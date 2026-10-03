@@ -47,6 +47,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".github/workflows/evidence-source-selection.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".github/workflows/federation-two-node.yml",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -803,6 +808,11 @@
     },
     {
       "path": "apps/extractor/tests/test_chunkr_durability.py",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/extractor/tests/test_docling_conversion_status.py",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -1982,6 +1992,21 @@
       "reason": "append-only database migration"
     },
     {
+      "path": "db/migrations/087_embedding_passage_input_fingerprints.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/088_set_based_embedding_input_validation.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
+      "path": "db/migrations/089_retrieval_table_atomic_units.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
       "path": "dependency-cruiser.cjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -2032,7 +2057,27 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/evidence-admission-handoff.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
+      "path": "docs/architecture/evidence-admission-research.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
+      "path": "docs/architecture/ingestion-chunking-audit.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/modules.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
+      "path": "docs/architecture/retrieval-flow-audit.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
     },
@@ -2207,6 +2252,56 @@
       "reason": "corpus-agnostic product evaluation"
     },
     {
+      "path": "evals/generic/evidence-admission/domains/aircraft-maintenance.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/biblioteca-municipal.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/hospital-pharmacy.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/incident-response.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/nomina-y-licencias.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/seguridad-alimentaria.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/transporte-publico.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/warehouse-logistics.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/evidence-admission/manifest.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/evidence-admission/README.md",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
       "path": "evals/generic/global-synthesis/basic.jsonl",
       "category": "PRODUCT_EVAL",
       "reason": "corpus-agnostic product evaluation"
@@ -2243,6 +2338,26 @@
     },
     {
       "path": "evals/generic/resilience-failure-matrix.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/retrieval-quality-scale/diagnostics.ts",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/retrieval-quality-scale/fixture-db.ts",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/retrieval-quality-scale/fixture.ts",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/retrieval-quality-scale/metrics.ts",
       "category": "PRODUCT_EVAL",
       "reason": "corpus-agnostic product evaluation"
     },
@@ -2852,6 +2967,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/indexing/test/source-span-provenance.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/indexing/tsconfig.json",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3107,6 +3227,16 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/postgres/vitest.config.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/postgres/vitest.integration.config.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/project-adapter/package.json",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3252,6 +3382,36 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/scripts/contextual-evidence-pack-scores.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/scripts/evidence-source-selection-aggregate.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/scripts/evidence-source-selection-compare.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/scripts/evidence-source-selection-contract.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/scripts/evidence-source-selection-score.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/scripts/evidence-verifier-bge-reranker-shadow-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/scripts/local-agent-provider.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3262,7 +3422,17 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/scripts/shadow-evidence-metrics.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/answerability.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/assertion-recall.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -3287,6 +3457,16 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/contextual-evidence.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/embedding-input.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/embedding-provider-registry.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3297,7 +3477,22 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/evidence-admission.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/evidence-reader.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/local-bge-reranker.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -3313,6 +3508,16 @@
     },
     {
       "path": "packages/retrieval/src/local-semantic-embedding.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/markdown-table-evidence.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/markdown-visible-source.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -3333,6 +3538,11 @@
     },
     {
       "path": "packages/retrieval/src/ppr.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/quality-diagnostics.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -3372,6 +3582,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/source-verification.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/structural-context.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3383,6 +3598,11 @@
     },
     {
       "path": "packages/retrieval/test/answerability.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/assertion-recall.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -3412,7 +3632,17 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/retrieval/test/contextual-evidence.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/retrieval/test/embedding-configuration-hash.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/embedding-input.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -3423,6 +3653,31 @@
     },
     {
       "path": "packages/retrieval/test/embeddings.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/evaluation-recordings.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/evidence-admission.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/evidence-reader.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/evidence-source-selection.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/local-bge-reranker.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -3442,12 +3697,27 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/retrieval/test/markdown-table-evidence.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/markdown-visible-source.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/retrieval/test/openai-compatible-embedding.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
     {
       "path": "packages/retrieval/test/ppr.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/quality-diagnostics.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -3482,7 +3752,22 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/retrieval/test/retrieval-quality-scale.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/retrieval/test/rrf.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/shadow-evidence-metrics.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/source-span-provenance.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -3495,6 +3780,11 @@
       "path": "packages/retrieval/test/tokenizer-contract.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/tsconfig.evidence-benchmarks.json",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
     },
     {
       "path": "packages/retrieval/tsconfig.json",
@@ -3542,6 +3832,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/vault-importer/test/source-occurrence.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/vault-importer/test/stable-identity.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -3563,6 +3858,16 @@
     },
     {
       "path": "policies/knowledge-rules.yaml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
+      "path": "policies/retrieval-generality-baseline.json",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
+      "path": "policies/retrieval-generality.md",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
     },
@@ -3657,7 +3962,17 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/contextual-embedding-input-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/deep-spec-traceability.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/deterministic-evidence-admission-benchmark.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -3683,6 +3998,26 @@
     },
     {
       "path": "scripts/event-concurrency-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/evidence-admission-generalization-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/evidence-admission-pack.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/evidence-admission-recordings.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/evidence-verifier-e5-relation-shadow-benchmark.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -3782,6 +4117,21 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/retrieval-quality-scale-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/retrieval-stage-observation.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/retrieval-unitization-audit.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/runtime-retrieval-benchmark.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3818,6 +4168,11 @@
     },
     {
       "path": "scripts/validate-repository-hygiene.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/validate-retrieval-generality.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

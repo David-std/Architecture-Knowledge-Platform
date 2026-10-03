@@ -66,6 +66,7 @@ Commit messages should describe the product behavior or repository change, not a
 - Add focused tests proportional to the risk of the changed behavior.
 - Do not enable optional retrieval, extraction or model providers by default without reproducible evidence and an explicit configuration decision.
 - Keep the generic runtime independent of a specific vault, course, company, developer workstation or fixture corpus.
+- Apply [retrieval generality policy](policies/retrieval-generality.md): never repair an individual RAG question by adding its concepts, aliases, wording, or document identity to generic runtime heuristics. Diagnose the failed stage, use generic and adversarial evaluation cases, and measure held-out source-level accuracy before changing a support rule.
 - Do not commit generated local reports, backups, `.env`, temporary repositories or private raw evidence.
 
 ## Focused checks
@@ -77,6 +78,7 @@ pnpm format:check
 pnpm contracts:validate
 pnpm docs:validate
 pnpm hygiene:validate
+pnpm retrieval:generality:validate
 pnpm check
 pnpm build
 ```
@@ -104,6 +106,7 @@ pnpm security:secrets
 pnpm contracts:validate
 pnpm docs:validate
 pnpm hygiene:validate
+pnpm retrieval:generality:validate
 pnpm check
 pnpm build
 pnpm test:integration

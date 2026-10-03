@@ -189,6 +189,19 @@ function validateCandidate(candidate: RetrievalCandidate): void {
     throw new Error("rawScore must be finite when provided");
   }
   if (
+    candidate.documentId !== undefined &&
+    (typeof candidate.documentId !== "string" ||
+      candidate.documentId.trim() === "")
+  ) {
+    throw new Error("documentId must be a non-empty string when provided");
+  }
+  if (
+    candidate.unitId !== undefined &&
+    (typeof candidate.unitId !== "string" || candidate.unitId.trim() === "")
+  ) {
+    throw new Error("unitId must be a non-empty string when provided");
+  }
+  if (
     typeof candidate.scopeId !== "string" ||
     candidate.scopeId.trim() === ""
   ) {
@@ -296,6 +309,89 @@ export function resolveRetrievalPolicy(
     ...(graphMode !== undefined ? { graphMode } : {}),
     contextLevel: input.contextLevel ?? DEFAULT_RETRIEVAL_POLICY.contextLevel,
   };
+}
+
+export interface RetrievalFusionTarget {
+  documentId: string;
+  unitId?: string;
+}
+
+export interface UnitAwareFusionProjection {
+  candidates: RetrievalCandidate[];
+  fusionIds: string[];
+  targetsByFusionId: ReadonlyMap<string, RetrievalFusionTarget>;
+}
+
+export function retrievalFusionIdentity(
+  documentId: string,
+  unitId?: string,
+): string {
+  const normalizedDocumentId = documentId.trim();
+  if (!normalizedDocumentId) {
+    throw new Error("fusion documentId must be a non-empty string");
+  }
+  const normalizedUnitId = unitId?.trim();
+  if (unitId !== undefined && !normalizedUnitId) {
+    throw new Error("fusion unitId must be a non-empty string when provided");
+  }
+  return normalizedUnitId
+    ? `${normalizedDocumentId}:${normalizedUnitId}`
+    : normalizedDocumentId;
+}
+
+/**
+ * Preserve atomic units as distinct RRF identities. A document-only signal is
+ * anchored to a leaf only when all measured leaf channels agree on exactly one
+ * unit for that document; otherwise it remains document-scoped.
+ */
+export function projectUnitAwareFusionCandidates(
+  candidates: readonly RetrievalCandidate[],
+): UnitAwareFusionProjection {
+  const unitIdsByDocument = new Map<string, Set<string>>();
+  for (const candidate of candidates) {
+    validateCandidate(candidate);
+    const documentId = (candidate.documentId ?? candidate.candidateId).trim();
+    const unitId = candidate.unitId?.trim();
+    if (!unitId) continue;
+    const units = unitIdsByDocument.get(documentId) ?? new Set<string>();
+    units.add(unitId);
+    unitIdsByDocument.set(documentId, units);
+  }
+
+  const singletonUnitByDocument = new Map<string, string>();
+  for (const [documentId, units] of unitIdsByDocument) {
+    if (units.size === 1) {
+      singletonUnitByDocument.set(documentId, [...units][0]!);
+    }
+  }
+
+  const targetsByFusionId = new Map<string, RetrievalFusionTarget>();
+  const fusionIds: string[] = [];
+  const projected = candidates.map((candidate) => {
+    const documentId = (candidate.documentId ?? candidate.candidateId).trim();
+    const unitId =
+      candidate.unitId?.trim() ?? singletonUnitByDocument.get(documentId);
+    const fusionId = retrievalFusionIdentity(documentId, unitId);
+    const target: RetrievalFusionTarget = {
+      documentId,
+      ...(unitId ? { unitId } : {}),
+    };
+    const existing = targetsByFusionId.get(fusionId);
+    if (
+      existing &&
+      (existing.documentId !== target.documentId ||
+        existing.unitId !== target.unitId)
+    ) {
+      throw new Error("FUSION_IDENTITY_COLLISION");
+    }
+    targetsByFusionId.set(fusionId, target);
+    fusionIds.push(fusionId);
+    return fusionId === candidate.candidateId
+      ? candidate
+      : { ...candidate, candidateId: fusionId };
+  });
+
+  return { candidates: projected, fusionIds, targetsByFusionId };
 }
 
 export function retrievalCandidatesToRankedChannels(

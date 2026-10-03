@@ -1,13 +1,26 @@
-export type EvidenceVerifierProvider = "disabled" | "local-multilingual-qa";
+export type EvidenceVerifierProvider =
+  | "disabled"
+  | "local-multilingual-qa"
+  | "contextual-cross-encoder"
+  | "cross-encoder-reader";
+
+export interface EvidenceReaderRuntimeConfig {
+  baseUrl: string;
+  model: string;
+  apiKey: string | null;
+  shortlistSize: number;
+  timeoutMs: number;
+}
 
 export interface ApiRuntimeConfig {
   rateLimitMax: number;
   port: number;
   evidenceVerifierProvider: EvidenceVerifierProvider;
-  evidenceVerifierMode: "SHADOW";
+  evidenceVerifierMode: "SHADOW" | "ENFORCE";
   evidenceVerifierMinimumSupportScore: number | null;
   evidenceVerifierMaxCandidates: number;
   evidenceVerifierLocalFilesOnly: boolean;
+  evidenceReader: EvidenceReaderRuntimeConfig | null;
 }
 
 function integerSetting(
@@ -49,9 +62,15 @@ function booleanSetting(
 
 function verifierProvider(env: NodeJS.ProcessEnv): EvidenceVerifierProvider {
   const raw = env.AKP_EVIDENCE_VERIFIER_PROVIDER ?? "disabled";
-  if (raw === "disabled" || raw === "local-multilingual-qa") return raw;
+  if (
+    raw === "disabled" ||
+    raw === "local-multilingual-qa" ||
+    raw === "contextual-cross-encoder" ||
+    raw === "cross-encoder-reader"
+  )
+    return raw;
   throw new Error(
-    `AKP_EVIDENCE_VERIFIER_PROVIDER must be "disabled" or "local-multilingual-qa"; received ${JSON.stringify(raw)}.`,
+    `AKP_EVIDENCE_VERIFIER_PROVIDER must be "disabled", "local-multilingual-qa", "contextual-cross-encoder" or "cross-encoder-reader"; received ${JSON.stringify(raw)}.`,
   );
 }
 
@@ -77,9 +96,20 @@ export function loadApiRuntimeConfig(
 ): ApiRuntimeConfig {
   const evidenceVerifierProvider = verifierProvider(env);
   const evidenceVerifierMode = env.AKP_EVIDENCE_VERIFIER_MODE ?? "SHADOW";
-  if (evidenceVerifierMode !== "SHADOW") {
+  if (evidenceVerifierMode !== "SHADOW" && evidenceVerifierMode !== "ENFORCE") {
     throw new Error(
-      `AKP_EVIDENCE_VERIFIER_MODE may only be "SHADOW" until a verifier is promoted; received ${JSON.stringify(evidenceVerifierMode)}.`,
+      `AKP_EVIDENCE_VERIFIER_MODE must be "SHADOW" or "ENFORCE"; received ${JSON.stringify(evidenceVerifierMode)}.`,
+    );
+  }
+  // A relevance-only score does not establish that the requested fact is
+  // present. Only the reader path can be explicitly selected for admission;
+  // cross-encoder and extractive QA diagnostics remain shadow-only.
+  if (
+    evidenceVerifierMode === "ENFORCE" &&
+    evidenceVerifierProvider !== "cross-encoder-reader"
+  ) {
+    throw new Error(
+      `AKP_EVIDENCE_VERIFIER_MODE "ENFORCE" requires AKP_EVIDENCE_VERIFIER_PROVIDER "cross-encoder-reader"; ${JSON.stringify(evidenceVerifierProvider)} remains SHADOW only.`,
     );
   }
   const evidenceVerifierMinimumSupportScore = optionalFraction(
@@ -95,6 +125,36 @@ export function loadApiRuntimeConfig(
     );
   }
 
+  let evidenceReader: EvidenceReaderRuntimeConfig | null = null;
+  if (evidenceVerifierProvider === "cross-encoder-reader") {
+    const baseUrl = env.AKP_EVIDENCE_READER_BASE_URL?.trim();
+    const model = env.AKP_EVIDENCE_READER_MODEL?.trim();
+    if (!baseUrl || !model) {
+      throw new Error(
+        "AKP_EVIDENCE_READER_BASE_URL and AKP_EVIDENCE_READER_MODEL are required when the cross-encoder reader verifier is enabled.",
+      );
+    }
+    evidenceReader = {
+      baseUrl,
+      model,
+      apiKey: env.AKP_EVIDENCE_READER_API_KEY?.trim() || null,
+      shortlistSize: integerSetting(
+        env,
+        "AKP_EVIDENCE_READER_SHORTLIST",
+        4,
+        1,
+        16,
+      ),
+      timeoutMs: integerSetting(
+        env,
+        "AKP_EVIDENCE_READER_TIMEOUT_MS",
+        30_000,
+        1_000,
+        300_000,
+      ),
+    };
+  }
+
   return {
     rateLimitMax: integerSetting(
       env,
@@ -105,7 +165,7 @@ export function loadApiRuntimeConfig(
     ),
     port: integerSetting(env, "PORT", 8080, 1, 65_535),
     evidenceVerifierProvider,
-    evidenceVerifierMode: "SHADOW",
+    evidenceVerifierMode,
     evidenceVerifierMinimumSupportScore,
     evidenceVerifierMaxCandidates: integerSetting(
       env,
@@ -119,5 +179,6 @@ export function loadApiRuntimeConfig(
       "AKP_EVIDENCE_VERIFIER_LOCAL_FILES_ONLY",
       false,
     ),
+    evidenceReader,
   };
 }

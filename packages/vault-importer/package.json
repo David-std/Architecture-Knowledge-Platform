@@ -9,12 +9,12 @@
     "build": "tsc -p tsconfig.json",
     "lint": "tsc -p tsconfig.json --noEmit",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "test:integration": "node -e \"if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required')\" && vitest run test/source-occurrence.integration.test.ts test/stable-identity.integration.test.ts --no-file-parallelism"
   },
   "dependencies": {
     "@akp/postgres": "*",
     "@akp/retrieval": "*",
-    "fast-glob": "^3.3.3",
     "gray-matter": "^4.0.3"
   }
 }

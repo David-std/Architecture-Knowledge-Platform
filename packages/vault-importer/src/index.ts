@@ -1,13 +1,15 @@
 import { createHash } from "node:crypto";
-import { readFile, realpath, stat } from "node:fs/promises";
+import { glob, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import fg from "fast-glob";
 import matter from "gray-matter";
 import type { Postgres } from "@akp/postgres";
 import {
   configurationHashForEmbeddingDescriptor,
   createConfiguredEmbeddingProvider,
+  embeddingPassageInputHash,
+  embeddingPassageText,
+  firstMarkdownHeadingLabel,
   parseKnowledgeUnits,
   serializeEmbeddingRuntime,
   toPgVector,
@@ -26,6 +28,8 @@ export interface VaultDocument {
   relativePath: string;
   absolutePath: string;
   externalId: string;
+  /** The source-declared id, when this document has one. */
+  declaredExternalId: string | null;
   title: string;
   type: string;
   lifecycle: string;
@@ -132,6 +136,22 @@ function normalizeProfile(
 const sha256 = (input: string | Buffer): string =>
   createHash("sha256").update(input).digest("hex");
 
+const IMPORT_IDENTITY_FRONTMATTER_KEY = "__akp_import_identity";
+const SOURCE_OCCURRENCE_EXTERNAL_ID_PREFIX = "SOURCE-OCCURRENCE-";
+
+interface SourceOccurrenceIdentity {
+  version: 1;
+  kind: "declared-id-path-occurrence";
+  collision: "duplicate-declared-id";
+  declaredId: string;
+  externalId: string;
+  occurrenceKey: string;
+  path: string;
+  resolution: "exact-path-only";
+  sourceType: string;
+  sourceContentHash: string;
+}
+
 function asStrings(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String).filter(Boolean);
   if (typeof value === "string") {
@@ -177,6 +197,181 @@ function slugTitle(relativePath: string): string {
     .basename(relativePath, path.extname(relativePath))
     .replace(/[-_]+/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function uniqueAliases(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const aliases: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim();
+    const key = trimmed.toLocaleLowerCase("en-US");
+    if (!trimmed || seen.has(key)) continue;
+    seen.add(key);
+    aliases.push(trimmed);
+  }
+  return aliases;
+}
+
+function appendReferenceCandidate(
+  references: Map<string, string[]>,
+  reference: string,
+  externalId: string,
+): void {
+  const key = reference.toLocaleLowerCase("en-US");
+  const candidates = references.get(key) ?? [];
+  if (!candidates.includes(externalId)) candidates.push(externalId);
+  references.set(key, candidates);
+}
+
+function sourceOccurrenceCandidate(
+  declaredId: string,
+  relativePath: string,
+  attempt: number,
+): string {
+  const occurrenceKey = portableVaultPathKey(relativePath);
+  return `${SOURCE_OCCURRENCE_EXTERNAL_ID_PREFIX}${sha256(
+    `v1\0${declaredId}\0${occurrenceKey}\0${attempt}`,
+  )
+    .slice(0, 32)
+    .toUpperCase()}`;
+}
+
+function allocateSourceOccurrenceExternalId(
+  declaredId: string,
+  relativePath: string,
+  occupied: Set<string>,
+): string {
+  for (let attempt = 0; ; attempt += 1) {
+    const candidate = sourceOccurrenceCandidate(
+      declaredId,
+      relativePath,
+      attempt,
+    );
+    if (!occupied.has(candidate)) {
+      occupied.add(candidate);
+      return candidate;
+    }
+  }
+}
+
+function markSourceOccurrenceIdentity(
+  document: VaultDocument,
+  declaredId: string,
+  externalId: string,
+): void {
+  document.externalId = externalId;
+  setSourceOccurrenceMetadata(document, declaredId, externalId);
+}
+
+interface ExistingImportedDocument {
+  id: string;
+  path: string;
+  externalId: string | null;
+  contentHash: string | null;
+  type: string | null;
+  frontmatter: Record<string, unknown> | null;
+}
+
+function sourceDeclaredId(
+  frontmatter: Record<string, unknown> | null,
+): string | null {
+  const value = frontmatter?.id;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function sourceIdentityMetadata(
+  frontmatter: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  const value = frontmatter?.[IMPORT_IDENTITY_FRONTMATTER_KEY];
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function isValidSourceIdentityMetadata(
+  document: ExistingImportedDocument,
+): boolean {
+  const metadata = sourceIdentityMetadata(document.frontmatter);
+  const declaredId = sourceDeclaredId(document.frontmatter);
+  if (!metadata || !declaredId || !document.externalId) return false;
+  if (
+    metadata.version !== 1 ||
+    metadata.kind !== "declared-id-path-occurrence" ||
+    metadata.collision !== "duplicate-declared-id" ||
+    metadata.resolution !== "exact-path-only" ||
+    metadata.declaredId !== declaredId ||
+    metadata.externalId !== document.externalId ||
+    metadata.path !== document.path ||
+    metadata.occurrenceKey !== `path:${portableVaultPathKey(document.path)}`
+  ) {
+    return false;
+  }
+  if (
+    metadata.sourceType !== undefined &&
+    metadata.sourceType !== document.type
+  ) {
+    return false;
+  }
+  if (
+    metadata.sourceContentHash !== undefined &&
+    metadata.sourceContentHash !== document.contentHash
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function sourceIdentityDeclaredId(
+  document: ExistingImportedDocument,
+): string | null {
+  return isValidSourceIdentityMetadata(document)
+    ? sourceDeclaredId(document.frontmatter)
+    : null;
+}
+
+function isSourceIdentityForDeclaredId(
+  document: ExistingImportedDocument,
+  declaredId: string,
+): boolean {
+  return (
+    document.externalId === declaredId ||
+    sourceDeclaredId(document.frontmatter) === declaredId ||
+    sourceIdentityDeclaredId(document) === declaredId
+  );
+}
+
+function setSourceOccurrenceMetadata(
+  document: VaultDocument,
+  declaredId: string,
+  externalId: string,
+): void {
+  const occurrenceKey = portableVaultPathKey(document.relativePath);
+  const metadata: SourceOccurrenceIdentity = {
+    version: 1,
+    kind: "declared-id-path-occurrence",
+    collision: "duplicate-declared-id",
+    declaredId,
+    externalId,
+    occurrenceKey: `path:${occurrenceKey}`,
+    path: document.relativePath,
+    resolution: "exact-path-only",
+    sourceType: document.type,
+    sourceContentHash: document.contentHash,
+  };
+  document.frontmatter = {
+    ...document.frontmatter,
+    [IMPORT_IDENTITY_FRONTMATTER_KEY]: metadata,
+  };
+  document.aliases = uniqueAliases([...document.aliases, declaredId]);
+}
+
+function sanitizeSourceFrontmatter(
+  frontmatter: Record<string, unknown>,
+): Record<string, unknown> {
+  const sanitized = { ...frontmatter };
+  delete sanitized[IMPORT_IDENTITY_FRONTMATTER_KEY];
+  return sanitized;
 }
 
 export function parseWikiLinks(body: string): string[] {
@@ -328,21 +523,36 @@ function resolveLink(
   target: string,
   byStem: Map<string, string[]>,
   byPath: Map<string, string>,
-): string | null {
+  byReference: Map<string, string[]>,
+): { externalId: string | null; ambiguous: boolean } {
   const normalized = normalizePath(target).replace(/^\/+/, "");
   const direct = byPath.get(normalized.toLowerCase());
-  if (direct) return direct;
+  if (direct) return { externalId: direct, ambiguous: false };
 
   const fromDirectory = path.posix.dirname(fromPath);
   const relativeTarget = path.posix
     .normalize(path.posix.join(fromDirectory, normalized))
     .replace(/^\.\//, "");
   const nearby = byPath.get(relativeTarget.toLowerCase());
-  if (nearby) return nearby;
+  if (nearby) return { externalId: nearby, ambiguous: false };
 
-  const candidates =
-    byStem.get(path.posix.basename(normalized).toLowerCase()) ?? [];
-  return candidates.length === 1 ? (candidates[0] ?? null) : null;
+  const referenceCandidates = [
+    ...new Set(byReference.get(normalized.toLowerCase()) ?? []),
+  ];
+  if (referenceCandidates.length === 1) {
+    return { externalId: referenceCandidates[0] ?? null, ambiguous: false };
+  }
+  if (referenceCandidates.length > 1) {
+    return { externalId: null, ambiguous: true };
+  }
+
+  const candidates = [
+    ...new Set(byStem.get(path.posix.basename(normalized).toLowerCase()) ?? []),
+  ];
+  return {
+    externalId: candidates.length === 1 ? (candidates[0] ?? null) : null,
+    ambiguous: candidates.length > 1,
+  };
 }
 
 function componentCount(
@@ -386,20 +596,19 @@ export async function inspectVault(
   if (!rootStats.isDirectory())
     throw new Error(`Vault path is not a directory: ${canonicalPath}`);
 
-  const relativePaths = (
-    await fg("**/*.md", {
-      cwd: canonicalPath,
-      onlyFiles: true,
-      dot: false,
-      ignore: [".git/**", "node_modules/**", ".obsidian/plugins/**"],
-    })
-  )
-    .map(normalizePath)
-    .sort();
+  const relativePaths: string[] = [];
+  for await (const relativePath of glob("**/*.md", {
+    cwd: canonicalPath,
+    exclude: ["**/.*/**", "**/.*", "node_modules/**"],
+  })) {
+    if ((await stat(path.resolve(canonicalPath, relativePath))).isFile()) {
+      relativePaths.push(normalizePath(relativePath));
+    }
+  }
+  relativePaths.sort();
 
   const issues: ImportIssue[] = [];
   const documents: VaultDocument[] = [];
-  const seenIds = new Map<string, string>();
   const seenPortablePaths = new Map<string, string>();
 
   for (const relativePath of relativePaths) {
@@ -432,7 +641,9 @@ export async function inspectVault(
       parsed.content = raw;
       parsed.data = {};
     }
-    const frontmatter = parsed.data as Record<string, unknown>;
+    const frontmatter = sanitizeSourceFrontmatter(
+      parsed.data as Record<string, unknown>,
+    );
     const transferArtifact =
       Boolean(profile.transferPackPrefix) &&
       relativePath.startsWith(profile.transferPackPrefix);
@@ -456,19 +667,6 @@ export async function inspectVault(
         message: "Operational Markdown must declare a stable frontmatter id.",
       });
     }
-    if (operational) {
-      const existing = seenIds.get(externalId);
-      if (existing) {
-        issues.push({
-          severity: "error",
-          code: "DUPLICATE_STABLE_ID",
-          path: relativePath,
-          message: `Stable id ${externalId} is already used by ${existing}.`,
-        });
-      } else {
-        seenIds.set(externalId, relativePath);
-      }
-    }
 
     const type = transferArtifact
       ? "raw-transfer-artifact"
@@ -489,6 +687,22 @@ export async function inspectVault(
     }
 
     const body = parsed.content.trim();
+    const slugFallbackTitle = slugTitle(relativePath);
+    const declaredTitle =
+      typeof frontmatter.title === "string" ? frontmatter.title.trim() : "";
+    const headingFallback = declaredTitle
+      ? null
+      : firstMarkdownHeadingLabel(body);
+    const title = declaredTitle || headingFallback || slugFallbackTitle;
+    const aliases = uniqueAliases([
+      ...asStrings(frontmatter.aliases),
+      ...(!declaredTitle &&
+      headingFallback &&
+      headingFallback.toLocaleLowerCase("en-US") !==
+        slugFallbackTitle.toLocaleLowerCase("en-US")
+        ? [slugFallbackTitle]
+        : []),
+    ]);
     if (acquisitionBacklog) {
       issues.push({
         severity: "warning",
@@ -502,14 +716,13 @@ export async function inspectVault(
       relativePath,
       absolutePath,
       externalId,
-      title:
-        (typeof frontmatter.title === "string" && frontmatter.title.trim()) ||
-        slugTitle(relativePath),
+      declaredExternalId: operational && declaredId ? declaredId : null,
+      title,
       type,
       lifecycle: normalizeLifecycle(frontmatter, { archival }),
       trustTier: normalizeTrust(frontmatter, operational),
       layer: deriveLayer(relativePath, frontmatter, profile),
-      aliases: asStrings(frontmatter.aliases),
+      aliases,
       body,
       frontmatter,
       links: parseWikiLinks(body),
@@ -519,16 +732,61 @@ export async function inspectVault(
     });
   }
 
+  const declaredIdGroups = new Map<string, VaultDocument[]>();
+  for (const document of documents) {
+    if (!document.declaredExternalId) continue;
+    const group = declaredIdGroups.get(document.declaredExternalId) ?? [];
+    group.push(document);
+    declaredIdGroups.set(document.declaredExternalId, group);
+  }
+
+  // A declared id is the stable identity only while it is unique in this
+  // source snapshot. Once the source declares it more than once, each file
+  // receives a deterministic path occurrence key so the importer cannot
+  // overwrite one legitimate source with another. The raw id remains an
+  // alias and in projection metadata, where callers can see why the alias is
+  // ambiguous and use an exact path to select an occurrence.
+  const occupiedExternalIds = new Set(
+    documents.map((document) => document.externalId),
+  );
+  for (const [declaredId, group] of declaredIdGroups) {
+    if (group.length < 2) continue;
+    const firstPath = group[0]?.relativePath ?? "";
+    for (const document of group) {
+      const occurrenceExternalId = allocateSourceOccurrenceExternalId(
+        declaredId,
+        document.relativePath,
+        occupiedExternalIds,
+      );
+      markSourceOccurrenceIdentity(document, declaredId, occurrenceExternalId);
+      if (document.relativePath === firstPath) continue;
+      issues.push({
+        severity: "warning",
+        code: "DUPLICATE_STABLE_ID",
+        path: document.relativePath,
+        message:
+          `Stable id ${declaredId} is declared by multiple source paths; ` +
+          `this occurrence is qualified from ${firstPath}.`,
+      });
+    }
+  }
+
   const byPath = new Map<string, string>();
   const byStem = new Map<string, string[]>();
+  const byReference = new Map<string, string[]>();
   for (const document of documents) {
     const withoutExtension = document.relativePath.replace(/\.md$/i, "");
     byPath.set(withoutExtension.toLowerCase(), document.externalId);
     const stem = path.posix.basename(withoutExtension).toLowerCase();
-    byStem.set(stem, [...(byStem.get(stem) ?? []), document.externalId]);
-    byPath.set(document.externalId.toLowerCase(), document.externalId);
-    for (const alias of document.aliases)
-      byPath.set(alias.toLowerCase(), document.externalId);
+    appendReferenceCandidate(byStem, stem, document.externalId);
+    appendReferenceCandidate(
+      byReference,
+      document.externalId,
+      document.externalId,
+    );
+    for (const alias of document.aliases) {
+      appendReferenceCandidate(byReference, alias, document.externalId);
+    }
   }
 
   const relations: VaultInspection["relations"] = [];
@@ -540,19 +798,25 @@ export async function inspectVault(
   }
   for (const document of documents) {
     for (const target of document.links) {
-      const resolved = resolveLink(
+      const resolution = resolveLink(
         document.relativePath,
         target,
         byStem,
         byPath,
+        byReference,
       );
+      const resolved = resolution.externalId;
       if (!resolved) {
         unresolvedLinks += 1;
         issues.push({
           severity: "warning",
-          code: "UNRESOLVED_LINK",
+          code: resolution.ambiguous
+            ? "AMBIGUOUS_DOCUMENT_REFERENCE"
+            : "UNRESOLVED_LINK",
           path: document.relativePath,
-          message: `Could not resolve wikilink [[${target}]].`,
+          message: resolution.ambiguous
+            ? `Wikilink [[${target}]] matches multiple source occurrences; use an exact path.`
+            : `Could not resolve wikilink [[${target}]].`,
         });
         continue;
       }
@@ -653,12 +917,14 @@ export async function inspectVault(
           .split(/[|#]/)[0]
           ?.trim();
         if (!target) continue;
-        const resolved = resolveLink(
+        const resolution = resolveLink(
           document.relativePath,
           target,
           byStem,
           byPath,
+          byReference,
         );
+        const resolved = resolution.externalId;
         if (!resolved) {
           const looksLikeKnowledgeReference =
             rawTarget.includes("[[") ||
@@ -666,7 +932,14 @@ export async function inspectVault(
             /^(?:SRC|CLM|CON|PAT|RUL|WF|REQ|QAS|BC|ADR|C4|ARC|API|EVT|TST|FIT|EVD|PRO|SKL|EVAL|AKS)-/i.test(
               target,
             );
-          if (warnWhenUnresolved && looksLikeKnowledgeReference) {
+          if (warnWhenUnresolved && resolution.ambiguous) {
+            issues.push({
+              severity: "warning",
+              code: "AMBIGUOUS_TYPED_RELATION",
+              path: document.relativePath,
+              message: `${field} target ${rawTarget} matches multiple source occurrences; use an exact path.`,
+            });
+          } else if (warnWhenUnresolved && looksLikeKnowledgeReference) {
             issues.push({
               severity: "warning",
               code: "UNRESOLVED_TYPED_RELATION",
@@ -761,7 +1034,7 @@ export async function inspectVault(
         (document) =>
           document.operational &&
           !profile.rootRouterDocuments.includes(document.relativePath) &&
-          !document.externalId.startsWith("RAW-"),
+          document.declaredExternalId !== null,
       ).length,
       links: documents.reduce(
         (sum, document) => sum + document.links.length,
@@ -822,13 +1095,15 @@ async function buildImportedEmbeddingGeneration(
   options: ImportEmbeddingBuildOptions,
 ): Promise<void> {
   const dimensions = provider.descriptor.dimensions;
-  const units = await db.pool.query<{
+  const rawUnits = await db.pool.query<{
     id: string;
     content_hash: string;
     body: string;
+    title: string;
+    heading_path: string[];
   }>(
     `
-    select u.id,u.content_hash,u.body
+    select u.id,u.content_hash,u.body,d.title,u.heading_path
       from knowledge_units u
       join knowledge_documents d on d.id=u.document_id
      where u.space_id=$1 and u.vault_id=$2 and u.corpus_revision=$3
@@ -841,6 +1116,27 @@ async function buildImportedEmbeddingGeneration(
     `,
     [options.spaceId, options.vaultId, options.corpusRevision],
   );
+
+  const units = {
+    rows: rawUnits.rows.map((unit) => {
+      const input = {
+        body: unit.body,
+        title: unit.title,
+        headingPath: unit.heading_path,
+      };
+      return {
+        ...unit,
+        input_hash: embeddingPassageInputHash(
+          input,
+          provider.descriptor.inputStrategy,
+        ),
+        input_text: embeddingPassageText(
+          input,
+          provider.descriptor.inputStrategy,
+        ),
+      };
+    }),
+  };
 
   // A retry must repair stale rows as well as missing rows.  Ineligible or
   // content-mismatched rows belong to an older snapshot and must not make a
@@ -867,6 +1163,7 @@ async function buildImportedEmbeddingGeneration(
             and d.lifecycle in ('ACTIVE','DISPUTED')
             and d.refresh_status not in ('STALE_BLOCKED','INVALID')
             and u.content_hash=e.content_hash
+            and e.input_hash=akp_embedding_passage_input_hash($6,d.title,u.heading_path,u.body)
             and e.embedding_dimensions=$5
        )
     `,
@@ -876,14 +1173,15 @@ async function buildImportedEmbeddingGeneration(
       options.vaultId,
       options.corpusRevision,
       dimensions,
+      provider.descriptor.inputStrategy,
     ],
   );
 
   const written = await db.pool.query<{
     unit_id: string;
-    content_hash: string;
+    input_hash: string;
   }>(
-    `select e.unit_id,e.content_hash
+    `select e.unit_id,e.input_hash
        from unit_embeddings e
        join embedding_generations g on g.id=e.generation_id
       where e.generation_id=$1 and g.space_id=$2 and g.vault_id=$3
@@ -891,17 +1189,17 @@ async function buildImportedEmbeddingGeneration(
     [generationId, options.spaceId, options.vaultId, options.corpusRevision],
   );
   const writtenHashes = new Map(
-    written.rows.map((row) => [String(row.unit_id), row.content_hash]),
+    written.rows.map((row) => [String(row.unit_id), row.input_hash]),
   );
   const missing = units.rows.filter(
-    (unit) => writtenHashes.get(unit.id) !== unit.content_hash,
+    (unit) => writtenHashes.get(unit.id) !== unit.input_hash,
   );
 
   const batchSize = 64;
   for (let start = 0; start < missing.length; start += batchSize) {
     const batch = missing.slice(start, start + batchSize);
     const vectors = await provider.embed(
-      batch.map((unit) => unit.body),
+      batch.map((unit) => unit.input_text),
       "passage",
     );
     if (vectors.length !== batch.length) {
@@ -925,12 +1223,13 @@ async function buildImportedEmbeddingGeneration(
       await db.pool.query(
         `
         insert into unit_embeddings(
-          unit_id,generation_id,content_hash,embedding,embedding_dimensions
-        ) values($1,$2,$3,$4::vector,$5)
+          unit_id,generation_id,content_hash,embedding,embedding_dimensions,input_hash
+        ) values($1,$2,$3,$4::vector,$5,$6)
         on conflict(unit_id,generation_id) do update set
           content_hash=excluded.content_hash,
           embedding=excluded.embedding,
-          embedding_dimensions=excluded.embedding_dimensions
+          embedding_dimensions=excluded.embedding_dimensions,
+          input_hash=excluded.input_hash
         `,
         [
           unit.id,
@@ -938,6 +1237,7 @@ async function buildImportedEmbeddingGeneration(
           unit.content_hash,
           toPgVector(vector),
           dimensions,
+          unit.input_hash,
         ],
       );
     }
@@ -961,6 +1261,7 @@ async function buildImportedEmbeddingGeneration(
           and d.refresh_status not in ('STALE_BLOCKED','INVALID')) expected,
       (select count(*)::int
          from unit_embeddings e
+         join embedding_generations g on g.id=e.generation_id
          join knowledge_units u
            on u.id=e.unit_id and u.space_id=$1 and u.vault_id=$2
           and u.corpus_revision=$3 and u.content_hash=e.content_hash
@@ -969,6 +1270,7 @@ async function buildImportedEmbeddingGeneration(
           and d.lifecycle in ('ACTIVE','DISPUTED')
           and d.refresh_status not in ('STALE_BLOCKED','INVALID')
         where e.generation_id=$4
+          and e.input_hash=akp_embedding_passage_input_hash(g.input_strategy,d.title,u.heading_path,u.body)
           and u.embedding_eligible=true
           and u.lifecycle in ('ACTIVE','DISPUTED')
           and e.embedding_dimensions=$5) matching,
@@ -1380,6 +1682,223 @@ export async function importVaultReadOnly(
       [spaceId, vaultId],
     );
 
+    const existingDocuments = await client.query<ExistingImportedDocument>(
+      `
+      select id,path,external_id as "externalId",
+             content_hash as "contentHash",type,frontmatter
+        from knowledge_documents
+       where space_id=$1 and vault_id=$2
+       for update
+      `,
+      [spaceId, vaultId],
+    );
+    const existingByPath = new Map(
+      existingDocuments.rows.map((document) => [document.path, document]),
+    );
+    const existingByExternalId = new Map<string, ExistingImportedDocument[]>();
+    const existingByDeclaredId = new Map<string, ExistingImportedDocument[]>();
+    for (const existing of existingDocuments.rows) {
+      if (existing.externalId) {
+        const byExternalId =
+          existingByExternalId.get(existing.externalId) ?? [];
+        byExternalId.push(existing);
+        existingByExternalId.set(existing.externalId, byExternalId);
+      }
+      const declaredId =
+        sourceIdentityDeclaredId(existing) ??
+        sourceDeclaredId(existing.frontmatter) ??
+        existing.externalId;
+      if (declaredId) {
+        const key = declaredId;
+        if (key) {
+          const byDeclaredId = existingByDeclaredId.get(key) ?? [];
+          byDeclaredId.push(existing);
+          existingByDeclaredId.set(key, byDeclaredId);
+        }
+      }
+    }
+
+    const declaredIdGroups = new Map<string, VaultDocument[]>();
+    for (const document of inspection.documents) {
+      if (!document.declaredExternalId) continue;
+      const group = declaredIdGroups.get(document.declaredExternalId) ?? [];
+      group.push(document);
+      declaredIdGroups.set(document.declaredExternalId, group);
+    }
+    const currentPaths = new Set(
+      inspection.documents.map((document) => document.relativePath),
+    );
+
+    const reusedExistingIds = new Set<string>();
+    const identityAssignments = new Map<
+      VaultDocument,
+      { externalId: string; existing: ExistingImportedDocument | null }
+    >();
+
+    const findExistingSourceDocument = (
+      document: VaultDocument,
+      declaredId: string,
+    ): ExistingImportedDocument | null => {
+      const pathMatch = existingByPath.get(document.relativePath);
+      if (
+        pathMatch &&
+        isSourceIdentityForDeclaredId(pathMatch, declaredId) &&
+        !reusedExistingIds.has(pathMatch.id)
+      ) {
+        return pathMatch;
+      }
+
+      const candidates = (existingByDeclaredId.get(declaredId) ?? []).filter(
+        (candidate) =>
+          !reusedExistingIds.has(candidate.id) &&
+          (candidate.path === document.relativePath ||
+            !currentPaths.has(candidate.path)),
+      );
+      const exactDeclaredId = candidates.filter(
+        (candidate) => candidate.externalId === declaredId,
+      );
+      if (
+        exactDeclaredId.length === 1 &&
+        (declaredIdGroups.get(declaredId)?.length ?? 1) === 1
+      ) {
+        return exactDeclaredId[0] ?? null;
+      }
+
+      const sameBody = candidates.filter(
+        (candidate) => candidate.contentHash === document.contentHash,
+      );
+      if (sameBody.length === 1) {
+        return sameBody[0] ?? null;
+      }
+      return null;
+    };
+
+    for (const document of inspection.documents) {
+      const declaredId = document.declaredExternalId;
+      const groupSize = declaredId
+        ? (declaredIdGroups.get(declaredId)?.length ?? 1)
+        : 0;
+      let existing: ExistingImportedDocument | null = null;
+      if (declaredId) {
+        existing = findExistingSourceDocument(document, declaredId);
+      } else {
+        const pathMatch = existingByPath.get(document.relativePath);
+        if (
+          pathMatch &&
+          pathMatch.externalId === document.externalId &&
+          !reusedExistingIds.has(pathMatch.id)
+        ) {
+          existing = pathMatch;
+        } else {
+          const externalMatches = (
+            existingByExternalId.get(document.externalId) ?? []
+          ).filter((candidate) => !reusedExistingIds.has(candidate.id));
+          if (externalMatches.length === 1) {
+            existing = externalMatches[0] ?? null;
+          }
+        }
+      }
+
+      if (existing) reusedExistingIds.add(existing.id);
+      let externalId = existing?.externalId ?? document.externalId;
+      const declaredIdOwner = declaredId
+        ? (existingByExternalId.get(declaredId) ?? []).find(
+            (candidate) => candidate.id !== existing?.id,
+          )
+        : undefined;
+      if (declaredId && groupSize === 1 && existing && !declaredIdOwner) {
+        // A collision disappeared. Restore the source-declared stable id on
+        // the same database row so document/unit/history identity survives.
+        externalId = declaredId;
+      } else if (
+        declaredId &&
+        groupSize === 1 &&
+        existing &&
+        declaredIdOwner &&
+        existing.externalId !== declaredId
+      ) {
+        // The raw id belongs to another historical occurrence. Keep this
+        // surviving qualified occurrence addressable by its own id.
+        setSourceOccurrenceMetadata(document, declaredId, externalId);
+      }
+      identityAssignments.set(document, { externalId, existing });
+    }
+
+    const occupiedExternalIds = new Set(
+      existingDocuments.rows.flatMap((document) =>
+        document.externalId ? [document.externalId] : [],
+      ),
+    );
+    const assignedExternalIds = new Set<string>();
+    const identityRemap = new Map<string, string>();
+    for (const document of inspection.documents) {
+      const assignment = identityAssignments.get(document);
+      if (!assignment) continue;
+      let externalId = assignment.externalId;
+      const existing = assignment.existing;
+      const occupiedByOtherExisting =
+        occupiedExternalIds.has(externalId) &&
+        existing?.externalId !== externalId;
+      if (assignedExternalIds.has(externalId) || occupiedByOtherExisting) {
+        if (!document.declaredExternalId || existing) {
+          throw new Error(
+            `VAULT_DOCUMENT_IDENTITY_CONFLICT:${document.relativePath}:${externalId}`,
+          );
+        }
+        externalId = allocateSourceOccurrenceExternalId(
+          document.declaredExternalId,
+          document.relativePath,
+          new Set([...occupiedExternalIds, ...assignedExternalIds]),
+        );
+        assignment.externalId = externalId;
+      }
+      assignedExternalIds.add(externalId);
+      identityRemap.set(document.externalId, externalId);
+      if (document.externalId !== externalId) {
+        if (document.declaredExternalId) {
+          setSourceOccurrenceMetadata(
+            document,
+            document.declaredExternalId,
+            externalId,
+          );
+        }
+        document.externalId = externalId;
+      }
+    }
+
+    const externalIdUpdates: Array<{
+      documentId: string;
+      externalId: string;
+    }> = [];
+    for (const document of inspection.documents) {
+      const assignment = identityAssignments.get(document);
+      const existing = assignment?.existing;
+      if (!existing || existing.externalId === document.externalId) continue;
+      const targetOwner = (
+        existingByExternalId.get(document.externalId) ?? []
+      ).find((candidate) => candidate.id !== existing.id);
+      if (targetOwner) {
+        throw new Error(
+          `VAULT_DOCUMENT_IDENTITY_CONFLICT:${document.relativePath}:${document.externalId}`,
+        );
+      }
+      externalIdUpdates.push({
+        documentId: existing.id,
+        externalId: document.externalId,
+      });
+    }
+
+    for (const update of externalIdUpdates) {
+      await client.query(
+        `
+        update knowledge_documents
+           set external_id=$1,updated_at=now()
+         where id=$2 and space_id=$3 and vault_id=$4
+        `,
+        [update.externalId, update.documentId, spaceId, vaultId],
+      );
+    }
+
     const importedIds: string[] = [];
     const databaseIdByExternalId = new Map<string, string>();
     for (const document of inspection.documents) {
@@ -1570,8 +2089,12 @@ export async function importVaultReadOnly(
     );
 
     for (const relation of inspection.relations) {
-      const from = databaseIdByExternalId.get(relation.from);
-      const to = databaseIdByExternalId.get(relation.to);
+      const from = databaseIdByExternalId.get(
+        identityRemap.get(relation.from) ?? relation.from,
+      );
+      const to = databaseIdByExternalId.get(
+        identityRemap.get(relation.to) ?? relation.to,
+      );
       if (!from || !to) continue;
       await client.query(
         `
@@ -1690,6 +2213,7 @@ export async function importVaultReadOnly(
               and d.refresh_status not in ('STALE_BLOCKED','INVALID')) expected,
           (select count(*)::int
              from unit_embeddings e
+             join embedding_generations g on g.id=e.generation_id
              join knowledge_units u
                on u.id=e.unit_id and u.space_id=$1 and u.vault_id=$2
               and u.corpus_revision=$3 and u.content_hash=e.content_hash
@@ -1698,6 +2222,7 @@ export async function importVaultReadOnly(
               and d.lifecycle in ('ACTIVE','DISPUTED')
               and d.refresh_status not in ('STALE_BLOCKED','INVALID')
             where e.generation_id=$4 and u.embedding_eligible=true
+              and e.input_hash=akp_embedding_passage_input_hash(g.input_strategy,d.title,u.heading_path,u.body)
               and u.lifecycle in ('ACTIVE','DISPUTED')
               and e.embedding_dimensions=$5) matching,
           (select count(*)::int from unit_embeddings where generation_id=$4) stored

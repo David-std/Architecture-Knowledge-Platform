@@ -1,0 +1,420 @@
+{
+  "id": "biblioteca-municipal",
+  "split": "development",
+  "language": "es",
+  "description": "Servicios de una biblioteca municipal: carné, préstamos, renovaciones, sanciones, salas y donaciones.",
+  "units": [
+    {
+      "id": "bm-carne",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Carné de lector",
+      "headingPath": ["Inscripción", "Carné de lector"],
+      "text": "El carné de lector es gratuito para las personas empadronadas en el municipio y se emite en el mostrador al presentar un documento de identidad. Quienes no residen en el municipio pagan una cuota anual de 15 euros."
+    },
+    {
+      "id": "bm-prestamo-limite",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Límites de préstamo",
+      "headingPath": ["Préstamo", "Límites de préstamo"],
+      "text": "Cada lector puede tener hasta ocho documentos prestados a la vez: como máximo cinco libros y tres materiales audiovisuales. El plazo general es de 21 días para los libros y de 7 días para los audiovisuales."
+    },
+    {
+      "id": "bm-renovacion",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Renovaciones",
+      "headingPath": ["Préstamo", "Renovaciones"],
+      "text": "Un préstamo se puede renovar dos veces, en línea o en el mostrador, siempre que ningún otro lector lo tenga reservado. Los préstamos que ya están vencidos no se pueden renovar."
+    },
+    {
+      "id": "bm-sanciones",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Sanciones por retraso",
+      "headingPath": ["Préstamo", "Sanciones por retraso"],
+      "text": "La biblioteca no cobra multas en dinero. Por cada día de retraso se suspende el derecho de préstamo durante dos días, con un tope de 60 días de suspensión."
+    },
+    {
+      "id": "bm-reserva",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Reserva",
+      "headingPath": ["Préstamo", "Reserva"],
+      "text": "Solicitud con la que un lector pide que el próximo ejemplar devuelto de un título quede apartado a su nombre. El ejemplar se guarda durante cinco días hábiles en el mostrador de recogida."
+    },
+    {
+      "id": "bm-interbibliotecario",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Préstamo interbibliotecario",
+      "headingPath": ["Servicios", "Préstamo interbibliotecario"],
+      "text": "Permite pedir a otra biblioteca de la red un documento que no forma parte del fondo local. Se solicita mediante el formulario en línea, y el lector solo paga el franqueo cuando la biblioteca de origen lo cobra."
+    },
+    {
+      "id": "bm-salas",
+      "documentType": "decision-rule",
+      "unitType": "TABLE",
+      "title": "Uso de salas y puestos",
+      "headingPath": ["Espacios", "Uso de salas y puestos"],
+      "text": "| Situación | Qué hacer |\n|---|---|\n| Grupo de 3 a 8 personas | Reservar una sala de trabajo en grupo con 48 horas de antelación |\n| Estudio individual en silencio | Usar la sala de lectura sin reserva |\n| Ordenador con software especializado | Pedir el puesto en el mostrador de informática |"
+    },
+    {
+      "id": "bm-menores",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Lectores menores de 14 años",
+      "headingPath": ["Inscripción", "Lectores menores de 14 años"],
+      "text": "Los menores de 14 años necesitan la autorización firmada de una persona adulta responsable para obtener el carné. Pueden llevarse materiales de la sección infantil y juvenil; los audiovisuales para adultos quedan excluidos."
+    },
+    {
+      "id": "bm-perdida",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Documentos perdidos o dañados",
+      "headingPath": ["Préstamo", "Documentos perdidos o dañados"],
+      "text": "Si un documento se pierde o se daña, el lector debe reponer un ejemplar idéntico o, cuando ya no se edita, abonar el precio de catálogo. Mientras no lo reponga, su carné queda bloqueado."
+    },
+    {
+      "id": "bm-donaciones",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "No se aceptan enciclopedias donadas",
+      "headingPath": ["Colección", "No se aceptan enciclopedias donadas"],
+      "text": "Las donaciones se valoran según la política de colección. Se rechazan las enciclopedias y los libros de texto de más de diez años porque su información queda desactualizada y ocupan el espacio que necesita la colección viva."
+    },
+    {
+      "id": "bm-horario",
+      "documentType": "note",
+      "unitType": "PARAGRAPH",
+      "title": "Horario",
+      "headingPath": ["Información general", "Horario"],
+      "text": "De lunes a viernes la biblioteca abre de 9:00 a 20:30, y los sábados de 10:00 a 14:00. En julio y agosto cierra por las tardes."
+    },
+    {
+      "id": "bm-estadisticas",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Estadísticas anuales",
+      "headingPath": ["Memoria", "Estadísticas anuales"],
+      "text": "| Indicador | 2024 | 2025 |\n|---|---|---|\n| Préstamos | 48.200 | 51.900 |\n| Lectores activos | 6.300 | 6.850 |\n| Reservas | 3.100 | 3.400 |"
+    },
+    {
+      "id": "bm-internet",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Acceso a internet",
+      "headingPath": ["Servicios", "Acceso a internet"],
+      "text": "La red wifi es abierta para cualquier visitante y no requiere carné. Los ordenadores públicos, en cambio, exigen iniciar sesión con el número de carné y se pueden usar dos horas al día."
+    },
+    {
+      "id": "bm-domicilio",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Préstamo a domicilio",
+      "headingPath": ["Servicios", "Préstamo a domicilio"],
+      "text": "Las personas con movilidad reducida pueden recibir sus préstamos en casa una vez al mes. El servicio lo realizan voluntarios coordinados por la biblioteca."
+    }
+  ],
+  "questions": [
+    {
+      "id": "bm-q01",
+      "family": "carne-coste",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿El carné de la biblioteca cuesta dinero?",
+      "gold": ["bm-carne"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "bm-q02",
+      "family": "carne-coste",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Do people from outside the town have to pay for a library card?",
+      "gold": ["bm-carne"],
+      "challenges": ["CROSS_LINGUAL", "PARAPHRASE"]
+    },
+    {
+      "id": "bm-q03",
+      "family": "renovar-vencido",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Puedo renovar un libro que ya tengo atrasado?",
+      "gold": ["bm-renovacion"],
+      "challenges": ["PARAPHRASE", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "bm-q04",
+      "family": "multa-dinero",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Te cobran una multa si devuelves tarde un libro?",
+      "gold": ["bm-sanciones"],
+      "challenges": ["PARAPHRASE", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "bm-q05",
+      "family": "wifi-carne",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Is a library card needed to use the wifi?",
+      "gold": ["bm-internet"],
+      "challenges": ["CROSS_LINGUAL", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "bm-q06",
+      "family": "menores-audiovisual",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Pueden los menores de 14 años llevarse películas para adultos?",
+      "gold": ["bm-menores"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "bm-q07",
+      "family": "donar-enciclopedia",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Aceptan enciclopedias de regalo?",
+      "gold": ["bm-donaciones"],
+      "challenges": ["PARAPHRASE", "NEGATIVE_ANSWER", "TITLE_CONTEXT"]
+    },
+    {
+      "id": "bm-q08",
+      "family": "sabado-tarde",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿La biblioteca abre los sábados por la tarde?",
+      "gold": ["bm-horario"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "bm-q09",
+      "family": "domicilio",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Can someone with limited mobility get library books delivered at home?",
+      "gold": ["bm-domicilio"],
+      "challenges": ["CROSS_LINGUAL", "PARAPHRASE"]
+    },
+    {
+      "id": "bm-q10",
+      "family": "reserva-definicion",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué es una reserva?",
+      "gold": ["bm-reserva"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "bm-q11",
+      "family": "interbibliotecario-definicion",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿En qué consiste el préstamo interbibliotecario?",
+      "gold": ["bm-interbibliotecario"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "bm-q12",
+      "family": "interbibliotecario-definicion",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is interlibrary loan?",
+      "gold": ["bm-interbibliotecario"],
+      "challenges": ["CROSS_LINGUAL", "TITLE_CONTEXT"]
+    },
+    {
+      "id": "bm-q13",
+      "family": "sala-grupo",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Cuándo hay que reservar una sala de trabajo en grupo?",
+      "gold": ["bm-salas"],
+      "challenges": ["TABLE_ROW"]
+    },
+    {
+      "id": "bm-q14",
+      "family": "renovacion-impedida",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿En qué casos no se puede renovar un préstamo?",
+      "gold": ["bm-renovacion"],
+      "challenges": []
+    },
+    {
+      "id": "bm-q15",
+      "family": "carne-bloqueo",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "When does a reader's card get blocked?",
+      "gold": ["bm-perdida"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "bm-q16",
+      "family": "donaciones-motivo",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se rechazan los libros de texto antiguos que se donan?",
+      "gold": ["bm-donaciones"],
+      "challenges": []
+    },
+    {
+      "id": "bm-q17",
+      "family": "donaciones-motivo",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why won't the library take old encyclopedias as donations?",
+      "gold": ["bm-donaciones"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "bm-q18",
+      "family": "obtener-carne",
+      "intent": "PROCEDURE",
+      "language": "es",
+      "query": "¿Cómo se saca el carné de lector?",
+      "gold": ["bm-carne"],
+      "acceptable": ["bm-menores"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "bm-q19",
+      "family": "pedir-otra-biblioteca",
+      "intent": "PROCEDURE",
+      "language": "es",
+      "query": "¿Cómo pido un libro que esta biblioteca no tiene?",
+      "gold": ["bm-interbibliotecario"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "bm-q20",
+      "family": "pedir-otra-biblioteca",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "how do i request an interlibrary loan",
+      "gold": ["bm-interbibliotecario"],
+      "challenges": ["CROSS_LINGUAL", "INFORMAL"]
+    },
+    {
+      "id": "bm-q21",
+      "family": "maximo-libros",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántos libros me puedo llevar a la vez?",
+      "gold": ["bm-prestamo-limite"],
+      "challenges": []
+    },
+    {
+      "id": "bm-q22",
+      "family": "plazo-dvd",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántos días puedo tener prestado un DVD?",
+      "gold": ["bm-prestamo-limite"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "bm-q23",
+      "family": "reserva-espera",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How long is a reserved item held at the pickup desk?",
+      "gold": ["bm-reserva"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "bm-q24",
+      "family": "tope-suspension",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuál es el máximo de días que te pueden suspender el préstamo?",
+      "gold": ["bm-sanciones"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "bm-q25",
+      "family": "prestamos-2025",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántos préstamos se hicieron en 2025?",
+      "gold": ["bm-estadisticas"],
+      "challenges": ["TABLE_ROW"]
+    },
+    {
+      "id": "bm-q26",
+      "family": "domicilio-quien",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién lleva los libros a casa en el préstamo a domicilio?",
+      "gold": ["bm-domicilio"],
+      "challenges": []
+    },
+    {
+      "id": "bm-q27",
+      "family": "correo-directora",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Cuál es el correo electrónico de la directora de la biblioteca?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "bm-q28",
+      "family": "anio-inauguracion",
+      "intent": "DATE",
+      "language": "es",
+      "query": "¿En qué año se inauguró la biblioteca?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT"]
+    },
+    {
+      "id": "bm-q29",
+      "family": "wifi-horas",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántas horas al día se puede usar la wifi?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "bm-q30",
+      "family": "libros-electronicos",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿La biblioteca presta libros electrónicos?",
+      "gold": [],
+      "challenges": ["SAME_VOCABULARY"]
+    },
+    {
+      "id": "bm-q31",
+      "family": "lectores-2023",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántos lectores activos tuvo la biblioteca en 2023?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "TABLE_ROW"]
+    },
+    {
+      "id": "bm-q32",
+      "family": "plazo-revistas",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuál es el plazo de préstamo de las revistas?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "bm-q33",
+      "family": "comida-sala",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Can I eat in the reading room?",
+      "gold": [],
+      "challenges": ["SAME_VOCABULARY", "CROSS_LINGUAL"]
+    }
+  ]
+}

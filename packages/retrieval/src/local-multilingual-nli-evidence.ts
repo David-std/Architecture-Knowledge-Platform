@@ -1,4 +1,5 @@
 import type {
+  QueryConditionedEvidenceSpan,
   QueryConditionedEvidenceVerification,
   QueryConditionedEvidenceVerifier,
   QueryConditionedEvidenceVerifierInput,
@@ -76,9 +77,18 @@ export interface LocalMultilingualNliEvidenceVerifierOptions {
   readonly runtimeFactory?: LocalMultilingualNliRuntimeFactory;
 }
 
-interface RelationHypotheses {
-  positive: string;
-  negative: string;
+export interface LocalMultilingualNliEvidenceEvaluation {
+  readonly score: number | null;
+  readonly oppositeScore: number | null;
+  readonly polarityMargin: number | null;
+  readonly direction: "POSITIVE" | "NEGATIVE" | null;
+  readonly evidenceSpan: QueryConditionedEvidenceSpan | null;
+  readonly reason: string;
+}
+
+export interface EvidenceRelationHypotheses {
+  readonly positive: string;
+  readonly negative: string;
 }
 
 interface PassageWindow {
@@ -120,22 +130,93 @@ function conjugateThirdPerson(verb: string): string {
   return `${verb}s`;
 }
 
-function relationHypotheses(query: string): RelationHypotheses | null {
+function spanishYesNoHypotheses(
+  query: string,
+): EvidenceRelationHypotheses | null {
+  const trimmed = query.trim();
+  if (!trimmed.startsWith("¿") || !trimmed.endsWith("?")) return null;
+  const proposition = trimmed.slice(1, -1).trim();
+  if (
+    !proposition ||
+    /^(?:qué|que|cuál|cuales|cuáles|quién|quienes|quiénes|dónde|donde|cuándo|cuando|cómo|como|por\s+qué|por\s+que|cuánto|cuánta|cuántos|cuántas)(?=\s|$)/iu.test(
+      proposition,
+    )
+  ) {
+    return null;
+  }
+  const lowered =
+    proposition.charAt(0).toLocaleLowerCase("es") + proposition.slice(1);
+  return {
+    positive: `${proposition}.`,
+    negative: `No es cierto que ${lowered}.`,
+  };
+}
+export function buildEvidenceRelationHypotheses(
+  query: string,
+  title?: string,
+): EvidenceRelationHypotheses | null {
+  const spanish = spanishYesNoHypotheses(query);
+  if (spanish) return spanish;
   const normalized = query
     .trim()
     .replace(/^¿\s*/u, "")
     .replace(/[?？]+\s*$/u, "")
     .trim();
-  const match =
+  const known =
     /^(do|does|did|can|could|should|must|will|would)\s+(.+?)\s+(define|determine|require|govern|control|establish|set|prevent|allow)\s+(.+)$/iu.exec(
       normalized,
     );
-  if (!match) return null;
 
-  const auxiliary = match[1]!.toLocaleLowerCase("en-US");
-  const subject = match[2]!.trim();
-  const verb = match[3]!.toLocaleLowerCase("en-US");
-  const object = match[4]!.trim();
+  let auxiliary: string;
+  let subject: string;
+  let verb: string;
+  let object: string;
+
+  if (known) {
+    auxiliary = known[1]!.toLocaleLowerCase("en-US");
+    subject = known[2]!.trim();
+    verb = known[3]!.toLocaleLowerCase("en-US");
+    object = known[4]!.trim();
+  } else {
+    const generic =
+      /^(do|does|did|can|could|should|must|will|would)\s+(.+)$/iu.exec(
+        normalized,
+      );
+    if (!generic || !title?.trim()) return null;
+
+    auxiliary = generic[1]!.toLocaleLowerCase("en-US");
+    const remainderTokens = generic[2]!.trim().split(/\s+/u).filter(Boolean);
+    if (remainderTokens.length < 3) return null;
+
+    const normalizeToken = (value: string) => {
+      const token = value
+        .toLocaleLowerCase("en-US")
+        .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}-]+$/gu, "");
+      return token.length > 4 && token.endsWith("s")
+        ? token.slice(0, -1)
+        : token;
+    };
+    const titleTokens = new Set(
+      title
+        .split(/\s+/u)
+        .map(normalizeToken)
+        .filter((token) => token.length >= 2),
+    );
+    let subjectEnd = -1;
+    for (let index = 0; index < remainderTokens.length; index += 1) {
+      if (titleTokens.has(normalizeToken(remainderTokens[index]!))) {
+        subjectEnd = index;
+      }
+    }
+    if (subjectEnd < 0 || subjectEnd >= remainderTokens.length - 2) {
+      return null;
+    }
+
+    subject = remainderTokens.slice(0, subjectEnd + 1).join(" ");
+    verb = normalizeToken(remainderTokens[subjectEnd + 1]!);
+    object = remainderTokens.slice(subjectEnd + 2).join(" ");
+    if (!verb || !object.trim()) return null;
+  }
 
   if (auxiliary === "do") {
     return {
@@ -161,38 +242,20 @@ function relationHypotheses(query: string): RelationHypotheses | null {
   };
 }
 
-function passageWindows(passage: string, title?: string): PassageWindow[] {
+/** Sentence spans use Unicode segmentation and retain exact source offsets. */
+export function evidenceSentenceWindows(passage: string): PassageWindow[] {
   const windows: PassageWindow[] = [];
-  const matcher = /[^.!?;\n]+(?:[.!?;]|$)/gu;
-  for (const match of passage.matchAll(matcher)) {
-    if (match.index === undefined) continue;
-    const raw = match[0];
-    const leading = raw.length - raw.trimStart().length;
-    const trailing = raw.length - raw.trimEnd().length;
-    const startOffset = match.index + leading;
-    const endOffset = match.index + raw.length - trailing;
+  const segmenter = new Intl.Segmenter("en", { granularity: "sentence" });
+  for (const { segment, index } of segmenter.segment(passage)) {
+    const leading = segment.length - segment.trimStart().length;
+    const trailing = segment.length - segment.trimEnd().length;
+    const startOffset = index + leading;
+    const endOffset = index + segment.length - trailing;
     if (endOffset <= startOffset) continue;
     const text = passage.slice(startOffset, endOffset);
-    windows.push({
-      text,
-      premise: title?.trim() ? `${title.trim()}: ${text}` : text,
-      startOffset,
-      endOffset,
-    });
+    windows.push({ text, premise: text, startOffset, endOffset });
   }
-  if (windows.length > 0) return windows;
-  const text = passage.trim();
-  const startOffset = passage.indexOf(text);
-  return text
-    ? [
-        {
-          text,
-          premise: title?.trim() ? `${title.trim()}: ${text}` : text,
-          startOffset,
-          endOffset: startOffset + text.length,
-        },
-      ]
-    : [];
+  return windows;
 }
 
 function entailmentIsTop(
@@ -285,21 +348,39 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
     this.id = `local-multilingual-nli:${this.modelDescriptor.model}@${this.modelDescriptor.revision}:entail=${this.minimumEntailmentScore}:margin=${this.minimumPolarityMargin}`;
   }
 
-  async verify(
+  async evaluate(
     input: QueryConditionedEvidenceVerifierInput,
-  ): Promise<QueryConditionedEvidenceVerification> {
-    const hypotheses = relationHypotheses(input.query);
+  ): Promise<LocalMultilingualNliEvidenceEvaluation> {
+    return this.evaluatePassages(input, false);
+  }
+
+  private async evaluatePassages(
+    input: QueryConditionedEvidenceVerifierInput,
+    preferCalibrated: boolean,
+  ): Promise<LocalMultilingualNliEvidenceEvaluation> {
+    const hypotheses = buildEvidenceRelationHypotheses(
+      input.query,
+      input.title,
+    );
     if (!hypotheses) {
       return {
-        decision: "INSUFFICIENT",
+        score: null,
+        oppositeScore: null,
+        polarityMargin: null,
+        direction: null,
+        evidenceSpan: null,
         reason: "LOCAL_MULTILINGUAL_NLI_QUERY_SHAPE_UNSUPPORTED",
       };
     }
 
-    const windows = passageWindows(input.passage, input.title);
+    const windows = evidenceSentenceWindows(input.passage);
     if (windows.length === 0) {
       return {
-        decision: "INSUFFICIENT",
+        score: null,
+        oppositeScore: null,
+        polarityMargin: null,
+        direction: null,
+        evidenceSpan: null,
         reason: "LOCAL_MULTILINGUAL_NLI_EMPTY_PASSAGE",
       };
     }
@@ -310,7 +391,7 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
           score: number;
           oppositeScore: number;
           direction: "POSITIVE" | "NEGATIVE";
-          span: { startOffset: number; endOffset: number };
+          span: QueryConditionedEvidenceSpan;
           distribution: LocalMultilingualNliDistribution;
         }
       | undefined;
@@ -336,11 +417,20 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
       ];
       for (const choice of choices) {
         if (!entailmentIsTop(choice.distribution)) continue;
+        const calibrated =
+          choice.score >= this.minimumEntailmentScore &&
+          choice.score - choice.oppositeScore >= this.minimumPolarityMargin;
+        const bestCalibrated =
+          best !== undefined &&
+          best.score >= this.minimumEntailmentScore &&
+          best.score - best.oppositeScore >= this.minimumPolarityMargin;
         if (
           !best ||
-          choice.score > best.score ||
-          (choice.score === best.score &&
-            choice.oppositeScore < best.oppositeScore)
+          (preferCalibrated && calibrated && !bestCalibrated) ||
+          ((!preferCalibrated || calibrated === bestCalibrated) &&
+            (choice.score > best.score ||
+              (choice.score === best.score &&
+                choice.oppositeScore < best.oppositeScore)))
         ) {
           best = {
             ...choice,
@@ -355,31 +445,62 @@ export class LocalMultilingualNliEvidenceVerifier implements QueryConditionedEvi
 
     if (!best) {
       return {
-        decision: "INSUFFICIENT",
+        score: null,
+        oppositeScore: null,
+        polarityMargin: null,
+        direction: null,
+        evidenceSpan: null,
         reason: "LOCAL_MULTILINGUAL_NLI_NO_ENTAILED_POLARITY",
       };
     }
-    if (best.score < this.minimumEntailmentScore) {
+
+    return {
+      score: best.score,
+      oppositeScore: best.oppositeScore,
+      polarityMargin: best.score - best.oppositeScore,
+      direction: best.direction,
+      evidenceSpan: best.span,
+      reason: "LOCAL_MULTILINGUAL_NLI_POLARITY_CANDIDATE",
+    };
+  }
+
+  async verify(
+    input: QueryConditionedEvidenceVerifierInput,
+  ): Promise<QueryConditionedEvidenceVerification> {
+    const evaluation = await this.evaluatePassages(input, true);
+    if (
+      evaluation.score === null ||
+      evaluation.oppositeScore === null ||
+      evaluation.polarityMargin === null ||
+      evaluation.direction === null ||
+      evaluation.evidenceSpan === null
+    ) {
       return {
         decision: "INSUFFICIENT",
-        score: best.score,
+        reason: evaluation.reason,
+      };
+    }
+    if (evaluation.score < this.minimumEntailmentScore) {
+      return {
+        decision: "INSUFFICIENT",
+        score: evaluation.score,
         reason: "LOCAL_MULTILINGUAL_NLI_BELOW_CALIBRATED_THRESHOLD",
       };
     }
-    if (best.score - best.oppositeScore < this.minimumPolarityMargin) {
+    if (evaluation.polarityMargin < this.minimumPolarityMargin) {
       return {
         decision: "INSUFFICIENT",
-        score: best.score,
+        score: evaluation.score,
         reason: "LOCAL_MULTILINGUAL_NLI_POLARITY_AMBIGUOUS",
       };
     }
 
     return {
       decision: "SUPPORTS",
-      score: best.score,
-      evidenceSpan: best.span,
+      score: evaluation.score,
+      evidenceSpan: evaluation.evidenceSpan,
       reason:
-        best.direction === "POSITIVE"
+        evaluation.direction === "POSITIVE"
           ? "LOCAL_MULTILINGUAL_NLI_POSITIVE_ANSWER_SUPPORT"
           : "LOCAL_MULTILINGUAL_NLI_NEGATIVE_ANSWER_SUPPORT",
     };

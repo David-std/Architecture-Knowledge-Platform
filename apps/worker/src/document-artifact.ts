@@ -276,13 +276,23 @@ function locatorComment(locator: DocumentArtifact["locators"][number]): string {
     locator.page == null ? null : `page=${locator.page}`,
     locator.slide == null ? null : `slide=${locator.slide}`,
     locator.sheet == null ? null : `sheet=${locator.sheet}`,
+    locator.table == null ? null : `table=${locator.table}`,
     locator.row == null ? null : `row=${locator.row}`,
+    locator.column == null ? null : `column=${locator.column}`,
     locator.start_line == null ? null : `line=${locator.start_line}`,
     locator.heading_path.length
       ? `heading=${locator.heading_path.join(" / ")}`
       : null,
   ].filter((entry): entry is string => Boolean(entry));
   return fields.length ? `<!-- akp-locator: ${fields.join("; ")} -->\n` : "";
+}
+
+function renderedCaption(
+  item: DocumentArtifact["blocks"][number],
+  locator: string,
+): string {
+  const caption = item.caption ?? "";
+  return caption.trim() ? `${locator}${caption}` : "";
 }
 
 function renderItem(item: DocumentArtifact["blocks"][number]): string {
@@ -296,14 +306,32 @@ function renderItem(item: DocumentArtifact["blocks"][number]): string {
   if (item.kind === "list" || item.kind === "list-item") {
     return text ? `${locator}- ${text}` : "";
   }
-  if (item.kind === "table" && item.headers?.length) {
-    const headers = item.headers.map(escapeTableCell);
-    const rows = (item.rows ?? []).map(
-      (row) => `| ${row.map(escapeTableCell).join(" | ")} |`,
+  if (item.kind === "table") {
+    const caption = renderedCaption(item, locator);
+    const sourceHeaders = item.headers ?? [];
+    const sourceRows = item.rows ?? [];
+    const width = sourceRows.reduce(
+      (maximum, row) => Math.max(maximum, row.length),
+      sourceHeaders.length,
     );
-    return `${locator}| ${headers.join(" | ")} |\n| ${headers
-      .map(() => "---")
-      .join(" | ")} |${rows.length ? `\n${rows.join("\n")}` : ""}`;
+    if (width > 0) {
+      // A missing header is not evidence that the first data row is a header.
+      // Neutral positional labels retain every cell without inventing semantics.
+      const headers = Array.from({ length: width }, (_, column) =>
+        escapeTableCell(sourceHeaders[column] || `Column ${column + 1}`),
+      );
+      const rows = sourceRows.map(
+        (row) =>
+          `| ${Array.from({ length: width }, (_, column) => escapeTableCell(row[column] ?? "")).join(" | ")} |`,
+      );
+      const table = `${locator}| ${headers.join(" | ")} |\n| ${headers.map(() => "---").join(" | ")} |${rows.length ? `\n${rows.join("\n")}` : ""}`;
+      return caption ? `${caption}\n\n${table}` : table;
+    }
+    const fallbackText = text ? `${locator}${text}` : "";
+    if (caption && text && (item.caption ?? "").trim() !== text) {
+      return `${caption}\n\n${fallbackText}`;
+    }
+    return caption || fallbackText;
   }
   if (item.kind === "code") {
     const language = String(item.metadata.language ?? "")
@@ -315,9 +343,25 @@ function renderItem(item: DocumentArtifact["blocks"][number]): string {
     return text ? `${locator}$$\n${text}\n$$` : "";
   }
   if (item.kind === "figure") {
+    const caption = item.caption ?? "";
+    const captionText = caption.trim();
+    if (captionText && (!text || captionText === text)) {
+      return `${locator}> Figure: ${caption}`;
+    }
+    if (captionText) {
+      const figure = `${locator}> Figure${text ? `: ${text}` : " (no caption extracted)"}`;
+      return `${renderedCaption(item, locator)}\n\n${figure}`;
+    }
     return `${locator}> Figure${text ? `: ${text}` : " (no caption extracted)"}`;
   }
   return text ? `${locator}${text}` : "";
+}
+
+/** Complete extraction material; presentation limits must never define indexed content. */
+export function renderDocumentArtifactMarkdown(
+  artifact: DocumentArtifact,
+): string {
+  return artifactItems(artifact).map(renderItem).filter(Boolean).join("\n\n");
 }
 
 export function renderDocumentArtifactPreview(
@@ -327,10 +371,7 @@ export function renderDocumentArtifactPreview(
   if (!Number.isInteger(maximumCharacters) || maximumCharacters < 1_000) {
     throw new Error("DOCUMENT_ARTIFACT_PREVIEW_LIMIT_INVALID");
   }
-  const rendered = artifactItems(artifact)
-    .map(renderItem)
-    .filter(Boolean)
-    .join("\n\n");
+  const rendered = renderDocumentArtifactMarkdown(artifact);
   if (rendered.length <= maximumCharacters) {
     return { markdown: rendered, truncated: false };
   }
@@ -360,7 +401,7 @@ export interface DocumentArtifactDraftInput {
 export function renderDocumentArtifactDraft(
   input: DocumentArtifactDraftInput,
 ): string {
-  const preview = renderDocumentArtifactPreview(input.artifact, 6_000);
+  const markdown = renderDocumentArtifactMarkdown(input.artifact);
   const yamlString = (value: string): string =>
     `'${value.replaceAll("'", "''")}'`;
   return `---
@@ -391,7 +432,7 @@ document_artifact_schema_version: ${yamlString(DOCUMENT_ARTIFACT_SCHEMA_VERSION)
 
 ## Machine extract
 
-${preview.markdown.trim() || "_No textual material was extracted._"}
+${markdown.trim() || "_No textual material was extracted._"}
 
 ## Uncertainty
 

@@ -14,8 +14,10 @@
   "dependencies": {
     "@akp/contracts": "*",
     "@huggingface/transformers": "4.2.0",
+    "mdast-util-from-markdown": "2.0.3",
+    "mdast-util-gfm-table": "2.0.0",
+    "micromark-extension-gfm-table": "2.1.2",
     "ngraph.graph": "20.1.2",
     "ngraph.leiden": "0.3.0"
-  },
-  "devDependencies": {}
+  }
 }

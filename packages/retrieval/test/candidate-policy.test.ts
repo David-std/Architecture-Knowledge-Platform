@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   candidateChannelForRuntimeChannel,
+  projectUnitAwareFusionCandidates,
   resolveRetrievalPolicy,
   retrievalCandidatesToRankedChannels,
   runtimeChannelEnabled,
@@ -141,6 +142,52 @@ describe("retrieval candidate policy", () => {
         ],
       },
     ]);
+  });
+
+  it("preserves distinct leaf identities and anchors document signals only for a singleton leaf", () => {
+    const documentId = baseCandidate.documentId!;
+    const documentOnly: RetrievalCandidate = {
+      candidateId: documentId,
+      channel: "EXACT",
+      rank: 1,
+      scopeId: baseCandidate.scopeId,
+      documentId,
+      revision: baseCandidate.revision,
+      selectionReason: "exact:external-id",
+    };
+
+    const singleton = projectUnitAwareFusionCandidates([
+      documentOnly,
+      baseCandidate,
+    ]);
+    const singletonKey = `${documentId}:${baseCandidate.unitId}`;
+    expect(singleton.fusionIds).toEqual([singletonKey, singletonKey]);
+    expect(
+      singleton.candidates.map((candidate) => candidate.candidateId),
+    ).toEqual([singletonKey, singletonKey]);
+    expect(singleton.targetsByFusionId.get(singletonKey)).toEqual({
+      documentId,
+      unitId: baseCandidate.unitId,
+    });
+
+    const secondUnitId = "44444444-4444-4444-8444-444444444444";
+    const ambiguous = projectUnitAwareFusionCandidates([
+      documentOnly,
+      baseCandidate,
+      {
+        ...baseCandidate,
+        unitId: secondUnitId,
+        rank: 2,
+      },
+    ]);
+    expect(ambiguous.fusionIds).toEqual([
+      documentId,
+      `${documentId}:${baseCandidate.unitId}`,
+      `${documentId}:${secondUnitId}`,
+    ]);
+    expect(ambiguous.targetsByFusionId.get(documentId)).toEqual({
+      documentId,
+    });
   });
 
   it("rejects malformed policy and candidate inputs", () => {

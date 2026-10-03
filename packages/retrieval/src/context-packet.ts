@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { deterministicProjectionRetainsSupport } from "./support-verifier.js";
+import type { EvidenceIdentity } from "./quality-diagnostics.js";
 import type {
   CompactAgentPacket as ContractCompactAgentPacket,
   CompactContextSection as ContractCompactContextSection,
@@ -90,6 +91,15 @@ export interface MaterialConflictRequirement {
   documentIds: string[];
 }
 
+export interface ContextSelectionDiagnostic {
+  selected: EvidenceIdentity[];
+  omitted: Array<
+    EvidenceIdentity & {
+      reason: "TOKEN_BUDGET" | "DOCUMENT_SECTION_LIMIT" | "MISSING_EVIDENCE";
+    }
+  >;
+}
+
 export interface BuildContextPacketInput {
   request: SearchRequest;
   intent: string;
@@ -124,6 +134,8 @@ export interface BuildContextPacketInput {
    * never inflate the measured or hashed packet wire representation.
    */
   continuationSink?: ContextContinuationSink;
+  /** Out-of-band selection metadata; does not enlarge or alter the packet. */
+  selectionDiagnosticSink?: (diagnostic: ContextSelectionDiagnostic) => void;
 }
 
 export interface CompactPacketIdentity {
@@ -959,6 +971,15 @@ export function buildContextPacket(
   const omitted: PacketCandidate[] = packetCandidates.filter(
     (candidate) => !orderedKeys.has(candidateKey(candidate)),
   );
+  const omissionReasons = new Map<
+    string,
+    ContextSelectionDiagnostic["omitted"][number]["reason"]
+  >(
+    omitted.map((candidate) => [
+      candidateKey(candidate),
+      "DOCUMENT_SECTION_LIMIT",
+    ]),
+  );
   const noteRequiredOmissions = (): void => {
     const omittedRequired = omitted.filter((candidate) =>
       requiredKeys.has(candidateKey(candidate)),
@@ -1179,12 +1200,14 @@ export function buildContextPacket(
     seenCandidates.add(key);
     if (requiresEvidence && !hasEvidence(candidate)) {
       omitted.push(candidate);
+      omissionReasons.set(key, "MISSING_EVIDENCE");
       continue;
     }
     const documentSections =
       sectionsByDocument.get(candidate.hit.documentId) ?? 0;
     if (documentSections >= maxSectionsPerDocument) {
       omitted.push(candidate);
+      omissionReasons.set(key, "DOCUMENT_SECTION_LIMIT");
       continue;
     }
     const section = contextSectionFromCandidate(
@@ -1200,6 +1223,7 @@ export function buildContextPacket(
     } catch (error) {
       if (error instanceof ContextPacketBudgetError) {
         omitted.push(candidate);
+        omissionReasons.set(key, "TOKEN_BUDGET");
         continue;
       }
       throw error;
@@ -1250,6 +1274,17 @@ export function buildContextPacket(
           ),
         });
       }
+      input.selectionDiagnosticSink?.({
+        selected: selected.map(({ candidate }) => ({
+          documentId: candidate.hit.documentId,
+          unitId: candidate.hit.unitId ?? null,
+        })),
+        omitted: omitted.map((candidate) => ({
+          documentId: candidate.hit.documentId,
+          unitId: candidate.hit.unitId ?? null,
+          reason: omissionReasons.get(candidateKey(candidate))!,
+        })),
+      });
       return full;
     } catch (error) {
       if (
@@ -1261,6 +1296,7 @@ export function buildContextPacket(
       const removed = selected.pop();
       if (!removed) throw error;
       omitted.push(removed.candidate);
+      omissionReasons.set(candidateKey(removed.candidate), "TOKEN_BUDGET");
       ensureNoAnswerGap();
       noteRequiredOmissions();
       notePrimaryQuerySupportOmission(selected.map((entry) => entry.section));

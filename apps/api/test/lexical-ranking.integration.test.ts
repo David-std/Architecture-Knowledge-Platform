@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { type SearchRequest } from "@akp/contracts";
 import { Postgres } from "@akp/postgres";
-import { planQuery } from "@akp/retrieval";
+import { assessRetrievalAnswerability, planQuery } from "@akp/retrieval";
 import { queryKnowledge } from "../src/routes/search.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -390,6 +390,9 @@ describe("production lexical ranking", () => {
             graphScopes: [
               { vaultId: fixture.vaultId, pathPrefix: "docs/title-terms.md" },
             ],
+            graphScopes: [
+              { vaultId: fixture.vaultId, pathPrefix: "docs/title-terms.md" },
+            ],
             pathAuthorizer: (path) => path === "docs/title-terms.md",
           },
         );
@@ -532,6 +535,7 @@ describe("production lexical ranking", () => {
           externalId: "RANKING",
           path: "docs/identity.md",
           title: "Canonical identity",
+          aliases: ["identity alias"],
         });
 
         const reranked = await queryKnowledge(db, searchRequest(fixture), {
@@ -586,6 +590,193 @@ describe("production lexical ranking", () => {
             document: hit.document,
           }).toEqual(originalById.get(hit.documentId));
         }
+      } finally {
+        await cleanupLexical(db, fixture);
+        await db.close();
+      }
+    },
+  );
+});
+
+describe("atomic lexical selection and indexed lexemes", () => {
+  it.skipIf(!databaseUrl)(
+    "keeps a matching leaf when its container ranks higher",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = lexicalFixture();
+      const db = new Postgres(databaseUrl);
+      try {
+        await seedLexical(db, fixture);
+        for (const [id, body] of [
+          [fixture.structuralParentId, "Ranking ".repeat(50)],
+          [fixture.units.externalId, "Ranking approved atomic answer."],
+        ] as const) {
+          await db.pool.query(
+            "update knowledge_units set body=$2,content_hash=$3 where id=$1",
+            [id, body, createHash("sha256").update(body).digest("hex")],
+          );
+        }
+        const hits = await queryKnowledge(db, searchRequest(fixture), {
+          channels: ["lexical"],
+          vaultIds: [fixture.vaultId],
+          graphScopes: [
+            { vaultId: fixture.vaultId, pathPrefix: "docs/identity.md" },
+          ],
+          pathAuthorizer: (path) => path === "docs/identity.md",
+        });
+        expect(hits[0]?.unitId).toBe(fixture.units.externalId);
+        expect(hits[0]?.unitType).not.toBe("SECTION");
+        expect(hits[0]?.excerpt).toContain("approved atomic answer");
+      } finally {
+        await cleanupLexical(db, fixture);
+        await db.close();
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
+    "matches accented Spanish terms through assertion recall",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = lexicalFixture();
+      const db = new Postgres(databaseUrl);
+      try {
+        await seedLexical(db, fixture);
+        const body = "La nómina pública se registra en el sistema autorizado.";
+        const hash = createHash("sha256").update(body).digest("hex");
+        await db.pool.query(
+          "update knowledge_documents set type='claim',title='Nómina pública',body_cache=$2,content_hash=$3 where id=$1",
+          [fixture.documents.titleTerms, body, hash],
+        );
+        await db.pool.query(
+          "update knowledge_units set heading_path=$2,body=$3,content_hash=$4 where id=$1",
+          [fixture.units.titleTerms, ["Nómina pública"], body, hash],
+        );
+        const hits = await queryKnowledge(
+          db,
+          {
+            ...searchRequest(fixture),
+            query: "¿Cómo se registra la nómina pública?",
+          },
+          {
+            channels: ["lexical"],
+            vaultIds: [fixture.vaultId],
+            graphScopes: [
+              { vaultId: fixture.vaultId, pathPrefix: "docs/title-terms.md" },
+            ],
+            pathAuthorizer: (path) => path === "docs/title-terms.md",
+          },
+        );
+        expect(hits[0]?.documentId).toBe(fixture.documents.titleTerms);
+        expect(hits[0]?.unitId).toBe(fixture.units.titleTerms);
+        expect(
+          hits[0]?.reasons.some((reason) =>
+            reason.includes("assertion-recall"),
+          ),
+        ).toBe(true);
+      } finally {
+        await cleanupLexical(db, fixture);
+        await db.close();
+      }
+    },
+  );
+});
+
+describe("bounded assertion recall", () => {
+  it.skipIf(!databaseUrl)(
+    "recovers a direct approved claim without admitting a same-topic wrong relation",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = lexicalFixture();
+      const db = new Postgres(databaseUrl);
+      try {
+        await seedLexical(db, fixture);
+        const updates = [
+          {
+            documentId: fixture.documents.titleTerms,
+            unitId: fixture.units.titleTerms,
+            externalId: "CLM-BLUE-WIDGET-STORAGE",
+            title: "Blue widget requires a storage engine",
+            body: "A blue widget requires a storage engine to keep its state.",
+            type: "claim",
+          },
+          {
+            documentId: fixture.documents.bodyTerms,
+            unitId: fixture.units.bodyTerms,
+            externalId: "RUL-BLUE-WIDGET-QUEUE",
+            title: "Blue widget requires a transport queue",
+            body: "A blue widget requires a transport queue for delivery.",
+            type: "decision-rule",
+          },
+          {
+            documentId: fixture.documents.alias,
+            unitId: fixture.units.alias,
+            externalId: "PRO-BLUE-WIDGET",
+            title: "Blue widget storage engine practice guide",
+            body: "In practice, a blue widget deployment guide uses a storage engine. The guide does not require the widget itself.",
+            type: "profile",
+          },
+        ] as const;
+        for (const item of updates) {
+          const hash = createHash("sha256").update(item.body).digest("hex");
+          await db.pool.query(
+            `update knowledge_documents
+                set external_id=$2,title=$3,body_cache=$4,type=$5,
+                    content_hash=$6
+              where id=$1`,
+            [
+              item.documentId,
+              item.externalId,
+              item.title,
+              item.body,
+              item.type,
+              hash,
+            ],
+          );
+          await db.pool.query(
+            `update knowledge_units
+                set heading_path=$2,body=$3,content_hash=$4
+              where id=$1`,
+            [item.unitId, [item.title], item.body, hash],
+          );
+        }
+        const query =
+          "Does a blue widget require a storage engine in practice?";
+        const hits = await queryKnowledge(
+          db,
+          { ...searchRequest(fixture), query },
+          { channels: ["lexical"], vaultIds: [fixture.vaultId] },
+        );
+        expect(
+          hits.some((hit) => hit.documentId === fixture.documents.titleTerms),
+        ).toBe(true);
+        expect(
+          hits.some((hit) => hit.documentId === fixture.documents.alias),
+        ).toBe(true);
+        expect(
+          hits
+            .find((hit) => hit.documentId === fixture.documents.alias)
+            ?.reasons.some((reason) =>
+              reason.includes("lexical:assertion-recall:"),
+            ),
+        ).toBe(false);
+        expect(
+          hits
+            .find((hit) => hit.documentId === fixture.documents.titleTerms)
+            ?.reasons.some((reason) =>
+              reason.includes("lexical:assertion-recall:"),
+            ),
+        ).toBe(true);
+        const answerability = assessRetrievalAnswerability(hits, query);
+        const accepted = answerability.candidateSignals
+          .filter((signal) => signal.passageSupport.supported)
+          .map((signal) => signal.externalId);
+        expect(
+          hits.some((hit) => hit.documentId === fixture.documents.bodyTerms),
+        ).toBe(true);
+        expect(accepted).toContain("CLM-BLUE-WIDGET-STORAGE");
+        expect(accepted).not.toContain("RUL-BLUE-WIDGET-QUEUE");
+        expect(accepted).not.toContain("PRO-BLUE-WIDGET");
       } finally {
         await cleanupLexical(db, fixture);
         await db.close();

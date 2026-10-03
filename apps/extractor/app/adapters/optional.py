@@ -18,7 +18,7 @@ from ..ports import (
 from .base import infer_media_type
 from .chunkr_runtime import ChunkrAdapter
 from .docling_native import DoclingAdapter as _NativeDoclingAdapter
-from .docling_native import map_docling_document
+from .docling_native import document_from_docling_conversion, map_docling_document
 from .marker_native import MarkerAdapter
 
 
@@ -52,15 +52,15 @@ class DoclingAdapter(_NativeDoclingAdapter):
         pipeline_options.do_table_structure = True
         timeout = float(request.configuration.get("timeout_seconds", 300))
         if timeout <= 0 or timeout > 900:
-            raise DocumentIntelligenceError(
-                "Docling timeout_seconds must be between 1 and 900"
-            )
+            raise DocumentIntelligenceError("Docling timeout_seconds must be between 1 and 900")
         pipeline_options.document_timeout = timeout
 
         force_full_page = request.configuration.get("force_full_page_ocr")
         ocr_options = getattr(pipeline_options, "ocr_options", None)
-        if force_full_page is not None and ocr_options is not None and hasattr(
-            ocr_options, "force_full_page_ocr"
+        if (
+            force_full_page is not None
+            and ocr_options is not None
+            and hasattr(ocr_options, "force_full_page_ocr")
         ):
             ocr_options.force_full_page_ocr = bool(force_full_page)
 
@@ -81,7 +81,7 @@ class DoclingAdapter(_NativeDoclingAdapter):
         try:
             converter, ocr_requested = self._converter(request)
             conversion = converter.convert(str(request.source_path))
-            document = getattr(conversion, "document", conversion)
+            document = document_from_docling_conversion(conversion)
             artifact = map_docling_document(document, request)
             artifact.configuration.update(
                 {
@@ -94,7 +94,7 @@ class DoclingAdapter(_NativeDoclingAdapter):
         except (CapabilityNotConfigured, DocumentIntelligenceError):
             raise
         except Exception as error:  # pragma: no cover - provider-specific API
-            raise DocumentIntelligenceError(f"Docling extraction failed: {error}") from error
+            raise DocumentIntelligenceError("DOCLING_EXTRACTION_FAILED") from error
 
 
 __all__ = ["ChunkrAdapter", "DoclingAdapter", "MarkerAdapter"]

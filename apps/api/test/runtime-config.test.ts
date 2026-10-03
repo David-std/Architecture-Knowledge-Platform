@@ -27,6 +27,7 @@ describe("API runtime configuration", () => {
       evidenceVerifierMinimumSupportScore: null,
       evidenceVerifierMaxCandidates: 16,
       evidenceVerifierLocalFilesOnly: false,
+      evidenceReader: null,
     });
     expect(
       loadApiRuntimeConfig({ AKP_RATE_LIMIT_MAX: "240", PORT: "9090" }),
@@ -62,6 +63,70 @@ describe("API runtime configuration", () => {
       evidenceVerifierMaxCandidates: 24,
       evidenceVerifierLocalFilesOnly: true,
     });
+  });
+
+  it("keeps relevance-only cross-encoder scores shadow-only", () => {
+    expect(() =>
+      loadApiRuntimeConfig({
+        AKP_EVIDENCE_VERIFIER_PROVIDER: "contextual-cross-encoder",
+        AKP_EVIDENCE_VERIFIER_MODE: "ENFORCE",
+      }),
+    ).toThrow(/cross-encoder-reader.*SHADOW/);
+    expect(
+      loadApiRuntimeConfig({
+        AKP_EVIDENCE_VERIFIER_PROVIDER: "contextual-cross-encoder",
+        AKP_EVIDENCE_VERIFIER_MIN_SCORE: "0.6",
+      }),
+    ).toMatchObject({
+      evidenceVerifierMode: "SHADOW",
+      evidenceVerifierMinimumSupportScore: 0.6,
+    });
+    expect(() =>
+      loadApiRuntimeConfig({ AKP_EVIDENCE_VERIFIER_MODE: "ENFORCE" }),
+    ).toThrow(/cross-encoder-reader/);
+    expect(() =>
+      loadApiRuntimeConfig({
+        AKP_EVIDENCE_VERIFIER_PROVIDER: "contextual-cross-encoder",
+        AKP_EVIDENCE_VERIFIER_MODE: "enforce",
+      }),
+    ).toThrow(/AKP_EVIDENCE_VERIFIER_MODE/);
+    expect(() =>
+      loadApiRuntimeConfig({ AKP_EVIDENCE_VERIFIER_PROVIDER: "reranker" }),
+    ).toThrow(/AKP_EVIDENCE_VERIFIER_PROVIDER/);
+  });
+
+  it("requires an explicit reader endpoint for the cross-encoder reader", () => {
+    expect(() =>
+      loadApiRuntimeConfig({
+        AKP_EVIDENCE_VERIFIER_PROVIDER: "cross-encoder-reader",
+      }),
+    ).toThrow(/AKP_EVIDENCE_READER_BASE_URL/);
+    expect(
+      loadApiRuntimeConfig({
+        AKP_EVIDENCE_VERIFIER_PROVIDER: "cross-encoder-reader",
+        AKP_EVIDENCE_VERIFIER_MODE: "ENFORCE",
+        AKP_EVIDENCE_READER_BASE_URL: "http://127.0.0.1:11434",
+        AKP_EVIDENCE_READER_MODEL: "local-reader",
+        AKP_EVIDENCE_READER_SHORTLIST: "3",
+      }),
+    ).toMatchObject({
+      evidenceVerifierMode: "ENFORCE",
+      evidenceReader: {
+        baseUrl: "http://127.0.0.1:11434",
+        model: "local-reader",
+        apiKey: null,
+        shortlistSize: 3,
+        timeoutMs: 30000,
+      },
+    });
+    expect(() =>
+      loadApiRuntimeConfig({
+        AKP_EVIDENCE_VERIFIER_PROVIDER: "cross-encoder-reader",
+        AKP_EVIDENCE_READER_BASE_URL: "http://127.0.0.1:11434",
+        AKP_EVIDENCE_READER_MODEL: "local-reader",
+        AKP_EVIDENCE_READER_SHORTLIST: "40",
+      }),
+    ).toThrow(/AKP_EVIDENCE_READER_SHORTLIST/);
   });
 
   it.each(["", "0", "-0.1", "1.1", "abc"])(

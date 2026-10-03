@@ -24,6 +24,7 @@ Keep branches short-lived. Do not publish remote scratch, no-op or experiment br
 6. Keep the generic runtime independent of a particular corpus, organization, course or workstation.
 7. Do not commit `.env`, credentials, backups, raw licensed/private sources, generated local reports or temporary managed repositories.
 8. Do not publish canonical knowledge by writing directly to the managed Git repository; use the proposal/review flow.
+9. Follow [retrieval generality policy](policies/retrieval-generality.md): a single query failure is an evaluation case, not grounds for adding source-specific vocabulary or a query-shaped branch to generic retrieval code.
 
 ## Local checks
 
@@ -37,10 +38,13 @@ pnpm security:secrets
 pnpm contracts:validate
 pnpm docs:validate
 pnpm hygiene:validate
+pnpm retrieval:generality:validate
 pnpm check
 pnpm build
 pnpm test:integration
 ```
+
+`pnpm test:integration` requires `DATABASE_URL` to point to an isolated, migrated PostgreSQL database with a disposable name such as `akp_test`. Do not use the operator database. PostgreSQL fixture files run sequentially because they share the consumer registry and outbox; concurrency remains exercised inside the tests. CI runs the full persistence suite on a fresh database and retains its JUnit report.
 
 Extractor changes additionally require the locked Python environment, Ruff, mypy and pytest. Persistence, publication and recovery changes should be exercised against disposable infrastructure and include restore evidence when applicable.
 

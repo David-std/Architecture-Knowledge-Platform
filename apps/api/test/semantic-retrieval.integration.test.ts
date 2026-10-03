@@ -4,6 +4,7 @@ import { type SearchRequest } from "@akp/contracts";
 import { Postgres } from "@akp/postgres";
 import {
   EmbeddingGenerationManager,
+  buildEmbeddingIndex,
   type RequestEmbeddingGeneration,
 } from "@akp/indexing";
 import {
@@ -12,6 +13,7 @@ import {
   type EmbeddingInputRole,
   type EmbeddingProvider,
   type EmbeddingRequestOptions,
+  type EvidenceRetrievalStageSnapshot,
 } from "@akp/retrieval";
 import { queryKnowledge } from "../src/routes/search.js";
 
@@ -76,6 +78,7 @@ async function seedScope(
   scope: ScopeIds,
   corpusRevision: string,
   label: string,
+  descriptor: RequestEmbeddingGeneration["descriptor"] = semanticDescriptor,
 ): Promise<{ generationId: string }> {
   await db.pool.query(
     `insert into organizations(id,slug,name)
@@ -173,14 +176,19 @@ async function seedScope(
     spaceId: scope.spaceId,
     vaultId: scope.vaultId,
     corpusRevision,
-    descriptor: semanticDescriptor,
+    descriptor,
   });
   expect(requested.status).toBe("REQUESTED");
-  expect(requested.dimensions).toBe(semanticDescriptor.dimensions);
+  expect(requested.dimensions).toBe(descriptor.dimensions);
   await expect(manager.build(requested.generationId)).resolves.toMatchObject({
     status: "BUILDING",
   });
+  const fingerprint = await db.pool.query<{ input_hash: string }>(
+    "select akp_embedding_passage_input_hash($1,d.title,u.heading_path,u.body) input_hash from knowledge_units u join knowledge_documents d on d.id=u.document_id where u.id=$2",
+    [descriptor.inputStrategy, scope.unitId],
+  );
   await manager.writeEmbedding({
+    inputHash: fingerprint.rows[0]!.input_hash,
     generationId: requested.generationId,
     unitId: scope.unitId,
     contentHash: unitHash,
@@ -246,6 +254,96 @@ async function cleanupFixture(
 }
 
 describe("semantic retrieval PostgreSQL integration", () => {
+  it.skipIf(!databaseUrl)(
+    "excludes stale contextual vectors and repairs them within the target vault",
+    async () => {
+      const previous = process.env.AKP_VECTOR_ENABLED;
+      process.env.AKP_VECTOR_ENABLED = "true";
+      const primary = scopeIds();
+      const secondary = scopeIds();
+      const fixture: FixtureIds = {
+        primary,
+        secondVault: {
+          ...secondary,
+          spaceId: primary.spaceId,
+          organizationId: primary.organizationId,
+        },
+        otherSpace: scopeIds(),
+        corpusRevision: `contextual-integration-${randomUUID()}`,
+      };
+      const db = new Postgres(databaseUrl!);
+      const descriptor = {
+        ...semanticDescriptor,
+        inputStrategy: `${semanticDescriptor.inputStrategy}+title-heading-v1`,
+      };
+      const provider: EmbeddingProvider = {
+        descriptor,
+        embed: async (texts) => texts.map(() => [1, 0, 0]),
+      };
+      const service = new QueryEmbeddingService(async () => provider);
+      const input = searchInput(
+        primary.spaceId,
+        primary.vaultId,
+        "Cancel enrollment",
+      );
+      const queryOptions = {
+        vaultIds: [primary.vaultId],
+        channels: ["vector"] as "vector"[],
+        queryEmbeddingService: service,
+      };
+      try {
+        await seedScope(
+          db,
+          primary,
+          fixture.corpusRevision,
+          "Primary",
+          descriptor,
+        );
+        await seedScope(
+          db,
+          fixture.secondVault,
+          fixture.corpusRevision,
+          "Other",
+          descriptor,
+        );
+        expect(
+          (await queryKnowledge(db, input, queryOptions)).map(
+            (hit) => hit.documentId,
+          ),
+        ).toEqual([primary.documentId]);
+        await db.pool.query(
+          "update knowledge_documents set title='Changed structural context' where id=$1",
+          [primary.documentId],
+        );
+        expect(await queryKnowledge(db, input, queryOptions)).toHaveLength(0);
+        await db.pool.query(
+          "update knowledge_units set heading_path=$1 where id=$2",
+          [["New scope"], primary.unitId],
+        );
+        const repaired = await buildEmbeddingIndex(db, {
+          spaceId: primary.spaceId,
+          vaultId: primary.vaultId,
+          corpusRevision: fixture.corpusRevision,
+          provider,
+          activate: true,
+        });
+        expect(repaired.embeddingsCreated).toBe(1);
+        expect(repaired.embeddingsReused).toBe(0);
+        expect(
+          (await queryKnowledge(db, input, queryOptions)).map(
+            (hit) => hit.documentId,
+          ),
+        ).toEqual([primary.documentId]);
+      } finally {
+        await cleanupFixture(db, fixture);
+        await db.close();
+        if (previous === undefined) delete process.env.AKP_VECTOR_ENABLED;
+        else process.env.AKP_VECTOR_ENABLED = previous;
+      }
+    },
+    30_000,
+  );
+
   it.skipIf(!databaseUrl)(
     "activates a semantic generation, queries the correct scope, and degrades only vector on provider failure",
     async () => {
@@ -339,6 +437,7 @@ describe("semantic retrieval PostgreSQL integration", () => {
         });
 
         const semanticQuery = "¿Cómo cancelar una matrícula?";
+        let diagnostic: EvidenceRetrievalStageSnapshot | undefined;
         const primaryHits = await queryKnowledge(
           db,
           searchInput(
@@ -350,9 +449,29 @@ describe("semantic retrieval PostgreSQL integration", () => {
             vaultIds: [fixture.primary.vaultId],
             channels: ["vector"],
             queryEmbeddingService: queryService,
+            stageDiagnosticSink: (snapshot) => {
+              diagnostic = snapshot;
+            },
           },
         );
         expect(primaryHits).toHaveLength(1);
+        expect(
+          diagnostic?.fusedCandidates.map((entry) => entry.documentId),
+        ).toEqual([primary.documentId]);
+        expect(diagnostic?.channelCandidates).toContainEqual({
+          documentId: primary.documentId,
+          unitId: primary.unitId,
+        });
+        expect(JSON.stringify(diagnostic)).not.toContain(semanticQuery);
+        expect(JSON.stringify(diagnostic)).not.toContain(
+          primaryHits[0]!.excerpt,
+        );
+        expect(JSON.stringify(diagnostic)).not.toContain(
+          fixture.secondVault.documentId,
+        );
+        expect(JSON.stringify(diagnostic)).not.toContain(
+          fixture.otherSpace.documentId,
+        );
         const deniedByPath = await queryKnowledge(
           db,
           searchInput(
@@ -368,9 +487,14 @@ describe("semantic retrieval PostgreSQL integration", () => {
               { vaultId: fixture.primary.vaultId, pathPrefix: "other" },
             ],
             pathAuthorizer: (path) => path.startsWith("other/"),
+            stageDiagnosticSink: (snapshot) => {
+              diagnostic = snapshot;
+            },
           },
         );
         expect(deniedByPath).toHaveLength(0);
+        expect(diagnostic?.fusedCandidates).toEqual([]);
+        expect(diagnostic?.channelCandidates).toEqual([]);
         const permittedByPath = await queryKnowledge(
           db,
           searchInput(

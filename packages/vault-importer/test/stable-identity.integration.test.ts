@@ -97,6 +97,11 @@ integration("vault importer stable document identity", () => {
           await db.pool.query("delete from vaults where id=$1", [vaultId]);
         }
         if (spaceId) {
+          await db.pool.query("delete from index_revisions where space_id=$1", [
+            spaceId,
+          ]);
+        }
+        if (spaceId) {
           await db.pool.query("delete from spaces where id=$1", [spaceId]);
         }
         if (organizationId) {

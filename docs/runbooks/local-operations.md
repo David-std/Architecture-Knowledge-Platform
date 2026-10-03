@@ -13,8 +13,16 @@ docker compose ps
 
 Set private values for `AKP_API_TOKEN`, `AKP_API_TOKEN_SCOPES`,
 `AKP_EXTRACTOR_TOKEN`, MinIO credentials and managed-repository paths. Do not
-reuse example placeholders or commit `.env`. Start API, worker and Web in
-separate terminals:
+reuse example placeholders or commit `.env`. `AKP_MANAGED_REPO` must name the
+actual root of its managed Git worktree. For a new repository, choose an
+independent directory outside another checkout. An uninitialized subdirectory
+of a checkout is rejected with `GIT_REPOSITORY_ROOT_INVALID`; Git would otherwise
+discover and operate on the ancestor repository. Linked Git worktree roots are
+valid, but an unavailable `main` checkout fails without reinitializing files.
+An empty setting uses the temporary managed-knowledge default consistently in
+API and worker; it must not resolve to the application working directory.
+
+Start API, worker and Web in separate terminals:
 
 ```powershell
 pnpm --filter @akp/api dev
@@ -205,3 +213,17 @@ git diff --check
 
 Broad retrieval/document/agent/load comparisons are release validation evidence,
 not a reason to weaken focused correctness gates.
+
+## Docling on CPU
+
+Use the locked CPU profile on hosts without a GPU:
+
+```powershell
+cd apps/extractor
+uv sync --locked --extra docling-cpu
+uv run --locked --extra docling-cpu python -c "import torch; print(torch.__version__); assert torch.version.cuda is None"
+```
+
+Select `docling-cpu` on every `uv run` that needs this environment. It installs the optional Docling provider and pins the same Torch, TorchVision and Docling Core versions as the existing provider lock, with CPU wheels on Linux and Windows. The [explicit PyTorch index](https://docs.astral.sh/uv/guides/integration/pytorch/#configuring-accelerators-with-optional-dependencies) is scoped to those packages. Provider selection remains an explicit extractor configuration decision.
+
+The CPU profile conflicts with the normal `docling` and `marker` extras to prevent mixing incompatible accelerator sources. Use the normal profile for the existing accelerator setup; base installation still excludes heavyweight providers. CI selects the CPU profile for native Docling and OCR tests and asserts `torch.version.cuda is None` before extraction.
