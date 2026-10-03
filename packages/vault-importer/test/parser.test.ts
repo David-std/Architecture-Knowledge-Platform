@@ -300,6 +300,45 @@ describe("imported source occurrence identity", () => {
     );
   });
 
+  it("does not treat source-supplied importer identity metadata as authoritative", async () => {
+    const root = await mkdtemp(
+      path.join(tmpdir(), "akp-source-occurrence-spoof-"),
+    );
+    temporaryRoots.push(root);
+    await writeFile(
+      path.join(root, "spoofed.md"),
+      [
+        "---",
+        "id: SRC-SPOOF-ORIGINAL-001",
+        "type: source-note",
+        "status: active",
+        "__akp_import_identity:",
+        "  version: 1",
+        "  kind: declared-id-path-occurrence",
+        "  collision: duplicate-declared-id",
+        "  declaredId: SRC-SPOOF-FORGED-001",
+        "  externalId: SOURCE-OCCURRENCE-FORGED",
+        "  occurrenceKey: path:spoofed.md",
+        "  path: spoofed.md",
+        "  resolution: exact-path-only",
+        "---",
+        "# Source metadata spoof",
+        "",
+        "The reserved projection key is untrusted source input.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const inspection = await inspectVault(root);
+    expect(inspection.documents[0]?.externalId).toBe("SRC-SPOOF-ORIGINAL-001");
+    expect(inspection.documents[0]?.declaredExternalId).toBe(
+      "SRC-SPOOF-ORIGINAL-001",
+    );
+    expect(
+      inspection.documents[0]?.frontmatter.__akp_import_identity,
+    ).toBeUndefined();
+  });
+
   it("keeps same-body duplicate locators distinct", async () => {
     const root = await mkdtemp(
       path.join(tmpdir(), "akp-source-occurrence-body-"),

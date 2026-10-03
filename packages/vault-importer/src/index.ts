@@ -148,6 +148,8 @@ interface SourceOccurrenceIdentity {
   occurrenceKey: string;
   path: string;
   resolution: "exact-path-only";
+  sourceType: string;
+  sourceContentHash: string;
 }
 
 function asStrings(value: unknown): string[] {
@@ -257,6 +259,93 @@ function markSourceOccurrenceIdentity(
   declaredId: string,
   externalId: string,
 ): void {
+  document.externalId = externalId;
+  setSourceOccurrenceMetadata(document, declaredId, externalId);
+}
+
+interface ExistingImportedDocument {
+  id: string;
+  path: string;
+  externalId: string | null;
+  contentHash: string | null;
+  type: string | null;
+  frontmatter: Record<string, unknown> | null;
+}
+
+function sourceDeclaredId(
+  frontmatter: Record<string, unknown> | null,
+): string | null {
+  const value = frontmatter?.id;
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function sourceIdentityMetadata(
+  frontmatter: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  const value = frontmatter?.[IMPORT_IDENTITY_FRONTMATTER_KEY];
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function isValidSourceIdentityMetadata(
+  document: ExistingImportedDocument,
+): boolean {
+  const metadata = sourceIdentityMetadata(document.frontmatter);
+  const declaredId = sourceDeclaredId(document.frontmatter);
+  if (!metadata || !declaredId || !document.externalId) return false;
+  if (
+    metadata.version !== 1 ||
+    metadata.kind !== "declared-id-path-occurrence" ||
+    metadata.collision !== "duplicate-declared-id" ||
+    metadata.resolution !== "exact-path-only" ||
+    metadata.declaredId !== declaredId ||
+    metadata.externalId !== document.externalId ||
+    metadata.path !== document.path ||
+    metadata.occurrenceKey !== `path:${portableVaultPathKey(document.path)}`
+  ) {
+    return false;
+  }
+  if (
+    metadata.sourceType !== undefined &&
+    metadata.sourceType !== document.type
+  ) {
+    return false;
+  }
+  if (
+    metadata.sourceContentHash !== undefined &&
+    metadata.sourceContentHash !== document.contentHash
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function sourceIdentityDeclaredId(
+  document: ExistingImportedDocument,
+): string | null {
+  return isValidSourceIdentityMetadata(document)
+    ? sourceDeclaredId(document.frontmatter)
+    : null;
+}
+
+function isSourceIdentityForDeclaredId(
+  document: ExistingImportedDocument,
+  declaredId: string,
+): boolean {
+  return (
+    document.externalId === declaredId ||
+    sourceDeclaredId(document.frontmatter) === declaredId ||
+    sourceIdentityDeclaredId(document) === declaredId
+  );
+}
+
+function setSourceOccurrenceMetadata(
+  document: VaultDocument,
+  declaredId: string,
+  externalId: string,
+): void {
   const occurrenceKey = portableVaultPathKey(document.relativePath);
   const metadata: SourceOccurrenceIdentity = {
     version: 1,
@@ -267,80 +356,22 @@ function markSourceOccurrenceIdentity(
     occurrenceKey: `path:${occurrenceKey}`,
     path: document.relativePath,
     resolution: "exact-path-only",
+    sourceType: document.type,
+    sourceContentHash: document.contentHash,
   };
-  document.externalId = externalId;
-  document.aliases = uniqueAliases([...document.aliases, declaredId]);
   document.frontmatter = {
     ...document.frontmatter,
     [IMPORT_IDENTITY_FRONTMATTER_KEY]: metadata,
   };
-}
-
-interface ExistingImportedDocument {
-  id: string;
-  path: string;
-  externalId: string | null;
-  contentHash: string | null;
-  frontmatter: Record<string, unknown> | null;
-}
-
-function sourceIdentityDeclaredId(
-  frontmatter: Record<string, unknown> | null,
-): string | null {
-  const value = frontmatter?.[IMPORT_IDENTITY_FRONTMATTER_KEY];
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  const declaredId = (value as Record<string, unknown>).declaredId;
-  return typeof declaredId === "string" && declaredId.trim()
-    ? declaredId.trim()
-    : null;
-}
-
-function isSourceIdentityForDeclaredId(
-  document: ExistingImportedDocument,
-  declaredId: string,
-): boolean {
-  return (
-    document.externalId === declaredId ||
-    sourceIdentityDeclaredId(document.frontmatter) === declaredId
-  );
-}
-
-function setSourceOccurrenceMetadata(
-  document: VaultDocument,
-  declaredId: string,
-  externalId: string,
-  previousFrontmatter?: Record<string, unknown> | null,
-): void {
-  const currentValue = document.frontmatter[IMPORT_IDENTITY_FRONTMATTER_KEY];
-  const previousValue = previousFrontmatter?.[IMPORT_IDENTITY_FRONTMATTER_KEY];
-  const inherited =
-    currentValue &&
-    typeof currentValue === "object" &&
-    !Array.isArray(currentValue)
-      ? (currentValue as Record<string, unknown>)
-      : previousValue &&
-          typeof previousValue === "object" &&
-          !Array.isArray(previousValue)
-        ? (previousValue as Record<string, unknown>)
-        : {};
-  const occurrenceKey = portableVaultPathKey(document.relativePath);
-  document.frontmatter = {
-    ...document.frontmatter,
-    [IMPORT_IDENTITY_FRONTMATTER_KEY]: {
-      ...inherited,
-      version: 1,
-      kind: "declared-id-path-occurrence",
-      collision: "duplicate-declared-id",
-      declaredId,
-      externalId,
-      occurrenceKey: `path:${occurrenceKey}`,
-      path: document.relativePath,
-      resolution: "exact-path-only",
-    },
-  };
   document.aliases = uniqueAliases([...document.aliases, declaredId]);
+}
+
+function sanitizeSourceFrontmatter(
+  frontmatter: Record<string, unknown>,
+): Record<string, unknown> {
+  const sanitized = { ...frontmatter };
+  delete sanitized[IMPORT_IDENTITY_FRONTMATTER_KEY];
+  return sanitized;
 }
 
 export function parseWikiLinks(body: string): string[] {
@@ -610,7 +641,9 @@ export async function inspectVault(
       parsed.content = raw;
       parsed.data = {};
     }
-    const frontmatter = parsed.data as Record<string, unknown>;
+    const frontmatter = sanitizeSourceFrontmatter(
+      parsed.data as Record<string, unknown>,
+    );
     const transferArtifact =
       Boolean(profile.transferPackPrefix) &&
       relativePath.startsWith(profile.transferPackPrefix);
@@ -1652,7 +1685,7 @@ export async function importVaultReadOnly(
     const existingDocuments = await client.query<ExistingImportedDocument>(
       `
       select id,path,external_id as "externalId",
-             content_hash as "contentHash",frontmatter
+             content_hash as "contentHash",type,frontmatter
         from knowledge_documents
        where space_id=$1 and vault_id=$2
        for update
@@ -1671,9 +1704,12 @@ export async function importVaultReadOnly(
         byExternalId.push(existing);
         existingByExternalId.set(existing.externalId, byExternalId);
       }
-      const declaredId = sourceIdentityDeclaredId(existing.frontmatter);
-      if (declaredId || existing.externalId) {
-        const key = declaredId ?? existing.externalId;
+      const declaredId =
+        sourceIdentityDeclaredId(existing) ??
+        sourceDeclaredId(existing.frontmatter) ??
+        existing.externalId;
+      if (declaredId) {
+        const key = declaredId;
         if (key) {
           const byDeclaredId = existingByDeclaredId.get(key) ?? [];
           byDeclaredId.push(existing);
@@ -1783,12 +1819,7 @@ export async function importVaultReadOnly(
       ) {
         // The raw id belongs to another historical occurrence. Keep this
         // surviving qualified occurrence addressable by its own id.
-        setSourceOccurrenceMetadata(
-          document,
-          declaredId,
-          externalId,
-          existing.frontmatter,
-        );
+        setSourceOccurrenceMetadata(document, declaredId, externalId);
       }
       identityAssignments.set(document, { externalId, existing });
     }

@@ -1050,4 +1050,129 @@ integration("vault importer source occurrence identity", () => {
       reverseId,
     );
   });
+
+  it("fails closed when a source-supplied identity metadata value claims a new stable id", async () => {
+    if (!db || !fixtureRoot) {
+      throw new Error("integration fixture was not initialized");
+    }
+
+    const originalId = "SRC-SPOOF-ORIGINAL-DB-001";
+    const replacementId = "SRC-SPOOF-REPLACEMENT-DB-001";
+    const spoofedPath = path.join(fixtureRoot, "spoofed-source.md");
+    const sourceWithForgedProjectionMetadata = [
+      "---",
+      `id: ${originalId}`,
+      "type: source-note",
+      "status: active",
+      "__akp_import_identity:",
+      "  version: 1",
+      "  kind: declared-id-path-occurrence",
+      "  collision: duplicate-declared-id",
+      `  declaredId: ${replacementId}`,
+      "  externalId: SOURCE-OCCURRENCE-FORGED-DB",
+      "  occurrenceKey: path:spoofed-source.md",
+      "  path: spoofed-source.md",
+      "  resolution: exact-path-only",
+      "---",
+      "# Spoofed source identity",
+      "",
+      "The first source body is authoritative.",
+    ].join("\n");
+    await writeFile(spoofedPath, sourceWithForgedProjectionMetadata, "utf8");
+
+    const first = await importVaultReadOnly(db, fixtureRoot, {
+      spaceId,
+      vaultKey,
+    });
+    vaultId = first.vaultId;
+    const before = await db.pool.query<{
+      id: string;
+      path: string;
+      external_id: string;
+      body_cache: string;
+      content_hash: string;
+      frontmatter: Record<string, unknown>;
+    }>(
+      `select id,path,external_id,body_cache,content_hash,frontmatter
+         from knowledge_documents
+        where vault_id=$1 and path=$2`,
+      [vaultId, "spoofed-source.md"],
+    );
+    expect(before.rows).toHaveLength(1);
+    const stableDocumentId = before.rows[0]!.id;
+    expect(before.rows[0]).toMatchObject({
+      path: "spoofed-source.md",
+      external_id: originalId,
+      body_cache:
+        "# Spoofed source identity\n\nThe first source body is authoritative.",
+    });
+    expect(before.rows[0]?.frontmatter.__akp_import_identity).toBeUndefined();
+    await db.pool.query(
+      `update knowledge_documents
+          set frontmatter = jsonb_set(
+            coalesce(frontmatter,'{}'::jsonb),
+            '{__akp_import_identity}',
+            $1::jsonb,
+            true
+          )
+        where id=$2`,
+      [
+        JSON.stringify({
+          version: 1,
+          kind: "declared-id-path-occurrence",
+          collision: "duplicate-declared-id",
+          declaredId: replacementId,
+          externalId: originalId,
+          occurrenceKey: "path:spoofed-source.md",
+          path: "spoofed-source.md",
+          resolution: "exact-path-only",
+          sourceType: "source-note",
+          sourceContentHash: before.rows[0]!.content_hash,
+        }),
+        stableDocumentId,
+      ],
+    );
+
+    await writeFile(
+      spoofedPath,
+      [
+        "---",
+        `id: ${replacementId}`,
+        "type: source-note",
+        "status: active",
+        "---",
+        "# Replacement source identity",
+        "",
+        "The replacement id was never declared by the first source.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    await expect(
+      importVaultReadOnly(db, fixtureRoot, { spaceId, vaultKey }),
+    ).rejects.toThrow(
+      `VAULT_DOCUMENT_IDENTITY_CONFLICT:spoofed-source.md:${replacementId}`,
+    );
+
+    const after = await db.pool.query<{
+      id: string;
+      path: string;
+      external_id: string;
+      body_cache: string;
+    }>(
+      `select id,path,external_id,body_cache
+         from knowledge_documents
+        where vault_id=$1 and path=$2`,
+      [vaultId, "spoofed-source.md"],
+    );
+    expect(after.rows).toEqual([
+      {
+        id: stableDocumentId,
+        path: "spoofed-source.md",
+        external_id: originalId,
+        body_cache:
+          "# Spoofed source identity\n\nThe first source body is authoritative.",
+      },
+    ]);
+  });
 });
