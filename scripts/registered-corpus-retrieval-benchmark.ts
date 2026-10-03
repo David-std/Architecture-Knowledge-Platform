@@ -163,8 +163,7 @@ const outputPath = path.resolve(
     "reports/ci/registered-corpus-retrieval-benchmark.json",
 );
 
-const R3_GREEN_BASELINE_SHA =
-  "ada069f13bd6566b71367f3ae983c196e9d84382";
+const R3_GREEN_BASELINE_SHA = "ada069f13bd6566b71367f3ae983c196e9d84382";
 const R4_RERANK_ARMS = [
   { poolDepth: 20, shortlist: 8 },
   { poolDepth: 50, shortlist: 10 },
@@ -205,8 +204,6 @@ function passageMatchesGoldPredicate(
     );
   return all && any;
 }
-
-
 function resolveGoldUnitIds(
   testCase: GoldCase,
   unitsByDocument: ReadonlyMap<string, readonly UnitizedUnit[]>,
@@ -1305,8 +1302,6 @@ async function runUnitSelectionStudy(
     results,
   };
 }
-
-
 function rankingCandidateIdentity(hit: QueryHit): string {
   return hit.unitId ? `${hit.documentId}:${hit.unitId}` : hit.documentId;
 }
@@ -1339,8 +1334,7 @@ function summarizeRerankRanks(ranks: readonly (number | null)[]) {
       ranks.length === 0
         ? null
         : ranks.reduce<number>(
-            (sum, rank) =>
-              sum + (rank === null ? 0 : 1 / Math.log2(rank + 1)),
+            (sum, rank) => sum + (rank === null ? 0 : 1 / Math.log2(rank + 1)),
             0,
           ) / ranks.length,
   };
@@ -1406,9 +1400,7 @@ async function runRerankStudy(
       },
     );
 
-    const passages = frozenPool.map(
-      (hit) => `${hit.title}\n${hit.excerpt}`,
-    );
+    const passages = frozenPool.map((hit) => `${hit.title}\n${hit.excerpt}`);
     const started = performance.now();
     const scores = await reranker.scoreMany(testCase.query, passages);
     scoringLatencyMs += performance.now() - started;
@@ -1447,8 +1439,7 @@ async function runRerankStudy(
       return {
         poolDepth,
         shortlist,
-        poolGoldPresent:
-          firstGoldUnitRank(baselinePool, goldUnitIds) !== null,
+        poolGoldPresent: firstGoldUnitRank(baselinePool, goldUnitIds) !== null,
         baselineRank,
         rerankedRank,
       };
@@ -1499,12 +1490,10 @@ async function runRerankStudy(
     const baseline = summarizeRerankRanks(baselineRanks);
     const reranked = summarizeRerankRanks(rerankedRanks);
     const goldDroppedByRerank = observations.filter(
-      (entry) =>
-        entry.baselineRank !== null && entry.rerankedRank === null,
+      (entry) => entry.baselineRank !== null && entry.rerankedRank === null,
     ).length;
     const goldRecoveredByRerank = observations.filter(
-      (entry) =>
-        entry.baselineRank === null && entry.rerankedRank !== null,
+      (entry) => entry.baselineRank === null && entry.rerankedRank !== null,
     ).length;
     const rankRegressions = observations.filter(
       (entry) =>
@@ -1565,11 +1554,7 @@ async function runRerankStudy(
       rankRegressions,
       rankImprovements,
       comparable,
-      decision: !comparable
-        ? "INCONCLUSIVE"
-        : improved
-          ? "PROMOTE"
-          : "REJECT",
+      decision: !comparable ? "INCONCLUSIVE" : improved ? "PROMOTE" : "REJECT",
     };
   });
 
@@ -1587,11 +1572,9 @@ async function runRerankStudy(
         (arm.delta.mrr ?? -1) >= -1e-12 &&
         (arm.delta.ndcg ?? -1) >= -1e-12,
     );
-  const anyRankingImprovement =
-    armSummaries.some(
-      (arm) =>
-        (arm.delta.mrr ?? 0) > 1e-12 || (arm.delta.ndcg ?? 0) > 1e-12,
-    );
+  const anyRankingImprovement = armSummaries.some(
+    (arm) => (arm.delta.mrr ?? 0) > 1e-12 || (arm.delta.ndcg ?? 0) > 1e-12,
+  );
   const experimentDisposition = !allComparable
     ? "INCONCLUSIVE"
     : allGuardrailsPass && anyRankingImprovement

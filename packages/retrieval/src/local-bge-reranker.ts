@@ -152,7 +152,9 @@ export class LocalBgeCrossEncoderReranker {
     const normalizedQuery = nonEmpty(query, "BGE reranker query");
     const normalizedPassage = nonEmpty(passage, "BGE reranker passage");
     const runtime = await this.getRuntime();
-    return sigmoid(await runtime.scoreLogit(normalizedQuery, normalizedPassage));
+    return sigmoid(
+      await runtime.scoreLogit(normalizedQuery, normalizedPassage),
+    );
   }
 
   async scoreMany(
