@@ -282,6 +282,74 @@ jobs:
           AKP_REGISTERED_RETRIEVAL_REPORT=reports/ci/registered-corpus-retrieval-benchmark.json \
             pnpm benchmark:retrieval:registered \
             2>&1 | tee reports/ci/registered-corpus-retrieval-benchmark.log
+      - name: Gate retrieval stage attribution
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const reports = [
+            ["runtime", "reports/ci/runtime-retrieval-benchmark.json"],
+            ["registered", "reports/ci/registered-corpus-retrieval-benchmark.json"],
+          ];
+          for (const [label, path] of reports) {
+            const report = JSON.parse(readFileSync(path, "utf8"));
+            const runs = Array.isArray(report.runs) ? report.runs : [];
+            if (runs.length === 0) {
+              throw new Error(`${label} retrieval report contains no runs.`);
+            }
+            for (const run of runs) {
+              const results = Array.isArray(run.results) ? run.results : [];
+              if (results.length === 0) {
+                throw new Error(
+                  `${label}/${run.configurationName ?? "unknown"} contains no case results.`,
+                );
+              }
+              for (const result of results) {
+                const diagnostic = result.stageDiagnostics;
+                if (
+                  diagnostic?.measurement !== "RETRIEVAL_PIPELINE" ||
+                  !Array.isArray(diagnostic.expected) ||
+                  !Array.isArray(diagnostic.failures) ||
+                  !Array.isArray(diagnostic.unresolved)
+                ) {
+                  throw new Error(
+                    `${label}/${result.caseId ?? "unknown"} lacks retrieval stage diagnostics.`,
+                  );
+                }
+                if (diagnostic.unresolved.length !== 0) {
+                  throw new Error(
+                    `${label}/${result.caseId ?? "unknown"} has unresolved stage attribution.`,
+                  );
+                }
+                for (const target of diagnostic.expected) {
+                  if (
+                    typeof target?.documentId !== "string" ||
+                    target.documentId.length === 0 ||
+                    typeof target?.unitId !== "string" ||
+                    target.unitId.length === 0
+                  ) {
+                    throw new Error(
+                      `${label}/${result.caseId ?? "unknown"} has incomplete expected document/unit identity.`,
+                    );
+                  }
+                }
+                if (result.passed !== true && diagnostic.failures.length === 0) {
+                  throw new Error(
+                    `${label}/${result.caseId ?? "unknown"} failed without a classified pipeline stage.`,
+                  );
+                }
+                for (const failure of diagnostic.failures) {
+                  if (typeof failure?.stage !== "string" || failure.stage.length === 0) {
+                    throw new Error(
+                      `${label}/${result.caseId ?? "unknown"} has a failure without a stage.`,
+                    );
+                  }
+                }
+              }
+            }
+          }
+          NODE
       - name: Build honest competitive arena report
         shell: bash
         run: |
