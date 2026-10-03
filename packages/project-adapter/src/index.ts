@@ -126,37 +126,40 @@ export class DeterministicProjectAdapter implements ProjectAdapter {
     }
     const resolvedChangedSince =
       verifiedChangedSince?.stdout.trim() || undefined;
-    const worktreeFiles = async (): Promise<string[]> =>
-      Array.fromAsync(
-        glob(
-          [
-            "**/package.json",
-            "**/pom.xml",
-            "**/build.gradle",
-            "**/build.gradle.kts",
-            "**/*.csproj",
-            "**/*.java",
-            "**/*.cs",
-            "**/*.ts",
-            "**/*.tsx",
-            "**/*.js",
-            "**/*.jsx",
-            "**/*.mjs",
-            "**/*.cjs",
-            "**/*.vue",
+    const worktreeFiles = async (): Promise<string[]> => {
+      const matches: string[] = [];
+      for await (const file of glob(
+        [
+          "**/package.json",
+          "**/pom.xml",
+          "**/build.gradle",
+          "**/build.gradle.kts",
+          "**/*.csproj",
+          "**/*.java",
+          "**/*.cs",
+          "**/*.ts",
+          "**/*.tsx",
+          "**/*.js",
+          "**/*.jsx",
+          "**/*.mjs",
+          "**/*.cjs",
+          "**/*.vue",
+        ],
+        {
+          cwd: root,
+          exclude: [
+            "**/node_modules/**",
+            "**/dist/**",
+            "**/build/**",
+            "**/bin/**",
+            "**/obj/**",
           ],
-          {
-            cwd: root,
-            exclude: [
-              "**/node_modules/**",
-              "**/dist/**",
-              "**/build/**",
-              "**/bin/**",
-              "**/obj/**",
-            ],
-          },
-        ),
-      );
+        },
+      )) {
+        matches.push(file);
+      }
+      return matches;
+    };
     const committedFiles = (): string[] => {
       if (!immutableCommit) return [];
       const listed = spawnSync(

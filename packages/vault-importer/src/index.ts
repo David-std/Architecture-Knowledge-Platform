@@ -387,16 +387,14 @@ export async function inspectVault(
   if (!rootStats.isDirectory())
     throw new Error(`Vault path is not a directory: ${canonicalPath}`);
 
-  const relativePaths = (
-    await Array.fromAsync(
-      glob("**/*.md", {
-        cwd: canonicalPath,
-        exclude: ["**/.*/**", "**/.*", "node_modules/**", "**/node_modules/**"],
-      }),
-    )
-  )
-    .map(normalizePath)
-    .sort();
+  const relativePaths: string[] = [];
+  for await (const relativePath of glob("**/*.md", {
+    cwd: canonicalPath,
+    exclude: ["**/.*/**", "**/.*", "node_modules/**", "**/node_modules/**"],
+  })) {
+    relativePaths.push(normalizePath(relativePath));
+  }
+  relativePaths.sort();
 
   const issues: ImportIssue[] = [];
   const documents: VaultDocument[] = [];
