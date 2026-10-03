@@ -184,11 +184,15 @@ function firstMarkdownHeading(
   body: string,
   fallbackTitle: string,
 ): string | null {
-  const firstSection = parseKnowledgeUnits(fallbackTitle, body).find(
-    (unit) => unit.unitType === "SECTION",
-  );
-  const heading = firstSection?.headingPath[0]?.trim();
-  return heading ? heading : null;
+  const heading = parseKnowledgeUnits(fallbackTitle, body)
+    .map((unit) => unit.headingPath[0]?.trim())
+    .find(
+      (value): value is string =>
+        Boolean(value) &&
+        value!.toLocaleLowerCase("en-US") !==
+          fallbackTitle.toLocaleLowerCase("en-US"),
+    );
+  return heading ?? null;
 }
 
 function uniqueAliases(values: readonly string[]): string[] {
