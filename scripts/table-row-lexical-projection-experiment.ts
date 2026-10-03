@@ -269,7 +269,8 @@ const QUESTIONS: QuestionFixture[] = [
     id: "hold-caption-clinic",
     split: "heldout",
     family: "CAPTION_HEADER_VALUE",
-    query:\n      "Clinic response roster Clinic Surco Contact Elena Cruz SLA FourHours",
+    query:
+      "Clinic response roster Clinic Surco Contact Elena Cruz SLA FourHours",
     goldRowKey: rowKey("hold-healthcare", 6, 1),
   },
   {
