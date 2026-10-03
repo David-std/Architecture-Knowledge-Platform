@@ -406,14 +406,8 @@ describe("R8 fixed-gold quality metrics", () => {
 
   it("derives generated distractor identities from seed and ordinal instead of random UUIDs", async () => {
     const fixture = createScaleDatabaseFixture("deterministic-generated-ids");
-    fixture.vaultIds.set(
-      "gold",
-      "00000000-0000-4000-8000-000000000101",
-    );
-    fixture.vaultIds.set(
-      "other-vault",
-      "00000000-0000-4000-8000-000000000102",
-    );
+    fixture.vaultIds.set("gold", "00000000-0000-4000-8000-000000000101");
+    fixture.vaultIds.set("other-vault", "00000000-0000-4000-8000-000000000102");
     const sql: string[] = [];
     const fakeDb = {
       pool: {

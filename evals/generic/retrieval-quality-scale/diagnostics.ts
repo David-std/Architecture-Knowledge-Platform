@@ -41,7 +41,10 @@ function identityKey(identity: EvidenceIdentity): string {
 
 function enrichAdmission(
   rows: readonly EvidenceCandidateDiagnostic[],
-  admissionByIdentity: ReadonlyMap<string, EvidenceCandidateDiagnostic["admission"]>,
+  admissionByIdentity: ReadonlyMap<
+    string,
+    EvidenceCandidateDiagnostic["admission"]
+  >,
 ): EvidenceCandidateDiagnostic[] {
   return rows.map((row) => ({
     ...row,
