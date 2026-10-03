@@ -26,10 +26,15 @@ import {
   LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
   LocalSemanticEmbeddingAdapter,
   MULTILINGUAL_E5_SMALL_DIMENSIONS,
+  parseKnowledgeUnits,
   QueryEmbeddingService,
+  reciprocalRankFusion,
+  resolveRetrievalPolicy,
   retrievalAnswerabilityCandidateKey,
+  retrievalCandidatesToRankedChannels,
   type ActiveEmbeddingGenerationDescriptor,
   type EvidenceRetrievalStageSnapshot,
+  type RetrievalCandidate,
 } from "../packages/retrieval/src/index.js";
 import { queryKnowledge } from "../apps/api/src/routes/search.js";
 import {
@@ -101,6 +106,12 @@ type Fixture = {
 };
 
 type QueryHit = Awaited<ReturnType<typeof queryKnowledge>>[number];
+
+type UnitizedUnit = {
+  id: string;
+  body: string;
+  embeddingEligible: boolean;
+};
 
 type RuntimeObservation = BenchmarkObservation & {
   stageDiagnostics: ReturnType<typeof diagnoseSingleUnitCorpusCase>;
@@ -439,6 +450,145 @@ async function seedCorpus(
       }
     }
   }
+}
+
+async function seedUnitizedCorpus(
+  db: Postgres,
+  manifest: ResolvedManifest,
+  fixture: Fixture,
+): Promise<Map<string, UnitizedUnit[]>> {
+  const unitsByDocument = new Map<string, UnitizedUnit[]>();
+  await db.pool.query(
+    `insert into organizations(id,slug,name) values($1,$2,$3)`,
+    [
+      fixture.organizationId,
+      `registered-unitized-${fixture.organizationId.slice(0, 8)}`,
+      "Registered public product corpus unit-selection benchmark",
+    ],
+  );
+  await db.pool.query(
+    `insert into spaces(id,organization_id,slug,name,visibility,knowledge_repo_path)
+     values($1,$2,$3,$4,'PRIVATE',$5)`,
+    [
+      fixture.spaceId,
+      fixture.organizationId,
+      `registered-unitized-${fixture.spaceId.slice(0, 8)}`,
+      "Registered public product corpus unit-selection benchmark",
+      `benchmark/registered-unitized/${fixture.spaceId}`,
+    ],
+  );
+
+  for (const vault of manifest.vaults) {
+    const vaultId = fixture.vaultIds.get(vault.id);
+    if (!vaultId) throw new Error(`Missing vault mapping for ${vault.id}`);
+    await db.pool.query(
+      `insert into vaults(
+         id,space_id,canonical_path,name,read_only,current_revision,
+         vault_key,local_path,visibility,enabled
+       ) values($1,$2,$3,$4,true,$5,$6,$3,'PRIVATE',true)`,
+      [
+        vaultId,
+        fixture.spaceId,
+        `benchmark/registered-unitized/${vault.id}`,
+        `Registered unitized ${vault.kind}`,
+        fixture.corpusRevision,
+        `registered-unitized-${vault.id}-${vaultId.slice(0, 8)}`,
+      ],
+    );
+    await db.pool.query(
+      `insert into vault_index_revisions(
+         space_id,vault_id,corpus_revision,lexical_revision,vector_revision,
+         graph_revision,context_pack_revision,status,warnings
+       ) values($1,$2,$3,$3,$3,$3,$3,'CONSISTENT','[]'::jsonb)`,
+      [fixture.spaceId, vaultId, fixture.corpusRevision],
+    );
+
+    for (const document of vault.documents) {
+      const documentId = fixture.documentIds.get(document.id);
+      if (!documentId) {
+        throw new Error(`Missing document mapping for ${document.id}`);
+      }
+      const contentHash = sha256(document.body);
+      await db.pool.query(
+        `insert into knowledge_documents(
+           id,space_id,vault_id,path,external_id,title,type,lifecycle,
+           trust_tier,current_revision,body_cache,frontmatter,aliases,layer,
+           content_hash,token_estimate,raw_links
+         ) values($1,$2,$3,$4,$5,$6,'concept','ACTIVE','HUMAN_REVIEWED',
+                  $7,$8,$9::jsonb,$10,'concept',$11,$12,'[]'::jsonb)`,
+        [
+          documentId,
+          fixture.spaceId,
+          vaultId,
+          document.sourcePath,
+          document.id,
+          document.title,
+          fixture.corpusRevision,
+          document.body,
+          JSON.stringify({
+            id: document.id,
+            title: document.title,
+            knowledge_layer: "concept",
+            benchmark_corpus: manifest.name,
+            source_path: document.sourcePath,
+            unitization: "parseKnowledgeUnits",
+          }),
+          document.aliases,
+          contentHash,
+          Math.max(1, document.body.split(/\s+/u).length),
+        ],
+      );
+
+      const parsedUnits = parseKnowledgeUnits(document.title, document.body);
+      const ids = new Map(
+        parsedUnits.map((unit) => [unit.unitKey, randomUUID()] as const),
+      );
+      const materialized: UnitizedUnit[] = [];
+      for (const unit of parsedUnits) {
+        const unitId = ids.get(unit.unitKey);
+        if (!unitId) throw new Error(`Missing unit id for ${unit.unitKey}`);
+        const parentUnitId = unit.parentUnitKey
+          ? (ids.get(unit.parentUnitKey) ?? null)
+          : null;
+        await db.pool.query(
+          `insert into knowledge_units(
+             id,document_id,space_id,vault_id,unit_key,unit_type,heading_path,
+             body,content_hash,corpus_revision,document_revision,lifecycle,
+             trust_tier,source_ids,token_estimate,parent_unit_id,permissions,
+             locator,structural_order,container_only,embedding_eligible
+           ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,'ACTIVE',
+                    'HUMAN_REVIEWED',$11,$12,$13,'{}'::jsonb,$14::jsonb,
+                    $15,$16,$17)`,
+          [
+            unitId,
+            documentId,
+            fixture.spaceId,
+            vaultId,
+            unit.unitKey,
+            unit.unitType,
+            unit.headingPath,
+            unit.body,
+            unit.contentHash,
+            fixture.corpusRevision,
+            document.evidence,
+            unit.tokenEstimate,
+            parentUnitId,
+            JSON.stringify(unit.locator),
+            unit.structuralOrder,
+            unit.containerOnly,
+            unit.embeddingEligible,
+          ],
+        );
+        materialized.push({
+          id: unitId,
+          body: unit.body,
+          embeddingEligible: unit.embeddingEligible,
+        });
+      }
+      unitsByDocument.set(document.id, materialized);
+    }
+  }
+  return unitsByDocument;
 }
 
 async function buildCommunityIndexes(
@@ -870,6 +1020,241 @@ function candidatePoolMeasurement(observations: readonly RuntimeObservation[]) {
   };
 }
 
+function rankOfAny(
+  rankedIds: readonly string[],
+  goldIds: ReadonlySet<string>,
+): number | null {
+  const index = rankedIds.findIndex((id) => goldIds.has(id));
+  return index < 0 ? null : index + 1;
+}
+
+function summarizeUnitRanks(ranks: readonly (number | null)[]) {
+  const found = ranks.filter((rank): rank is number => rank !== null);
+  return {
+    cases: ranks.length,
+    recallAt10:
+      ranks.length === 0
+        ? null
+        : ranks.filter((rank) => rank !== null && rank <= 10).length /
+          ranks.length,
+    mrr:
+      ranks.length === 0
+        ? null
+        : ranks.reduce(
+            (sum, rank) => sum + (rank === null ? 0 : 1 / rank),
+            0,
+          ) / ranks.length,
+    meanFoundRank:
+      found.length === 0
+        ? null
+        : found.reduce((sum, rank) => sum + rank, 0) / found.length,
+  };
+}
+
+async function runUnitSelectionStudy(
+  db: Postgres,
+  dataset: {
+    manifest: ResolvedManifest;
+    cases: GoldCase[];
+  },
+  fixture: Fixture,
+  adapter: LocalSemanticEmbeddingAdapter,
+  queryEmbeddingService: QueryEmbeddingService,
+) {
+  const unitsByDocument = await seedUnitizedCorpus(
+    db,
+    dataset.manifest,
+    fixture,
+  );
+  const generations = await buildRealEmbeddings(
+    db,
+    dataset.manifest,
+    fixture,
+    adapter,
+  );
+  const labelled = dataset.cases.filter(
+    (testCase) => (testCase.gold_support?.length ?? 0) > 0,
+  );
+  const policy = resolveRetrievalPolicy();
+  const results = [];
+  const unresolvedPredicates: string[] = [];
+
+  for (const testCase of labelled) {
+    const vaultId = fixture.vaultIds.get(testCase.vault);
+    if (!vaultId) throw new Error(`Unknown case vault ${testCase.vault}`);
+    const goldUnitIds = new Set<string>();
+    const unresolvedForCase: string[] = [];
+    for (const predicate of testCase.gold_support ?? []) {
+      const matches = (unitsByDocument.get(predicate.document) ?? []).filter(
+        (unit) =>
+          unit.embeddingEligible &&
+          passageMatchesGoldPredicate(unit.body, predicate),
+      );
+      if (matches.length === 0) {
+        unresolvedForCase.push(predicate.id);
+        unresolvedPredicates.push(predicate.id);
+        continue;
+      }
+      for (const match of matches) goldUnitIds.add(match.id);
+    }
+    if (unresolvedForCase.length > 0 || goldUnitIds.size === 0) {
+      results.push({
+        caseId: testCase.id,
+        status: "UNRESOLVED_GOLD_UNIT",
+        unresolvedPredicates: unresolvedForCase,
+      });
+      continue;
+    }
+
+    let snapshot: EvidenceRetrievalStageSnapshot | undefined;
+    const currentHits = await queryKnowledge(
+      db,
+      {
+        query: testCase.query,
+        spaceId: fixture.spaceId,
+        vaultId,
+        vaultIds: [],
+        federated: false,
+        types: [],
+        minimumTrust: "MACHINE_SUPPORTED",
+        mode: "SOURCE_BACKED",
+        limit: 10,
+      },
+      {
+        vaultIds: [vaultId],
+        channels: ["lexical", "vector"],
+        allowVectorForBenchmark: true,
+        queryEmbeddingService,
+        stageDiagnosticSink: (value) => {
+          snapshot = value;
+        },
+      },
+    );
+    if (!snapshot) {
+      throw new Error(`Missing stage diagnostics for ${testCase.id}`);
+    }
+
+    const keyToUnitId = new Map<string, string>();
+    const unitCandidates: RetrievalCandidate[] = [];
+    for (const candidate of snapshot.channelCandidateTrace ?? []) {
+      if (
+        !candidate.unitId ||
+        (candidate.channel !== "LEXICAL" && candidate.channel !== "VECTOR")
+      ) {
+        continue;
+      }
+      const candidateId = `${candidate.documentId}:${candidate.unitId}`;
+      keyToUnitId.set(candidateId, candidate.unitId);
+      unitCandidates.push({
+        candidateId,
+        channel: candidate.channel,
+        rank: candidate.rank,
+        ...(candidate.rawScore === null
+          ? {}
+          : { rawScore: candidate.rawScore }),
+        scopeId: fixture.spaceId,
+        documentId: candidate.documentId,
+        unitId: candidate.unitId,
+        revision: fixture.corpusRevision,
+        selectionReason: candidate.selectionReason,
+      });
+    }
+    const unitRanked = reciprocalRankFusion(
+      retrievalCandidatesToRankedChannels(unitCandidates, policy),
+    );
+    const currentUnitIds = currentHits.flatMap((hit) =>
+      hit.unitId ? [hit.unitId] : [],
+    );
+    const unitKeyedIds = unitRanked.flatMap((item) => {
+      const unitId = keyToUnitId.get(item.id);
+      return unitId ? [unitId] : [];
+    });
+    const candidateGoldPresent = (snapshot.channelCandidateTrace ?? []).some(
+      (candidate) =>
+        candidate.unitId !== null && goldUnitIds.has(candidate.unitId),
+    );
+
+    results.push({
+      caseId: testCase.id,
+      status: "MEASURED",
+      goldUnitAlternatives: goldUnitIds.size,
+      candidateGoldPresent,
+      currentDocumentKeyedRank: rankOfAny(currentUnitIds, goldUnitIds),
+      unitKeyedRrfRank: rankOfAny(unitKeyedIds, goldUnitIds),
+    });
+  }
+
+  const measured = results.filter(
+    (
+      result,
+    ): result is {
+      caseId: string;
+      status: "MEASURED";
+      goldUnitAlternatives: number;
+      candidateGoldPresent: boolean;
+      currentDocumentKeyedRank: number | null;
+      unitKeyedRrfRank: number | null;
+    } => result.status === "MEASURED",
+  );
+  const candidateGoldCoverage =
+    measured.length === 0
+      ? null
+      : measured.filter((result) => result.candidateGoldPresent).length /
+        measured.length;
+  const current = summarizeUnitRanks(
+    measured.map((result) => result.currentDocumentKeyedRank),
+  );
+  const unitKeyed = summarizeUnitRanks(
+    measured.map((result) => result.unitKeyedRrfRank),
+  );
+  const comparable =
+    unresolvedPredicates.length === 0 &&
+    candidateGoldCoverage === 1 &&
+    current.recallAt10 !== null &&
+    unitKeyed.recallAt10 !== null &&
+    current.mrr !== null &&
+    unitKeyed.mrr !== null;
+  const epsilon = 1e-12;
+  const decision = !comparable
+    ? "INCONCLUSIVE"
+    : unitKeyed.recallAt10! > current.recallAt10! + epsilon ||
+        (Math.abs(unitKeyed.recallAt10! - current.recallAt10!) <= epsilon &&
+          unitKeyed.mrr! > current.mrr! + epsilon)
+      ? "PROMOTE"
+      : "REJECT";
+
+  return {
+    status: "MEASURED",
+    independentVariable: "fusionIdentity",
+    arms: ["DOCUMENT_KEYED_CURRENT", "UNIT_KEYED_RRF"],
+    corpusProjection: "FRESH_PARSE_KNOWLEDGE_UNITS",
+    casesLabelled: labelled.length,
+    casesMeasured: measured.length,
+    unresolvedPredicates: [...new Set(unresolvedPredicates)].sort(),
+    candidateGoldCoverage,
+    currentDocumentKeyed: current,
+    unitKeyedRrf: unitKeyed,
+    delta: {
+      recallAt10:
+        current.recallAt10 === null || unitKeyed.recallAt10 === null
+          ? null
+          : unitKeyed.recallAt10 - current.recallAt10,
+      mrr:
+        current.mrr === null || unitKeyed.mrr === null
+          ? null
+          : unitKeyed.mrr - current.mrr,
+    },
+    decision,
+    productionDefaultChanged: false,
+    generationCount: generations.length,
+    goldDerivation:
+      "Gold units are derived only from versioned gold_support predicates matched against embedding-eligible parseKnowledgeUnits output; no private vocabulary or manual unit labels are added.",
+    claimBoundary:
+      "This registered public-product slice isolates document-keyed versus unit-keyed fusion. Only a PROMOTE result may justify a later runtime change; this measurement does not change production behavior.",
+    results,
+  };
+}
+
 async function main(): Promise<void> {
   const repositoryState = {
     commit: execFileSync("git", ["rev-parse", "HEAD"], {
@@ -887,6 +1272,7 @@ async function main(): Promise<void> {
   const db = new Postgres(databaseUrl);
   const dataset = await loadDataset();
   const fixture = createFixture(dataset.manifest);
+  const unitSelectionFixture = createFixture(dataset.manifest);
   const adapter = new LocalSemanticEmbeddingAdapter({
     ...(process.env.AKP_MODEL_CACHE_DIR?.trim()
       ? { cacheDir: process.env.AKP_MODEL_CACHE_DIR }
@@ -1002,6 +1388,13 @@ async function main(): Promise<void> {
       claimBoundary:
         "This isolates the residual lexical assertion-recall path on the registered corpus; it does not alter production selection.",
     };
+    const unitSelectionStudy = await runUnitSelectionStudy(
+      db,
+      dataset,
+      unitSelectionFixture,
+      adapter,
+      queryEmbeddingService,
+    );
 
     const isolationViolations = runs.flatMap((run) =>
       run.results.flatMap((result) => {
@@ -1154,6 +1547,13 @@ async function main(): Promise<void> {
           configuration: candidateDepthConfiguration.name,
           variants: ["current", "disabled"],
         },
+        unitSelectionStudy: {
+          corpusProjection: "FRESH_PARSE_KNOWLEDGE_UNITS",
+          variants: ["DOCUMENT_KEYED_CURRENT", "UNIT_KEYED_RRF"],
+          labelledCases: dataset.cases.filter(
+            (testCase) => (testCase.gold_support?.length ?? 0) > 0,
+          ).length,
+        },
       }),
     );
     const cpu = os.cpus();
@@ -1217,7 +1617,7 @@ async function main(): Promise<void> {
         limitations: [
           "Stage diagnostics retain gold document/unit identities, but exact gold spans and final generation are not annotated or measured by this pack.",
           "The corpus is the product's own public documentation, not a private customer vault or production traffic sample.",
-          "The benchmark seeds one retrieval unit per source document and therefore does not validate extraction or production chunking fidelity.",
+          "The primary comparison matrix retains its one-unit-per-document compatibility projection; unitSelectionStudy separately rebuilds the same public Markdown with production parseKnowledgeUnits for a controlled multi-unit comparison.",
           "The corpus is small and single-product; results are not evidence of domain-general retrieval superiority.",
         ],
         notMeasured: [
@@ -1274,11 +1674,7 @@ async function main(): Promise<void> {
           "Depth measurements use the same registered corpus and full-hybrid retrieval configuration; they do not select a production default.",
       },
       assertionRecallStudy,
-      unitSelectionStudy: {
-        status: "NOT_MEASURED",
-        reason:
-          "The registered public corpus seeds exactly one retrieval unit per source document, so document-vs-unit candidate selection is not identifiable on this fixture.",
-      },
+      unitSelectionStudy,
       productionDefault: {
         status: "NOT_SELECTED",
         reason:
@@ -1330,13 +1726,17 @@ async function main(): Promise<void> {
     );
   } finally {
     try {
-      await cleanupCorpus(db, fixture);
+      await cleanupCorpus(db, unitSelectionFixture);
     } finally {
-      await db.close();
+      try {
+        await cleanupCorpus(db, fixture);
+      } finally {
+        await db.close();
       if (previousVectorEnabled === undefined) {
         delete process.env.AKP_VECTOR_ENABLED;
       } else {
-        process.env.AKP_VECTOR_ENABLED = previousVectorEnabled;
+          process.env.AKP_VECTOR_ENABLED = previousVectorEnabled;
+        }
       }
     }
   }

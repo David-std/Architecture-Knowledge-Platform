@@ -25,6 +25,13 @@ export interface EvidenceIdentity {
   unitId: string | null;
 }
 
+export interface EvidenceChannelCandidateTrace extends EvidenceIdentity {
+  channel: string;
+  rank: number;
+  rawScore: number | null;
+  selectionReason: string;
+}
+
 export interface GoldEvidenceTarget extends EvidenceIdentity {
   /** Null means no exact gold span was annotated, not that any span is valid. */
   evidenceSpan: QueryConditionedEvidenceSpan | null;
@@ -85,6 +92,7 @@ export interface EvidencePipelineObservation {
 
 export interface EvidenceRetrievalStageSnapshot {
   channelCandidates: readonly EvidenceIdentity[];
+  channelCandidateTrace?: readonly EvidenceChannelCandidateTrace[];
   fusedCandidates: readonly EvidenceCandidateDiagnostic[];
   beforeRerank: readonly EvidenceCandidateDiagnostic[];
   afterRerank: readonly EvidenceCandidateDiagnostic[];

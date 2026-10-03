@@ -3302,6 +3302,7 @@ export async function queryKnowledge(
     await finalizeTruthSnapshot();
     options.stageDiagnosticSink?.({
       channelCandidates: [],
+      channelCandidateTrace: [],
       fusedCandidates: [],
       beforeRerank: [],
       afterRerank: [],
@@ -3685,15 +3686,26 @@ export async function queryKnowledge(
   if (options.stageDiagnosticSink) {
     const fullPool = projectedHits;
     const allowedDocumentIds = new Set(fullPool.map((hit) => hit.documentId));
+    const authorizedChannelCandidates = retrievalCandidates.filter(
+      (candidate) =>
+        allowedDocumentIds.has(candidate.documentId ?? candidate.candidateId),
+    );
     options.stageDiagnosticSink({
-      channelCandidates: retrievalCandidates
-        .filter((candidate) =>
-          allowedDocumentIds.has(candidate.documentId ?? candidate.candidateId),
-        )
-        .map((candidate) => ({
-          documentId: candidate.documentId ?? candidate.candidateId,
-          unitId: candidate.unitId ?? null,
-        })),
+      channelCandidates: authorizedChannelCandidates.map((candidate) => ({
+        documentId: candidate.documentId ?? candidate.candidateId,
+        unitId: candidate.unitId ?? null,
+      })),
+      channelCandidateTrace: authorizedChannelCandidates.map((candidate) => ({
+        documentId: candidate.documentId ?? candidate.candidateId,
+        unitId: candidate.unitId ?? null,
+        channel: candidate.channel,
+        rank: candidate.rank,
+        rawScore: candidate.rawScore ?? null,
+        selectionReason:
+          typeof candidate.selectionReason === "string"
+            ? candidate.selectionReason
+            : "structured-reason",
+      })),
       fusedCandidates: fullPool.map((hit, index) =>
         evidenceCandidateDiagnostic(hit, index + 1),
       ),
