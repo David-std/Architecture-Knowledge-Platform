@@ -121,7 +121,9 @@ jobs:
 
   retrieval-quality-scale:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # The full 0→100K fixed-gold matrix has measured ~32–38 minutes on hosted runners.
+    # Keep headroom for runner/storage variance without changing the benchmark contract.
+    timeout-minutes: 50
     env:
       DATABASE_URL: postgres://akp:akp@localhost:55432/akp
     steps:
