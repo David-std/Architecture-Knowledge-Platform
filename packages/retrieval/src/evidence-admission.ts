@@ -30,9 +30,7 @@ export type EvidenceVerdict =
   | { readonly kind: "INSUFFICIENT" };
 
 export type EvidenceAdmissionLayer =
-  | "STRUCTURAL_GUARD"
-  | "STRUCTURED_PROPOSITION"
-  | "SEMANTIC_READER";
+  "STRUCTURAL_GUARD" | "STRUCTURED_PROPOSITION" | "SEMANTIC_READER";
 
 export interface EvidenceAdmissionDecision {
   readonly layer: EvidenceAdmissionLayer;
@@ -66,7 +64,11 @@ export interface StructuredPropositionMatcher {
 }
 
 function normalizedProjectionValue(value: string): string {
-  return value.normalize("NFKC").trim().replace(/\s+/gu, " ").toLocaleLowerCase("und");
+  return value
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/gu, " ")
+    .toLocaleLowerCase("und");
 }
 
 /**
@@ -76,9 +78,7 @@ function normalizedProjectionValue(value: string): string {
  * ingestion/query planning did not produce a proposition projection, this
  * matcher must abstain rather than reconstruct semantics from raw prose.
  */
-export class ExactStructuredPropositionMatcher
-  implements StructuredPropositionMatcher
-{
+export class ExactStructuredPropositionMatcher implements StructuredPropositionMatcher {
   match(input: StructuredPropositionMatcherInput): EvidenceVerdict {
     const querySubject = normalizedProjectionValue(input.query.subject);
     const queryPredicate = normalizedProjectionValue(input.query.predicate);
@@ -143,10 +143,7 @@ function identifierLikeQuery(query: string): boolean {
 }
 
 function normalizedIdentity(value: string): string {
-  return value
-    .normalize("NFKC")
-    .trim()
-    .toLocaleLowerCase("und");
+  return value.normalize("NFKC").trim().toLocaleLowerCase("und");
 }
 
 function exactIdentifierMatchesHit(hit: SearchHit, query: string): boolean {
@@ -214,11 +211,7 @@ function hardStructuralFactsSatisfied(
 
   if (
     structuralRequirements.includes("QUANTITY") &&
-    !quantitativeEvidenceMatches(
-      evidence.valueText,
-      query,
-      evidence.scopedText,
-    )
+    !quantitativeEvidenceMatches(evidence.valueText, query, evidence.scopedText)
   ) {
     return false;
   }
@@ -245,7 +238,10 @@ function hardStructuralFactsSatisfied(
  * semantic support from relevance or token overlap.
  */
 export class StructuralEvidenceGuard {
-  candidateEligible(hit: SearchHit, query: string): StructuralEvidenceGuardResult {
+  candidateEligible(
+    hit: SearchHit,
+    query: string,
+  ): StructuralEvidenceGuardResult {
     if (hit.lifecycle !== "ACTIVE") {
       return {
         accepted: false,
@@ -369,9 +365,7 @@ function verificationVerdict(
  * Timeout, provider error, malformed output and CONTRADICTS without an exact
  * span all fail closed to INSUFFICIENT.
  */
-export class QueryConditionedSemanticEvidenceReader
-  implements SemanticEvidenceReader
-{
+export class QueryConditionedSemanticEvidenceReader implements SemanticEvidenceReader {
   readonly id: string;
   private readonly verifier: QueryConditionedEvidenceVerifier;
   private readonly maxWaitMs: number;
@@ -535,9 +529,7 @@ export class LayeredEvidenceAdmissionPipeline {
       query: input.query,
       candidateKey: `${input.hit.documentId}:${input.hit.unitId ?? "document"}`,
       title: input.hit.title,
-      ...(input.hit.headingPath
-        ? { headingPath: input.hit.headingPath }
-        : {}),
+      ...(input.hit.headingPath ? { headingPath: input.hit.headingPath } : {}),
       passage: input.hit.excerpt,
       unitType: input.hit.unitType ?? null,
       parentUnitType: input.hit.parentUnitType ?? null,
