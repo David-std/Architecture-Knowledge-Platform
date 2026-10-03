@@ -4,6 +4,7 @@
   "include": [
     "scripts/evidence-source-selection-*.ts",
     "../../scripts/evidence-admission-*.ts",
-    "../../scripts/registered-corpus-retrieval-benchmark.ts"
+    "../../scripts/registered-corpus-retrieval-benchmark.ts",
+    "../../scripts/runtime-retrieval-benchmark.ts"
   ]
 }

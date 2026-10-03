@@ -6,7 +6,6 @@ import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import {
-  aggregateBenchmarkRun,
   RETRIEVAL_BENCHMARK_MATRIX,
   V03_RETRIEVAL_BASELINE,
   selectBenchmarkDefault,
@@ -23,8 +22,6 @@ import {
 } from "../packages/postgres/src/index.js";
 import {
   assessRetrievalAnswerability,
-  diagnoseEvidencePipeline,
-  evidenceCandidateDiagnostic,
   DeterministicQueryDecomposer,
   LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
   LocalSemanticEmbeddingAdapter,
@@ -35,6 +32,10 @@ import {
   type EvidenceRetrievalStageSnapshot,
 } from "../packages/retrieval/src/index.js";
 import { queryKnowledge } from "../apps/api/src/routes/search.js";
+import {
+  aggregateObservedBenchmarkRun,
+  diagnoseSingleUnitCorpusCase,
+} from "./retrieval-stage-observation.js";
 
 type RegisteredDocument = {
   id: string;
@@ -102,7 +103,7 @@ type Fixture = {
 type QueryHit = Awaited<ReturnType<typeof queryKnowledge>>[number];
 
 type RuntimeObservation = BenchmarkObservation & {
-  stageDiagnostics: ReturnType<typeof diagnoseEvidencePipeline>;
+  stageDiagnostics: ReturnType<typeof diagnoseSingleUnitCorpusCase>;
   warnings: string[];
   availableChannels: string[];
   rankedVaultIds: string[];
@@ -744,54 +745,17 @@ async function executeCase(
       warnings.push(`PREDICATE_SUPPORT_MISSED:${supportId}`);
     }
   }
-  const identityForDocument = (document: string) => {
-    const documentId = fixture.documentIds.get(document);
-    const unitId = fixture.unitIds.get(document);
-    if (!documentId || !unitId)
-      throw new Error("REGISTERED_GOLD_UNIT_MAPPING_MISSING");
-    return { documentId, unitId, evidenceSpan: null };
-  };
-  const measuredAdmission = new Map(
-    rawHits.map((hit, index) => [
-      retrievalAnswerabilityCandidateKey(hit),
-      evidenceCandidateDiagnostic(hit, index + 1, answerability).admission,
-    ]),
-  );
-  const withAdmission = (
-    candidates: EvidenceRetrievalStageSnapshot["fusedCandidates"],
-  ) =>
-    candidates.map((candidate) => ({
-      ...candidate,
-      admission:
-        measuredAdmission.get(
-          `${candidate.documentId}:${candidate.unitId ?? "document"}`,
-        ) ?? candidate.admission,
-    }));
-  const stageDiagnostics = diagnoseEvidencePipeline({
+  const stageDiagnostics = diagnoseSingleUnitCorpusCase({
     caseId: testCase.id,
-    measurement: "RETRIEVAL_PIPELINE",
-    expected: testCase.gold_documents.map(identityForDocument),
-    admissible: testCase.gold_documents.map(identityForDocument),
-    // Document labels are not exhaustive source/span support labels.
-    labelsComplete: testCase.expect_no_answer === true,
-    sourceDocuments: [...fixture.documentIds.values()],
-    materializedUnits: [...fixture.documentIds.keys()].map(identityForDocument),
-    ...(candidateStages
-      ? {
-          channelCandidates: candidateStages.channelCandidates,
-          candidates: withAdmission(candidateStages.fusedCandidates),
-          beforeRerank: withAdmission(candidateStages.beforeRerank),
-          reranked: withAdmission(candidateStages.afterRerank),
-        }
-      : {}),
-    shortlist: rawHits.map((hit) => ({
-      documentId: hit.documentId,
-      unitId: hit.unitId ?? null,
-    })),
+    goldDocuments: testCase.gold_documents,
+    expectNoAnswer: testCase.expect_no_answer === true,
+    documentIds: fixture.documentIds,
+    unitIds: fixture.unitIds,
+    candidateStages,
+    shortlist: rawHits,
     shortlistLimit: 10,
-    admitted: hits.map((hit, index) =>
-      evidenceCandidateDiagnostic(hit, index + 1, answerability),
-    ),
+    admitted: hits,
+    assessment: answerability,
   });
   return {
     stageDiagnostics,
@@ -853,21 +817,6 @@ async function executeCase(
   };
 }
 
-function aggregateRuntimeBenchmark(
-  configuration: BenchmarkConfiguration,
-  observations: readonly RuntimeObservation[],
-) {
-  const run = aggregateBenchmarkRun(configuration, observations);
-  return {
-    ...run,
-    results: run.results.map((result, index) => ({
-      ...observations[index]!,
-      metrics: result.metrics,
-      passed: result.passed,
-    })),
-  };
-}
-
 async function main(): Promise<void> {
   const repositoryState = {
     commit: execFileSync("git", ["rev-parse", "HEAD"], {
@@ -916,7 +865,9 @@ async function main(): Promise<void> {
       async () => adapter,
     );
     const configurations = benchmarkConfigurations();
-    const runs: Array<ReturnType<typeof aggregateRuntimeBenchmark>> = [];
+    const runs: Array<
+      ReturnType<typeof aggregateObservedBenchmarkRun<RuntimeObservation>>
+    > = [];
     for (const configuration of configurations) {
       const observations: RuntimeObservation[] = [];
       for (const testCase of dataset.cases) {
@@ -930,7 +881,7 @@ async function main(): Promise<void> {
           ),
         );
       }
-      runs.push(aggregateRuntimeBenchmark(configuration, observations));
+      runs.push(aggregateObservedBenchmarkRun(configuration, observations));
     }
 
     const isolationViolations = runs.flatMap((run) =>
