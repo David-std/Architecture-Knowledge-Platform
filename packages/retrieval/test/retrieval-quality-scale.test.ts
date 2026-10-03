@@ -79,9 +79,9 @@ describe("R8 fixed-gold quality metrics", () => {
     let previous = generatedDistractorFamilyCounts(0);
     for (const target of targets) {
       const counts = generatedDistractorFamilyCounts(target);
-      expect(
-        Object.values(counts).reduce((sum, count) => sum + count, 0),
-      ).toBe(target);
+      expect(Object.values(counts).reduce((sum, count) => sum + count, 0)).toBe(
+        target,
+      );
       for (const family of GENERATED_DISTRACTOR_FAMILIES) {
         expect(counts[family]).toBeGreaterThan(previous[family]);
       }
