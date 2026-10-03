@@ -218,7 +218,10 @@ function parsePositiveInteger(value: string | undefined, name: string): number {
   return parsed;
 }
 
-function parseTargets(value: string | undefined, reducedScope: boolean): number[] {
+function parseTargets(
+  value: string | undefined,
+  reducedScope: boolean,
+): number[] {
   const raw = value ?? REQUIRED_TARGETS.join(",");
   const targets = raw
     .split(",")
@@ -234,7 +237,9 @@ function parseTargets(value: string | undefined, reducedScope: boolean): number[
     }
   }
   if (targets.some((target) => target < 1_000) && !reducedScope) {
-    throw new Error("counts below 1000 require the explicit --reduced-scope flag");
+    throw new Error(
+      "counts below 1000 require the explicit --reduced-scope flag",
+    );
   }
   if (targets.some((target) => target > 100_000)) {
     throw new Error("this benchmark refuses distractor counts above 100000");
@@ -827,7 +832,10 @@ async function main(): Promise<void> {
     return;
   }
   const reducedScope = hasFlag(argv, "--reduced-scope");
-  const targets = parseTargets(parseArg(argv, "--distractor-counts"), reducedScope);
+  const targets = parseTargets(
+    parseArg(argv, "--distractor-counts"),
+    reducedScope,
+  );
   const iterations = parsePositiveInteger(
     parseArg(argv, "--iterations") ?? "3",
     "iterations",
