@@ -18,6 +18,7 @@ jobs:
     env:
       AKP_MODEL_CACHE_DIR: /tmp/akp-model-cache
       AKP_QA_VETO_FAMILY_DISJOINT_REPORT: reports/ci/qa-veto-family-disjoint.json
+      AKP_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -27,6 +28,7 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: pnpm build
       - name: Run family-disjoint QA veto experiment
         shell: bash
         run: |
