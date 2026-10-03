@@ -85,6 +85,60 @@ describe("parseWikiLinks", () => {
   });
 });
 
+describe("title fallback and portable aliases", () => {
+  it("uses the first Markdown heading as title and retains the file slug as an alias", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akp-title-fallback-"));
+    temporaryRoots.push(root);
+    await writeFile(
+      path.join(root, "runtime-recovery-guide.md"),
+      [
+        "---",
+        "id: TITLE-FALLBACK-001",
+        "type: guide",
+        "status: active",
+        "---",
+        "# Runtime Recovery",
+        "",
+        "Use the verified recovery path.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const inspection = await inspectVault(root);
+    expect(inspection.documents[0]).toMatchObject({
+      title: "Runtime Recovery",
+      aliases: ["Runtime Recovery Guide"],
+    });
+  });
+
+  it("preserves an explicit title without inventing a slug alias", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akp-title-explicit-"));
+    temporaryRoots.push(root);
+    await writeFile(
+      path.join(root, "runtime-recovery-guide.md"),
+      [
+        "---",
+        "id: TITLE-EXPLICIT-001",
+        "type: guide",
+        "status: active",
+        "title: Canonical Recovery Title",
+        "aliases: [Recovery Handbook]",
+        "---",
+        "# Different Heading",
+        "",
+        "Explicit metadata remains authoritative.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const inspection = await inspectVault(root);
+    expect(inspection.documents[0]).toMatchObject({
+      title: "Canonical Recovery Title",
+      aliases: ["Recovery Handbook"],
+    });
+  });
+});
+
 describe("portable vault paths", () => {
   const document = (id: string): string =>
     [

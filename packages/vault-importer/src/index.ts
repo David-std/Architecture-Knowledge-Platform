@@ -180,6 +180,27 @@ function slugTitle(relativePath: string): string {
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
+function firstMarkdownHeading(body: string, fallbackTitle: string): string | null {
+  const firstSection = parseKnowledgeUnits(fallbackTitle, body).find(
+    (unit) => unit.unitType === "SECTION",
+  );
+  const heading = firstSection?.headingPath[0]?.trim();
+  return heading ? heading : null;
+}
+
+function uniqueAliases(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const aliases: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim();
+    const key = trimmed.toLocaleLowerCase("en-US");
+    if (!trimmed || seen.has(key)) continue;
+    seen.add(key);
+    aliases.push(trimmed);
+  }
+  return aliases;
+}
+
 export function parseWikiLinks(body: string): string[] {
   const targets: string[] = [];
   const regex = /!?\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g;
@@ -490,6 +511,22 @@ export async function inspectVault(
     }
 
     const body = parsed.content.trim();
+    const slugFallbackTitle = slugTitle(relativePath);
+    const declaredTitle =
+      typeof frontmatter.title === "string" ? frontmatter.title.trim() : "";
+    const headingFallback = declaredTitle
+      ? null
+      : firstMarkdownHeading(body, slugFallbackTitle);
+    const title = declaredTitle || headingFallback || slugFallbackTitle;
+    const aliases = uniqueAliases([
+      ...asStrings(frontmatter.aliases),
+      ...(!declaredTitle &&
+      headingFallback &&
+      headingFallback.toLocaleLowerCase("en-US") !==
+        slugFallbackTitle.toLocaleLowerCase("en-US")
+        ? [slugFallbackTitle]
+        : []),
+    ]);
     if (acquisitionBacklog) {
       issues.push({
         severity: "warning",
@@ -503,14 +540,12 @@ export async function inspectVault(
       relativePath,
       absolutePath,
       externalId,
-      title:
-        (typeof frontmatter.title === "string" && frontmatter.title.trim()) ||
-        slugTitle(relativePath),
+      title,
       type,
       lifecycle: normalizeLifecycle(frontmatter, { archival }),
       trustTier: normalizeTrust(frontmatter, operational),
       layer: deriveLayer(relativePath, frontmatter, profile),
-      aliases: asStrings(frontmatter.aliases),
+      aliases,
       body,
       frontmatter,
       links: parseWikiLinks(body),
