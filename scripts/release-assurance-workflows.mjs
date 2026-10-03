@@ -64,9 +64,11 @@ async function githubJson(url, token) {
       const error = new Error(
         `GitHub API ${response.status} ${response.statusText}: ${body.slice(0, 500)}`,
       );
-      if (!retryableStatus(response) || attempt === GITHUB_API_MAX_ATTEMPTS) {
+      if (!retryableStatus(response)) {
+        error.name = "GitHubApiPermanentError";
         throw error;
       }
+      if (attempt === GITHUB_API_MAX_ATTEMPTS) throw error;
       lastError = error;
       const delayMs = retryDelayMs(response, attempt);
       console.warn(
@@ -81,6 +83,12 @@ async function githubJson(url, token) {
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     } catch (error) {
       lastError = error;
+      if (
+        error instanceof Error &&
+        error.name === "GitHubApiPermanentError"
+      ) {
+        throw error;
+      }
       if (attempt === GITHUB_API_MAX_ATTEMPTS) throw error;
       const delayMs = retryDelayMs(null, attempt);
       console.warn(
