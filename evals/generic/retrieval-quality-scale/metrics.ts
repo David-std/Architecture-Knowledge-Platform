@@ -87,13 +87,15 @@ export function classifyQualityScaleOutcome(
   }
 
   const { baseline, final } = input;
+  const baselineFalseAcceptanceRate = baseline.falseAcceptanceRate;
+  const finalFalseAcceptanceRate = final.falseAcceptanceRate;
   if (
-    baseline.falseAcceptanceRate > 0.2 ||
-    final.falseAcceptanceRate > 0.2 ||
+    baselineFalseAcceptanceRate > 0.2 ||
+    finalFalseAcceptanceRate > 0.2 ||
     final.recallAt10 < baseline.recallAt10 - 0.05 ||
     final.mrr < baseline.mrr - 0.05 ||
     final.ndcg < baseline.ndcg - 0.05 ||
-    final.falseAcceptanceRate > baseline.falseAcceptanceRate + 0.05
+    finalFalseAcceptanceRate > baselineFalseAcceptanceRate + 0.05
   ) {
     return "REJECT";
   }
