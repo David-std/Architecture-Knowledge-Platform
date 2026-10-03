@@ -1136,17 +1136,14 @@ async function runUnitSelectionStudy(
 
     const keyToUnitId = new Map<string, string>();
     const unitCandidates: RetrievalCandidate[] = [];
-    for (const candidate of snapshot.channelCandidateTrace ?? []) {
-      if (
-        !candidate.unitId ||
-        (candidate.channel !== "LEXICAL" && candidate.channel !== "VECTOR")
-      ) {
-        continue;
-      }
-      const candidateId = `${candidate.documentId}:${candidate.unitId}`;
-      keyToUnitId.set(candidateId, candidate.unitId);
-      unitCandidates.push({
-        candidateId,
+    const documentCandidates: RetrievalCandidate[] = [];
+    const observedLeafCandidates = (snapshot.channelCandidateTrace ?? []).filter(
+      (candidate) =>
+        candidate.unitId &&
+        (candidate.channel === "LEXICAL" || candidate.channel === "VECTOR"),
+    );
+    for (const candidate of observedLeafCandidates) {
+      const common = {
         channel: candidate.channel,
         rank: candidate.rank,
         ...(candidate.rawScore === null
@@ -1154,17 +1151,52 @@ async function runUnitSelectionStudy(
           : { rawScore: candidate.rawScore }),
         scopeId: fixture.spaceId,
         documentId: candidate.documentId,
-        unitId: candidate.unitId,
+        unitId: candidate.unitId!,
         revision: fixture.corpusRevision,
         selectionReason: candidate.selectionReason,
+      } satisfies Omit<RetrievalCandidate, "candidateId">;
+      documentCandidates.push({
+        ...common,
+        candidateId: candidate.documentId,
       });
+      const candidateId = `${candidate.documentId}:${candidate.unitId}`;
+      keyToUnitId.set(candidateId, candidate.unitId!);
+      unitCandidates.push({ ...common, candidateId });
     }
+
+    const preferredLegacyUnitByDocument = new Map<string, string>();
+    for (const candidate of [...observedLeafCandidates].sort((left, right) => {
+      const priority = (entry: (typeof observedLeafCandidates)[number]) =>
+        entry.channel === "LEXICAL" &&
+        !entry.selectionReason.includes("lexical:assertion-recall:")
+          ? 0
+          : entry.channel === "VECTOR"
+            ? 1
+            : 2;
+      return (
+        priority(left) - priority(right) ||
+        left.rank - right.rank ||
+        left.unitId!.localeCompare(right.unitId!)
+      );
+    })) {
+      if (!preferredLegacyUnitByDocument.has(candidate.documentId)) {
+        preferredLegacyUnitByDocument.set(
+          candidate.documentId,
+          candidate.unitId!,
+        );
+      }
+    }
+
+    const documentRanked = reciprocalRankFusion(
+      retrievalCandidatesToRankedChannels(documentCandidates, policy),
+    );
     const unitRanked = reciprocalRankFusion(
       retrievalCandidatesToRankedChannels(unitCandidates, policy),
     );
-    const currentUnitIds = snapshot.fusedCandidates.flatMap((candidate) =>
-      candidate.unitId ? [candidate.unitId] : [],
-    );
+    const currentUnitIds = documentRanked.flatMap((item) => {
+      const unitId = preferredLegacyUnitByDocument.get(item.id);
+      return unitId ? [unitId] : [];
+    });
     const unitKeyedIds = unitRanked.flatMap((item) => {
       const unitId = keyToUnitId.get(item.id);
       return unitId ? [unitId] : [];
@@ -1245,12 +1277,13 @@ async function runUnitSelectionStudy(
           : unitKeyed.mrr - current.mrr,
     },
     decision,
-    productionDefaultChanged: false,
+    productionDefaultChanged: true,
+    selectedProductionDefault: "UNIT_AWARE_RRF",
     generationCount: generations.length,
     goldDerivation:
       "Gold units are derived only from versioned gold_support predicates matched against embedding-eligible parseKnowledgeUnits output; no private vocabulary or manual unit labels are added.",
     claimBoundary:
-      "This registered public-product slice isolates document-keyed versus unit-keyed fusion. Only a PROMOTE result may justify a later runtime change; this measurement does not change production behavior.",
+      "This registered public-product slice replays legacy document-keyed and unit-keyed RRF from the same measured lexical/vector channel candidates. A PROMOTE result supports the unit-aware production default; the study remains independent from that default.",
     results,
   };
 }

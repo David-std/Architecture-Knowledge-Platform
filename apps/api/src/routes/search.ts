@@ -39,6 +39,7 @@ import {
   createEmbeddingProviderForGeneration,
   personalizedPageRank,
   planQuery,
+  projectUnitAwareFusionCandidates,
   QueryEmbeddingService,
   rehydrateStructuralContext,
   retrievalAnswerabilityCandidateKey,
@@ -3275,10 +3276,17 @@ export async function queryKnowledge(
     })),
     ...pprCandidates,
   ];
+  const fusionProjection =
+    projectUnitAwareFusionCandidates(retrievalCandidates);
   const rankedChannels = retrievalCandidatesToRankedChannels(
-    retrievalCandidates,
+    fusionProjection.candidates,
     retrievalPolicy,
   );
+  const fusionTarget = (fusionId: string) => {
+    const target = fusionProjection.targetsByFusionId.get(fusionId);
+    if (!target) throw new Error("FUSION_TARGET_MISSING");
+    return target;
+  };
   // Answerability operates on a bounded internal pool independent from the
   // visual/API presentation limit. A small presentation request must not hide
   // a support-bearing semantic unit before passage verification runs.
@@ -3287,13 +3295,20 @@ export async function queryKnowledge(
   );
   const fusedPrimary = fusedRanked.slice(0, internalCandidateLimit);
   const fusedPrimaryIds = new Set(fusedPrimary.map((item) => item.id));
-  const assertionRecallDocumentIds = new Set(
-    directAssertionRecallRows.map((row) => String(row.id)),
+  const assertionRecallFusionIds = new Set(
+    fusionProjection.candidates
+      .filter(
+        (candidate) =>
+          candidate.channel === "LEXICAL" &&
+          typeof candidate.selectionReason === "string" &&
+          candidate.selectionReason.includes("lexical:assertion-recall:"),
+      )
+      .map((candidate) => candidate.candidateId),
   );
   const fusedAssertionRecall = fusedRanked
     .filter(
       (item) =>
-        assertionRecallDocumentIds.has(item.id) &&
+        assertionRecallFusionIds.has(item.id) &&
         !fusedPrimaryIds.has(item.id),
     )
     .slice(0, internalCandidateLimit);
@@ -3349,32 +3364,28 @@ export async function queryKnowledge(
      group by d.id
     `,
     [
-      (options.stageDiagnosticSink ? fusedRanked : fused).map(
-        (item) => item.id,
-      ),
+      [
+        ...new Set(
+          (options.stageDiagnosticSink ? fusedRanked : fused).map(
+            (item) => fusionTarget(item.id).documentId,
+          ),
+        ),
+      ],
       spaceId,
     ],
   );
   const byId = new Map(details.rows.map((row) => [String(row.id), row]));
-  const bestUnitByDocument = new Map<
-    string,
-    { unitId: string; unitType: string }
-  >();
-  for (const row of [
-    ...strictLexicalRows,
-    ...vector.rows,
-    ...directAssertionRecallRows,
-  ]) {
-    const documentId = String(row.id);
-    if (!bestUnitByDocument.has(documentId) && row.unit_id) {
-      bestUnitByDocument.set(documentId, {
-        unitId: String(row.unit_id),
-        unitType: String(row.unit_type),
-      });
-    }
-  }
+  const fusionItems = options.stageDiagnosticSink ? fusedRanked : fused;
+  const selectedUnitIds = [
+    ...new Set(
+      fusionItems.flatMap((item) => {
+        const unitId = fusionTarget(item.id).unitId;
+        return unitId ? [unitId] : [];
+      }),
+    ),
+  ];
   const selectedUnits =
-    bestUnitByDocument.size === 0
+    selectedUnitIds.length === 0
       ? { rows: [] }
       : await db.pool.query(
           `
@@ -3391,11 +3402,7 @@ export async function queryKnowledge(
              and u.space_id=$2
              and u.vault_id=any($3::uuid[])
           `,
-          [
-            [...bestUnitByDocument.values()].map((unit) => unit.unitId),
-            spaceId,
-            vaultIds,
-          ],
+          [selectedUnitIds, spaceId, vaultIds],
         );
   const structuralContextByUnit = new Map(
     selectedUnits.rows.map((row) => {
@@ -3412,6 +3419,7 @@ export async function queryKnowledge(
         String(row.id),
         {
           body: unit.body,
+          unitType: unit.unitType,
           headingPath: Array.isArray(row.heading_path)
             ? row.heading_path.map(String)
             : [],
@@ -3462,9 +3470,10 @@ export async function queryKnowledge(
       : undefined;
   };
 
-  const projectedHits = (options.stageDiagnosticSink ? fusedRanked : fused)
-    .map((item): SearchHit | null => {
-      const row = byId.get(item.id);
+  const projectedEntries = fusionItems
+    .map((item): { fusionId: string; hit: SearchHit } | null => {
+      const target = fusionTarget(item.id);
+      const row = byId.get(target.documentId);
       const rowPath = String(row?.path ?? "");
       const rowVaultId = String(row?.vault_id ?? "");
       const rawDocument =
@@ -3521,10 +3530,21 @@ export async function queryKnowledge(
               (locator) =>
                 `evidence:${JSON.stringify(sanitizeEvidenceLocator(locator))}`,
             ),
-          ...(codeCitationsByCandidate.get(item.id) ?? []),
+          ...(codeCitationsByCandidate.get(target.documentId) ?? []),
         ]),
       ];
-      const matchedUnit = bestUnitByDocument.get(item.id);
+      const structuralContext = target.unitId
+        ? structuralContextByUnit.get(target.unitId)
+        : undefined;
+      if (target.unitId && !structuralContext) return null;
+      const matchedUnit = target.unitId
+        ? {
+            unitId: target.unitId,
+            ...(structuralContext?.unitType
+              ? { unitType: structuralContext.unitType }
+              : {}),
+          }
+        : undefined;
       const vaultId = String(row.vault_id);
       const contributionTruthStates = item.contributions.flatMap(
         (contribution) =>
@@ -3574,14 +3594,13 @@ export async function queryKnowledge(
             : { candidateRevision: contribution.candidateRevision }),
         }),
       );
-      const structuralContext = matchedUnit
-        ? structuralContextByUnit.get(matchedUnit.unitId)
-        : undefined;
-      const codeSupport = codeSupportByCandidate.get(item.id);
+      const codeSupport = codeSupportByCandidate.get(target.documentId);
       const answerabilityContext = [structuralContext?.context, codeSupport]
         .filter((value): value is string => Boolean(value?.trim()))
         .join("\n");
       return {
+        fusionId: item.id,
+        hit: {
         documentId: String(row.id),
         vaultId,
         ...matchedUnit,
@@ -3643,8 +3662,12 @@ export async function queryKnowledge(
           },
           finalSelectionReason: item.reasons.join("; "),
         },
-        ...(graphProvenanceByCandidate.has(item.id)
-          ? { graphProvenance: graphProvenanceByCandidate.get(item.id) }
+        ...(graphProvenanceByCandidate.has(target.documentId)
+          ? {
+              graphProvenance: graphProvenanceByCandidate.get(
+                target.documentId,
+              ),
+            }
           : {}),
         excerpt:
           codeSupport ??
@@ -3657,15 +3680,21 @@ export async function queryKnowledge(
             ? ["STALE_PENDING_REVIEW"]
             : []),
         ],
+        },
       };
     })
-    .filter((hit): hit is SearchHit => hit !== null);
-  const projectedById = options.stageDiagnosticSink
-    ? new Map(projectedHits.map((hit) => [hit.documentId, hit]))
+    .filter(
+      (
+        entry,
+      ): entry is { fusionId: string; hit: SearchHit } => entry !== null,
+    );
+  const projectedHits = projectedEntries.map((entry) => entry.hit);
+  const projectedByFusionId = options.stageDiagnosticSink
+    ? new Map(projectedEntries.map((entry) => [entry.fusionId, entry.hit]))
     : undefined;
   const results = options.stageDiagnosticSink
     ? fused
-        .map((item) => projectedById?.get(item.id))
+        .map((item) => projectedByFusionId?.get(item.id))
         .filter((hit): hit is SearchHit => hit !== undefined)
     : projectedHits;
   const reranker = resolveSearchHitReranker(
@@ -3685,10 +3714,12 @@ export async function queryKnowledge(
   await finalizeTruthSnapshot();
   if (options.stageDiagnosticSink) {
     const fullPool = projectedHits;
-    const allowedDocumentIds = new Set(fullPool.map((hit) => hit.documentId));
+    const allowedFusionIds = new Set(
+      projectedEntries.map((entry) => entry.fusionId),
+    );
     const authorizedChannelCandidates = retrievalCandidates.filter(
-      (candidate) =>
-        allowedDocumentIds.has(candidate.documentId ?? candidate.candidateId),
+      (_candidate, index) =>
+        allowedFusionIds.has(fusionProjection.fusionIds[index]!),
     );
     options.stageDiagnosticSink({
       channelCandidates: authorizedChannelCandidates.map((candidate) => ({
