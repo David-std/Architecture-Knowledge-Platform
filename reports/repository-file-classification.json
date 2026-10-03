@@ -4052,6 +4052,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/retrieval-stage-observation.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/retrieval-unitization-audit.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
