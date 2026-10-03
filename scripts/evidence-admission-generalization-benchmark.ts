@@ -62,7 +62,7 @@ async function recordedRuntime(
 }
 
 const deterministicAdmitter: EvidenceAdmitter = async (hits, query) =>
-  assessRetrievalAnswerability(hits, query).supportedCandidateKeys;
+  assessRetrievalAnswerability(hits, query);
 
 function formatRate(value: number | null): string {
   return value === null ? "  n/a" : `${(value * 100).toFixed(1).padStart(5)}%`;
@@ -245,6 +245,26 @@ const requestedSplits = (
     (split): split is Split => split === "development" || split === "heldout",
   );
 const { manifest, cases } = await loadEvidenceAdmissionPack(requestedSplits);
+const alignmentAudit = frozenAlignmentAuditReport(
+  manifest,
+  cases,
+  requestedSplits.includes("development") &&
+    requestedSplits.includes("heldout"),
+);
+const goldSpans = new Map(
+  (alignmentAudit.status === "FROZEN" ? alignmentAudit.rows : []).map((row) => [
+    row.questionId,
+    new Map(
+      row.citations.map((citation) => [
+        citation.unit,
+        {
+          startOffset: citation.startOffset,
+          endOffset: citation.endOffset,
+        },
+      ]),
+    ),
+  ]),
+);
 const verifierName =
   process.env.AKP_EVIDENCE_ADMISSION_VERIFIER ?? "deterministic";
 let admitter: EvidenceAdmitter;
@@ -269,12 +289,10 @@ if (verifierName === "deterministic") {
   });
   label = `${verifier.id} min=${minimumSupportScore}${scoresPath ? " (recorded scores)" : ""}`;
   admitter = async (hits, query) =>
-    (
-      await assessRetrievalAnswerabilityWithVerifier(hits, query, verifier, {
-        mode: "ENFORCE",
-        maxCandidates: 64,
-      })
-    ).supportedCandidateKeys;
+    assessRetrievalAnswerabilityWithVerifier(hits, query, verifier, {
+      mode: "ENFORCE",
+      maxCandidates: 64,
+    });
 } else if (verifierName === "cross-encoder-reader") {
   const scoresPath = process.env.AKP_CONTEXTUAL_EVIDENCE_SCORES;
   const shortlist = new ContextualCrossEncoderEvidenceVerifier({
@@ -325,27 +343,20 @@ if (verifierName === "deterministic") {
   });
   label = `${verifier.id} shortlist=${shortlistSize}${scoresPath ? " (recorded shortlist scores)" : ""}`;
   admitter = async (hits, query) =>
-    (
-      await assessRetrievalAnswerabilityWithVerifier(hits, query, verifier, {
-        mode: "ENFORCE",
-        maxCandidates: 64,
-      })
-    ).supportedCandidateKeys;
+    assessRetrievalAnswerabilityWithVerifier(hits, query, verifier, {
+      mode: "ENFORCE",
+      maxCandidates: 64,
+    });
 } else {
   throw new Error(`Unknown AKP_EVIDENCE_ADMISSION_VERIFIER ${verifierName}`);
 }
 
-const results = await evaluateEvidenceAdmission(cases, admitter);
+const results = await evaluateEvidenceAdmission(cases, admitter, { goldSpans });
 if (readerExecution && readerExecution.stats.recordingErrors > 0)
   throw new Error("EVIDENCE_READER_RECORDING_FAILED");
 const report = {
   ...evidenceAdmissionReport(results, label),
-  alignmentAudit: frozenAlignmentAuditReport(
-    manifest,
-    cases,
-    requestedSplits.includes("development") &&
-      requestedSplits.includes("heldout"),
-  ),
+  alignmentAudit,
   ...(readerExecution
     ? {
         readerExecution: {

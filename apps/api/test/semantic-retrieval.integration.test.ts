@@ -13,6 +13,7 @@ import {
   type EmbeddingInputRole,
   type EmbeddingProvider,
   type EmbeddingRequestOptions,
+  type EvidenceRetrievalStageSnapshot,
 } from "@akp/retrieval";
 import { queryKnowledge } from "../src/routes/search.js";
 
@@ -436,6 +437,7 @@ describe("semantic retrieval PostgreSQL integration", () => {
         });
 
         const semanticQuery = "¿Cómo cancelar una matrícula?";
+        let diagnostic: EvidenceRetrievalStageSnapshot | undefined;
         const primaryHits = await queryKnowledge(
           db,
           searchInput(
@@ -447,9 +449,29 @@ describe("semantic retrieval PostgreSQL integration", () => {
             vaultIds: [fixture.primary.vaultId],
             channels: ["vector"],
             queryEmbeddingService: queryService,
+            stageDiagnosticSink: (snapshot) => {
+              diagnostic = snapshot;
+            },
           },
         );
         expect(primaryHits).toHaveLength(1);
+        expect(
+          diagnostic?.fusedCandidates.map((entry) => entry.documentId),
+        ).toEqual([primary.documentId]);
+        expect(diagnostic?.channelCandidates).toContainEqual({
+          documentId: primary.documentId,
+          unitId: primary.unitId,
+        });
+        expect(JSON.stringify(diagnostic)).not.toContain(semanticQuery);
+        expect(JSON.stringify(diagnostic)).not.toContain(
+          primaryHits[0]!.excerpt,
+        );
+        expect(JSON.stringify(diagnostic)).not.toContain(
+          fixture.secondVault.documentId,
+        );
+        expect(JSON.stringify(diagnostic)).not.toContain(
+          fixture.otherSpace.documentId,
+        );
         const deniedByPath = await queryKnowledge(
           db,
           searchInput(
@@ -465,9 +487,14 @@ describe("semantic retrieval PostgreSQL integration", () => {
               { vaultId: fixture.primary.vaultId, pathPrefix: "other" },
             ],
             pathAuthorizer: (path) => path.startsWith("other/"),
+            stageDiagnosticSink: (snapshot) => {
+              diagnostic = snapshot;
+            },
           },
         );
         expect(deniedByPath).toHaveLength(0);
+        expect(diagnostic?.fusedCandidates).toEqual([]);
+        expect(diagnostic?.channelCandidates).toEqual([]);
         const permittedByPath = await queryKnowledge(
           db,
           searchInput(

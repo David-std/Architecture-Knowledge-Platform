@@ -87,6 +87,33 @@ Context packets enforce token/budget constraints and support compact/full modes 
 
 Query transformations and reasoning plans may improve retrieval, but their output is validated before execution and cannot introduce arbitrary SQL/Cypher operators.
 
+### Stage diagnostics and evaluation boundaries
+
+`queryKnowledge` exposes an optional application diagnostic sink after scope,
+trust and truth filtering. It records the authorized channel units, the full
+fused pool, the bounded pool before/after reranking and the returned unit
+identities. The context assembler exposes a separate selection sink identifying
+token-budget omissions, per-document section limits and missing evidence.
+These sinks contain identities, ranks, scores, generation and policy metadata;
+they exclude queries, titles, paths, passages and citation text. They are
+out-of-band and do not change support policy or packet budgets.
+
+`diagnoseEvidencePipeline` compares those observations with explicit gold
+document/unit/span labels. It distinguishes missing source bytes, missing units,
+channel/fusion losses, shortlist and rerank losses, admission errors, invalid
+spans, context omissions and observed generation failures. A sibling unit cannot
+stand in for a gold unit. Missing observations remain unmeasured; incomplete
+labels cannot produce admitted-unit precision. An absent or unannotated gold
+span cannot produce an exact citation precision claim.
+
+The generalization admission report includes per-unit loss attribution and a
+breakdown by failure stage. Its candidates are supplied, so ingestion, retrieval,
+ContextPacket and generation remain explicitly unmeasured. The registered public
+retrieval report additionally captures actual channel/fusion/rerank snapshots,
+but still seeds one unit per source document and lacks exhaustive exact span
+labels. Neither report is fresh private E2E evidence, an untouched family-disjoint
+holdout or quality-under-distractor evidence at 20K/100K documents.
+
 ## Contextual evidence verifier
 
 Admission decides whether a retrieved unit answers the query, so it can be returned as `SUPPORTED` evidence rather than an exploratory candidate. The deterministic verifier matches query cue words and three hard-coded relation verbs. On the domain-disjoint pack in `evals/generic/evidence-admission` it admits a correct unit for 19–26% of answerable questions, never for yes/no or cross-lingual questions, and admits something for 28% of unanswerable ones.

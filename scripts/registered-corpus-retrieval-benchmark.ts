@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -22,6 +23,8 @@ import {
 } from "../packages/postgres/src/index.js";
 import {
   assessRetrievalAnswerability,
+  diagnoseEvidencePipeline,
+  evidenceCandidateDiagnostic,
   DeterministicQueryDecomposer,
   LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
   LocalSemanticEmbeddingAdapter,
@@ -29,6 +32,7 @@ import {
   QueryEmbeddingService,
   retrievalAnswerabilityCandidateKey,
   type ActiveEmbeddingGenerationDescriptor,
+  type EvidenceRetrievalStageSnapshot,
 } from "../packages/retrieval/src/index.js";
 import { queryKnowledge } from "../apps/api/src/routes/search.js";
 
@@ -98,6 +102,7 @@ type Fixture = {
 type QueryHit = Awaited<ReturnType<typeof queryKnowledge>>[number];
 
 type RuntimeObservation = BenchmarkObservation & {
+  stageDiagnostics: ReturnType<typeof diagnoseEvidencePipeline>;
   warnings: string[];
   availableChannels: string[];
   rankedVaultIds: string[];
@@ -105,9 +110,15 @@ type RuntimeObservation = BenchmarkObservation & {
   candidateSignals: ReturnType<
     typeof assessRetrievalAnswerability
   >["candidateSignals"];
-  answerability: Omit<
+  answerability: Pick<
     ReturnType<typeof assessRetrievalAnswerability>,
-    "candidateSignals"
+    | "supported"
+    | "reason"
+    | "topVectorScore"
+    | "secondVectorScore"
+    | "thirdVectorScore"
+    | "vectorMargin"
+    | "vectorNeighborhoodMargin"
   >;
 };
 
@@ -119,8 +130,11 @@ type StorageSnapshot = {
   embeddingsBytes: number;
 };
 
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error("DATABASE_URL is required");
+const databaseUrl = (() => {
+  const value = process.env.DATABASE_URL;
+  if (!value) throw new Error("DATABASE_URL is required");
+  return value;
+})();
 assertSyntheticFixtureDatabaseSafety(databaseUrl);
 
 const repositoryRoot = path.resolve(".");
@@ -244,8 +258,10 @@ async function loadDataset(): Promise<{
   const casesRaw = await readFile(casesPath, "utf8");
   const parsed = JSON.parse(manifestRaw) as RegisteredManifest;
   const hashes: Record<string, string> = {
-    [path.relative(repositoryRoot, manifestPath)]: sha256(manifestRaw),
-    [path.relative(repositoryRoot, casesPath)]: sha256(casesRaw),
+    [path.relative(repositoryRoot, manifestPath).replaceAll("\\", "/")]:
+      sha256(manifestRaw),
+    [path.relative(repositoryRoot, casesPath).replaceAll("\\", "/")]:
+      sha256(casesRaw),
   };
 
   const vaults: ResolvedVault[] = [];
@@ -596,6 +612,7 @@ async function executeCase(
 
   const started = performance.now();
   let answerabilityCandidates: readonly QueryHit[] | undefined;
+  let candidateStages: EvidenceRetrievalStageSnapshot | undefined;
   const rawHits = await queryKnowledge(
     db,
     {
@@ -615,6 +632,9 @@ async function executeCase(
       availableChannelSink: availableChannels,
       answerabilityCandidateSink: (candidates) => {
         answerabilityCandidates = candidates;
+      },
+      stageDiagnosticSink: (snapshot) => {
+        candidateStages = snapshot;
       },
     },
   );
@@ -724,7 +744,57 @@ async function executeCase(
       warnings.push(`PREDICATE_SUPPORT_MISSED:${supportId}`);
     }
   }
+  const identityForDocument = (document: string) => {
+    const documentId = fixture.documentIds.get(document);
+    const unitId = fixture.unitIds.get(document);
+    if (!documentId || !unitId)
+      throw new Error("REGISTERED_GOLD_UNIT_MAPPING_MISSING");
+    return { documentId, unitId, evidenceSpan: null };
+  };
+  const measuredAdmission = new Map(
+    rawHits.map((hit, index) => [
+      retrievalAnswerabilityCandidateKey(hit),
+      evidenceCandidateDiagnostic(hit, index + 1, answerability).admission,
+    ]),
+  );
+  const withAdmission = (
+    candidates: EvidenceRetrievalStageSnapshot["fusedCandidates"],
+  ) =>
+    candidates.map((candidate) => ({
+      ...candidate,
+      admission:
+        measuredAdmission.get(
+          `${candidate.documentId}:${candidate.unitId ?? "document"}`,
+        ) ?? candidate.admission,
+    }));
+  const stageDiagnostics = diagnoseEvidencePipeline({
+    caseId: testCase.id,
+    measurement: "RETRIEVAL_PIPELINE",
+    expected: testCase.gold_documents.map(identityForDocument),
+    admissible: testCase.gold_documents.map(identityForDocument),
+    // Document labels are not exhaustive source/span support labels.
+    labelsComplete: testCase.expect_no_answer === true,
+    sourceDocuments: [...fixture.documentIds.values()],
+    materializedUnits: [...fixture.documentIds.keys()].map(identityForDocument),
+    ...(candidateStages
+      ? {
+          channelCandidates: candidateStages.channelCandidates,
+          candidates: withAdmission(candidateStages.fusedCandidates),
+          beforeRerank: withAdmission(candidateStages.beforeRerank),
+          reranked: withAdmission(candidateStages.afterRerank),
+        }
+      : {}),
+    shortlist: rawHits.map((hit) => ({
+      documentId: hit.documentId,
+      unitId: hit.unitId ?? null,
+    })),
+    shortlistLimit: 10,
+    admitted: hits.map((hit, index) =>
+      evidenceCandidateDiagnostic(hit, index + 1, answerability),
+    ),
+  });
   return {
+    stageDiagnostics,
     configurationName: configuration.name,
     caseId: testCase.id,
     slice: testCase.slice ?? testCase.category,
@@ -760,7 +830,7 @@ async function executeCase(
       (sum, hit) => sum + Math.ceil(hit.excerpt.length / 4),
       0,
     ),
-    critical: testCase.critical,
+    ...(testCase.critical !== undefined ? { critical: testCase.critical } : {}),
     warnings: [...new Set(warnings)],
     availableChannels: [...availableChannels].sort(),
     rankedVaultIds: [...new Set(hits.map((hit) => hit.vaultId))],
@@ -783,7 +853,33 @@ async function executeCase(
   };
 }
 
+function aggregateRuntimeBenchmark(
+  configuration: BenchmarkConfiguration,
+  observations: readonly RuntimeObservation[],
+) {
+  const run = aggregateBenchmarkRun(configuration, observations);
+  return {
+    ...run,
+    results: run.results.map((result, index) => ({
+      ...observations[index]!,
+      metrics: result.metrics,
+      passed: result.passed,
+    })),
+  };
+}
+
 async function main(): Promise<void> {
+  const repositoryState = {
+    commit: execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+    }).trim(),
+    workingTreeDirty:
+      execFileSync("git", ["status", "--porcelain"], {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+      }).trim().length > 0,
+  };
   const previousVectorEnabled = process.env.AKP_VECTOR_ENABLED;
   process.env.AKP_VECTOR_ENABLED = "true";
   const db = new Postgres(databaseUrl);
@@ -820,7 +916,7 @@ async function main(): Promise<void> {
       async () => adapter,
     );
     const configurations = benchmarkConfigurations();
-    const runs = [];
+    const runs: Array<ReturnType<typeof aggregateRuntimeBenchmark>> = [];
     for (const configuration of configurations) {
       const observations: RuntimeObservation[] = [];
       for (const testCase of dataset.cases) {
@@ -834,7 +930,7 @@ async function main(): Promise<void> {
           ),
         );
       }
-      runs.push(aggregateBenchmarkRun(configuration, observations));
+      runs.push(aggregateRuntimeBenchmark(configuration, observations));
     }
 
     const isolationViolations = runs.flatMap((run) =>
@@ -987,7 +1083,9 @@ async function main(): Promise<void> {
       tool: {
         repositoryUrl:
           "https://github.com/David-std/Architecture-Knowledge-Platform",
-        versionOrCommit: process.env.GITHUB_SHA ?? "UNAVAILABLE_OUTSIDE_CI",
+        versionOrCommit: process.env.GITHUB_SHA ?? repositoryState.commit,
+        checkoutCommit: repositoryState.commit,
+        workingTreeDirty: repositoryState.workingTreeDirty,
         licenseObserved: "NOT_DECLARED_IN_REPOSITORY",
       },
       configuration: {
@@ -1039,6 +1137,7 @@ async function main(): Promise<void> {
         description:
           "Versioned repository product documentation is read from its real source files, hashed, embedded with the pinned multilingual E5 provider, persisted to PostgreSQL/pgvector, and queried through production retrieval/RRF code.",
         limitations: [
+          "Stage diagnostics retain gold document/unit identities, but exact gold spans and final generation are not annotated or measured by this pack.",
           "The corpus is the product's own public documentation, not a private customer vault or production traffic sample.",
           "The benchmark seeds one retrieval unit per source document and therefore does not validate extraction or production chunking fidelity.",
           "The corpus is small and single-product; results are not evidence of domain-general retrieval superiority.",

@@ -27,6 +27,7 @@ import {
 import {
   assessRetrievalAnswerability,
   assessRetrievalAnswerabilityWithVerifier,
+  evidenceCandidateDiagnostic,
   assertionRecallSelectionReason,
   boundedAssertionRecallQuery,
   isAssertionRecallSelectionReason,
@@ -60,6 +61,7 @@ import {
   type QueryTransformationVariant,
   type QueryTransformerPort,
   type RetrievalAnswerabilityAssessment,
+  type EvidenceRetrievalStageSnapshot,
   type RetrievalCandidate,
   type RetrievalPolicyInput,
   type Tokenizer,
@@ -514,6 +516,8 @@ export interface RetrievalExecutionOptions {
    * before presentation; the pool itself is never evidence by rank alone.
    */
   answerabilityCandidateSink?: (hits: readonly SearchHit[]) => void;
+  /** Metadata-only snapshots after scope/truth filtering; never source bytes. */
+  stageDiagnosticSink?: (snapshot: EvidenceRetrievalStageSnapshot) => void;
   vaultIds?: string[];
   /** Exact, authorized Code Graph candidates resolved by the HTTP boundary. */
   codeCandidates?: CodeChannelCandidate[];
@@ -3270,6 +3274,13 @@ export async function queryKnowledge(
   const fused = [...fusedPrimary, ...fusedAssertionRecall];
   if (fused.length === 0) {
     await finalizeTruthSnapshot();
+    options.stageDiagnosticSink?.({
+      channelCandidates: [],
+      fusedCandidates: [],
+      beforeRerank: [],
+      afterRerank: [],
+      returned: [],
+    });
     return [];
   }
 
@@ -3310,7 +3321,12 @@ export async function queryKnowledge(
        and ${trustClause("d.")}
      group by d.id
     `,
-    [fused.map((item) => item.id), spaceId],
+    [
+      (options.stageDiagnosticSink ? fusedRanked : fused).map(
+        (item) => item.id,
+      ),
+      spaceId,
+    ],
   );
   const byId = new Map(details.rows.map((row) => [String(row.id), row]));
   const bestUnitByDocument = new Map<
@@ -3419,7 +3435,7 @@ export async function queryKnowledge(
       : undefined;
   };
 
-  const results = fused
+  const projectedHits = (options.stageDiagnosticSink ? fusedRanked : fused)
     .map((item): SearchHit | null => {
       const row = byId.get(item.id);
       const rowPath = String(row?.path ?? "");
@@ -3617,6 +3633,14 @@ export async function queryKnowledge(
       };
     })
     .filter((hit): hit is SearchHit => hit !== null);
+  const projectedById = options.stageDiagnosticSink
+    ? new Map(projectedHits.map((hit) => [hit.documentId, hit]))
+    : undefined;
+  const results = options.stageDiagnosticSink
+    ? fused
+        .map((item) => projectedById?.get(item.id))
+        .filter((hit): hit is SearchHit => hit !== undefined)
+    : projectedHits;
   const reranker = resolveSearchHitReranker(
     retrievalPolicy.reranker ??
       (options.deterministicRerank
@@ -3632,6 +3656,33 @@ export async function queryKnowledge(
   options.answerabilityCandidateSink?.(rerankResult.hits);
   const finalResults = rerankResult.hits.slice(0, input.limit);
   await finalizeTruthSnapshot();
+  if (options.stageDiagnosticSink) {
+    const fullPool = projectedHits;
+    const allowedDocumentIds = new Set(fullPool.map((hit) => hit.documentId));
+    options.stageDiagnosticSink({
+      channelCandidates: retrievalCandidates
+        .filter((candidate) =>
+          allowedDocumentIds.has(candidate.documentId ?? candidate.candidateId),
+        )
+        .map((candidate) => ({
+          documentId: candidate.documentId ?? candidate.candidateId,
+          unitId: candidate.unitId ?? null,
+        })),
+      fusedCandidates: fullPool.map((hit, index) =>
+        evidenceCandidateDiagnostic(hit, index + 1),
+      ),
+      beforeRerank: results.map((hit, index) =>
+        evidenceCandidateDiagnostic(hit, index + 1),
+      ),
+      afterRerank: rerankResult.hits.map((hit, index) =>
+        evidenceCandidateDiagnostic(hit, index + 1),
+      ),
+      returned: finalResults.map((hit) => ({
+        documentId: hit.documentId,
+        unitId: hit.unitId ?? null,
+      })),
+    });
+  }
   return finalResults;
 }
 

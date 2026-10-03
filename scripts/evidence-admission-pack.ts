@@ -2,7 +2,13 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { SearchHit } from "@akp/contracts";
-import { retrievalAnswerabilityCandidateKey } from "../packages/retrieval/src/index.js";
+import {
+  diagnoseEvidencePipeline,
+  evidenceCandidateDiagnostic,
+  retrievalAnswerabilityCandidateKey,
+  type QueryConditionedEvidenceSpan,
+  type RetrievalAnswerabilityAssessment,
+} from "../packages/retrieval/src/index.js";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const packRoot = path.join(repositoryRoot, "evals/generic/evidence-admission");
@@ -52,11 +58,25 @@ export interface EvidenceAdmissionCase {
   unitIdByCandidateKey: Map<string, string>;
 }
 
-/** Returns the candidate keys a verifier admits as supporting evidence. */
+export type EvidenceAdmissionDecision =
+  | readonly string[]
+  | Pick<
+      RetrievalAnswerabilityAssessment,
+      "supportedCandidateKeys" | "candidateSignals"
+    >;
+
+/** A legacy key list or an assessment retaining the actual verifier trace. */
 export type EvidenceAdmitter = (
   hits: readonly SearchHit[],
   query: string,
-) => Promise<readonly string[]>;
+) => Promise<EvidenceAdmissionDecision>;
+
+export interface EvidenceAdmissionEvaluationOptions {
+  goldSpans?: ReadonlyMap<
+    string,
+    ReadonlyMap<string, QueryConditionedEvidenceSpan>
+  >;
+}
 
 function stableUuid(value: string): string {
   const hex = createHash("sha256").update(value).digest("hex");
@@ -205,17 +225,24 @@ export interface QuestionResult {
   wrongAdmissions: string[];
   strictCorrect: boolean;
   latencyMs: number;
+  stageDiagnostics: ReturnType<typeof diagnoseEvidencePipeline>;
 }
 
 export async function evaluateEvidenceAdmission(
   cases: readonly EvidenceAdmissionCase[],
   admit: EvidenceAdmitter,
+  options: EvidenceAdmissionEvaluationOptions = {},
 ): Promise<QuestionResult[]> {
   const results: QuestionResult[] = [];
   for (const entry of cases) {
     const started = performance.now();
-    const keys = await admit(entry.hits, entry.question.query);
+    const decision = await admit(entry.hits, entry.question.query);
     const latencyMs = performance.now() - started;
+    const assessment =
+      "supportedCandidateKeys" in decision
+        ? decision
+        : { supportedCandidateKeys: [...decision], candidateSignals: [] };
+    const keys = assessment.supportedCandidateKeys;
     const admitted = [
       ...new Set(
         keys.map((key) => {
@@ -232,6 +259,40 @@ export async function evaluateEvidenceAdmission(
     const wrongAdmissions = admitted.filter(
       (unit) => !gold.includes(unit) && !acceptable.includes(unit),
     );
+    const candidates = entry.hits.map((hit, index) =>
+      evidenceCandidateDiagnostic(hit, index + 1, assessment),
+    );
+    const targetForUnit = (unit: string) => {
+      const hit = entry.hits.find(
+        (candidate) => candidate.document.externalId === unit,
+      );
+      if (!hit) throw new Error("ADMISSION_DIAGNOSTIC_LABEL_MISSING");
+      return {
+        documentId: hit.documentId,
+        unitId: hit.unitId ?? null,
+        evidenceSpan:
+          options.goldSpans?.get(entry.question.id)?.get(unit) ?? null,
+      };
+    };
+    const readerSelected = candidates.some(
+      (candidate) => candidate.admission?.readerSelected !== null,
+    );
+    const stageDiagnostics = diagnoseEvidencePipeline({
+      caseId: entry.question.id,
+      measurement: "SUPPLIED_CANDIDATE_ADMISSION",
+      expected: gold.map(targetForUnit),
+      admissible: [...gold, ...acceptable].map(targetForUnit),
+      labelsComplete: true,
+      candidates,
+      ...(readerSelected
+        ? {
+            shortlist: candidates.filter(
+              (candidate) => candidate.admission?.readerSelected,
+            ),
+          }
+        : {}),
+      admitted: candidates.filter((candidate) => candidate.admission?.accepted),
+    });
     results.push({
       id: entry.question.id,
       domain: entry.domain.id,
@@ -250,6 +311,7 @@ export async function evaluateEvidenceAdmission(
         ? goldAdmitted && wrongAdmissions.length === 0
         : admitted.length === 0,
       latencyMs,
+      stageDiagnostics,
     });
   }
   return results;
@@ -321,7 +383,7 @@ export function evidenceAdmissionReport(
   const bySplit = (split: Split) =>
     results.filter((row) => row.split === split);
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     verifier,
     evidenceBoundary:
       "Synthetic, domain-disjoint admission pack. Held-out domains are reported, not tuned. A regression signal, not a product-wide precision claim.",
@@ -333,6 +395,37 @@ export function evidenceAdmissionReport(
       row.challenges.length > 0 ? row.challenges : ["NONE"],
     ),
     byDomain: breakdown(results, (row) => [row.domain]),
+    stageDiagnostics: {
+      measurement: "SUPPLIED_CANDIDATE_ADMISSION",
+      upstreamRetrievalMeasured: false,
+      questions: results.length,
+      unresolvedQuestions: results.filter(
+        (row) => row.stageDiagnostics.unresolved.length > 0,
+      ).length,
+      goldSpanAnnotations: results.reduce(
+        (sum, row) =>
+          sum + row.stageDiagnostics.exactSpanEvaluation.annotatedGoldUnits,
+        0,
+      ),
+      questionsByFailureStage: Object.fromEntries(
+        [
+          ...new Set(
+            results.flatMap((row) =>
+              row.stageDiagnostics.failures.map((failure) => failure.stage),
+            ),
+          ),
+        ]
+          .sort()
+          .map((stage) => [
+            stage,
+            results.filter((row) =>
+              row.stageDiagnostics.failures.some(
+                (failure) => failure.stage === stage,
+              ),
+            ).length,
+          ]),
+      ),
+    },
     rows: results,
   };
 }

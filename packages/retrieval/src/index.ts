@@ -23,5 +23,6 @@ export * from "./query-transform.js";
 export * from "./support-verifier.js";
 export * from "./assertion-recall.js";
 export * from "./answerability.js";
+export * from "./quality-diagnostics.js";
 
 export * from "./embedding-input.js";

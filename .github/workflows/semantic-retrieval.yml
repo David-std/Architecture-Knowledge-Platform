@@ -154,6 +154,23 @@ jobs:
           AKP_DETERMINISTIC_EVIDENCE_ADMISSION_REPORT=reports/ci/deterministic-evidence-admission-benchmark.json \
             pnpm benchmark:evidence-admission \
             2>&1 | tee reports/ci/deterministic-evidence-admission-benchmark.log
+      - name: Report stage-attributed evidence admission
+        shell: bash
+        run: |
+          set -o pipefail
+          AKP_EVIDENCE_ADMISSION_GENERALIZATION_REPORT=reports/ci/evidence-admission-generalization.json \
+          AKP_EVIDENCE_ADMISSION_BREAKDOWN=0 \
+            pnpm benchmark:evidence-admission:generalization \
+            2>&1 | tee reports/ci/evidence-admission-generalization.log
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(readFileSync("reports/ci/evidence-admission-generalization.json", "utf8"));
+          if (report.stageDiagnostics.unresolvedQuestions !== 0 ||
+              report.stageDiagnostics.questions !== report.rows.length ||
+              report.stageDiagnostics.upstreamRetrievalMeasured !== false) {
+            throw new Error("Incomplete or incorrectly scoped admission loss diagnostics");
+          }
+          NODE
       - name: Measure query-conditioned evidence verifier in shadow mode
         shell: bash
         run: |
