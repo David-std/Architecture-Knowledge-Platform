@@ -393,7 +393,7 @@ const report = {
       "A source-bound extractive QA verifier used only as a veto on deterministic admissions can remove missing-slot false positives without creating new support or reducing family-disjoint answerable recall.",
     failure_stage: "ADMISSION_FALSE_POSITIVE",
     baseline_sha: BASELINE_SHA,
-    candidate_sha: process.env.GITHUB_SHA ?? "LOCAL_UNCOMMITTED",
+    candidate_sha:\n      process.env.AKP_CANDIDATE_SHA ??\n      process.env.GITHUB_SHA ??\n      "LOCAL_UNCOMMITTED",
     dataset_version: `${manifest.id}@${manifest.version}/alignmentAudit@${audit.version}`,
     dataset_hash: datasetHash,
     index_generation: "SUPPLIED_CANDIDATE_ADMISSION_NOT_APPLICABLE",
