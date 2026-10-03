@@ -48,9 +48,7 @@ describe("table row projection", () => {
     });
     expect(projections[0]?.caption).toBeUndefined();
     expect(projections[0]?.lexicalText).toContain("Quarter = Q2");
-    expect(projections[0]?.embeddingText).toContain(
-      "Accuracy = 97.2%",
-    );
+    expect(projections[0]?.embeddingText).toContain("Accuracy = 97.2%");
 
     for (const cell of projections[0]?.cells ?? []) {
       expect(
@@ -58,9 +56,9 @@ describe("table row projection", () => {
       ).toBe(cell.rawValue);
     }
     const row = projections[0]!;
-    expect(source.slice(row.sourceSpan.startOffset, row.sourceSpan.endOffset)).toBe(
-      "| 3 | Q2 | 97.2% |",
-    );
+    expect(
+      source.slice(row.sourceSpan.startOffset, row.sourceSpan.endOffset),
+    ).toBe("| 3 | Q2 | 97.2% |");
   });
 
   it("attaches only an explicitly located table caption", () => {
@@ -112,8 +110,6 @@ describe("table row projection", () => {
       source.slice(owner!.sourceSpan.startOffset, owner!.sourceSpan.endOffset),
     ).toBe("José   Pérez");
     expect(projection?.sourceBodyHash).toMatch(/^[a-f0-9]{64}$/u);
-    expect(projection?.tableId).toBe(
-      `${projection?.sourceBodyHash}:table:1`,
-    );
+    expect(projection?.tableId).toBe(`${projection?.sourceBodyHash}:table:1`);
   });
 });
