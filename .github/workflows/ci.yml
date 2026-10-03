@@ -71,6 +71,12 @@ jobs:
       - run: pnpm auth:provision
       - name: Run pnpm check
         run: pnpm check
+      - name: Run table-caption lexical augmentation experiment
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'experiment/table-caption-lexical-augmentation'
+        env:
+          AKP_TABLE_CAPTION_BASELINE_SHA: c96b9e9d07dfa9f19c334344d5d1563851c79a7e
+          AKP_TABLE_CAPTION_REPORT: reports/ci/table-caption-lexical-augmentation.json
+        run: pnpm exec tsx scripts/table-caption-lexical-augmentation-experiment.ts
       - name: Run PostgreSQL persistence integration on an isolated database
         env:
           DATABASE_URL: postgres://akp:akp@localhost:55432/akp_postgres_test
