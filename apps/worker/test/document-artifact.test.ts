@@ -218,9 +218,9 @@ describe("complete extraction material", () => {
     ]);
     expect(rows.every((unit) => unit.embeddingEligible)).toBe(true);
     expect(cells).toHaveLength(5);
-    expect(
-      cells.find((unit) => unit.body === "days")?.locator,
-    ).toEqual(expect.objectContaining({ table: 3, row: 2, column: 3 }));
+    expect(cells.find((unit) => unit.body === "days")?.locator).toEqual(
+      expect.objectContaining({ table: 3, row: 2, column: 3 }),
+    );
     expect(rows.every((unit) => !unit.body.includes("akp-locator"))).toBe(true);
   });
 

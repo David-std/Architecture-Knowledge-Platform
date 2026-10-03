@@ -180,7 +180,10 @@ function slugTitle(relativePath: string): string {
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function firstMarkdownHeading(body: string, fallbackTitle: string): string | null {
+function firstMarkdownHeading(
+  body: string,
+  fallbackTitle: string,
+): string | null {
   const firstSection = parseKnowledgeUnits(fallbackTitle, body).find(
     (unit) => unit.unitType === "SECTION",
   );

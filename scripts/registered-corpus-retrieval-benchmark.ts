@@ -825,9 +825,7 @@ async function executeCase(
   };
 }
 
-function candidatePoolMeasurement(
-  observations: readonly RuntimeObservation[],
-) {
+function candidatePoolMeasurement(observations: readonly RuntimeObservation[]) {
   let expectedTargets = 0;
   let foundTargets = 0;
   const firstGoldRanks: number[] = [];
@@ -846,10 +844,7 @@ function candidatePoolMeasurement(
       for (const channel of new Set(
         candidate.channels.map((entry) => entry.channel),
       )) {
-        perChannelFound.set(
-          channel,
-          (perChannelFound.get(channel) ?? 0) + 1,
-        );
+        perChannelFound.set(channel, (perChannelFound.get(channel) ?? 0) + 1);
       }
     }
   }
@@ -980,7 +975,9 @@ async function main(): Promise<void> {
       (run) => run.configurationName === candidateDepthConfiguration.name,
     );
     if (!fullHybridRun) {
-      throw new Error("Registered full-hybrid run missing for assertion study.");
+      throw new Error(
+        "Registered full-hybrid run missing for assertion study.",
+      );
     }
     const assertionRecallDisabledObservations: RuntimeObservation[] = [];
     for (const testCase of dataset.cases) {

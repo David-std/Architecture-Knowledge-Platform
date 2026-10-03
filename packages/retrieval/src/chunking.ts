@@ -572,8 +572,7 @@ export function parseKnowledgeUnits(
         for (const [fragmentIndex, fragment] of embeddingFragments.entries()) {
           const fragmentHash = hash(fragment.body);
           const fragmentStartLine =
-            block.startLine +
-            lineOffsetAt(block.body, fragment.startOffset);
+            block.startLine + lineOffsetAt(block.body, fragment.startOffset);
           const fragmentEndLine =
             block.startLine +
             lineOffsetAt(
@@ -598,8 +597,9 @@ export function parseKnowledgeUnits(
               fragment: fragmentIndex + 1,
               ...(commentsByContentLine.has(block.startLine)
                 ? {
-                    sourceCommentSpans:
-                      commentsByContentLine.get(block.startLine)!,
+                    sourceCommentSpans: commentsByContentLine.get(
+                      block.startLine,
+                    )!,
                   }
                 : {}),
             },

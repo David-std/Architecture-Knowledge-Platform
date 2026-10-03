@@ -2002,6 +2002,11 @@
       "reason": "append-only database migration"
     },
     {
+      "path": "db/migrations/089_retrieval_table_atomic_units.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
       "path": "dependency-cruiser.cjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"

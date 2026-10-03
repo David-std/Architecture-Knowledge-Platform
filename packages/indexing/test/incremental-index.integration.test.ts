@@ -635,9 +635,7 @@ describe("incremental index event port", () => {
         expect(
           rows.rows
             .filter((row) => row.embedding_eligible)
-            .every(
-              (row) => row.body.length <= MAX_EMBEDDING_UNIT_CHARACTERS,
-            ),
+            .every((row) => row.body.length <= MAX_EMBEDDING_UNIT_CHARACTERS),
         ).toBe(true);
       } finally {
         if (previousVectorEnabled === undefined) {

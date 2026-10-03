@@ -196,8 +196,7 @@ async function main(): Promise<void> {
         providerMaxTokens:
           LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR.runtime.maxTokens,
         unitCharacterBudget: MAX_EMBEDDING_UNIT_CHARACTERS,
-        note:
-          "Character budget is a structural guard, not an exact provider-token claim.",
+        note: "Character budget is a structural guard, not an exact provider-token claim.",
       },
       units: {
         total: aggregate.total,
