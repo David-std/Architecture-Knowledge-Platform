@@ -236,10 +236,14 @@ export function rehydrateStructuralContext(
     const table = boundedTableContext(child, focus, maxChars);
     if (table !== null) return table;
   }
+  const parent = unit.parentBody?.trim();
+  if (parent && unit.parentUnitType === "TABLE") {
+    const table = boundedTableContext(parent, focus || child, maxChars);
+    if (table !== null) return table;
+  }
   const boundedChild = focus
     ? boundedWindowAroundFocus(child, focus, Math.min(maxChars, 1600))
     : boundedWindow(child, child, Math.min(maxChars, 1600));
-  const parent = unit.parentBody?.trim();
   if (!parent || unit.parentUnitType === "DOCUMENT" || parent === child) {
     return boundedChild;
   }

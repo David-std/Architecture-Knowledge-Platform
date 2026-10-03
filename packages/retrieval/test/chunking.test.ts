@@ -21,7 +21,7 @@ describe("hierarchical chunking", () => {
     expect(units[2]?.parentUnitKey).toBe("section-1");
   });
 
-  it("keeps tables, figures and equations atomic with line locators", () => {
+  it("projects table rows and cells without losing exact source locators", () => {
     const units = parseKnowledgeUnits(
       "Structured",
       [
@@ -37,16 +37,37 @@ describe("hierarchical chunking", () => {
         "$$",
       ].join("\n"),
     );
-    const atomic = units.filter((unit) => unit.embeddingEligible);
-    expect(atomic.map((unit) => unit.unitType)).toEqual([
-      "TABLE",
+    const table = units.find((unit) => unit.unitType === "TABLE");
+    const row = units.find((unit) => unit.unitType === "TABLE_ROW");
+    const cells = units.filter((unit) => unit.unitType === "TABLE_CELL");
+    const retrievable = units.filter((unit) => unit.embeddingEligible);
+
+    expect(table).toMatchObject({
+      parentUnitKey: "section-1",
+      containerOnly: true,
+      embeddingEligible: false,
+      locator: { startLine: 2, endLine: 4, table: 1 },
+    });
+    expect(row).toMatchObject({
+      parentUnitKey: table?.unitKey,
+      body: "| A | B |",
+      headingPath: ["Evidence", "Table columns: Rule | Result"],
+      containerOnly: false,
+      embeddingEligible: true,
+      locator: { startLine: 4, endLine: 4, table: 1, row: 1 },
+    });
+    expect(cells.map((unit) => unit.body)).toEqual(["A", "B"]);
+    expect(cells.map((unit) => unit.parentUnitKey)).toEqual([
+      row?.unitKey,
+      row?.unitKey,
+    ]);
+    expect(cells.map((unit) => unit.locator.column)).toEqual([1, 2]);
+    expect(cells.every((unit) => !unit.embeddingEligible)).toBe(true);
+    expect(retrievable.map((unit) => unit.unitType)).toEqual([
+      "TABLE_ROW",
       "FIGURE",
       "EQUATION",
     ]);
-    expect(atomic[0]?.locator).toMatchObject({ startLine: 2, endLine: 4 });
-    expect(atomic.every((unit) => unit.parentUnitKey === "section-1")).toBe(
-      true,
-    );
   });
 
   it("assigns stable distinct keys to repeated identical blocks", () => {

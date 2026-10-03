@@ -11,6 +11,8 @@ export type KnowledgeUnitType =
   | "PARAGRAPH"
   | "LIST"
   | "TABLE"
+  | "TABLE_ROW"
+  | "TABLE_CELL"
   | "FIGURE"
   | "EQUATION"
   | "PRECONDITION"
@@ -38,6 +40,10 @@ export interface ParsedKnowledgeUnit {
     contentHash: string;
     /** Source comment positions are provenance hints, never assertions. */
     sourceCommentSpans?: ReadonlyArray<{ startLine: number; endLine: number }>;
+    /** One-based structural table coordinates when this unit comes from a table. */
+    table?: number;
+    row?: number;
+    column?: number;
   };
   containerOnly: boolean;
   embeddingEligible: boolean;
@@ -229,6 +235,15 @@ function atomicType(
     : structural;
 }
 
+function lineOffsetAt(source: string, offset: number): number {
+  let lines = 0;
+  const bounded = Math.max(0, Math.min(offset, source.length));
+  for (let index = 0; index < bounded; index++) {
+    if (source.charCodeAt(index) === 10) lines += 1;
+  }
+  return lines;
+}
+
 function hasIndependentText(body: string): boolean {
   const text = body.replace(/\[\[[^\]]*\]\]/gu, "");
   const tree = fromMarkdown(text);
@@ -306,6 +321,7 @@ export function parseKnowledgeUnits(
   const headings: HeadingEntry[] = [];
   let sectionStart = 0;
   let sectionIndex = 0;
+  let tableIndex = 0;
   let order = 1;
 
   const flushSection = (endExclusive: number): void => {
@@ -342,8 +358,16 @@ export function parseKnowledgeUnits(
     for (const block of markdownBlocks(sectionLines, sectionStart + 1)) {
       const contentHash = hash(block.body);
       const unitType = atomicType(block, path);
+      const table =
+        block.structuralType === "TABLE"
+          ? markdownTableEvidence(block.body)[0]
+          : undefined;
+      const structuredTable =
+        table && table.rows.length > 0 ? table : undefined;
+      const tableOrdinal = structuredTable ? ++tableIndex : undefined;
+      const unitKey = `${sectionKey}-${unitType.toLowerCase()}-${String(block.startLine).padStart(6, "0")}-${contentHash.slice(0, 10)}`;
       units.push({
-        unitKey: `${sectionKey}-${unitType.toLowerCase()}-${String(block.startLine).padStart(6, "0")}-${contentHash.slice(0, 10)}`,
+        unitKey,
         parentUnitKey: sectionKey,
         unitType,
         headingPath: [...path],
@@ -356,17 +380,104 @@ export function parseKnowledgeUnits(
           startLine: block.startLine,
           endLine: block.endLine,
           contentHash,
+          ...(tableOrdinal !== undefined ? { table: tableOrdinal } : {}),
           ...(commentsByContentLine.has(block.startLine)
             ? {
                 sourceCommentSpans: commentsByContentLine.get(block.startLine)!,
               }
             : {}),
         },
-        containerOnly: false,
+        containerOnly: structuredTable !== undefined,
         embeddingEligible:
-          !["PARAGRAPH", "LIST"].includes(block.structuralType) ||
-          hasIndependentText(block.body),
+          structuredTable === undefined &&
+          (!["PARAGRAPH", "LIST"].includes(block.structuralType) ||
+            hasIndependentText(block.body)),
       });
+
+      if (!structuredTable || tableOrdinal === undefined) continue;
+      const tableHeader = structuredTable.header.cells
+        .map((cell) => cell.source.trim())
+        .filter(Boolean)
+        .join(" | ");
+      const rowHeadingPath = tableHeader
+        ? [...path, `Table columns: ${tableHeader}`]
+        : [...path];
+
+      for (const [rowIndex, row] of structuredTable.rows.entries()) {
+        const rowNumber = rowIndex + 1;
+        const rowHash = hash(row.source);
+        const rowKey = `${unitKey}-row-${String(rowNumber).padStart(4, "0")}-${rowHash.slice(0, 10)}`;
+        const rowStartLine =
+          block.startLine + lineOffsetAt(block.body, row.span.startOffset);
+        const rowEndLine =
+          block.startLine +
+          lineOffsetAt(
+            block.body,
+            Math.max(row.span.startOffset, row.span.endOffset - 1),
+          );
+        const rowHasContent = row.cells.some((cell) => cell.source.trim());
+        units.push({
+          unitKey: rowKey,
+          parentUnitKey: unitKey,
+          unitType: "TABLE_ROW",
+          headingPath: rowHeadingPath,
+          body: row.source,
+          contentHash: rowHash,
+          tokenEstimate: Math.ceil(row.source.length / 4),
+          structuralOrder: order++,
+          locator: {
+            kind: "markdown",
+            startLine: rowStartLine,
+            endLine: rowEndLine,
+            contentHash: rowHash,
+            table: tableOrdinal,
+            row: rowNumber,
+          },
+          containerOnly: !rowHasContent,
+          embeddingEligible: rowHasContent,
+        });
+
+        for (const cell of row.cells) {
+          if (!cell.source.trim()) continue;
+          const cellHash = hash(cell.source);
+          const columnNumber = cell.columnIndex + 1;
+          const header =
+            structuredTable.header.cells[cell.columnIndex]?.source.trim();
+          const cellStartLine =
+            block.startLine + lineOffsetAt(block.body, cell.span.startOffset);
+          const cellEndLine =
+            block.startLine +
+            lineOffsetAt(
+              block.body,
+              Math.max(cell.span.startOffset, cell.span.endOffset - 1),
+            );
+          units.push({
+            unitKey: `${rowKey}-cell-${String(columnNumber).padStart(3, "0")}-${cellHash.slice(0, 10)}`,
+            parentUnitKey: rowKey,
+            unitType: "TABLE_CELL",
+            headingPath: header
+              ? [...rowHeadingPath, `Column: ${header}`]
+              : rowHeadingPath,
+            body: cell.source,
+            contentHash: cellHash,
+            tokenEstimate: Math.ceil(cell.source.length / 4),
+            structuralOrder: order++,
+            locator: {
+              kind: "markdown",
+              startLine: cellStartLine,
+              endLine: cellEndLine,
+              contentHash: cellHash,
+              table: tableOrdinal,
+              row: rowNumber,
+              column: columnNumber,
+            },
+            // Cell units preserve exact source identity for evidence binding.
+            // Row units own retrieval because a scalar cell lacks row context.
+            containerOnly: true,
+            embeddingEligible: false,
+          });
+        }
+      }
     }
   };
 

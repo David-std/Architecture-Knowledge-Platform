@@ -40,11 +40,21 @@ describe("GFM table evidence source binding", () => {
     expect(table.rows[0]!.cells).toHaveLength(2);
     expect(table.rows[0]!.cells[0]!.source).toBe("A\\|B");
     expect(table.rows[0]!.cells[1]!.source).toBe("`ok`");
+    const units = parseKnowledgeUnits("Channels", passage);
+    expect(units.find((unit) => unit.unitType === "TABLE")).toMatchObject({
+      body: passage,
+      containerOnly: true,
+      embeddingEligible: false,
+    });
     expect(
-      parseKnowledgeUnits("Channels", passage).filter(
-        (unit) => unit.embeddingEligible,
-      ),
-    ).toMatchObject([{ unitType: "TABLE", body: passage }]);
+      units.filter((unit) => unit.embeddingEligible),
+    ).toMatchObject([
+      {
+        unitType: "TABLE_ROW",
+        body: "A\\|B | `ok`",
+        headingPath: ["Table columns: Channel | Result"],
+      },
+    ]);
   });
 
   it.each([
