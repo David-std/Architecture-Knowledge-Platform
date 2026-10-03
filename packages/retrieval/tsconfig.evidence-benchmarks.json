@@ -6,6 +6,7 @@
     "../../scripts/evidence-admission-*.ts",
     "../../scripts/registered-corpus-retrieval-benchmark.ts",
     "../../scripts/runtime-retrieval-benchmark.ts",
-    "../../scripts/retrieval-unitization-audit.ts"
+    "../../scripts/retrieval-unitization-audit.ts",
+    "../../scripts/retrieval-quality-scale-benchmark.ts"
   ]
 }

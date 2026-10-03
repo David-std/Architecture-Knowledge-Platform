@@ -2342,6 +2342,21 @@
       "reason": "corpus-agnostic product evaluation"
     },
     {
+      "path": "evals/generic/retrieval-quality-scale/fixture-db.ts",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/retrieval-quality-scale/fixture.ts",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/retrieval-quality-scale/metrics.ts",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
       "path": "evals/generic/retrieval/basic.jsonl",
       "category": "PRODUCT_EVAL",
       "reason": "corpus-agnostic product evaluation"
@@ -3727,6 +3742,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/retrieval/test/retrieval-quality-scale.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/retrieval/test/rrf.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -4078,6 +4098,11 @@
     },
     {
       "path": "scripts/retrieval_benchmark_offline.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/retrieval-quality-scale-benchmark.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
