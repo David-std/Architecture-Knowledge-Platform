@@ -72,9 +72,19 @@ function loadAudit(manifest: unknown): Audit {
 function resolve(
   audit: Audit,
   cases: readonly EvidenceAdmissionCase[],
-): Array<{ partition: Partition; family: string; entry: EvidenceAdmissionCase; goldSpans: Map<string, { startOffset: number; endOffset: number }> }> {
+): Array<{
+  partition: Partition;
+  family: string;
+  entry: EvidenceAdmissionCase;
+  goldSpans: Map<string, { startOffset: number; endOffset: number }>;
+}> {
   const byId = new Map(cases.map((entry) => [entry.question.id, entry]));
-  const rows: Array<{ partition: Partition; family: string; entry: EvidenceAdmissionCase; goldSpans: Map<string, { startOffset: number; endOffset: number }> }> = [];
+  const rows: Array<{
+    partition: Partition;
+    family: string;
+    entry: EvidenceAdmissionCase;
+    goldSpans: Map<string, { startOffset: number; endOffset: number }>;
+  }> = [];
   for (const [partition, items, split] of [
     ["development", audit.development, "development"],
     ["independent", audit.independent, "heldout"],
@@ -84,16 +94,28 @@ function resolve(
       if (!entry || entry.domain.split !== split) {
         throw new Error("QA_VETO_ALIGNMENT_SOURCE_SPLIT_INVALID");
       }
-      const citationUnits = item.citations.map((citation) => citation.unit).sort();
-      if (citationUnits.join("\n") !== [...entry.question.gold].sort().join("\n")) {
+      const citationUnits = item.citations
+        .map((citation) => citation.unit)
+        .sort();
+      if (
+        citationUnits.join("\n") !== [...entry.question.gold].sort().join("\n")
+      ) {
         throw new Error("QA_VETO_ALIGNMENT_GOLD_MISMATCH");
       }
-      const goldSpans = new Map<string, { startOffset: number; endOffset: number }>();
+      const goldSpans = new Map<
+        string,
+        { startOffset: number; endOffset: number }
+      >();
       for (const citation of item.citations) {
-        const hit = entry.hits.find((candidate) => candidate.document.externalId === citation.unit);
+        const hit = entry.hits.find(
+          (candidate) => candidate.document.externalId === citation.unit,
+        );
         if (!hit) throw new Error("QA_VETO_ALIGNMENT_UNIT_MISSING");
         const startOffset = hit.excerpt.indexOf(citation.quote);
-        if (startOffset < 0 || hit.excerpt.indexOf(citation.quote, startOffset + 1) >= 0) {
+        if (
+          startOffset < 0 ||
+          hit.excerpt.indexOf(citation.quote, startOffset + 1) >= 0
+        ) {
           throw new Error("QA_VETO_ALIGNMENT_QUOTE_NOT_UNIQUE");
         }
         goldSpans.set(citation.unit, {
@@ -114,7 +136,10 @@ async function measure(
   const rows: Row[] = [];
   for (const row of source) {
     const { entry } = row;
-    const baseline = assessRetrievalAnswerability(entry.hits, entry.question.query);
+    const baseline = assessRetrievalAnswerability(
+      entry.hits,
+      entry.question.query,
+    );
     const baselineKeys = new Set(baseline.supportedCandidateKeys);
     const candidates: Candidate[] = [];
     for (const hit of entry.hits) {
@@ -122,7 +147,13 @@ async function measure(
       const unit = entry.unitIdByCandidateKey.get(key);
       if (!unit) throw new Error("QA_VETO_LABEL_MISSING");
       if (!baselineKeys.has(key)) {
-        candidates.push({ unit, baseline: false, decision: "NOT_RUN", score: null, span: null });
+        candidates.push({
+          unit,
+          baseline: false,
+          decision: "NOT_RUN",
+          score: null,
+          span: null,
+        });
         continue;
       }
       const result = await verifier.verify({
@@ -167,7 +198,10 @@ const admitted = (row: Row, threshold: number) =>
     )
     .map((candidate) => candidate.unit);
 
-function summarize(rows: readonly Row[], select: (row: Row) => readonly string[]): Summary {
+function summarize(
+  rows: readonly Row[],
+  select: (row: Row) => readonly string[],
+): Summary {
   let answerable = 0;
   let hit = 0;
   let negatives = 0;
@@ -182,7 +216,9 @@ function summarize(rows: readonly Row[], select: (row: Row) => readonly string[]
     const selected = [...new Set(select(row))];
     const gold = new Set(row.entry.question.gold);
     const acceptable = new Set(row.entry.question.acceptable ?? []);
-    const wrong = selected.filter((unit) => !gold.has(unit) && !acceptable.has(unit));
+    const wrong = selected.filter(
+      (unit) => !gold.has(unit) && !acceptable.has(unit),
+    );
     const goldHit = selected.some((unit) => gold.has(unit));
     admittedUnits += selected.length;
     correctUnits += selected.length - wrong.length;
@@ -200,8 +236,14 @@ function summarize(rows: readonly Row[], select: (row: Row) => readonly string[]
       const expected = row.goldSpans.get(unit);
       if (!expected) continue;
       spanExpected += 1;
-      const actual = row.candidates.find((candidate) => candidate.unit === unit)?.span;
-      if (actual && actual.startOffset >= expected.startOffset && actual.endOffset <= expected.endOffset) {
+      const actual = row.candidates.find(
+        (candidate) => candidate.unit === unit,
+      )?.span;
+      if (
+        actual &&
+        actual.startOffset >= expected.startOffset &&
+        actual.endOffset <= expected.endOffset
+      ) {
         spanContained += 1;
       }
     }
@@ -219,9 +261,13 @@ function summarize(rows: readonly Row[], select: (row: Row) => readonly string[]
 }
 
 const ge = (candidate: number | null, baseline: number | null) =>
-  baseline === null ? candidate === null : candidate !== null && candidate >= baseline;
+  baseline === null
+    ? candidate === null
+    : candidate !== null && candidate >= baseline;
 const le = (candidate: number | null, baseline: number | null) =>
-  baseline === null ? candidate === null : candidate !== null && candidate <= baseline;
+  baseline === null
+    ? candidate === null
+    : candidate !== null && candidate <= baseline;
 const developmentPass = (candidate: Summary, baseline: Summary) =>
   candidate.falseAcceptances === 0 &&
   candidate.wrongAdmissions === 0 &&
@@ -230,7 +276,10 @@ const developmentPass = (candidate: Summary, baseline: Summary) =>
   ge(candidate.answerableRecall, baseline.answerableRecall) &&
   ge(candidate.strictAccuracy, baseline.strictAccuracy);
 
-const { manifest, cases } = await loadEvidenceAdmissionPack(["development", "heldout"]);
+const { manifest, cases } = await loadEvidenceAdmissionPack([
+  "development",
+  "heldout",
+]);
 const audit = loadAudit(manifest);
 const resolved = resolve(audit, cases);
 const verifier = new LocalMultilingualQaEvidenceVerifier({
@@ -250,7 +299,9 @@ const independent = measured.filter((row) => row.partition === "independent");
 const baselineDevelopment = summarize(development, (row) => row.baseline);
 const scores = development.flatMap((row) =>
   row.candidates.flatMap((candidate) =>
-    candidate.baseline && candidate.decision === "SUPPORTS" && candidate.score !== null
+    candidate.baseline &&
+    candidate.decision === "SUPPORTS" &&
+    candidate.score !== null
       ? [candidate.score]
       : [],
   ),
@@ -282,13 +333,19 @@ const sweep = thresholds.map((threshold) => ({
   threshold,
   summary: summarize(development, (row) => admitted(row, threshold)),
 }));
-const calibration = sweep.find((row) => developmentPass(row.summary, baselineDevelopment)) ?? null;
+const calibration =
+  sweep.find((row) => developmentPass(row.summary, baselineDevelopment)) ??
+  null;
 
 let outcome: "PROMOTE" | "REJECT" = "REJECT";
-let independentResult: unknown = { status: "NOT_EVALUATED_CALIBRATION_REJECTED" };
+let independentResult: unknown = {
+  status: "NOT_EVALUATED_CALIBRATION_REJECTED",
+};
 if (calibration) {
   const baseline = summarize(independent, (row) => row.baseline);
-  const candidate = summarize(independent, (row) => admitted(row, calibration.threshold));
+  const candidate = summarize(independent, (row) =>
+    admitted(row, calibration.threshold),
+  );
   const safe =
     ge(candidate.answerableRecall, baseline.answerableRecall) &&
     ge(candidate.admittedPrecision, baseline.admittedPrecision) &&
@@ -301,7 +358,13 @@ if (calibration) {
     candidate.wrongAdmissions < baseline.wrongAdmissions ||
     (candidate.strictAccuracy ?? -1) > (baseline.strictAccuracy ?? -1);
   outcome = safe && improves ? "PROMOTE" : "REJECT";
-  independentResult = { status: "EVALUATED_AFTER_THRESHOLD_FREEZE", baseline, candidate, safe, improves };
+  independentResult = {
+    status: "EVALUATED_AFTER_THRESHOLD_FREEZE",
+    baseline,
+    candidate,
+    safe,
+    improves,
+  };
 }
 
 const datasetHash = hash(
@@ -312,7 +375,10 @@ const datasetHash = hash(
     query: row.entry.question.query,
     gold: row.entry.question.gold,
     acceptable: row.entry.question.acceptable ?? [],
-    passages: row.entry.hits.map((hit) => [hit.document.externalId, hit.excerpt]),
+    passages: row.entry.hits.map((hit) => [
+      hit.document.externalId,
+      hit.excerpt,
+    ]),
   })),
 );
 const report = {
@@ -334,12 +400,20 @@ const report = {
     embedding_model_revision: "NOT_APPLICABLE",
     reranker_revision: "NOT_APPLICABLE",
     reader_revision: `${LOCAL_MULTILINGUAL_QA_EVIDENCE_MODEL}@${LOCAL_MULTILINGUAL_QA_EVIDENCE_REVISION}`,
-    configuration_hash: hash({ experiment: "qa-veto-family-disjoint-v1", model: LOCAL_MULTILINGUAL_QA_EVIDENCE_REVISION }),
+    configuration_hash: hash({
+      experiment: "qa-veto-family-disjoint-v1",
+      model: LOCAL_MULTILINGUAL_QA_EVIDENCE_REVISION,
+    }),
     single_independent_variable:
       "Intersect deterministic-supported candidate keys with source-bound QA SUPPORTS at a development-calibrated threshold; QA may veto but never add support.",
     primary_metric:
       "family-disjoint false acceptance / wrong admission reduction at unchanged answerable recall",
-    guardrail_metrics: ["answerable recall", "admitted precision", "strict accuracy", "gold source-span containment"],
+    guardrail_metrics: [
+      "answerable recall",
+      "admitted precision",
+      "strict accuracy",
+      "gold source-span containment",
+    ],
     expected_failure_if_wrong:
       "No development threshold preserves recall with zero false/wrong admissions, or independent families regress.",
     promotion_rule:
@@ -369,7 +443,8 @@ const report = {
   ],
 };
 const output = path.resolve(
-  process.env.AKP_QA_VETO_FAMILY_DISJOINT_REPORT ?? "reports/ci/qa-veto-family-disjoint.json",
+  process.env.AKP_QA_VETO_FAMILY_DISJOINT_REPORT ??
+    "reports/ci/qa-veto-family-disjoint.json",
 );
 await mkdir(path.dirname(output), { recursive: true });
 await writeFile(output, `${JSON.stringify(report, null, 2)}\n`, "utf8");
