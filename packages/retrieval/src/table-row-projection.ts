@@ -1,7 +1,4 @@
-import {
-  parseKnowledgeUnits,
-  type ParsedKnowledgeUnit,
-} from "./chunking.js";
+import { parseKnowledgeUnits, type ParsedKnowledgeUnit } from "./chunking.js";
 import { markdownTableEvidence } from "./markdown-table-evidence.js";
 
 export interface TableProjectionSourceSpan {
@@ -43,10 +40,7 @@ export interface TableRowProjection {
 }
 
 function normalizedProjectionValue(value: string): string {
-  return value
-    .normalize("NFKC")
-    .trim()
-    .replace(/\s+/gu, " ");
+  return value.normalize("NFKC").trim().replace(/\s+/gu, " ");
 }
 
 function samePortableScope(
@@ -83,7 +77,8 @@ function captionForTable(
         unit.locator.endLine <= table.locator.startLine &&
         samePortableScope(unit, table),
     )
-    .sort((left, right) => right.structuralOrder - left.structuralOrder)[0]\n    ?.body;
+    .sort((left, right) => right.structuralOrder - left.structuralOrder)[0]
+    ?.body;
 }
 
 function rowText(
@@ -97,19 +92,12 @@ function rowText(
       ? `${cell.header} = ${cell.rawValue}`
       : `Column ${cell.columnIndex} = ${cell.rawValue}`,
   );
-  const lexicalText = [
-    title,
-    headingPath.join(" > "),
-    caption ?? "",
-    ...facts,
-  ]
+  const lexicalText = [title, headingPath.join(" > "), caption ?? "", ...facts]
     .filter((value) => value.trim().length > 0)
     .join("\n");
   const embeddingText = [
     `Document: ${title}`,
-    ...(headingPath.length > 0
-      ? [`Section: ${headingPath.join(" > ")}`]
-      : []),
+    ...(headingPath.length > 0 ? [`Section: ${headingPath.join(" > ")}`] : []),
     ...(caption?.trim() ? [`Caption: ${caption}`] : []),
     "Table row:",
     ...facts,
