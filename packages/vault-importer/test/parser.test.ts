@@ -111,6 +111,30 @@ describe("title fallback and portable aliases", () => {
     });
   });
 
+  it("derives a title from a heading-only setext document", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akp-title-setext-"));
+    temporaryRoots.push(root);
+    await writeFile(
+      path.join(root, "fallback-name.md"),
+      [
+        "---",
+        "id: TITLE-SETEXT-001",
+        "type: guide",
+        "status: active",
+        "---",
+        "Operational Handbook",
+        "====================",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const inspection = await inspectVault(root);
+    expect(inspection.documents[0]).toMatchObject({
+      title: "Operational Handbook",
+      aliases: ["Fallback Name"],
+    });
+  });
+
   it("preserves an explicit title without inventing a slug alias", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "akp-title-explicit-"));
     temporaryRoots.push(root);

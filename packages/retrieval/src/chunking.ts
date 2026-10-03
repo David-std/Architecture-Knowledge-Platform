@@ -231,6 +231,17 @@ function headingLabel(node: MarkdownNode): string {
   return node.children?.map(text).join("").trim() ?? "";
 }
 
+/** Return the first visible Markdown heading without depending on unitization. */
+export function firstMarkdownHeadingLabel(body: string): string | null {
+  const normalized = body.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+  if (!normalized) return null;
+  const tree = markdownTree(markdownVisibleSource(normalized).text);
+  const heading = tree.children.find((node) => node.type === "heading");
+  if (!heading) return null;
+  const label = headingLabel(heading);
+  return label || null;
+}
+
 function atomicType(
   block: Block,
   headingPath: readonly string[],

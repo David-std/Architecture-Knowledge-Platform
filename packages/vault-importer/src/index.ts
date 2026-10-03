@@ -9,6 +9,7 @@ import {
   createConfiguredEmbeddingProvider,
   embeddingPassageInputHash,
   embeddingPassageText,
+  firstMarkdownHeadingLabel,
   parseKnowledgeUnits,
   serializeEmbeddingRuntime,
   toPgVector,
@@ -178,21 +179,6 @@ function slugTitle(relativePath: string): string {
     .basename(relativePath, path.extname(relativePath))
     .replace(/[-_]+/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function firstMarkdownHeading(
-  body: string,
-  fallbackTitle: string,
-): string | null {
-  const heading = parseKnowledgeUnits(fallbackTitle, body)
-    .map((unit) => unit.headingPath[0]?.trim())
-    .find(
-      (value): value is string =>
-        Boolean(value) &&
-        value!.toLocaleLowerCase("en-US") !==
-          fallbackTitle.toLocaleLowerCase("en-US"),
-    );
-  return heading ?? null;
 }
 
 function uniqueAliases(values: readonly string[]): string[] {
@@ -523,7 +509,7 @@ export async function inspectVault(
       typeof frontmatter.title === "string" ? frontmatter.title.trim() : "";
     const headingFallback = declaredTitle
       ? null
-      : firstMarkdownHeading(body, slugFallbackTitle);
+      : firstMarkdownHeadingLabel(body);
     const title = declaredTitle || headingFallback || slugFallbackTitle;
     const aliases = uniqueAliases([
       ...asStrings(frontmatter.aliases),
