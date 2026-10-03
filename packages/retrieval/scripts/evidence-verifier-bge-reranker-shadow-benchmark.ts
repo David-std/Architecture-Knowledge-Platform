@@ -738,6 +738,303 @@ const CASES: Case[] = [
   },
 ];
 
+
+const BLIND_FAMILY_HOLDOUT_CASES: Case[] = [
+  {
+    id: "blind-owner-positive",
+    split: "HOLDOUT",
+    family: "NAMED_PERSON_SLOT",
+    query: "Is LINA the named human owner of the KODA boundary record?",
+    candidates: [
+      {
+        label: "owner",
+        title: "KODA boundary ownership",
+        passage: "LINA is the named human owner of the KODA boundary record.",
+        goldSpan: "LINA is the named human owner of the KODA boundary record.",
+      },
+      {
+        label: "owner-topic",
+        title: "KODA boundary processing",
+        passage: "KODA produces a boundary record after validation.",
+      },
+    ],
+    goldLabels: ["owner"],
+  },
+  {
+    id: "blind-owner-absent",
+    split: "HOLDOUT",
+    family: "NAMED_PERSON_SLOT",
+    query: "Is MIRA the named human owner of the TERA boundary record?",
+    candidates: [
+      {
+        label: "owner-absent-topic",
+        title: "TERA boundary processing",
+        passage:
+          "TERA produces the boundary record after validation and publishes it to the archive.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "blind-region-positive",
+    split: "HOLDOUT",
+    family: "GEOGRAPHIC_SLOT",
+    query: "Must production audit records remain in region NERA?",
+    candidates: [
+      {
+        label: "region-rule",
+        title: "Audit residency",
+        passage: "Production audit records must remain in region NERA.",
+        goldSpan: "Production audit records must remain in region NERA.",
+      },
+      {
+        label: "region-topic",
+        title: "NERA observability",
+        passage: "Region NERA hosts dashboards for audit ingestion latency.",
+      },
+    ],
+    goldLabels: ["region-rule"],
+  },
+  {
+    id: "blind-region-absent",
+    split: "HOLDOUT",
+    family: "GEOGRAPHIC_SLOT",
+    query: "Must production audit records remain in region LUMA?",
+    candidates: [
+      {
+        label: "region-absent-topic",
+        title: "LUMA observability",
+        passage:
+          "Region LUMA hosts dashboards for audit processing, but this record does not define storage residency.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "blind-period-positive",
+    split: "HOLDOUT",
+    family: "TEMPORAL_PERIOD_SLOT",
+    query: "Is the approved 2027 maintenance date March 18?",
+    candidates: [
+      {
+        label: "period-rule",
+        title: "2027 maintenance",
+        passage: "The approved 2027 maintenance date is March 18.",
+        goldSpan: "The approved 2027 maintenance date is March 18.",
+      },
+      {
+        label: "period-neighbor",
+        title: "2026 maintenance",
+        passage: "The approved 2026 maintenance date is March 18.",
+      },
+    ],
+    goldLabels: ["period-rule"],
+  },
+  {
+    id: "blind-period-wrong-year",
+    split: "HOLDOUT",
+    family: "TEMPORAL_PERIOD_SLOT",
+    query: "Is the approved 2028 maintenance date March 18?",
+    candidates: [
+      {
+        label: "period-wrong-year",
+        title: "2027 maintenance",
+        passage:
+          "The approved 2027 maintenance date is March 18; the 2028 window has not been scheduled.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "blind-table-positive",
+    split: "HOLDOUT",
+    family: "SIBLING_TABLE_SCOPE",
+    query: "Is the gold tier timeout 800 milliseconds?",
+    candidates: [
+      {
+        label: "gold-row",
+        title: "Timeout matrix",
+        passage: "Gold tier timeout is 800 milliseconds.",
+        goldSpan: "Gold tier timeout is 800 milliseconds.",
+      },
+      {
+        label: "silver-row",
+        title: "Timeout matrix",
+        passage: "Silver tier timeout is 800 milliseconds.",
+      },
+    ],
+    goldLabels: ["gold-row"],
+  },
+  {
+    id: "blind-table-missing-row",
+    split: "HOLDOUT",
+    family: "SIBLING_TABLE_SCOPE",
+    query: "Is the platinum tier timeout 800 milliseconds?",
+    candidates: [
+      {
+        label: "platinum-sibling",
+        title: "Timeout matrix",
+        passage:
+          "Gold tier timeout is 800 milliseconds and silver tier timeout is 1200 milliseconds.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "blind-compound-positive",
+    split: "HOLDOUT",
+    family: "PARTIAL_COMPOUND_SCOPE",
+    query: "Must deployment require both security approval and a signed checksum?",
+    candidates: [
+      {
+        label: "compound-full",
+        title: "Deployment gate",
+        passage:
+          "Deployment requires both security approval and a signed checksum.",
+        goldSpan:
+          "Deployment requires both security approval and a signed checksum.",
+      },
+      {
+        label: "compound-partial",
+        title: "Deployment approval",
+        passage: "Deployment requires security approval before release.",
+      },
+    ],
+    goldLabels: ["compound-full"],
+  },
+  {
+    id: "blind-compound-partial-only",
+    split: "HOLDOUT",
+    family: "PARTIAL_COMPOUND_SCOPE",
+    query: "Must emergency deployment require both incident approval and a signed checksum?",
+    candidates: [
+      {
+        label: "compound-partial-only",
+        title: "Emergency deployment",
+        passage:
+          "Emergency deployment requires incident approval before release; checksum policy is not defined here.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "blind-identifier-positive",
+    split: "HOLDOUT",
+    family: "EXACT_IDENTIFIER_BINDING",
+    query: "Is ADR-431 the approved rollback decision for NOVA?",
+    candidates: [
+      {
+        label: "identifier-exact",
+        title: "NOVA rollback",
+        passage: "ADR-431 is the approved rollback decision for NOVA.",
+        goldSpan: "ADR-431 is the approved rollback decision for NOVA.",
+      },
+      {
+        label: "identifier-near",
+        title: "NOVA rollback archive",
+        passage: "ADR-413 is an archived rollback decision for NOVA.",
+      },
+    ],
+    goldLabels: ["identifier-exact"],
+  },
+  {
+    id: "blind-identifier-near-only",
+    split: "HOLDOUT",
+    family: "EXACT_IDENTIFIER_BINDING",
+    query: "Is ADR-732 the approved rollback decision for VEGA?",
+    candidates: [
+      {
+        label: "identifier-near-only",
+        title: "VEGA rollback",
+        passage: "ADR-723 is the approved rollback decision for VEGA.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "blind-crosslingual-role-positive",
+    split: "HOLDOUT",
+    family: "CROSS_LINGUAL_SLOT_BINDING",
+    query: "Is MARA the named reviewer for ORBIT?",
+    queryLanguage: "en",
+    candidates: [
+      {
+        label: "reviewer-cross",
+        title: "Revisión ORBIT",
+        language: "es",
+        passage: "MARA es la revisora designada de ORBIT.",
+        goldSpan: "MARA es la revisora designada de ORBIT.",
+      },
+      {
+        label: "reviewer-cross-topic",
+        title: "Métricas ORBIT",
+        language: "es",
+        passage: "ORBIT registra tiempos de revisión y estados de aprobación.",
+      },
+    ],
+    goldLabels: ["reviewer-cross"],
+  },
+  {
+    id: "blind-crosslingual-role-absent",
+    split: "HOLDOUT",
+    family: "CROSS_LINGUAL_SLOT_BINDING",
+    query: "Is NORA the named reviewer for PICO?",
+    queryLanguage: "en",
+    candidates: [
+      {
+        label: "reviewer-cross-absent",
+        title: "Revisión PICO",
+        language: "es",
+        passage:
+          "PICO registra el estado de revisión, pero este documento no nombra a una persona revisora.",
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "blind-unit-positive",
+    split: "HOLDOUT",
+    family: "UNIT_SLOT_BINDING",
+    query: "Is the retry ceiling 7 attempts?",
+    candidates: [
+      {
+        label: "retry-ceiling",
+        title: "Retry policy",
+        passage: "The retry ceiling is 7 attempts.",
+        goldSpan: "The retry ceiling is 7 attempts.",
+      },
+      {
+        label: "queue-depth",
+        title: "Queue policy",
+        passage: "The queue alert threshold is 7 items.",
+      },
+    ],
+    goldLabels: ["retry-ceiling"],
+  },
+  {
+    id: "blind-unit-wrong-measure",
+    split: "HOLDOUT",
+    family: "UNIT_SLOT_BINDING",
+    query: "Is the retry ceiling 9 attempts?",
+    candidates: [
+      {
+        label: "retry-wrong-measure",
+        title: "Retry telemetry",
+        passage:
+          "The retry dashboard shows 9 active workers; this document does not define a retry ceiling.",
+      },
+    ],
+    goldLabels: [],
+  },
+];
+
+const BLIND_FAMILY_HOLDOUT_BOUNDARY = Object.freeze({
+  threshold: 0.815083,
+  minimumPolarityMargin: 0.073464,
+  source:
+    "frozen from the pre-existing role-guarded calibration before this family-disjoint holdout was authored",
+});
+
 function deterministicBenchmarkHit(candidate: Candidate): SearchHit {
   return {
     documentId: `benchmark-${candidate.label}`,
@@ -1614,9 +1911,10 @@ async function evaluateBinaryCases(
     testCase: Case,
     candidate: Candidate,
   ) => readonly ShadowRelationHypothesisCandidate[],
+  cases: readonly Case[] = CASES,
 ) {
   const observations = [];
-  for (const testCase of CASES) {
+  for (const testCase of cases) {
     const candidates = [];
     for (const candidate of testCase.candidates) {
       const hypotheses = hypothesisCandidatesFor(testCase, candidate);
@@ -1966,6 +2264,9 @@ let binaryObservations: Awaited<ReturnType<typeof evaluateBinaryCases>>;
 let binaryHypothesisSweepObservations: Awaited<
   ReturnType<typeof evaluateBinaryCases>
 >;
+let blindFamilyHoldoutObservations: Awaited<
+  ReturnType<typeof evaluateBinaryCases>
+>;
 let binaryNumericalStabilityAudit: Awaited<
   ReturnType<typeof measureBinaryNumericalStability>
 >;
@@ -1982,6 +2283,11 @@ try {
   binaryHypothesisSweepObservations = await evaluateBinaryCases(
     (testCase, candidate) =>
       shadowRelationHypothesisCandidates(testCase.query, candidate.title),
+  );
+  blindFamilyHoldoutObservations = await evaluateBinaryCases(
+    (testCase, candidate) =>
+      shadowRelationHypothesisCandidates(testCase.query, candidate.title),
+    BLIND_FAMILY_HOLDOUT_CASES,
   );
   binaryNumericalStabilityAudit = await measureBinaryNumericalStability(
     binaryEntailmentScore,
@@ -2192,6 +2498,103 @@ const binaryDeterministicFallbackComparison = {
   observations: binaryDeterministicFallbackObservations,
 };
 
+
+const previousQuestionFamilies = new Set(CASES.map((entry) => entry.family));
+const blindQuestionFamilies = [
+  ...new Set(BLIND_FAMILY_HOLDOUT_CASES.map((entry) => entry.family)),
+].sort();
+const overlappingBlindFamilies = blindQuestionFamilies.filter((family) =>
+  previousQuestionFamilies.has(family),
+);
+if (overlappingBlindFamilies.length > 0) {
+  throw new Error(
+    `BLIND_FAMILY_HOLDOUT_OVERLAP:${overlappingBlindFamilies.join(",")}`,
+  );
+}
+
+const blindFamilyRoleGuardedObservations = blindFamilyHoldoutObservations.map(
+  (entry) => ({
+    ...entry,
+    candidates: entry.candidates.map((candidate) => ({
+      ...candidate,
+      directionCompatible: candidate.roleCompatible,
+    })),
+  }),
+);
+const blindFamilyDeterministicObservations = blindFamilyHoldoutObservations.map(
+  (entry) => ({
+    ...entry,
+    candidates: entry.candidates.map((candidate) => ({
+      ...candidate,
+      score: candidate.deterministic.supported ? 1 : 0,
+      directionCompatible: candidate.deterministic.supported,
+      polarityMargin: 1,
+      spanCorrect: null,
+    })),
+  }),
+);
+const blindFamilyDeterministicMetrics = metrics(
+  blindFamilyDeterministicObservations,
+  0.5,
+  0,
+);
+const blindFamilyRoleGuardedMetrics = metrics(
+  blindFamilyRoleGuardedObservations,
+  BLIND_FAMILY_HOLDOUT_BOUNDARY.threshold,
+  BLIND_FAMILY_HOLDOUT_BOUNDARY.minimumPolarityMargin,
+);
+const blindFamilyCoverageComplete =
+  blindFamilyRoleGuardedMetrics.positiveCases >= 8 &&
+  blindFamilyRoleGuardedMetrics.negativeCases >= 8 &&
+  blindQuestionFamilies.length >= 8;
+const blindFamilyPrecisionSafe =
+  blindFamilyRoleGuardedMetrics.falseAcceptances === 0 &&
+  blindFamilyRoleGuardedMetrics.wrongSelections === 0 &&
+  blindFamilyRoleGuardedMetrics.supportSelectionPrecision === 1 &&
+  blindFamilyRoleGuardedMetrics.spanAccuracy === 1;
+const blindFamilyRecallNonRegressed =
+  blindFamilyRoleGuardedMetrics.falseAbstentionRate !== null &&
+  blindFamilyDeterministicMetrics.falseAbstentionRate !== null &&
+  blindFamilyRoleGuardedMetrics.falseAbstentionRate <=
+    blindFamilyDeterministicMetrics.falseAbstentionRate;
+const blindFamilyFalseAcceptanceNonRegressed =
+  blindFamilyRoleGuardedMetrics.falseAcceptanceRate !== null &&
+  blindFamilyDeterministicMetrics.falseAcceptanceRate !== null &&
+  blindFamilyRoleGuardedMetrics.falseAcceptanceRate <=
+    blindFamilyDeterministicMetrics.falseAcceptanceRate;
+const blindFamilyStrictImprovement =
+  (blindFamilyRoleGuardedMetrics.falseAcceptanceRate ?? 1) <
+    (blindFamilyDeterministicMetrics.falseAcceptanceRate ?? 1) ||
+  (blindFamilyRoleGuardedMetrics.falseAbstentionRate ?? 1) <
+    (blindFamilyDeterministicMetrics.falseAbstentionRate ?? 1);
+const blindFamilyHoldoutOutcome =
+  !blindFamilyCoverageComplete
+    ? "INCONCLUSIVE"
+    : blindFamilyPrecisionSafe &&
+        blindFamilyRecallNonRegressed &&
+        blindFamilyFalseAcceptanceNonRegressed &&
+        blindFamilyStrictImprovement
+      ? "PROMOTE"
+      : "REJECT";
+
+const blindFamilyHoldout = {
+  status: "MEASURED",
+  evaluationUse: "BLIND_FAMILY_DISJOINT_HOLDOUT",
+  authoredAfterCalibrationFrozen: true,
+  thresholdTuningAllowed: false,
+  unseenQuestionFamilyHoldout: true,
+  familyDisjoint: overlappingBlindFamilies.length === 0,
+  families: blindQuestionFamilies,
+  cases: BLIND_FAMILY_HOLDOUT_CASES.length,
+  boundary: BLIND_FAMILY_HOLDOUT_BOUNDARY,
+  deterministicBaseline: blindFamilyDeterministicMetrics,
+  roleGuardedCandidate: blindFamilyRoleGuardedMetrics,
+  outcome: blindFamilyHoldoutOutcome,
+  promotionRule:
+    "PROMOTE only when the frozen role-guarded candidate has zero false acceptances and wrong selections, exact annotated spans for every admitted gold candidate, does not regress false abstention or false acceptance versus deterministic admission, and strictly improves at least one of those two rates on at least eight positive and eight negative cases across at least eight previously unseen families.",
+  observations: blindFamilyRoleGuardedObservations,
+};
+
 const report = {
   schemaVersion: 14,
   status: "MEASURED",
@@ -2218,6 +2621,7 @@ const report = {
   binaryHypothesisSweepComparison,
   binaryRoleGuardedComparison,
   binaryDeterministicFallbackComparison,
+  blindFamilyHoldout,
   binaryNumericalStabilityAudit,
   binaryControlledSessionStabilityAudit,
   binaryCrossLingualPairCalibration,
