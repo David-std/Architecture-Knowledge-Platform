@@ -1105,7 +1105,7 @@ async function runUnitSelectionStudy(
     }
 
     let snapshot: EvidenceRetrievalStageSnapshot | undefined;
-    const currentHits = await queryKnowledge(
+    await queryKnowledge(
       db,
       {
         query: testCase.query,
@@ -1160,8 +1160,8 @@ async function runUnitSelectionStudy(
     const unitRanked = reciprocalRankFusion(
       retrievalCandidatesToRankedChannels(unitCandidates, policy),
     );
-    const currentUnitIds = currentHits.flatMap((hit) =>
-      hit.unitId ? [hit.unitId] : [],
+    const currentUnitIds = snapshot.fusedCandidates.flatMap((candidate) =>
+      candidate.unitId ? [candidate.unitId] : [],
     );
     const unitKeyedIds = unitRanked.flatMap((item) => {
       const unitId = keyToUnitId.get(item.id);
