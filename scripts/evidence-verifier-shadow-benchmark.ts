@@ -271,7 +271,6 @@ const CASES: ShadowCase[] = [
   },
 ];
 
-
 const SLOT_CALIBRATION_CASES: ShadowCase[] = [
   {
     id: "slot-cal-named-role-positive",
@@ -461,7 +460,8 @@ const SLOT_CALIBRATION_CASES: ShadowCase[] = [
       {
         label: "vimo-condition",
         title: "VIMO failover policy",
-        passage: "VIMO failover is enabled when the primary route is unhealthy.",
+        passage:
+          "VIMO failover is enabled when the primary route is unhealthy.",
         vectorRank: 1,
         goldSpan: "when the primary route is unhealthy",
       },
