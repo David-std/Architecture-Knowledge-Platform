@@ -3308,8 +3308,7 @@ export async function queryKnowledge(
   const fusedAssertionRecall = fusedRanked
     .filter(
       (item) =>
-        assertionRecallFusionIds.has(item.id) &&
-        !fusedPrimaryIds.has(item.id),
+        assertionRecallFusionIds.has(item.id) && !fusedPrimaryIds.has(item.id),
     )
     .slice(0, internalCandidateLimit);
   const fused = [...fusedPrimary, ...fusedAssertionRecall];
@@ -3601,92 +3600,91 @@ export async function queryKnowledge(
       return {
         fusionId: item.id,
         hit: {
-        documentId: String(row.id),
-        vaultId,
-        ...matchedUnit,
-        ...(structuralContext?.parentUnitId
-          ? { parentUnitId: structuralContext.parentUnitId }
-          : {}),
-        ...(structuralContext?.parentUnitType
-          ? { parentUnitType: structuralContext.parentUnitType }
-          : {}),
-        ...(structuralContext?.headingPath
-          ? { headingPath: structuralContext.headingPath }
-          : {}),
-        ...(structuralContext &&
-        Number.isSafeInteger(structuralContext.structuralOrder) &&
-        structuralContext.structuralOrder >= 0
-          ? { structuralOrder: structuralContext.structuralOrder }
-          : {}),
-        ...(answerabilityContext
-          ? { parentContext: answerabilityContext.slice(0, 4_000) }
-          : {}),
-        document: {
-          externalId: row.external_id ? String(row.external_id) : null,
-          path: String(row.path),
+          documentId: String(row.id),
+          vaultId,
+          ...matchedUnit,
+          ...(structuralContext?.parentUnitId
+            ? { parentUnitId: structuralContext.parentUnitId }
+            : {}),
+          ...(structuralContext?.parentUnitType
+            ? { parentUnitType: structuralContext.parentUnitType }
+            : {}),
+          ...(structuralContext?.headingPath
+            ? { headingPath: structuralContext.headingPath }
+            : {}),
+          ...(structuralContext &&
+          Number.isSafeInteger(structuralContext.structuralOrder) &&
+          structuralContext.structuralOrder >= 0
+            ? { structuralOrder: structuralContext.structuralOrder }
+            : {}),
+          ...(answerabilityContext
+            ? { parentContext: answerabilityContext.slice(0, 4_000) }
+            : {}),
+          document: {
+            externalId: row.external_id ? String(row.external_id) : null,
+            path: String(row.path),
+            title: String(row.title),
+            aliases: Array.isArray(row.aliases) ? row.aliases.map(String) : [],
+          },
+          revision: String(row.current_revision),
           title: String(row.title),
-          aliases: Array.isArray(row.aliases) ? row.aliases.map(String) : [],
-        },
-        revision: String(row.current_revision),
-        title: String(row.title),
-        type: String(row.type),
-        trust: String(row.trust_tier) as SearchHit["trust"],
-        lifecycle: String(row.lifecycle) as SearchHit["lifecycle"],
-        refreshStatus: String(row.refresh_status),
-        score: item.score,
-        reasons: item.reasons,
-        fusionContributions: publicFusionContributions,
-        retrievalTrace: {
-          authorization: {
-            decision: options.authorizationResolved
-              ? "ALLOW"
-              : "SCOPED_INTERNAL",
-            spaceId,
-            vaultId,
-            pathRestricted: Boolean(options.pathAuthorizer),
+          type: String(row.type),
+          trust: String(row.trust_tier) as SearchHit["trust"],
+          lifecycle: String(row.lifecycle) as SearchHit["lifecycle"],
+          refreshStatus: String(row.refresh_status),
+          score: item.score,
+          reasons: item.reasons,
+          fusionContributions: publicFusionContributions,
+          retrievalTrace: {
+            authorization: {
+              decision: options.authorizationResolved
+                ? "ALLOW"
+                : "SCOPED_INTERNAL",
+              spaceId,
+              vaultId,
+              pathRestricted: Boolean(options.pathAuthorizer),
+            },
+            truth: {
+              state: truthState,
+              consistency: truthConsistency,
+              revisionHash: truthRevision?.revisionHash ?? null,
+              capturedAt: truthSnapshot.capturedAt,
+            },
+            temporal: {
+              lifecycle: String(row.lifecycle) as SearchHit["lifecycle"],
+              refreshStatus: String(row.refresh_status),
+            },
+            contributions: traceContributions,
+            fusion: {
+              score: item.score,
+              reasons: item.reasons,
+            },
+            finalSelectionReason: item.reasons.join("; "),
           },
-          truth: {
-            state: truthState,
-            consistency: truthConsistency,
-            revisionHash: truthRevision?.revisionHash ?? null,
-            capturedAt: truthSnapshot.capturedAt,
-          },
-          temporal: {
-            lifecycle: String(row.lifecycle) as SearchHit["lifecycle"],
-            refreshStatus: String(row.refresh_status),
-          },
-          contributions: traceContributions,
-          fusion: {
-            score: item.score,
-            reasons: item.reasons,
-          },
-          finalSelectionReason: item.reasons.join("; "),
-        },
-        ...(graphProvenanceByCandidate.has(target.documentId)
-          ? {
-              graphProvenance: graphProvenanceByCandidate.get(
-                target.documentId,
-              ),
-            }
-          : {}),
-        excerpt:
-          codeSupport ??
-          structuralContext?.atomicExcerpt ??
-          String(row.body_cache).slice(0, 1200),
-        citations,
-        warnings: [
-          "UNTRUSTED_RETRIEVED_CONTENT",
-          ...(String(row.refresh_status ?? "CURRENT") === "STALE_PENDING_REVIEW"
-            ? ["STALE_PENDING_REVIEW"]
-            : []),
-        ],
+          ...(graphProvenanceByCandidate.has(target.documentId)
+            ? {
+                graphProvenance: graphProvenanceByCandidate.get(
+                  target.documentId,
+                ),
+              }
+            : {}),
+          excerpt:
+            codeSupport ??
+            structuralContext?.atomicExcerpt ??
+            String(row.body_cache).slice(0, 1200),
+          citations,
+          warnings: [
+            "UNTRUSTED_RETRIEVED_CONTENT",
+            ...(String(row.refresh_status ?? "CURRENT") ===
+            "STALE_PENDING_REVIEW"
+              ? ["STALE_PENDING_REVIEW"]
+              : []),
+          ],
         },
       };
     })
     .filter(
-      (
-        entry,
-      ): entry is { fusionId: string; hit: SearchHit } => entry !== null,
+      (entry): entry is { fusionId: string; hit: SearchHit } => entry !== null,
     );
   const projectedHits = projectedEntries.map((entry) => entry.hit);
   const projectedByFusionId = options.stageDiagnosticSink

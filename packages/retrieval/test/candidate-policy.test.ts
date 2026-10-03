@@ -144,7 +144,6 @@ describe("retrieval candidate policy", () => {
     ]);
   });
 
-
   it("preserves distinct leaf identities and anchors document signals only for a singleton leaf", () => {
     const documentId = baseCandidate.documentId!;
     const documentOnly: RetrievalCandidate = {
@@ -163,10 +162,9 @@ describe("retrieval candidate policy", () => {
     ]);
     const singletonKey = `${documentId}:${baseCandidate.unitId}`;
     expect(singleton.fusionIds).toEqual([singletonKey, singletonKey]);
-    expect(singleton.candidates.map((candidate) => candidate.candidateId)).toEqual([
-      singletonKey,
-      singletonKey,
-    ]);
+    expect(
+      singleton.candidates.map((candidate) => candidate.candidateId),
+    ).toEqual([singletonKey, singletonKey]);
     expect(singleton.targetsByFusionId.get(singletonKey)).toEqual({
       documentId,
       unitId: baseCandidate.unitId,

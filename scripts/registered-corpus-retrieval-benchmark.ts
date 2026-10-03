@@ -1137,7 +1137,9 @@ async function runUnitSelectionStudy(
     const keyToUnitId = new Map<string, string>();
     const unitCandidates: RetrievalCandidate[] = [];
     const documentCandidates: RetrievalCandidate[] = [];
-    const observedLeafCandidates = (snapshot.channelCandidateTrace ?? []).filter(
+    const observedLeafCandidates = (
+      snapshot.channelCandidateTrace ?? []
+    ).filter(
       (candidate) =>
         candidate.unitId &&
         (candidate.channel === "LEXICAL" || candidate.channel === "VECTOR"),

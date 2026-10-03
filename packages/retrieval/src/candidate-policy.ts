@@ -311,7 +311,6 @@ export function resolveRetrievalPolicy(
   };
 }
 
-
 export interface RetrievalFusionTarget {
   documentId: string;
   unitId?: string;
