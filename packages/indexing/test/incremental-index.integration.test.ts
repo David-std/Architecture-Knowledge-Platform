@@ -592,13 +592,11 @@ describe("incremental index event port", () => {
         );
         const longContainer = rows.rows.find(
           (row) =>
-            row.container_only &&
-            row.body.includes("terminal recovery marker"),
+            row.container_only && row.body.includes("terminal recovery marker"),
         );
         const fragments = rows.rows.filter(
           (row) =>
-            row.embedding_eligible &&
-            typeof row.locator.fragment === "number",
+            row.embedding_eligible && typeof row.locator.fragment === "number",
         );
 
         expect(table).toMatchObject({
