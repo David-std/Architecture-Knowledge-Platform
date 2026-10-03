@@ -304,16 +304,11 @@ if (verifierName === "deterministic") {
   });
   label = `${verifier.id} enforce-source-bound`;
   admitter = async (hits, query) =>
-    assessRetrievalAnswerabilityWithVerifier(
-      hits,
-      query,
-      verifier,
-      {
-        mode: "ENFORCE",
-        maxCandidates: 64,
-        maxConcurrency: 4,
-      },
-    );
+    assessRetrievalAnswerabilityWithVerifier(hits, query, verifier, {
+      mode: "ENFORCE",
+      maxCandidates: 64,
+      maxConcurrency: 4,
+    });
 } else if (verifierName === "cross-encoder-reader") {
   const scoresPath = process.env.AKP_CONTEXTUAL_EVIDENCE_SCORES;
   const shortlist = new ContextualCrossEncoderEvidenceVerifier({
