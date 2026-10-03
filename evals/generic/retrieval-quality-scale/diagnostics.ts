@@ -96,7 +96,7 @@ export function buildRetrievalScaleStageAttribution(
     supported.has(
       retrievalAnswerabilityCandidateKey({
         documentId: candidate.documentId,
-        unitId: candidate.unitId,
+        unitId: candidate.unitId ?? undefined,
       }),
     ),
   );
