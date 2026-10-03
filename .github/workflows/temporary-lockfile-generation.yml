@@ -1,0 +1,30 @@
+name: temporary-lockfile-generation
+
+on:
+  pull_request:
+    paths:
+      - package.json
+      - packages/project-adapter/package.json
+      - packages/vault-importer/package.json
+      - .github/workflows/temporary-lockfile-generation.yml
+
+jobs:
+  lockfile:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --lockfile-only --no-frozen-lockfile
+      - run: pnpm audit --audit-level high
+      - uses: actions/upload-artifact@v4
+        with:
+          name: generated-lockfile
+          path: pnpm-lock.yaml
