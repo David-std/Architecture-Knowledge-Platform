@@ -1,5 +1,4 @@
 import { contextualEvidenceSpanText } from "./contextual-evidence.js";
-import { markdownVisibleSource } from "./markdown-visible-source.js";
 import type { SearchHit } from "@akp/contracts";
 import {
   DEFAULT_DETERMINISTIC_PASSAGE_SUPPORT_POLICY,
@@ -12,6 +11,11 @@ import {
   type DeterministicPassageSupportPolicy,
   type DeterministicPassageSupportSignal,
 } from "./support-verifier.js";
+import {
+  SourceVerificationError,
+  sourceVerificationFailureCode,
+  validateSourceBoundVerification,
+} from "./source-verification.js";
 
 const DIRECT_SUPPORT_CHANNELS = new Set([
   "exact",
@@ -57,7 +61,7 @@ export interface QueryConditionedEvidenceVerification {
   decision: QueryConditionedEvidenceDecision;
   /** Optional calibrated provider score. Core policy never treats it as proof. */
   score?: number;
-  /** SUPPORTS must point to an inspectable span in the supplied passage. */
+  /** SUPPORTS and CONTRADICTS must point to an inspectable source span. */
   evidenceSpan?: QueryConditionedEvidenceSpan;
   reason: string;
 }
@@ -522,51 +526,6 @@ function hardDeterministicRequirementsSatisfied(
   });
 }
 
-function validateQueryConditionedVerification(
-  passage: string,
-  result: QueryConditionedEvidenceVerification,
-): QueryConditionedEvidenceVerification {
-  if (
-    result.decision !== "SUPPORTS" &&
-    result.decision !== "CONTRADICTS" &&
-    result.decision !== "INSUFFICIENT"
-  ) {
-    throw new Error("QUERY_CONDITIONED_EVIDENCE_DECISION_INVALID");
-  }
-  if (!result.reason?.trim()) {
-    throw new Error("QUERY_CONDITIONED_EVIDENCE_REASON_REQUIRED");
-  }
-  if (
-    result.score !== undefined &&
-    (!Number.isFinite(result.score) || result.score < 0 || result.score > 1)
-  ) {
-    throw new Error("QUERY_CONDITIONED_EVIDENCE_SCORE_INVALID");
-  }
-  if (result.decision === "SUPPORTS") {
-    const span = result.evidenceSpan;
-    if (
-      !span ||
-      !Number.isSafeInteger(span.startOffset) ||
-      !Number.isSafeInteger(span.endOffset) ||
-      span.startOffset < 0 ||
-      span.endOffset <= span.startOffset ||
-      span.endOffset > passage.length
-    ) {
-      throw new Error("QUERY_CONDITIONED_EVIDENCE_SPAN_REQUIRED");
-    }
-    if (
-      markdownVisibleSource(passage).comments.some(
-        (comment) =>
-          comment.startOffset < span.endOffset &&
-          comment.endOffset > span.startOffset,
-      )
-    ) {
-      throw new Error("QUERY_CONDITIONED_EVIDENCE_SPAN_HIDDEN_SOURCE");
-    }
-  }
-  return { ...result, reason: result.reason.trim() };
-}
-
 function verifierInput(
   hit: SearchHit,
   query: string,
@@ -587,13 +546,10 @@ function verificationTrace(
   verifier: QueryConditionedEvidenceVerifier,
   policy: QueryConditionedEvidencePolicy,
   input: QueryConditionedEvidenceVerifierInput,
-  result: QueryConditionedEvidenceVerification | unknown,
+  result: unknown,
 ): QueryConditionedEvidenceTrace {
   try {
-    const verified = validateQueryConditionedVerification(
-      input.passage,
-      result as QueryConditionedEvidenceVerification,
-    );
+    const verified = validateSourceBoundVerification(input.passage, result);
     return {
       verifierId: verifier.id,
       mode: policy.mode,
@@ -617,10 +573,7 @@ function verifierErrorTrace(
     mode: policy.mode,
     decision: "VERIFIER_ERROR",
     score: null,
-    reason:
-      error instanceof Error
-        ? error.message
-        : "QUERY_CONDITIONED_EVIDENCE_VERIFIER_ERROR",
+    reason: sourceVerificationFailureCode(error),
     evidenceSpan: null,
   };
 }
@@ -637,9 +590,11 @@ async function verifyQueryConditionedEvidence(
     .map((hit) => verifierInput(hit, query));
   if (verifier.verifyBatch) {
     try {
-      const results = await verifier.verifyBatch(inputs);
-      if (results.length !== inputs.length) {
-        throw new Error("QUERY_CONDITIONED_EVIDENCE_BATCH_SIZE_MISMATCH");
+      const results: unknown = await verifier.verifyBatch(inputs);
+      if (!Array.isArray(results) || results.length !== inputs.length) {
+        throw new SourceVerificationError(
+          "QUERY_CONDITIONED_EVIDENCE_BATCH_SIZE_MISMATCH",
+        );
       }
       inputs.forEach((input, index) =>
         output.set(

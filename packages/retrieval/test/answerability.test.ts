@@ -1815,6 +1815,288 @@ describe("retrieval answerability", () => {
     );
   });
 
+  it("requires visible UTF-16 source spans for SUPPORTS and CONTRADICTS", async () => {
+    const excerpt = "😀 Visible answer. <!-- hidden 🔒 denial -->";
+    const candidate = hit(45, {
+      title: "Source boundary",
+      excerpt,
+      contributions: [contribution("vector", 0.8, 1)],
+    });
+    const visibleEnd = excerpt.indexOf("<!--");
+    const supported = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "What is visible?",
+      {
+        id: "utf16-visible",
+        verify: async () => ({
+          decision: "SUPPORTS",
+          evidenceSpan: { startOffset: 0, endOffset: visibleEnd },
+          reason: "visible source",
+        }),
+      },
+      { mode: "SHADOW" },
+    );
+    expect(
+      supported.candidateSignals[0]?.queryConditionedEvidence,
+    ).toMatchObject({
+      decision: "SUPPORTS",
+      evidenceSpan: { startOffset: 0, endOffset: visibleEnd },
+    });
+
+    const hiddenStart = excerpt.indexOf("<!--");
+    const contradicted = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "What is visible?",
+      {
+        id: "utf16-hidden-contradiction",
+        verify: async () => ({
+          decision: "CONTRADICTS",
+          evidenceSpan: {
+            startOffset: hiddenStart + 4,
+            endOffset: hiddenStart + 15,
+          },
+          reason: "hidden source must not be evidence",
+        }),
+      },
+      { mode: "SHADOW" },
+    );
+    expect(
+      contradicted.candidateSignals[0]?.queryConditionedEvidence,
+    ).toMatchObject({
+      decision: "VERIFIER_ERROR",
+      reason: "QUERY_CONDITIONED_EVIDENCE_SPAN_HIDDEN_SOURCE",
+      evidenceSpan: null,
+    });
+  });
+
+  it("rejects verifier spans that split an astral code point", async () => {
+    const candidate = hit(450, {
+      title: "Surrogate boundary",
+      excerpt: "😀 fact",
+      contributions: [contribution("vector", 0.8, 1)],
+    });
+    const verify = (startOffset: number, endOffset: number) =>
+      assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        "What is the fact?",
+        {
+          id: `surrogate-${startOffset}-${endOffset}`,
+          verify: async () => ({
+            decision: "SUPPORTS" as const,
+            evidenceSpan: { startOffset, endOffset },
+            reason: "source-bound fixture",
+          }),
+        },
+        { mode: "SHADOW" },
+      );
+
+    for (const [startOffset, endOffset] of [
+      [0, 1],
+      [1, 2],
+    ]) {
+      const result = await verify(startOffset, endOffset);
+      expect(
+        result.candidateSignals[0]?.queryConditionedEvidence,
+      ).toMatchObject({
+        decision: "VERIFIER_ERROR",
+        reason: "QUERY_CONDITIONED_EVIDENCE_SPAN_INVALID",
+        evidenceSpan: null,
+      });
+    }
+
+    const valid = await verify(0, 2);
+    expect(valid.candidateSignals[0]?.queryConditionedEvidence).toMatchObject({
+      decision: "SUPPORTS",
+      evidenceSpan: { startOffset: 0, endOffset: 2 },
+    });
+  });
+
+  it.each([
+    [
+      "unknown decision",
+      () => ({
+        decision: "MAYBE",
+        evidenceSpan: { startOffset: 0, endOffset: 4 },
+        reason: "untrusted output",
+      }),
+      "QUERY_CONDITIONED_EVIDENCE_DECISION_INVALID",
+    ],
+    ["null result", () => null, "QUERY_CONDITIONED_EVIDENCE_RESULT_INVALID"],
+    [
+      "invalid score",
+      () => ({
+        decision: "SUPPORTS",
+        score: 2,
+        evidenceSpan: { startOffset: 0, endOffset: 4 },
+        reason: "untrusted output",
+      }),
+      "QUERY_CONDITIONED_EVIDENCE_SCORE_INVALID",
+    ],
+    [
+      "spanless contradiction",
+      () => ({ decision: "CONTRADICTS", reason: "untrusted output" }),
+      "QUERY_CONDITIONED_EVIDENCE_SPAN_REQUIRED",
+    ],
+    [
+      "out of bounds contradiction",
+      () => ({
+        decision: "CONTRADICTS",
+        evidenceSpan: { startOffset: 0, endOffset: 99 },
+        reason: "untrusted output",
+      }),
+      "QUERY_CONDITIONED_EVIDENCE_SPAN_INVALID",
+    ],
+    [
+      "unexpected insufficient span",
+      () => ({
+        decision: "INSUFFICIENT",
+        evidenceSpan: { startOffset: 0, endOffset: 4 },
+        reason: "untrusted output",
+      }),
+      "QUERY_CONDITIONED_EVIDENCE_SPAN_UNEXPECTED",
+    ],
+  ])(
+    "fails closed for malformed verifier output: %s",
+    async (_label, verifyResult, reason) => {
+      const candidate = hit(46, {
+        title: "Malformed verifier output",
+        excerpt: "Fact.",
+        contributions: [contribution("vector", 0.8, 1)],
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        "What is the fact?",
+        {
+          id: "malformed-output",
+          verify: async () => verifyResult() as never,
+        },
+        { mode: "ENFORCE" },
+      );
+      expect(result.supported).toBe(false);
+      expect(
+        result.candidateSignals[0]?.queryConditionedEvidence,
+      ).toMatchObject({
+        decision: "VERIFIER_ERROR",
+        reason,
+        evidenceSpan: null,
+      });
+    },
+  );
+
+  it("keeps batch failures bounded to the affected candidate and closes operation failures", async () => {
+    const first = hit(47, {
+      title: "First fact",
+      excerpt: "First fact is recorded.",
+      contributions: [contribution("vector", 0.8, 1)],
+    });
+    const second = hit(48, {
+      title: "Second fact",
+      excerpt: "Second fact is recorded.",
+      contributions: [contribution("vector", 0.79, 2)],
+    });
+    const query = "What fact is recorded?";
+    const baseline = assessRetrievalAnswerability([first, second], query);
+    const rowFailure = await assessRetrievalAnswerabilityWithVerifier(
+      [first, second],
+      query,
+      {
+        id: "row-bounded",
+        verifyBatch: async () =>
+          [
+            {
+              decision: "SUPPORTS",
+              evidenceSpan: { startOffset: 0, endOffset: first.excerpt.length },
+              reason: "first source",
+            },
+            {
+              decision: "UNKNOWN",
+              evidenceSpan: {
+                startOffset: 0,
+                endOffset: second.excerpt.length,
+              },
+              reason: "malformed second row",
+            },
+          ] as never,
+      },
+      { mode: "SHADOW" },
+    );
+    expect(
+      rowFailure.candidateSignals[0]?.queryConditionedEvidence,
+    ).toMatchObject({ decision: "SUPPORTS" });
+    expect(
+      rowFailure.candidateSignals[1]?.queryConditionedEvidence,
+    ).toMatchObject({
+      decision: "VERIFIER_ERROR",
+      reason: "QUERY_CONDITIONED_EVIDENCE_DECISION_INVALID",
+    });
+    expect(rowFailure.supported).toBe(baseline.supported);
+    expect(rowFailure.supportedCandidateKeys).toEqual(
+      baseline.supportedCandidateKeys,
+    );
+
+    const batchFailure = await assessRetrievalAnswerabilityWithVerifier(
+      [first, second],
+      query,
+      {
+        id: "batch-size-failure",
+        verifyBatch: async () =>
+          [
+            {
+              decision: "SUPPORTS",
+              evidenceSpan: { startOffset: 0, endOffset: first.excerpt.length },
+              reason: "only one row",
+            },
+          ] as never,
+      },
+      { mode: "SHADOW" },
+    );
+    expect(
+      batchFailure.candidateSignals.map(
+        (signal) => signal.queryConditionedEvidence,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        decision: "VERIFIER_ERROR",
+        reason: "QUERY_CONDITIONED_EVIDENCE_BATCH_SIZE_MISMATCH",
+      }),
+      expect.objectContaining({
+        decision: "VERIFIER_ERROR",
+        reason: "QUERY_CONDITIONED_EVIDENCE_BATCH_SIZE_MISMATCH",
+      }),
+    ]);
+    expect(batchFailure.supported).toBe(baseline.supported);
+    expect(batchFailure.supportedCandidateKeys).toEqual(
+      baseline.supportedCandidateKeys,
+    );
+  });
+
+  it("does not expose provider exception text in the verifier trace", async () => {
+    const candidate = hit(49, {
+      title: "Provider boundary",
+      excerpt: "Private source text.",
+      contributions: [contribution("vector", 0.8, 1)],
+    });
+    const secret = "private-source https://user:password@example.invalid/token";
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "What is the source text?",
+      {
+        id: "provider-failure",
+        verify: async () => {
+          throw new Error(secret);
+        },
+      },
+      { mode: "SHADOW" },
+    );
+    const trace = result.candidateSignals[0]?.queryConditionedEvidence;
+    expect(trace).toMatchObject({
+      decision: "VERIFIER_ERROR",
+      reason: "QUERY_CONDITIONED_EVIDENCE_VERIFIER_ERROR",
+      evidenceSpan: null,
+    });
+    expect(JSON.stringify(trace)).not.toContain(secret);
+  });
+
   it("uses the comparison pool only for vector diagnostics, never as implicit support", () => {
     const winner = hit(1, {
       title: "Observability",

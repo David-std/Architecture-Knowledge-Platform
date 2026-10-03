@@ -1,11 +1,16 @@
 import type { SearchHit } from "@akp/contracts";
 import type {
-  QueryConditionedEvidenceVerification,
   QueryConditionedEvidenceVerifier,
   QueryConditionedEvidenceVerifierInput,
 } from "./answerability.js";
 import { contextualEvidenceSpanText } from "./contextual-evidence.js";
 import { markdownVisibleSource } from "./markdown-visible-source.js";
+import {
+  SourceVerificationError,
+  sourceVerificationFailureCode,
+  sourceSpanUsesCodePointBoundaries,
+  validateSourceBoundVerification,
+} from "./source-verification.js";
 import {
   dateYearEvidenceMatches,
   explicitYearBindingsMatch,
@@ -172,7 +177,8 @@ function validSpan(passage: string, span: ExactSourceSpan): boolean {
     Number.isSafeInteger(span.endOffset) &&
     span.startOffset >= 0 &&
     span.endOffset > span.startOffset &&
-    span.endOffset <= passage.length
+    span.endOffset <= passage.length &&
+    sourceSpanUsesCodePointBoundaries(passage, span.startOffset, span.endOffset)
   );
 }
 
@@ -345,18 +351,55 @@ function timeoutMs(value: number | undefined): number {
   return resolved;
 }
 
+function isReaderInput(
+  input: unknown,
+): input is QueryConditionedEvidenceVerifierInput {
+  return (
+    typeof input === "object" &&
+    input !== null &&
+    typeof (input as { passage?: unknown }).passage === "string"
+  );
+}
+
+function isSpanlessContradiction(verification: unknown): boolean {
+  return (
+    typeof verification === "object" &&
+    verification !== null &&
+    !Array.isArray(verification) &&
+    (verification as { decision?: unknown }).decision === "CONTRADICTS" &&
+    !(verification as { evidenceSpan?: unknown }).evidenceSpan
+  );
+}
+
+function semanticReaderFailureReason(
+  error: unknown,
+  verification: unknown,
+): string {
+  if (
+    sourceVerificationFailureCode(error) ===
+      "QUERY_CONDITIONED_EVIDENCE_SPAN_REQUIRED" &&
+    isSpanlessContradiction(verification)
+  ) {
+    return "SEMANTIC_CONTRADICTION_WITHOUT_SOURCE_SPAN";
+  }
+  return `SEMANTIC_READER_ERROR:${sourceVerificationFailureCode(error)}`;
+}
+
 function verificationVerdict(
-  verification: QueryConditionedEvidenceVerification,
-): EvidenceVerdict {
-  if (verification.decision === "INSUFFICIENT") {
-    return { kind: "INSUFFICIENT" };
+  passage: string,
+  verification: unknown,
+): { verdict: EvidenceVerdict; reason: string } {
+  const verified = validateSourceBoundVerification(passage, verification);
+  if (verified.decision === "INSUFFICIENT") {
+    return { verdict: { kind: "INSUFFICIENT" }, reason: verified.reason };
   }
-  if (!verification.evidenceSpan) {
-    return { kind: "INSUFFICIENT" };
-  }
-  return verification.decision === "SUPPORTS"
-    ? { kind: "ANSWERS", quote: verification.evidenceSpan }
-    : { kind: "CONTRADICTS", quote: verification.evidenceSpan };
+  return {
+    verdict:
+      verified.decision === "SUPPORTS"
+        ? { kind: "ANSWERS", quote: verified.evidenceSpan! }
+        : { kind: "CONTRADICTS", quote: verified.evidenceSpan! },
+    reason: verified.reason,
+  };
 }
 
 /**
@@ -379,28 +422,33 @@ export class QueryConditionedSemanticEvidenceReader implements SemanticEvidenceR
   async read(
     input: QueryConditionedEvidenceVerifierInput,
   ): Promise<EvidenceAdmissionDecision> {
+    if (!isReaderInput(input)) {
+      return {
+        layer: "SEMANTIC_READER",
+        verdict: { kind: "INSUFFICIENT" },
+        reason:
+          "SEMANTIC_READER_ERROR:QUERY_CONDITIONED_EVIDENCE_INPUT_INVALID",
+        readerId: this.id,
+      };
+    }
+    let verification: unknown;
     try {
-      const verification = await this.withTimeout(this.verifier.verify(input));
-      const verdict = verificationVerdict(verification);
+      verification = await this.withTimeout(this.verifier.verify(input));
+      const { verdict, reason } = verificationVerdict(
+        input.passage,
+        verification,
+      );
       return {
         layer: "SEMANTIC_READER",
         verdict,
-        reason:
-          verdict.kind === "INSUFFICIENT" &&
-          verification.decision === "CONTRADICTS" &&
-          !verification.evidenceSpan
-            ? "SEMANTIC_CONTRADICTION_WITHOUT_SOURCE_SPAN"
-            : verification.reason,
+        reason,
         readerId: this.id,
       };
     } catch (error) {
       return {
         layer: "SEMANTIC_READER",
         verdict: { kind: "INSUFFICIENT" },
-        reason:
-          error instanceof Error
-            ? `SEMANTIC_READER_ERROR:${error.message}`
-            : "SEMANTIC_READER_ERROR",
+        reason: semanticReaderFailureReason(error, verification),
         readerId: this.id,
       };
     }
@@ -410,36 +458,47 @@ export class QueryConditionedSemanticEvidenceReader implements SemanticEvidenceR
     inputs: readonly QueryConditionedEvidenceVerifierInput[],
   ): Promise<EvidenceAdmissionDecision[]> {
     if (inputs.length === 0) return [];
+    if (inputs.some((input) => !isReaderInput(input))) {
+      return Promise.all(inputs.map((input) => this.read(input)));
+    }
     if (!this.verifier.verifyBatch) {
       return Promise.all(inputs.map((input) => this.read(input)));
     }
+    let rows: unknown;
     try {
-      const rows = await this.withTimeout(this.verifier.verifyBatch(inputs));
-      if (rows.length !== inputs.length) {
-        throw new Error("SEMANTIC_READER_BATCH_SIZE_MISMATCH");
+      rows = await this.withTimeout(this.verifier.verifyBatch(inputs));
+      if (!Array.isArray(rows) || rows.length !== inputs.length) {
+        throw new SourceVerificationError(
+          "QUERY_CONDITIONED_EVIDENCE_BATCH_SIZE_MISMATCH",
+        );
       }
-      return rows.map((verification) => {
-        const verdict = verificationVerdict(verification);
-        return {
-          layer: "SEMANTIC_READER" as const,
-          verdict,
-          reason:
-            verdict.kind === "INSUFFICIENT" &&
-            verification.decision === "CONTRADICTS" &&
-            !verification.evidenceSpan
-              ? "SEMANTIC_CONTRADICTION_WITHOUT_SOURCE_SPAN"
-              : verification.reason,
-          readerId: this.id,
-        };
+      return rows.map((verification, index) => {
+        const input = inputs[index]!;
+        try {
+          const { verdict, reason } = verificationVerdict(
+            input.passage,
+            verification,
+          );
+          return {
+            layer: "SEMANTIC_READER" as const,
+            verdict,
+            reason,
+            readerId: this.id,
+          };
+        } catch (error) {
+          return {
+            layer: "SEMANTIC_READER" as const,
+            verdict: { kind: "INSUFFICIENT" as const },
+            reason: semanticReaderFailureReason(error, verification),
+            readerId: this.id,
+          };
+        }
       });
     } catch (error) {
       const decision: EvidenceAdmissionDecision = {
         layer: "SEMANTIC_READER",
         verdict: { kind: "INSUFFICIENT" },
-        reason:
-          error instanceof Error
-            ? `SEMANTIC_READER_ERROR:${error.message}`
-            : "SEMANTIC_READER_ERROR",
+        reason: semanticReaderFailureReason(error, rows),
         readerId: this.id,
       };
       return inputs.map(() => decision);
@@ -453,7 +512,8 @@ export class QueryConditionedSemanticEvidenceReader implements SemanticEvidenceR
         operation,
         new Promise<T>((_resolve, reject) => {
           timer = setTimeout(
-            () => reject(new Error("SEMANTIC_READER_TIMEOUT")),
+            () =>
+              reject(new SourceVerificationError("SEMANTIC_READER_TIMEOUT")),
             this.maxWaitMs,
           );
         }),
