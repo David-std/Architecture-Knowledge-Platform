@@ -564,6 +564,7 @@ async function executeCase(
   configuration: BenchmarkConfiguration,
   queryEmbeddingService: QueryEmbeddingService,
   candidatePoolLimit?: number,
+  disableAssertionRecall = false,
 ): Promise<RuntimeObservation> {
   const vaultId = fixture.vaultIds.get(testCase.vault);
   if (!vaultId) throw new Error(`Unknown case vault ${testCase.vault}`);
@@ -613,6 +614,9 @@ async function executeCase(
     ...(candidatePoolLimit === undefined
       ? {}
       : { benchmarkCandidatePoolLimit: candidatePoolLimit }),
+    ...(disableAssertionRecall
+      ? { benchmarkDisableAssertionRecall: true }
+      : {}),
   };
 
   const started = performance.now();
@@ -821,6 +825,56 @@ async function executeCase(
   };
 }
 
+function candidatePoolMeasurement(
+  observations: readonly RuntimeObservation[],
+) {
+  let expectedTargets = 0;
+  let foundTargets = 0;
+  const firstGoldRanks: number[] = [];
+  const perChannelFound = new Map<string, number>();
+  for (const observation of observations) {
+    for (const target of observation.stageDiagnostics.expected) {
+      expectedTargets += 1;
+      const candidate = observation.stageDiagnostics.candidateTrace.find(
+        (entry) =>
+          entry.documentId === target.documentId &&
+          entry.unitId === target.unitId,
+      );
+      if (!candidate) continue;
+      foundTargets += 1;
+      firstGoldRanks.push(candidate.rank);
+      for (const channel of new Set(
+        candidate.channels.map((entry) => entry.channel),
+      )) {
+        perChannelFound.set(
+          channel,
+          (perChannelFound.get(channel) ?? 0) + 1,
+        );
+      }
+    }
+  }
+  return {
+    answerableGoldTargets: expectedTargets,
+    candidateGoldTargetsFound: foundTargets,
+    candidatePoolRecall:
+      expectedTargets === 0 ? null : foundTargets / expectedTargets,
+    meanFirstGoldRank:
+      firstGoldRanks.length === 0
+        ? null
+        : firstGoldRanks.reduce((sum, value) => sum + value, 0) /
+          firstGoldRanks.length,
+    candidateMisses: expectedTargets - foundTargets,
+    perChannelGoldCoverage: Object.fromEntries(
+      [...perChannelFound.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([channel, count]) => [
+          channel,
+          expectedTargets === 0 ? null : count / expectedTargets,
+        ]),
+    ),
+  };
+}
+
 async function main(): Promise<void> {
   const repositoryState = {
     commit: execFileSync("git", ["rev-parse", "HEAD"], {
@@ -915,54 +969,42 @@ async function main(): Promise<void> {
           ),
         );
       }
-      let expectedTargets = 0;
-      let foundTargets = 0;
-      const firstGoldRanks: number[] = [];
-      const perChannelFound = new Map<string, number>();
-      for (const observation of observations) {
-        for (const target of observation.stageDiagnostics.expected) {
-          expectedTargets += 1;
-          const candidate = observation.stageDiagnostics.candidateTrace.find(
-            (entry) =>
-              entry.documentId === target.documentId &&
-              entry.unitId === target.unitId,
-          );
-          if (!candidate) continue;
-          foundTargets += 1;
-          firstGoldRanks.push(candidate.rank);
-          for (const channel of new Set(
-            candidate.channels.map((entry) => entry.channel),
-          )) {
-            perChannelFound.set(
-              channel,
-              (perChannelFound.get(channel) ?? 0) + 1,
-            );
-          }
-        }
-      }
       candidateDepthStudy.push({
         depth,
         configuration: candidateDepthConfiguration.name,
-        answerableGoldTargets: expectedTargets,
-        candidateGoldTargetsFound: foundTargets,
-        candidatePoolRecall:
-          expectedTargets === 0 ? null : foundTargets / expectedTargets,
-        meanFirstGoldRank:
-          firstGoldRanks.length === 0
-            ? null
-            : firstGoldRanks.reduce((sum, value) => sum + value, 0) /
-              firstGoldRanks.length,
-        candidateMisses: expectedTargets - foundTargets,
-        perChannelGoldCoverage: Object.fromEntries(
-          [...perChannelFound.entries()]
-            .sort(([left], [right]) => left.localeCompare(right))
-            .map(([channel, count]) => [
-              channel,
-              expectedTargets === 0 ? null : count / expectedTargets,
-            ]),
-        ),
+        ...candidatePoolMeasurement(observations),
       });
     }
+
+    const fullHybridRun = runs.find(
+      (run) => run.configurationName === candidateDepthConfiguration.name,
+    );
+    if (!fullHybridRun) {
+      throw new Error("Registered full-hybrid run missing for assertion study.");
+    }
+    const assertionRecallDisabledObservations: RuntimeObservation[] = [];
+    for (const testCase of dataset.cases) {
+      assertionRecallDisabledObservations.push(
+        await executeCase(
+          db,
+          fixture,
+          testCase,
+          candidateDepthConfiguration,
+          queryEmbeddingService,
+          undefined,
+          true,
+        ),
+      );
+    }
+    const assertionRecallStudy = {
+      independentVariable: "assertionRecall",
+      configuration: candidateDepthConfiguration.name,
+      productionDefaultChanged: false,
+      current: candidatePoolMeasurement(fullHybridRun.results),
+      disabled: candidatePoolMeasurement(assertionRecallDisabledObservations),
+      claimBoundary:
+        "This isolates the residual lexical assertion-recall path on the registered corpus; it does not alter production selection.",
+    };
 
     const isolationViolations = runs.flatMap((run) =>
       run.results.flatMap((result) => {
@@ -1111,6 +1153,10 @@ async function main(): Promise<void> {
           configuration: candidateDepthConfiguration.name,
           depths: candidateDepths,
         },
+        assertionRecallStudy: {
+          configuration: candidateDepthConfiguration.name,
+          variants: ["current", "disabled"],
+        },
       }),
     );
     const cpu = os.cpus();
@@ -1230,6 +1276,12 @@ async function main(): Promise<void> {
         claimBoundary:
           "Depth measurements use the same registered corpus and full-hybrid retrieval configuration; they do not select a production default.",
       },
+      assertionRecallStudy,
+      unitSelectionStudy: {
+        status: "NOT_MEASURED",
+        reason:
+          "The registered public corpus seeds exactly one retrieval unit per source document, so document-vs-unit candidate selection is not identifiable on this fixture.",
+      },
       productionDefault: {
         status: "NOT_SELECTED",
         reason:
@@ -1248,6 +1300,8 @@ async function main(): Promise<void> {
           cases: dataset.cases.length,
           candidateDecision,
           candidateDepthStudy: report.candidateDepthStudy,
+          assertionRecallStudy: report.assertionRecallStudy,
+          unitSelectionStudy: report.unitSelectionStudy,
           productionDefault: report.productionDefault,
           reproducibility: {
             commit: report.reproducibility.tool.versionOrCommit,

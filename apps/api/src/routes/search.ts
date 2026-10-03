@@ -523,6 +523,8 @@ export interface RetrievalExecutionOptions {
    * allowVectorForBenchmark is enabled and never comes from the HTTP request.
    */
   benchmarkCandidatePoolLimit?: number;
+  /** Registered benchmark-only switch for the residual assertion-recall path. */
+  benchmarkDisableAssertionRecall?: boolean;
   vaultIds?: string[];
   /** Exact, authorized Code Graph candidates resolved by the HTTP boundary. */
   codeCandidates?: CodeChannelCandidate[];
@@ -1455,10 +1457,14 @@ export async function queryKnowledge(
   if (!input.spaceId) throw new Error("SPACE_ID_REQUIRED");
   const spaceId = input.spaceId;
   const benchmarkCandidatePoolLimit = options.benchmarkCandidatePoolLimit;
+  if (
+    (benchmarkCandidatePoolLimit !== undefined ||
+      options.benchmarkDisableAssertionRecall === true) &&
+    !options.allowVectorForBenchmark
+  ) {
+    throw new Error("BENCHMARK_RETRIEVAL_OVERRIDE_NOT_ALLOWED");
+  }
   if (benchmarkCandidatePoolLimit !== undefined) {
-    if (!options.allowVectorForBenchmark) {
-      throw new Error("BENCHMARK_CANDIDATE_POOL_OVERRIDE_NOT_ALLOWED");
-    }
     if (
       !Number.isSafeInteger(benchmarkCandidatePoolLimit) ||
       benchmarkCandidatePoolLimit < 1 ||
@@ -2060,7 +2066,9 @@ export async function queryKnowledge(
         ),
       );
 
-      const assertionTerms = boundedAssertionRecallQuery(assisted.query);
+      const assertionTerms = options.benchmarkDisableAssertionRecall
+        ? null
+        : boundedAssertionRecallQuery(assisted.query);
       if (assertionTerms) {
         const assertionRecall = await queryLexical(assertionTerms);
         assertionRecallRows.push(
