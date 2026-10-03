@@ -1,6 +1,9 @@
 name: retrieval-qa-veto-experiment
 
 on:
+  pull_request:
+    branches:
+      - chore/retrieval-generality-policy
   push:
     branches:
       - experiment/retrieval-qa-veto-family-disjoint
