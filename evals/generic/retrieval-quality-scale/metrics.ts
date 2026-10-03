@@ -79,16 +79,16 @@ export function classifyQualityScaleOutcome(
 ): QualityScaleOutcome {
   if (input.smoke || !input.contractComplete) return "INCONCLUSIVE";
   if (!input.baseline || !input.final) return "INCONCLUSIVE";
-  if (
-    input.baseline.falseAcceptanceRate === null ||
-    input.final.falseAcceptanceRate === null
-  ) {
-    return "INCONCLUSIVE";
-  }
 
   const { baseline, final } = input;
   const baselineFalseAcceptanceRate = baseline.falseAcceptanceRate;
   const finalFalseAcceptanceRate = final.falseAcceptanceRate;
+  if (
+    baselineFalseAcceptanceRate === null ||
+    finalFalseAcceptanceRate === null
+  ) {
+    return "INCONCLUSIVE";
+  }
   if (
     baselineFalseAcceptanceRate > 0.2 ||
     finalFalseAcceptanceRate > 0.2 ||
