@@ -1355,11 +1355,31 @@ async function runRerankStudy(
   datasetHash: string,
   modelLoadLatencyMs: number,
 ) {
+  type RerankArmObservation = {
+    poolDepth: number;
+    shortlist: number;
+    poolGoldPresent: boolean;
+    baselineRank: number | null;
+    rerankedRank: number | null;
+  };
+  type MeasuredResult = {
+    caseId: string;
+    status: "MEASURED";
+    goldUnitAlternatives: number;
+    frozenPoolCandidates: number;
+    arms: RerankArmObservation[];
+  };
+  type UnresolvedResult = {
+    caseId: string;
+    status: "UNRESOLVED_GOLD_UNIT";
+    unresolvedPredicates: string[];
+  };
+
   const labelled = dataset.cases.filter(
     (testCase) => (testCase.gold_support?.length ?? 0) > 0,
   );
   const unresolvedPredicates: string[] = [];
-  const results = [];
+  const results: Array<MeasuredResult | UnresolvedResult> = [];
   let scoredCandidates = 0;
   let scoringLatencyMs = 0;
 
@@ -1454,19 +1474,6 @@ async function runRerankStudy(
     });
   }
 
-  type MeasuredResult = {
-    caseId: string;
-    status: "MEASURED";
-    goldUnitAlternatives: number;
-    frozenPoolCandidates: number;
-    arms: Array<{
-      poolDepth: number;
-      shortlist: number;
-      poolGoldPresent: boolean;
-      baselineRank: number | null;
-      rerankedRank: number | null;
-    }>;
-  };
   const measured = results.filter(
     (result): result is MeasuredResult => result.status === "MEASURED",
   );
