@@ -1313,6 +1313,31 @@ describe("retrieval answerability", () => {
     ]);
   });
 
+  it("binds numeric row selectors outside quantity-shaped questions", () => {
+    const table = hit(217, {
+      title: "Storage matrix",
+      type: "decision-rule",
+      unitType: "TABLE",
+      excerpt:
+        "| Hazard class | Storage rule |\n|---|---|\n| Flammable (class 3) | Cabinet |\n| Corrosive (class 8) | Bunded area |",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+
+    const missing = assessRetrievalAnswerability(
+      [table],
+      "What are the storage rules for hazard class 7?",
+    );
+    expect(missing.supported).toBe(false);
+
+    const present = assessRetrievalAnswerability(
+      [table],
+      "What are the storage rules for hazard class 8?",
+    );
+    expect(present.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(table),
+    ]);
+  });
+
   it("requires an explicit year when the question asks which year", () => {
     const topical = hit(22, {
       title: "Compatibility window history",
