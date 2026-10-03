@@ -3597,6 +3597,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/table-row-projection.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/test/answerability.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -3773,6 +3778,11 @@
     },
     {
       "path": "packages/retrieval/test/structural-context.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/table-row-projection.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
