@@ -393,6 +393,54 @@ describe("R8 fixed-gold quality metrics", () => {
     expect(attributed.measuredStages.context).toBe(false);
     expect(attributed.measuredStages.generation).toBe(false);
 
+    const noAnswer = buildRetrievalScaleStageAttribution({
+      caseId: "no-answer-seam",
+      expected: [],
+      admissible: [],
+      labelsComplete: true,
+      labelScope: "CLOSED_GOLD_BENCHMARK",
+      sourceDocuments: [goldHit.documentId, wrongHit.documentId],
+      materializedUnits: returnedHits.map(({ documentId, unitId }) => ({
+        documentId,
+        unitId: unitId!,
+      })),
+      snapshot,
+      returnedHits,
+      assessment,
+      shortlistLimit: 2,
+    });
+
+    expect(noAnswer.labelsComplete).toBe(true);
+    expect(noAnswer.admitted).toHaveLength(2);
+    expect(noAnswer.admittedOutsideAdmissible).toHaveLength(2);
+    expect(noAnswer.failures.map((failure) => failure.stage)).toEqual([
+      "ADMISSION_FALSE_POSITIVE",
+      "ADMISSION_FALSE_POSITIVE",
+    ]);
+    expect(
+      noAnswer.failures.map((failure) => ({
+        documentId: failure.target?.documentId,
+        unitId: failure.target?.unitId,
+        evidenceSpan: failure.target?.evidenceSpan,
+      })),
+    ).toEqual([
+      {
+        documentId: goldHit.documentId,
+        unitId: goldHit.unitId,
+        evidenceSpan: null,
+      },
+      {
+        documentId: wrongHit.documentId,
+        unitId: wrongHit.unitId,
+        evidenceSpan: null,
+      },
+    ]);
+    expect(noAnswer.exactSpanEvaluation).toEqual({
+      annotatedGoldUnits: 0,
+      totalGoldUnits: 0,
+      precision: null,
+    });
+
     expect(() =>
       buildRetrievalScaleStageAttribution({
         caseId: "missing-seam",

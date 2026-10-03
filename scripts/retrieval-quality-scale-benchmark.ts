@@ -99,6 +99,7 @@ interface IndexGenerationMarker {
 interface CaseObservation extends RankedGoldObservation {
   caseId: string;
   slice: string;
+  expectNoAnswer?: boolean;
   goldTargets: Array<{
     documentId: string;
     unitId: string;
@@ -504,7 +505,10 @@ async function executeCase(
       documentId,
       unitId,
     })),
-    labelsComplete: false,
+    // Explicit no-answer annotations are complete for the admission
+    // diagnostic. Positive closed-gold labels remain intentionally
+    // incomplete because they are not universal semantic authority.
+    labelsComplete: testCase.definition.expectNoAnswer === true,
     labelScope: "CLOSED_GOLD_BENCHMARK",
     sourceDocuments: materialized.sourceDocuments,
     materializedUnits: materialized.units,

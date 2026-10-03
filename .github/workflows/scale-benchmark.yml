@@ -245,14 +245,16 @@ jobs:
               );
             }
             for (const result of row.cases ?? []) {
-              if ((result.goldTargets?.length ?? 0) === 0) continue;
               if (!result.goldStagePresence || !result.stageAttribution) {
                 throw new Error(`R8 case ${result.caseId} lacks stage attribution.`);
               }
               const attribution = result.stageAttribution;
+              const isExplicitNoAnswer =
+                result.expectNoAnswer === true &&
+                (result.goldTargets?.length ?? 0) === 0;
               if (
                 attribution.labelScope !== "CLOSED_GOLD_BENCHMARK" ||
-                attribution.labelsComplete !== false
+                attribution.labelsComplete !== isExplicitNoAnswer
               ) {
                 throw new Error(
                   `R8 case ${result.caseId} misstates benchmark label authority.`,
@@ -289,6 +291,54 @@ jobs:
               if (!Array.isArray(attribution.admittedOutsideAdmissible)) {
                 throw new Error(
                   `R8 case ${result.caseId} lacks outside-gold admission diagnostics.`,
+                );
+              }
+              if (isExplicitNoAnswer) {
+                const falsePositiveFailures = (attribution.failures ?? []).filter(
+                  (failure) => failure.stage === "ADMISSION_FALSE_POSITIVE",
+                );
+                const admittedOutside = attribution.admittedOutsideAdmissible;
+                for (const failure of falsePositiveFailures) {
+                  if (
+                    !failure.target?.documentId ||
+                    !Object.prototype.hasOwnProperty.call(
+                      failure.target,
+                      "unitId",
+                    ) ||
+                    failure.target.evidenceSpan !== null
+                  ) {
+                    throw new Error(
+                      `R8 no-answer case ${result.caseId} has incomplete false-positive target metadata.`,
+                    );
+                  }
+                }
+                const identityKey = (identity) =>
+                  `${identity.documentId}:${identity.unitId ?? "document"}`;
+                const admittedOutsideKeys = admittedOutside.map(identityKey);
+                const falsePositiveKeys = falsePositiveFailures.map(
+                  (failure) => identityKey(failure.target),
+                );
+                if (Boolean(result.admitted) !== (admittedOutsideKeys.length > 0)) {
+                  throw new Error(
+                    `R8 no-answer case ${result.caseId} disagrees with admitted metadata.`,
+                  );
+                }
+                if (
+                  falsePositiveKeys.length !== admittedOutsideKeys.length ||
+                  [...falsePositiveKeys].sort().join("\n") !==
+                    [...admittedOutsideKeys].sort().join("\n")
+                ) {
+                  throw new Error(
+                    `R8 no-answer case ${result.caseId} false-positive attribution does not match admitted metadata.`,
+                  );
+                }
+              } else if (
+                (attribution.failures ?? []).some(
+                  (failure) => failure.stage === "ADMISSION_FALSE_POSITIVE",
+                )
+              ) {
+                throw new Error(
+                  `R8 positive case ${result.caseId} promoted outside-gold evidence to a false-positive label.`,
                 );
               }
             }
