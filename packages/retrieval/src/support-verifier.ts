@@ -1662,7 +1662,8 @@ export function verifyDeterministicPassageSupport(
     query,
   );
   const compactHeaderSelectorsMatched =
-    hit.unitType !== "TABLE" || compactTableHeaderSelectorsMatch(passage, query);
+    hit.unitType !== "TABLE" ||
+    compactTableHeaderSelectorsMatch(passage, query);
   const queryTokens = normalizedAnswerabilityTokens(query);
   const salientQueryTokens = queryTokens.filter(
     (token) => token.length >= 3 && !ANSWERABILITY_STOPWORDS.has(token),
