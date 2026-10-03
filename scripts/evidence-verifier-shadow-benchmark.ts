@@ -14,13 +14,23 @@ type CandidateFixture = {
   title: string;
   passage: string;
   vectorRank: number;
+  goldSpan?: string;
 };
+
+type SlotCalibrationFamily =
+  | "NAMED_ROLE"
+  | "LOCATION"
+  | "QUANTITY"
+  | "DATE"
+  | "DESTINATION"
+  | "CONDITION_VALUE";
 
 type ShadowCase = {
   id: string;
   query: string;
   candidates: CandidateFixture[];
   goldLabels: string[];
+  family?: SlotCalibrationFamily;
 };
 
 function hit(input: CandidateFixture): SearchHit {
@@ -261,6 +271,226 @@ const CASES: ShadowCase[] = [
   },
 ];
 
+
+const SLOT_CALIBRATION_CASES: ShadowCase[] = [
+  {
+    id: "slot-cal-named-role-positive",
+    family: "NAMED_ROLE",
+    query: "Who is the named reviewer for KESTO?",
+    candidates: [
+      {
+        label: "kesto-reviewer",
+        title: "KESTO review ownership",
+        passage: "MIRA is the named reviewer for KESTO.",
+        vectorRank: 1,
+        goldSpan: "MIRA",
+      },
+      {
+        label: "kesto-review-metrics",
+        title: "KESTO review telemetry",
+        passage: "KESTO records review latency and approval status.",
+        vectorRank: 2,
+      },
+    ],
+    goldLabels: ["kesto-reviewer"],
+  },
+  {
+    id: "slot-cal-named-role-negative",
+    family: "NAMED_ROLE",
+    query: "Who is the named reviewer for PAVO?",
+    candidates: [
+      {
+        label: "pavo-review-topic",
+        title: "PAVO review workflow",
+        passage:
+          "PAVO records review state and approval history, but this source does not name a reviewer.",
+        vectorRank: 1,
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "slot-cal-location-positive",
+    family: "LOCATION",
+    query: "Where is the RENO archive stored?",
+    candidates: [
+      {
+        label: "reno-location",
+        title: "RENO archive residency",
+        passage: "The RENO archive is stored in region VELA.",
+        vectorRank: 1,
+        goldSpan: "region VELA",
+      },
+      {
+        label: "reno-dashboard",
+        title: "RENO monitoring",
+        passage: "RENO dashboards are viewed from region VELA.",
+        vectorRank: 2,
+      },
+    ],
+    goldLabels: ["reno-location"],
+  },
+  {
+    id: "slot-cal-location-negative",
+    family: "LOCATION",
+    query: "Where is the SUMA archive stored?",
+    candidates: [
+      {
+        label: "suma-location-absent",
+        title: "SUMA archive monitoring",
+        passage:
+          "SUMA reports archive latency from region NARO; storage residency is not defined here.",
+        vectorRank: 1,
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "slot-cal-quantity-positive",
+    family: "QUANTITY",
+    query: "How many retry attempts are allowed for TILO?",
+    candidates: [
+      {
+        label: "tilo-retry-limit",
+        title: "TILO retry policy",
+        passage: "TILO allows 4 retry attempts before escalation.",
+        vectorRank: 1,
+        goldSpan: "4",
+      },
+      {
+        label: "tilo-workers",
+        title: "TILO workers",
+        passage: "TILO currently runs 4 retry workers.",
+        vectorRank: 2,
+      },
+    ],
+    goldLabels: ["tilo-retry-limit"],
+  },
+  {
+    id: "slot-cal-quantity-negative",
+    family: "QUANTITY",
+    query: "How many retry attempts are allowed for BERA?",
+    candidates: [
+      {
+        label: "bera-workers-only",
+        title: "BERA retry telemetry",
+        passage:
+          "BERA currently runs 6 retry workers; this source does not define the attempt limit.",
+        vectorRank: 1,
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "slot-cal-date-positive",
+    family: "DATE",
+    query: "When is the approved KORA maintenance window?",
+    candidates: [
+      {
+        label: "kora-date",
+        title: "KORA maintenance approval",
+        passage: "The approved KORA maintenance window is 2027-04-16.",
+        vectorRank: 1,
+        goldSpan: "2027-04-16",
+      },
+      {
+        label: "kora-history",
+        title: "KORA maintenance history",
+        passage: "KORA maintenance was reviewed during 2027 planning.",
+        vectorRank: 2,
+      },
+    ],
+    goldLabels: ["kora-date"],
+  },
+  {
+    id: "slot-cal-date-negative",
+    family: "DATE",
+    query: "When is the approved SENA maintenance window?",
+    candidates: [
+      {
+        label: "sena-date-absent",
+        title: "SENA maintenance planning",
+        passage:
+          "SENA maintenance is reviewed during 2028 planning; no approved window is recorded here.",
+        vectorRank: 1,
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "slot-cal-destination-positive",
+    family: "DESTINATION",
+    query: "Which destination receives NIVA audit exports?",
+    candidates: [
+      {
+        label: "niva-destination",
+        title: "NIVA audit export",
+        passage: "NIVA audit exports are written to the QUOR archive.",
+        vectorRank: 1,
+        goldSpan: "QUOR archive",
+      },
+      {
+        label: "niva-observability",
+        title: "NIVA export monitoring",
+        passage: "NIVA monitors audit export latency in QUOR dashboards.",
+        vectorRank: 2,
+      },
+    ],
+    goldLabels: ["niva-destination"],
+  },
+  {
+    id: "slot-cal-destination-negative",
+    family: "DESTINATION",
+    query: "Which destination receives LARO audit exports?",
+    candidates: [
+      {
+        label: "laro-destination-absent",
+        title: "LARO audit export monitoring",
+        passage:
+          "LARO reports export throughput and failures; this source does not define the destination.",
+        vectorRank: 1,
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "slot-cal-condition-positive",
+    family: "CONDITION_VALUE",
+    query: "What condition enables VIMO failover?",
+    candidates: [
+      {
+        label: "vimo-condition",
+        title: "VIMO failover policy",
+        passage: "VIMO failover is enabled when the primary route is unhealthy.",
+        vectorRank: 1,
+        goldSpan: "when the primary route is unhealthy",
+      },
+      {
+        label: "vimo-status",
+        title: "VIMO failover dashboard",
+        passage: "VIMO displays primary route health and failover status.",
+        vectorRank: 2,
+      },
+    ],
+    goldLabels: ["vimo-condition"],
+  },
+  {
+    id: "slot-cal-condition-negative",
+    family: "CONDITION_VALUE",
+    query: "What condition enables DORO failover?",
+    candidates: [
+      {
+        label: "doro-condition-absent",
+        title: "DORO failover telemetry",
+        passage:
+          "DORO records failover events and route health; the enabling condition is not specified.",
+        vectorRank: 1,
+      },
+    ],
+    goldLabels: [],
+  },
+];
+
 const reportPath = path.resolve(
   process.env.AKP_EVIDENCE_VERIFIER_SHADOW_REPORT ??
     "reports/ci/evidence-verifier-shadow-benchmark.json",
@@ -282,8 +512,9 @@ function hardRequirementsSatisfied(
 }
 
 const observations = [];
+const slotCalibrationObservations = [];
 try {
-  for (const testCase of CASES) {
+  for (const testCase of [...CASES, ...SLOT_CALIBRATION_CASES]) {
     const hits = testCase.candidates.map(hit);
     const baseline = collectCandidateAnswerabilitySignals(hits, testCase.query);
     const candidates = [];
@@ -299,6 +530,13 @@ try {
         parentUnitType: candidate.parentUnitType ?? null,
         documentType: candidate.type,
       });
+      const fixture = testCase.candidates[index]!;
+      const evidenceText = verification.evidenceSpan
+        ? candidate.excerpt.slice(
+            verification.evidenceSpan.startOffset,
+            verification.evidenceSpan.endOffset,
+          )
+        : null;
       candidates.push({
         label: candidate.document.externalId,
         candidateKey: retrievalAnswerabilityCandidateKey(candidate),
@@ -311,14 +549,21 @@ try {
         verifierReason: verification.reason,
         verifierScore: verification.score ?? null,
         evidenceSpan: verification.evidenceSpan ?? null,
+        spanCorrect:
+          fixture.goldSpan === undefined
+            ? null
+            : evidenceText?.trim() === fixture.goldSpan.trim(),
         latencyMs: performance.now() - started,
       });
     }
-    observations.push({
+    const row = {
       id: testCase.id,
+      family: testCase.family ?? null,
       goldLabels: testCase.goldLabels,
       candidates,
-    });
+    };
+    if (testCase.family) slotCalibrationObservations.push(row);
+    else observations.push(row);
   }
 } finally {
   await verifier.dispose();
@@ -392,6 +637,139 @@ const thresholdMetrics = thresholds.map((threshold) => {
   };
 });
 
+
+const slotObservedScores = slotCalibrationObservations.flatMap((entry) =>
+  entry.candidates.flatMap((candidate) =>
+    typeof candidate.verifierScore === "number"
+      ? [candidate.verifierScore]
+      : [],
+  ),
+);
+const slotThresholds = [
+  ...new Set([
+    0.01,
+    0.025,
+    0.05,
+    0.075,
+    0.1,
+    0.15,
+    0.2,
+    0.3,
+    0.4,
+    0.5,
+    0.6,
+    0.7,
+    0.8,
+    0.9,
+    ...slotObservedScores.map((score) => Number(score.toFixed(6))),
+  ]),
+].sort((left, right) => left - right);
+
+const slotCalibrationMetrics = slotThresholds.map((threshold) => {
+  let positiveCases = 0;
+  let negativeCases = 0;
+  let falseAbstentions = 0;
+  let falseAcceptances = 0;
+  let selected = 0;
+  let selectedGold = 0;
+  let selectedWrong = 0;
+  let selectedGoldWithSpan = 0;
+  let selectedGoldSpanCorrect = 0;
+
+  for (const entry of slotCalibrationObservations) {
+    const gold = new Set(entry.goldLabels);
+    const accepted = entry.candidates.filter(
+      (candidate) =>
+        candidate.verifierDecision === "SUPPORTS" &&
+        candidate.hardRequirementsSatisfied &&
+        (candidate.verifierScore ?? 0) >= threshold,
+    );
+    const acceptedGold = accepted.filter((candidate) =>
+      gold.has(candidate.label ?? ""),
+    );
+    const acceptedWrong = accepted.filter(
+      (candidate) => !gold.has(candidate.label ?? ""),
+    );
+    selected += accepted.length;
+    selectedGold += acceptedGold.length;
+    selectedWrong += acceptedWrong.length;
+    for (const candidate of acceptedGold) {
+      if (candidate.spanCorrect !== null) {
+        selectedGoldWithSpan += 1;
+        if (candidate.spanCorrect) selectedGoldSpanCorrect += 1;
+      }
+    }
+    if (gold.size > 0) {
+      positiveCases += 1;
+      if (acceptedGold.length === 0) falseAbstentions += 1;
+    } else {
+      negativeCases += 1;
+      if (accepted.length > 0) falseAcceptances += 1;
+    }
+  }
+
+  return {
+    threshold,
+    positiveCases,
+    negativeCases,
+    falseAbstentions,
+    falseAbstentionRate:
+      positiveCases === 0 ? null : falseAbstentions / positiveCases,
+    falseAcceptances,
+    falseAcceptanceRate:
+      negativeCases === 0 ? null : falseAcceptances / negativeCases,
+    selectedCandidates: selected,
+    selectedGoldCandidates: selectedGold,
+    wrongSelections: selectedWrong,
+    supportSelectionPrecision: selected === 0 ? null : selectedGold / selected,
+    spanAccuracy:
+      selectedGold === 0 ||
+      selectedGoldWithSpan !== selectedGold ||
+      selectedGoldWithSpan === 0
+        ? null
+        : selectedGoldSpanCorrect / selectedGoldWithSpan,
+  };
+});
+
+const slotCalibrationCandidate =
+  slotCalibrationMetrics
+    .filter(
+      (metrics) =>
+        metrics.falseAcceptances === 0 &&
+        metrics.wrongSelections === 0 &&
+        metrics.supportSelectionPrecision === 1 &&
+        metrics.spanAccuracy === 1,
+    )
+    .sort(
+      (left, right) =>
+        left.falseAbstentions - right.falseAbstentions ||
+        right.threshold - left.threshold,
+    )[0] ?? null;
+
+const slotCalibration = {
+  status: "MEASURED",
+  evaluationUse: "DEVELOPMENT_CALIBRATION_ONLY",
+  holdoutEvaluated: false,
+  thresholdTuningAllowed: true,
+  model: {
+    id: verifier.id,
+    revision: "484112fae76dde6ad01b640192d559cbc2d488e1",
+  },
+  families: [
+    ...new Set(
+      SLOT_CALIBRATION_CASES.map((entry) => entry.family).filter(Boolean),
+    ),
+  ].sort(),
+  cases: slotCalibrationObservations.length,
+  metrics: slotCalibrationMetrics,
+  calibrationCandidate: slotCalibrationCandidate,
+  promotionAllowed: false,
+  nextStep:
+    slotCalibrationCandidate === null
+      ? "REJECT this QA slot-reader candidate before blind holdout."
+      : "Freeze this boundary in a versioned experiment SHA, then author a new family-disjoint holdout without reusing these cases or families.",
+};
+
 const promotionCandidates = thresholdMetrics.filter(
   (metrics) =>
     metrics.falseAcceptanceRate === 0 &&
@@ -416,6 +794,7 @@ const report = {
       : promotionCandidates.sort(
           (left, right) => right.threshold - left.threshold,
         )[0],
+  slotCalibration,
   productionDefaultChanged: false,
   enforcementEnabled: false,
 };
