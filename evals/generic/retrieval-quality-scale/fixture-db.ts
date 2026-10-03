@@ -56,6 +56,18 @@ export interface FixtureRowCounts {
   embeddings: number;
 }
 
+export interface MaterializedFixtureState {
+  sourceDocuments: string[];
+  units: Array<{ documentId: string; unitId: string }>;
+}
+
+export interface IndexGenerationMarker {
+  /** Exact lexical evidence is keyed by the fixture corpus revision. */
+  lexical: { kind: "CORPUS_REVISION"; value: string } | null;
+  /** Dense evidence is keyed by the actual embedding-generation UUID. */
+  vector: { kind: "EMBEDDING_GENERATION"; id: string } | null;
+}
+
 export const GENERATED_DISTRACTOR_FAMILIES = [
   "UNRELATED",
   "NEAR_DUPLICATE",
@@ -188,7 +200,13 @@ export function createScaleDatabaseFixture(
   definition: ScaleFixtureDefinition = R8_QUALITY_SCALE_FIXTURE,
 ): ScaleDatabaseFixture {
   if (!seed.trim()) throw new Error("R8 benchmark seed must not be empty");
-  const runId = randomUUID();
+  // Fixed-gold ordering must be reproducible.  The benchmark uses a
+  // disposable database and a seed-scoped namespace, so the document/unit
+  // UUIDs remain stable across reruns instead of making SQL tie ordering
+  // depend on a random run UUID.
+  const runId = deterministicUuid(
+    `r8-run:${seed}:${fixtureDefinitionHash(definition)}`,
+  );
   return {
     seed,
     runId,
@@ -432,6 +450,7 @@ export async function appendGeneratedDistractors(
          from generate_series($7::integer + 1,$8::integer) as generated(ordinal)
      ), projected as (
        select ordinal,family_index,
+              md5($6::text || ':generated-document:' || ordinal::text) document_hex,
               case family_index
                 when 0 then 'UNRELATED'
                 when 1 then 'NEAR_DUPLICATE'
@@ -500,7 +519,13 @@ export async function appendGeneratedDistractors(
          current_revision,body_cache,frontmatter,aliases,layer,content_hash,
          token_estimate,raw_links,refresh_status
        )
-       select gen_random_uuid(),$1,vault_id,
+       select (
+                substr(document_hex,1,8) || '-' ||
+                substr(document_hex,9,4) || '-' ||
+                substr(document_hex,13,4) || '-' ||
+                substr(document_hex,17,4) || '-' ||
+                substr(document_hex,21,12)
+              )::uuid,$1,vault_id,
               $4 || 'distractor-' || ordinal || '.md',
               $4 || 'distractor-' || ordinal,
               title,'concept',lifecycle,'HUMAN_REVIEWED',$5,body,
@@ -522,7 +547,13 @@ export async function appendGeneratedDistractors(
        source_ids,token_estimate,parent_unit_id,permissions,locator,
        structural_order,container_only,embedding_eligible
      )
-     select gen_random_uuid(),id,$1,vault_id,
+     select (
+              substr(unit_hex,1,8) || '-' ||
+              substr(unit_hex,9,4) || '-' ||
+              substr(unit_hex,13,4) || '-' ||
+              substr(unit_hex,17,4) || '-' ||
+              substr(unit_hex,21,12)
+            )::uuid,id,$1,vault_id,
             'paragraph-' || external_id,'PARAGRAPH',array[title],body_cache,
             content_hash,$5,$5,lifecycle,'HUMAN_REVIEWED','{}'::text[],
             greatest(18,ceil(length(body_cache)::numeric / 4)::integer),null,
@@ -531,7 +562,10 @@ export async function appendGeneratedDistractors(
               'kind','markdown','startLine',1,'endLine',1,'contentHash',content_hash
             ),
             1,false,true
-       from inserted_documents`,
+       from inserted_documents
+       cross join lateral (
+         select md5($6::text || ':generated-unit:' || external_id) unit_hex
+       ) generated_unit`,
     [
       fixture.spaceId,
       goldVaultId,
@@ -648,6 +682,49 @@ export async function fixtureRowCounts(
   };
 }
 
+/**
+ * Read the fixed fixture identities from the live projection instead of
+ * trusting fixture maps. Generated distractors are intentionally excluded:
+ * stage attribution only needs to prove that expected fixed sources/units
+ * survived ingestion, and retaining 100K generated identities here would
+ * contaminate the benchmark's own memory measurement.
+ */
+export async function materializedFixtureState(
+  db: Postgres,
+  fixture: ScaleDatabaseFixture,
+): Promise<MaterializedFixtureState> {
+  const expectedDocumentIds = [...fixture.documentIds.values()];
+  const expectedUnitIds = [...fixture.unitIds.values()];
+  if (expectedDocumentIds.length === 0) {
+    return { sourceDocuments: [], units: [] };
+  }
+  const [documents, units] = await Promise.all([
+    db.pool.query(
+      `select id document_id
+         from knowledge_documents
+        where space_id=$1 and id=any($2::uuid[])
+        order by id`,
+      [fixture.spaceId, expectedDocumentIds],
+    ),
+    expectedUnitIds.length === 0
+      ? Promise.resolve({ rows: [] })
+      : db.pool.query(
+          `select document_id,id unit_id
+             from knowledge_units
+            where space_id=$1 and id=any($2::uuid[])
+            order by document_id,id`,
+          [fixture.spaceId, expectedUnitIds],
+        ),
+  ]);
+  return {
+    sourceDocuments: documents.rows.map((row) => String(row.document_id)),
+    units: units.rows.map((row) => ({
+      documentId: String(row.document_id),
+      unitId: String(row.unit_id),
+    })),
+  };
+}
+
 export function logicalKeyForHit(
   fixture: ScaleDatabaseFixture,
   documentId: string,
@@ -659,15 +736,16 @@ export function logicalKeyForHit(
   if (unitKey) return unitKey;
   const documentKey = fixture.documentById.get(documentId);
   if (documentKey) return `${documentKey}:document`;
-  return "UNKNOWN_CANDIDATE";
+  // Generated distractors are intentionally not copied into the fixed-gold
+  // maps. Keep each unresolved result distinct for ranking metrics while the
+  // stage diagnostic retains the actual document/unit metadata.
+  return `UNKNOWN_CANDIDATE:${documentId}:${unitId ?? "document"}`;
 }
 
 export async function indexGenerationMarkers(
   db: Postgres,
   fixture: ScaleDatabaseFixture,
-): Promise<
-  Record<ScaleVaultKey, { lexical: string | null; vector: string | null }>
-> {
+): Promise<Record<ScaleVaultKey, IndexGenerationMarker>> {
   const result = await db.pool.query(
     `select v.vault_key, i.lexical_revision, i.vector_revision
        from vault_index_revisions i
@@ -680,11 +758,21 @@ export async function indexGenerationMarkers(
     result.rows.map((row) => [
       String(row.vault_key) as ScaleVaultKey,
       {
-        lexical: row.lexical_revision ? String(row.lexical_revision) : null,
-        vector: row.vector_revision ? String(row.vector_revision) : null,
+        lexical: row.lexical_revision
+          ? {
+              kind: "CORPUS_REVISION" as const,
+              value: String(row.lexical_revision),
+            }
+          : null,
+        vector: row.vector_revision
+          ? {
+              kind: "EMBEDDING_GENERATION" as const,
+              id: String(row.vector_revision),
+            }
+          : null,
       },
     ]),
-  ) as Record<ScaleVaultKey, { lexical: string | null; vector: string | null }>;
+  ) as Record<ScaleVaultKey, IndexGenerationMarker>;
 }
 
 export async function cleanupScaleDatabaseFixture(
@@ -718,9 +806,7 @@ export async function cleanupScaleDatabaseFixture(
   await db.pool.query("delete from organizations where id=$1", [
     fixture.organizationId,
   ]);
-  return fixtureRowCounts(db, fixture).catch(() => ({
-    documents: 0,
-    units: 0,
-    embeddings: 0,
-  }));
+  // Verification errors must fail the benchmark. Returning zeroes here would
+  // turn an unavailable count query into false cleanup evidence.
+  return fixtureRowCounts(db, fixture);
 }

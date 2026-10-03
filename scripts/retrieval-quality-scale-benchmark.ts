@@ -23,9 +23,10 @@ import {
   LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
   LocalSemanticEmbeddingAdapter,
   QueryEmbeddingService,
-  retrievalAnswerabilityCandidateKey,
+  type GoldEvidenceTarget,
   type EvidenceRetrievalStageSnapshot,
 } from "../packages/retrieval/src/index.js";
+import type { EvidenceFailureStage } from "../packages/retrieval/src/quality-diagnostics.js";
 import { queryKnowledge } from "../apps/api/src/routes/search.js";
 import {
   R8_QUALITY_SCALE_FIXTURE,
@@ -40,16 +41,22 @@ import {
   generatedDistractorFamilyCounts,
   indexGenerationMarkers,
   logicalKeyForHit,
+  materializedFixtureState,
   measureProjectedUpdate,
   seedFixedFixture,
   storageDelta,
   storageSnapshot,
   type GeneratedDistractorFamily,
+  type MaterializedFixtureState,
   type ResolvedGoldTarget,
   type ResolvedScaleCase,
   type ScaleDatabaseFixture,
   type StorageSnapshot,
 } from "../evals/generic/retrieval-quality-scale/fixture-db.js";
+import {
+  buildRetrievalScaleStageAttribution,
+  type RetrievalScaleStageAttribution,
+} from "../evals/generic/retrieval-quality-scale/diagnostics.js";
 import {
   average,
   classifyQualityScaleOutcome,
@@ -84,10 +91,17 @@ interface StageCoverage {
   returned: number;
 }
 
+interface IndexGenerationMarker {
+  lexical: { kind: "CORPUS_REVISION"; value: string } | null;
+  vector: { kind: "EMBEDDING_GENERATION"; id: string } | null;
+}
+
 interface CaseObservation extends RankedGoldObservation {
   caseId: string;
   slice: string;
   goldTargets: Array<{
+    documentId: string;
+    unitId: string;
     documentKey: string;
     unitKey: string;
     unitType: string;
@@ -106,6 +120,9 @@ interface CaseObservation extends RankedGoldObservation {
     afterRerank: boolean;
     returned: boolean;
   } | null;
+  failureStages: EvidenceFailureStage[];
+  primaryFailureStage: EvidenceFailureStage | null;
+  stageAttribution: RetrievalScaleStageAttribution;
   warnings: string[];
   availableChannels: string[];
 }
@@ -132,10 +149,7 @@ interface TargetResult {
     beforeQueries: MemorySnapshot;
     afterQueries: MemorySnapshot;
   };
-  indexGeneration: Record<
-    ScaleVaultKey,
-    { lexical: string | null; vector: string | null }
-  >;
+  indexGeneration: Record<ScaleVaultKey, IndexGenerationMarker>;
   relevance: ReturnType<typeof scoreGoldRanking>;
   falseAcceptance: ReturnType<typeof scoreFalseAcceptance>;
   cases: CaseObservation[];
@@ -173,11 +187,13 @@ interface BenchmarkReport {
     };
     indexGenerations: Record<
       string,
-      Record<ScaleVaultKey, { lexical: string | null; vector: string | null }>
+      Record<ScaleVaultKey, IndexGenerationMarker>
     >;
   };
   acceptance: {
     fixedGold: boolean;
+    goldLabelScope: "CLOSED_GOLD_BENCHMARK";
+    semanticLabelAuthorityMeasured: false;
     goldResolvedBeforeRetrieval: boolean;
     queryKnowledgeUsed: boolean;
     parserUsed: string;
@@ -243,6 +259,14 @@ function parseTargets(
   }
   if (targets.some((target) => target > 100_000)) {
     throw new Error("this benchmark refuses distractor counts above 100000");
+  }
+  if (
+    !reducedScope &&
+    JSON.stringify(targets) !== JSON.stringify(REQUIRED_TARGETS)
+  ) {
+    throw new Error(
+      `full R8 runs require exactly ${REQUIRED_TARGETS.join(",")}; use --reduced-scope for an explicit smoke matrix`,
+    );
   }
   return targets;
 }
@@ -331,6 +355,40 @@ function stageCoverage(
   };
 }
 
+function goldEvidenceTargets(
+  fixture: ScaleDatabaseFixture,
+  testCase: ResolvedScaleCase,
+): GoldEvidenceTarget[] {
+  return testCase.gold.map((target) => {
+    const documentId = fixture.documentIds.get(target.documentKey);
+    const unitId = fixture.unitIds.get(target.identityKey);
+    if (!documentId || !unitId) {
+      throw new Error(`Missing fixed gold identity for ${target.identityKey}`);
+    }
+    return {
+      documentId,
+      unitId,
+      evidenceSpan: target.span,
+    };
+  });
+}
+
+function indexGenerationContractValue(
+  corpusRevision: string,
+  arm: BenchmarkArm,
+  generations: BenchmarkReport["experiment"]["indexGenerations"],
+): string {
+  const lastTarget = Object.keys(generations).at(-1) ?? "0";
+  return JSON.stringify({
+    lexical: {
+      kind: "CORPUS_REVISION",
+      value: corpusRevision,
+    },
+    arm,
+    latestPerVault: generations[lastTarget] ?? null,
+  });
+}
+
 async function gitHead(): Promise<string> {
   const result = await execFile("git", ["rev-parse", "HEAD"], {
     cwd: process.cwd(),
@@ -382,6 +440,7 @@ async function executeCase(
   testCase: ResolvedScaleCase,
   arm: BenchmarkArm,
   queryEmbeddingService: QueryEmbeddingService | undefined,
+  materialized: MaterializedFixtureState,
 ): Promise<CaseObservation> {
   const vaultIds = testCase.definition.vaults.map((vault) => {
     const value = fixture.vaultIds.get(vault);
@@ -436,11 +495,33 @@ async function executeCase(
   const admittedUnitKeys = assessment.supportedCandidateKeys.map((key) =>
     candidateKeyToLogical(fixture, key),
   );
+  const expected = goldEvidenceTargets(fixture, testCase);
   const staged = stageCoverage(fixture, diagnostics, testCase.gold);
+  const attribution = buildRetrievalScaleStageAttribution({
+    caseId: testCase.definition.id,
+    expected,
+    admissible: expected.map(({ documentId, unitId }) => ({
+      documentId,
+      unitId,
+    })),
+    labelsComplete: false,
+    labelScope: "CLOSED_GOLD_BENCHMARK",
+    sourceDocuments: materialized.sourceDocuments,
+    materializedUnits: materialized.units,
+    snapshot: diagnostics,
+    returnedHits: hits,
+    assessment,
+    shortlistLimit: QUERY_LIMIT,
+  });
+  const failureStages = [
+    ...new Set(attribution.failures.map((failure) => failure.stage)),
+  ];
   return {
     caseId: testCase.definition.id,
     slice: testCase.definition.slice,
-    goldTargets: testCase.gold.map((target) => ({
+    goldTargets: testCase.gold.map((target, index) => ({
+      documentId: expected[index]!.documentId,
+      unitId: expected[index]!.unitId!,
       documentKey: target.documentKey,
       unitKey: target.unitKey,
       unitType: target.unitType,
@@ -459,6 +540,9 @@ async function executeCase(
     answerabilityReason: assessment.reason,
     stageCoverage: staged?.counts ?? null,
     goldStagePresence: staged?.goldPresence ?? null,
+    failureStages,
+    primaryFailureStage: failureStages[0] ?? null,
+    stageAttribution: attribution,
     warnings,
     availableChannels: [...availableChannels].sort(),
   };
@@ -475,7 +559,7 @@ function experimentContract(
   return {
     hypothesis:
       "A fixed gold set retains candidate-unit quality as unrelated and adversarial distractors grow.",
-    failureStage: "CANDIDATE_RETRIEVAL",
+    failureStage: "CANDIDATE_NOT_RETRIEVED",
     baselineSha,
     candidateSha,
     datasetVersion: R8_QUALITY_SCALE_FIXTURE.version,
@@ -489,14 +573,16 @@ function experimentContract(
     readerRevision: "deterministic-answerability-v1",
     configurationHash,
     singleIndependentVariable: "distractorCount",
-    primaryMetric: "goldUnitRecallAt10",
+    primaryMetric: "goldUnitFractionRecallAt10",
     guardrailMetrics: [
       "goldUnitRecallAt1",
       "goldUnitRecallAt5",
       "goldUnitRecallAt20",
+      "goldUnitAnyHitAt10",
       "mrr",
       "ndcg",
       "falseAcceptance",
+      "ADMISSION_FALSE_POSITIVE",
       "negativeFalseAcceptance",
       "p50QueryLatencyMs",
       "p95QueryLatencyMs",
@@ -587,6 +673,7 @@ async function runBenchmark(
           ? fixedIndexMs + denseIndexMs
           : appendIndexMs + denseIndexMs;
       const updateTimeMs = await measureProjectedUpdate(db, fixture);
+      const materialized = await materializedFixtureState(db, fixture);
       const beforeQueries = memorySnapshot();
       const querySamples: number[] = [];
       let firstIteration: CaseObservation[] = [];
@@ -599,6 +686,7 @@ async function runBenchmark(
             testCase,
             arm,
             queryEmbeddingService,
+            materialized,
           );
           querySamples.push(observation.queryLatencyMs);
           observations.push(observation);
@@ -673,7 +761,11 @@ async function runBenchmark(
       fixture,
       arm,
       configurationHash,
-      `${fixture.corpusRevision}:lexical${dense ? "+e5" : ""}`,
+      indexGenerationContractValue(
+        fixture.corpusRevision,
+        arm,
+        indexGenerations,
+      ),
     );
     const contractValidation = validateExperimentContract(contract);
     const baselineResult = results.find(
@@ -744,6 +836,8 @@ async function runBenchmark(
       },
       acceptance: {
         fixedGold: true,
+        goldLabelScope: "CLOSED_GOLD_BENCHMARK",
+        semanticLabelAuthorityMeasured: false,
         goldResolvedBeforeRetrieval: true,
         queryKnowledgeUsed: true,
         parserUsed: "parseKnowledgeUnits",
@@ -757,19 +851,38 @@ async function runBenchmark(
         "gold-unit Recall@1/5/10/20",
         "MRR",
         "nDCG",
-        "false acceptance separated from relevance",
+        "admitted units outside the closed benchmark gold set, separated from ranking relevance",
         "p50/p95 query latency",
         "lexical projection/index write time",
         "projected update time",
         "PostgreSQL storage growth",
-        "metadata-only stage diagnostics",
+        "metadata-only stage diagnostics with R1 failure enums",
+        "admitted-unit identity overlap with the closed benchmark gold set",
+        "expected document/unit/source-span labels with actual candidate metadata",
+        "source documents and materialized units read from the live fixture database",
         "adversarial distractor family multiplicity at every scale target",
       ],
       notMeasured: [
         {
+          dimension: "context packet inclusion",
+          reason:
+            "The R8 harness does not build a context packet; stage attribution records context as unmeasured.",
+        },
+        {
           dimension: "answer generation",
           reason:
             "The R8 harness stops at retrieval and deterministic answerability.",
+        },
+        {
+          dimension: "semantic exact-span precision",
+          reason:
+            "Gold source spans are annotated, but no provider/verifier quote span is supplied by this arm.",
+        },
+        {
+          dimension:
+            "semantic authority and completeness of closed gold labels",
+          reason:
+            "Active near-duplicate and contradictory policy sources can be valid alternatives or contradictions; outside-gold counts are not universal false-acceptance precision.",
         },
         {
           dimension: "private vault quality",
@@ -802,6 +915,7 @@ async function runBenchmark(
       ],
       limitations: [
         "The fixed gold corpus is synthetic and is a regression measurement, not a general precision claim.",
+        "Closed-gold outside-set admission counts are benchmark-label comparisons, not claims that every excluded source is semantically false or non-authoritative.",
         "Targets are cumulative in one disposable fixture; cache and warm index state can affect latency.",
         "Generated distractors scale deterministically across unrelated, near-duplicate, stale-version, same-title/other-vault, wrong-relation, close-number/date and contradictory-policy families.",
         "The dense arm, when selected, uses the pinned local multilingual E5 descriptor and real inference; no fake vectors are inserted.",

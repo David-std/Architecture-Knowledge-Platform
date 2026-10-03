@@ -11,7 +11,10 @@ export interface RankedGoldObservation {
 export interface GoldRankingMetrics {
   cases: number;
   labelledCases: number;
+  /** Macro averaged fraction of the independently labelled gold units found. */
   recallAtK: Record<string, number>;
+  /** Case-level any-hit recall, retained separately from unit recall. */
+  anyHitAtK: Record<string, number>;
   mrr: number;
   ndcg: number;
 }
@@ -131,7 +134,7 @@ function hitRank(
   goldUnitKeys: readonly string[],
 ): number | null {
   const gold = new Set(goldUnitKeys);
-  const index = rankedUnitKeys.findIndex((key) => gold.has(key));
+  const index = [...new Set(rankedUnitKeys)].findIndex((key) => gold.has(key));
   return index < 0 ? null : index + 1;
 }
 
@@ -139,7 +142,15 @@ function dcg(ranks: readonly number[]): number {
   return ranks.reduce((sum, rank) => sum + 1 / Math.log2(rank + 1), 0);
 }
 
-/** Compute binary relevance metrics over independently labelled unit keys. */
+/**
+ * Compute unit-level relevance metrics over independently labelled unit keys.
+ *
+ * Results are deduplicated before every rank cutoff. Recall is the macro
+ * average of the fraction of each case's required gold units found in the
+ * first k unique results. The older any-hit view remains available as a
+ * separate metric so a single hit cannot masquerade as full multi-unit
+ * recall.
+ */
 export function scoreGoldRanking(
   observations: readonly RankedGoldObservation[],
   kValues: readonly number[] = [1, 5, 10, 20],
@@ -159,14 +170,30 @@ export function scoreGoldRanking(
         ? 0
         : labelled.reduce((sum, observation) => {
             const gold = new Set(observation.goldUnitKeys);
+            if (gold.size === 0) return sum;
+            const rankedPrefix = new Set(
+              [...new Set(observation.rankedUnitKeys)].slice(0, k),
+            );
             return (
               sum +
-              Number(
-                observation.rankedUnitKeys
-                  .slice(0, k)
-                  .some((key) => gold.has(key)),
-              )
+              [...gold].filter((key) => rankedPrefix.has(key)).length /
+                gold.size
             );
+          }, 0) / labelled.length,
+    ]),
+  );
+  const anyHitAtK = Object.fromEntries(
+    validK.map((k) => [
+      String(k),
+      labelled.length === 0
+        ? 0
+        : labelled.reduce((sum, observation) => {
+            const rankedPrefix = [...new Set(observation.rankedUnitKeys)].slice(
+              0,
+              k,
+            );
+            const gold = new Set(observation.goldUnitKeys);
+            return sum + Number(rankedPrefix.some((key) => gold.has(key)));
           }, 0) / labelled.length,
     ]),
   );
@@ -175,18 +202,20 @@ export function scoreGoldRanking(
     return rank === null ? 0 : 1 / rank;
   });
   const ndcgValues = labelled.map((observation) => {
+    const ranked = [...new Set(observation.rankedUnitKeys)];
     const gold = new Set(observation.goldUnitKeys);
-    const relevantRanks = observation.rankedUnitKeys.flatMap((key, index) =>
+    const relevantRanks = ranked.flatMap((key, index) =>
       gold.has(key) ? [index + 1] : [],
     );
     if (relevantRanks.length === 0) return 0;
-    const idealRanks = observation.goldUnitKeys.map((_, index) => index + 1);
+    const idealRanks = [...gold].map((_, index) => index + 1);
     return dcg(relevantRanks) / dcg(idealRanks);
   });
   return {
     cases: observations.length,
     labelledCases: labelled.length,
     recallAtK,
+    anyHitAtK,
     mrr:
       reciprocalRanks.length === 0
         ? 0
@@ -202,10 +231,11 @@ export function scoreGoldRanking(
 /**
  * Score support/admission separately from ranking relevance.
  *
- * A positive case is a false acceptance when an admitted unit is outside its
- * fixed gold set. A no-answer case is a false acceptance when any unit is
- * admitted. This keeps rank quality and evidence acceptance denominators
- * explicit instead of collapsing them into one percentage.
+ * A positive case is outside the closed benchmark gold set when an admitted
+ * unit is outside that set. A no-answer case is outside the expected empty set
+ * when any unit is admitted. These are benchmark-label comparisons, not
+ * universal source-authority judgments. Rank quality and this guardrail keep
+ * their denominators explicit instead of collapsing them into one percentage.
  */
 export function scoreFalseAcceptance(
   observations: readonly RankedGoldObservation[],

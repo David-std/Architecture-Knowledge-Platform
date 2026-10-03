@@ -179,6 +179,16 @@ jobs:
               throw new Error(`R8 acceptance failed: ${key}`);
             }
           }
+          if (report.acceptance?.goldLabelScope !== "CLOSED_GOLD_BENCHMARK") {
+            throw new Error(
+              `R8 gold label scope is not explicit: ${report.acceptance?.goldLabelScope}`,
+            );
+          }
+          if (report.acceptance?.semanticLabelAuthorityMeasured !== false) {
+            throw new Error(
+              "R8 must not claim universal semantic authority for closed benchmark labels.",
+            );
+          }
           if (report.acceptance?.topKBoundsChanged !== false) {
             throw new Error("R8 must not change topK bounds.");
           }
@@ -213,9 +223,60 @@ jobs:
                 throw new Error(`R8 family ${family} did not grow at target ${row.distractorCount}.`);
               }
             }
+            if (
+              typeof row.relevance?.anyHitAtK?.["10"] !== "number" ||
+              typeof row.relevance?.recallAtK?.["10"] !== "number"
+            ) {
+              throw new Error(
+                `R8 row ${row.distractorCount} must report both any-hit and required-unit recall.`,
+              );
+            }
             for (const result of row.cases ?? []) {
-              if ((result.goldTargets?.length ?? 0) > 0 && !result.goldStagePresence) {
+              if ((result.goldTargets?.length ?? 0) === 0) continue;
+              if (!result.goldStagePresence || !result.stageAttribution) {
                 throw new Error(`R8 case ${result.caseId} lacks stage attribution.`);
+              }
+              const attribution = result.stageAttribution;
+              if (
+                attribution.labelScope !== "CLOSED_GOLD_BENCHMARK" ||
+                attribution.labelsComplete !== false
+              ) {
+                throw new Error(
+                  `R8 case ${result.caseId} misstates benchmark label authority.`,
+                );
+              }
+              if ((attribution.unresolved?.length ?? 0) !== 0) {
+                throw new Error(
+                  `R8 case ${result.caseId} has unresolved stage attribution: ${JSON.stringify(attribution.unresolved)}`,
+                );
+              }
+              for (const stage of [
+                "ingestion",
+                "unitization",
+                "candidates",
+                "channels",
+                "rerank",
+                "shortlist",
+                "admission",
+              ]) {
+                if (attribution.measuredStages?.[stage] !== true) {
+                  throw new Error(
+                    `R8 case ${result.caseId} did not measure stage ${stage}.`,
+                  );
+                }
+              }
+              if (
+                attribution.measuredStages?.context !== false ||
+                attribution.measuredStages?.generation !== false
+              ) {
+                throw new Error(
+                  `R8 case ${result.caseId} must leave context/generation explicitly unmeasured.`,
+                );
+              }
+              if (!Array.isArray(attribution.admittedOutsideAdmissible)) {
+                throw new Error(
+                  `R8 case ${result.caseId} lacks outside-gold admission diagnostics.`,
+                );
               }
             }
             previous = counts;

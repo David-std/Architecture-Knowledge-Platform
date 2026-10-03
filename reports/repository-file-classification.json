@@ -2342,6 +2342,11 @@
       "reason": "corpus-agnostic product evaluation"
     },
     {
+      "path": "evals/generic/retrieval-quality-scale/diagnostics.ts",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
       "path": "evals/generic/retrieval-quality-scale/fixture-db.ts",
       "category": "PRODUCT_EVAL",
       "reason": "corpus-agnostic product evaluation"
