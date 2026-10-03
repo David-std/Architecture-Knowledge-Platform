@@ -1040,10 +1040,8 @@ function summarizeUnitRanks(ranks: readonly (number | null)[]) {
     mrr:
       ranks.length === 0
         ? null
-        : ranks.reduce(
-            (sum, rank) => sum + (rank === null ? 0 : 1 / rank),
-            0,
-          ) / ranks.length,
+        : ranks.reduce((sum, rank) => sum + (rank === null ? 0 : 1 / rank), 0) /
+          ranks.length,
     meanFoundRank:
       found.length === 0
         ? null
@@ -1732,9 +1730,9 @@ async function main(): Promise<void> {
         await cleanupCorpus(db, fixture);
       } finally {
         await db.close();
-      if (previousVectorEnabled === undefined) {
-        delete process.env.AKP_VECTOR_ENABLED;
-      } else {
+        if (previousVectorEnabled === undefined) {
+          delete process.env.AKP_VECTOR_ENABLED;
+        } else {
           process.env.AKP_VECTOR_ENABLED = previousVectorEnabled;
         }
       }

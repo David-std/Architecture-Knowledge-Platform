@@ -233,10 +233,7 @@ function headingLabel(node: MarkdownNode): string {
 
 /** Return the first visible Markdown heading without depending on unitization. */
 export function firstMarkdownHeadingLabel(body: string): string | null {
-  const normalized = body
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n")
-    .trim();
+  const normalized = body.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
   if (!normalized) return null;
   const tree = markdownTree(markdownVisibleSource(normalized).text);
   const heading = tree.children.find((node) => node.type === "heading");
