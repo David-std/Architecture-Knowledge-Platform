@@ -779,34 +779,55 @@ export async function cleanupScaleDatabaseFixture(
   db: Postgres,
   fixture: ScaleDatabaseFixture,
 ): Promise<FixtureRowCounts> {
-  await db.pool.query("delete from knowledge_relations where space_id=$1", [
-    fixture.spaceId,
-  ]);
-  await db.pool.query(
-    `delete from unit_embeddings where unit_id in
-       (select id from knowledge_units where space_id=$1)`,
-    [fixture.spaceId],
-  );
-  await db.pool.query(`delete from embedding_generations where space_id=$1`, [
-    fixture.spaceId,
-  ]);
-  await db.pool.query("delete from knowledge_units where space_id=$1", [
-    fixture.spaceId,
-  ]);
-  await db.pool.query("delete from knowledge_documents where space_id=$1", [
-    fixture.spaceId,
-  ]);
-  await db.pool.query("delete from vault_index_revisions where space_id=$1", [
-    fixture.spaceId,
-  ]);
-  await db.pool.query("delete from vaults where space_id=$1", [
-    fixture.spaceId,
-  ]);
-  await db.pool.query("delete from spaces where id=$1", [fixture.spaceId]);
-  await db.pool.query("delete from organizations where id=$1", [
-    fixture.organizationId,
-  ]);
-  // Verification errors must fail the benchmark. Returning zeroes here would
-  // turn an unavailable count query into false cleanup evidence.
-  return fixtureRowCounts(db, fixture);
+  const cleanupIndex = "akp_r8_cleanup_invalidated_by_idx";
+  let cleanupIndexCreated = false;
+  try {
+    const existingIndex = await db.pool.query<{ present: boolean }>(
+      "select to_regclass($1)::text is not null as present",
+      [`public.${cleanupIndex}`],
+    );
+    if (!existingIndex.rows[0]?.present) {
+      // knowledge_documents.invalidated_by is a legacy self-FK without a
+      // supporting index. Large fixture deletion otherwise rescans the table
+      // once per row and turns R8 cleanup into O(n^2) work.
+      await db.pool.query(
+        `create index ${cleanupIndex} on knowledge_documents(invalidated_by)`,
+      );
+      cleanupIndexCreated = true;
+    }
+    await db.pool.query("delete from knowledge_relations where space_id=$1", [
+      fixture.spaceId,
+    ]);
+    await db.pool.query(
+      `delete from unit_embeddings where unit_id in
+         (select id from knowledge_units where space_id=$1)`,
+      [fixture.spaceId],
+    );
+    await db.pool.query(`delete from embedding_generations where space_id=$1`, [
+      fixture.spaceId,
+    ]);
+    await db.pool.query("delete from knowledge_units where space_id=$1", [
+      fixture.spaceId,
+    ]);
+    await db.pool.query("delete from knowledge_documents where space_id=$1", [
+      fixture.spaceId,
+    ]);
+    await db.pool.query("delete from vault_index_revisions where space_id=$1", [
+      fixture.spaceId,
+    ]);
+    await db.pool.query("delete from vaults where space_id=$1", [
+      fixture.spaceId,
+    ]);
+    await db.pool.query("delete from spaces where id=$1", [fixture.spaceId]);
+    await db.pool.query("delete from organizations where id=$1", [
+      fixture.organizationId,
+    ]);
+    // Verification errors must fail the benchmark. Returning zeroes here would
+    // turn an unavailable count query into false cleanup evidence.
+    return await fixtureRowCounts(db, fixture);
+  } finally {
+    if (cleanupIndexCreated) {
+      await db.pool.query(`drop index if exists ${cleanupIndex}`);
+    }
+  }
 }
