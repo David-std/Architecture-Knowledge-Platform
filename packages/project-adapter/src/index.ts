@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { glob, readFile } from "node:fs/promises";
 import path from "node:path";
-import fg from "fast-glob";
 
 export type CodeEvidenceTier =
   | "NO_SIGNAL"
@@ -128,26 +127,35 @@ export class DeterministicProjectAdapter implements ProjectAdapter {
     const resolvedChangedSince =
       verifiedChangedSince?.stdout.trim() || undefined;
     const worktreeFiles = async (): Promise<string[]> =>
-      fg(
-        [
-          "**/package.json",
-          "**/pom.xml",
-          "**/build.gradle",
-          "**/build.gradle.kts",
-          "**/*.csproj",
-          "**/*.{java,cs,ts,tsx,js,jsx,mjs,cjs,vue}",
-        ],
-        {
-          cwd: root,
-          onlyFiles: true,
-          ignore: [
-            "**/node_modules/**",
-            "**/dist/**",
-            "**/build/**",
-            "**/bin/**",
-            "**/obj/**",
+      Array.fromAsync(
+        glob(
+          [
+            "**/package.json",
+            "**/pom.xml",
+            "**/build.gradle",
+            "**/build.gradle.kts",
+            "**/*.csproj",
+            "**/*.java",
+            "**/*.cs",
+            "**/*.ts",
+            "**/*.tsx",
+            "**/*.js",
+            "**/*.jsx",
+            "**/*.mjs",
+            "**/*.cjs",
+            "**/*.vue",
           ],
-        },
+          {
+            cwd: root,
+            exclude: [
+              "**/node_modules/**",
+              "**/dist/**",
+              "**/build/**",
+              "**/bin/**",
+              "**/obj/**",
+            ],
+          },
+        ),
       );
     const committedFiles = (): string[] => {
       if (!immutableCommit) return [];

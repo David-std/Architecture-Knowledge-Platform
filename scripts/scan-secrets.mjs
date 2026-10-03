@@ -1,6 +1,30 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import fg from "fast-glob";
+import { readdir } from "node:fs/promises";
+import path from "node:path";
+
+const FALLBACK_EXCLUDED_DIRECTORIES = new Set([
+  "node_modules",
+  ".next",
+  "dist",
+  "backups",
+  ".git",
+]);
+
+async function fallbackRepositoryFiles(root = ".", relativeRoot = "") {
+  const files = [];
+  for (const entry of await readdir(root, { withFileTypes: true })) {
+    const relativePath = relativeRoot ? `${relativeRoot}/${entry.name}` : entry.name;
+    if (entry.isSymbolicLink()) continue;
+    if (entry.isDirectory()) {
+      if (FALLBACK_EXCLUDED_DIRECTORIES.has(entry.name)) continue;
+      files.push(...(await fallbackRepositoryFiles(path.join(root, entry.name), relativePath)));
+      continue;
+    }
+    if (entry.isFile()) files.push(relativePath);
+  }
+  return files;
+}
 
 const files = existsSync(".git")
   ? [
@@ -17,18 +41,7 @@ const files = existsSync(".git")
           .filter((file) => file && existsSync(file)),
       ),
     ]
-  : await fg(["**/*"], {
-      onlyFiles: true,
-      dot: true,
-      followSymbolicLinks: false,
-      ignore: [
-        "**/node_modules/**",
-        "**/.next/**",
-        "**/dist/**",
-        "backups/**",
-        ".git/**",
-      ],
-    });
+  : await fallbackRepositoryFiles();
 const forbiddenPaths = files.filter(
   (file) =>
     (/(^|\/)\.env($|\.)/.test(file) && !file.endsWith(".env.example")) ||
