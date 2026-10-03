@@ -563,6 +563,7 @@ async function executeCase(
   testCase: GoldCase,
   configuration: BenchmarkConfiguration,
   queryEmbeddingService: QueryEmbeddingService,
+  candidatePoolLimit?: number,
 ): Promise<RuntimeObservation> {
   const vaultId = fixture.vaultIds.get(testCase.vault);
   if (!vaultId) throw new Error(`Unknown case vault ${testCase.vault}`);
@@ -609,6 +610,9 @@ async function executeCase(
     queryEmbeddingService,
     graphScopes: [{ vaultId, pathPrefix: null }],
     graphPolicy: { maxHops: 3, directionPolicy: "both" as const },
+    ...(candidatePoolLimit === undefined
+      ? {}
+      : { benchmarkCandidatePoolLimit: candidatePoolLimit }),
   };
 
   const started = performance.now();
@@ -884,6 +888,82 @@ async function main(): Promise<void> {
       runs.push(aggregateObservedBenchmarkRun(configuration, observations));
     }
 
+    const candidateDepths = [20, 50, 100] as const;
+    const candidateDepthConfiguration = configurations.find(
+      (configuration) => configuration.name === "full-hybrid-rrf",
+    );
+    if (
+      !candidateDepthConfiguration ||
+      !candidateDepthConfiguration.allowVectorForBenchmark
+    ) {
+      throw new Error(
+        "Registered candidate-depth study requires full-hybrid-rrf with benchmark vector access.",
+      );
+    }
+    const candidateDepthStudy = [];
+    for (const depth of candidateDepths) {
+      const observations: RuntimeObservation[] = [];
+      for (const testCase of dataset.cases) {
+        observations.push(
+          await executeCase(
+            db,
+            fixture,
+            testCase,
+            candidateDepthConfiguration,
+            queryEmbeddingService,
+            depth,
+          ),
+        );
+      }
+      let expectedTargets = 0;
+      let foundTargets = 0;
+      const firstGoldRanks: number[] = [];
+      const perChannelFound = new Map<string, number>();
+      for (const observation of observations) {
+        for (const target of observation.stageDiagnostics.expected) {
+          expectedTargets += 1;
+          const candidate = observation.stageDiagnostics.candidateTrace.find(
+            (entry) =>
+              entry.documentId === target.documentId &&
+              entry.unitId === target.unitId,
+          );
+          if (!candidate) continue;
+          foundTargets += 1;
+          firstGoldRanks.push(candidate.rank);
+          for (const channel of new Set(
+            candidate.channels.map((entry) => entry.channel),
+          )) {
+            perChannelFound.set(
+              channel,
+              (perChannelFound.get(channel) ?? 0) + 1,
+            );
+          }
+        }
+      }
+      candidateDepthStudy.push({
+        depth,
+        configuration: candidateDepthConfiguration.name,
+        answerableGoldTargets: expectedTargets,
+        candidateGoldTargetsFound: foundTargets,
+        candidatePoolRecall:
+          expectedTargets === 0 ? null : foundTargets / expectedTargets,
+        meanFirstGoldRank:
+          firstGoldRanks.length === 0
+            ? null
+            : firstGoldRanks.reduce((sum, value) => sum + value, 0) /
+              firstGoldRanks.length,
+        candidateMisses: expectedTargets - foundTargets,
+        perChannelGoldCoverage: Object.fromEntries(
+          [...perChannelFound.entries()]
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([channel, count]) => [
+              channel,
+              expectedTargets === 0 ? null : count / expectedTargets,
+            ]),
+        ),
+      });
+    }
+
     const isolationViolations = runs.flatMap((run) =>
       run.results.flatMap((result) => {
         const expectedVault = dataset.cases.find(
@@ -1022,12 +1102,16 @@ async function main(): Promise<void> {
     );
     const fixtureHash = sha256(JSON.stringify(sortedFixtureHashes));
     const configurationHash = sha256(
-      JSON.stringify(
-        configurations.map((configuration) => ({
+      JSON.stringify({
+        configurations: configurations.map((configuration) => ({
           ...configuration,
           channels: [...configuration.channels],
         })),
-      ),
+        candidateDepthStudy: {
+          configuration: candidateDepthConfiguration.name,
+          depths: candidateDepths,
+        },
+      }),
     );
     const cpu = os.cpus();
     const reproducibility = {
@@ -1139,6 +1223,13 @@ async function main(): Promise<void> {
         violations: isolationViolations,
       },
       candidateDecision,
+      candidateDepthStudy: {
+        independentVariable: "candidatePoolLimit",
+        productionDefaultChanged: false,
+        measurements: candidateDepthStudy,
+        claimBoundary:
+          "Depth measurements use the same registered corpus and full-hybrid retrieval configuration; they do not select a production default.",
+      },
       productionDefault: {
         status: "NOT_SELECTED",
         reason:
@@ -1156,6 +1247,7 @@ async function main(): Promise<void> {
           evidenceLevel: report.evidence.level,
           cases: dataset.cases.length,
           candidateDecision,
+          candidateDepthStudy: report.candidateDepthStudy,
           productionDefault: report.productionDefault,
           reproducibility: {
             commit: report.reproducibility.tool.versionOrCommit,

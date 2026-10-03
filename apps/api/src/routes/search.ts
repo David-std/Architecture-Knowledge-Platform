@@ -518,6 +518,11 @@ export interface RetrievalExecutionOptions {
   answerabilityCandidateSink?: (hits: readonly SearchHit[]) => void;
   /** Metadata-only snapshots after scope/truth filtering; never source bytes. */
   stageDiagnosticSink?: (snapshot: EvidenceRetrievalStageSnapshot) => void;
+  /**
+   * Registered benchmark-only candidate pool override. It is rejected unless
+   * allowVectorForBenchmark is enabled and never comes from the HTTP request.
+   */
+  benchmarkCandidatePoolLimit?: number;
   vaultIds?: string[];
   /** Exact, authorized Code Graph candidates resolved by the HTTP boundary. */
   codeCandidates?: CodeChannelCandidate[];
@@ -1449,9 +1454,22 @@ export async function queryKnowledge(
 ): Promise<SearchHit[]> {
   if (!input.spaceId) throw new Error("SPACE_ID_REQUIRED");
   const spaceId = input.spaceId;
-  const internalCandidateLimit = internalAnswerabilityCandidateLimit(
-    input.limit,
-  );
+  const benchmarkCandidatePoolLimit = options.benchmarkCandidatePoolLimit;
+  if (benchmarkCandidatePoolLimit !== undefined) {
+    if (!options.allowVectorForBenchmark) {
+      throw new Error("BENCHMARK_CANDIDATE_POOL_OVERRIDE_NOT_ALLOWED");
+    }
+    if (
+      !Number.isSafeInteger(benchmarkCandidatePoolLimit) ||
+      benchmarkCandidatePoolLimit < 1 ||
+      benchmarkCandidatePoolLimit > 200
+    ) {
+      throw new Error("BENCHMARK_CANDIDATE_POOL_LIMIT_INVALID");
+    }
+  }
+  const internalCandidateLimit =
+    benchmarkCandidatePoolLimit ??
+    internalAnswerabilityCandidateLimit(input.limit);
   telemetry.histogram(
     "retrieval_answerability_internal_candidate_limit",
     internalCandidateLimit,
