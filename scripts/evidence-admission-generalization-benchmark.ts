@@ -8,6 +8,7 @@ import {
   CONTEXTUAL_CROSS_ENCODER_REVISION,
   ContextualCrossEncoderEvidenceVerifier,
   contextualEvidenceText,
+  LocalMultilingualQaEvidenceVerifier,
   OpenAICompatibleEvidenceReader,
   ReaderEvidenceVerifier,
   type CrossEncoderRuntimeFactory,
@@ -293,6 +294,26 @@ if (verifierName === "deterministic") {
       mode: "ENFORCE",
       maxCandidates: 64,
     });
+} else if (verifierName === "local-multilingual-qa") {
+  const minimumSupportScore = Number(
+    process.env.AKP_EVIDENCE_VERIFIER_MIN_SCORE ?? "0.000001",
+  );
+  const verifier = new LocalMultilingualQaEvidenceVerifier({
+    minimumSupportScore,
+    localFilesOnly: process.env.AKP_LOCAL_FILES_ONLY === "1",
+  });
+  label = `${verifier.id} enforce-source-bound`;
+  admitter = async (hits, query) =>
+    assessRetrievalAnswerabilityWithVerifier(
+      hits,
+      query,
+      verifier,
+      {
+        mode: "ENFORCE",
+        maxCandidates: 64,
+        maxConcurrency: 4,
+      },
+    );
 } else if (verifierName === "cross-encoder-reader") {
   const scoresPath = process.env.AKP_CONTEXTUAL_EVIDENCE_SCORES;
   const shortlist = new ContextualCrossEncoderEvidenceVerifier({

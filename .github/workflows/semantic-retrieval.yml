@@ -178,6 +178,17 @@ jobs:
           AKP_EVIDENCE_VERIFIER_SHADOW_REPORT=reports/ci/evidence-verifier-shadow-benchmark.json \
             pnpm benchmark:evidence-verifier-shadow \
             2>&1 | tee reports/ci/evidence-verifier-shadow-benchmark.log
+      - name: Measure source-bound QA admission on frozen generalization pack
+        shell: bash
+        run: |
+          set -o pipefail
+          AKP_EVIDENCE_ADMISSION_VERIFIER=local-multilingual-qa \
+          AKP_EVIDENCE_VERIFIER_MIN_SCORE=0.000001 \
+          AKP_EVIDENCE_ADMISSION_GENERALIZATION_REPORT=reports/ci/evidence-admission-generalization-qa-enforce.json \
+          AKP_EVIDENCE_ADMISSION_BREAKDOWN=0 \
+            pnpm benchmark:evidence-admission:generalization \
+            2>&1 | tee reports/ci/evidence-admission-generalization-qa-enforce.log
+
       - name: Measure multilingual NLI evidence verifier in shadow mode
         shell: bash
         run: |
