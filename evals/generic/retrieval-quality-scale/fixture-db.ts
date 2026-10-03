@@ -803,20 +803,18 @@ export async function cleanupScaleDatabaseFixture(
          (select id from knowledge_units where space_id=$1)`,
       [fixture.spaceId],
     );
-    await db.pool.query(
-      `delete from embedding_generations where space_id=$1`,
-      [fixture.spaceId],
-    );
+    await db.pool.query(`delete from embedding_generations where space_id=$1`, [
+      fixture.spaceId,
+    ]);
     await db.pool.query("delete from knowledge_units where space_id=$1", [
       fixture.spaceId,
     ]);
     await db.pool.query("delete from knowledge_documents where space_id=$1", [
       fixture.spaceId,
     ]);
-    await db.pool.query(
-      "delete from vault_index_revisions where space_id=$1",
-      [fixture.spaceId],
-    );
+    await db.pool.query("delete from vault_index_revisions where space_id=$1", [
+      fixture.spaceId,
+    ]);
     await db.pool.query("delete from vaults where space_id=$1", [
       fixture.spaceId,
     ]);
