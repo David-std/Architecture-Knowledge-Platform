@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
-import { readFile, realpath, stat } from "node:fs/promises";
+import { glob, readFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
-import fg from "fast-glob";
 import matter from "gray-matter";
 import type { Postgres } from "@akp/postgres";
 import {
@@ -388,16 +387,14 @@ export async function inspectVault(
   if (!rootStats.isDirectory())
     throw new Error(`Vault path is not a directory: ${canonicalPath}`);
 
-  const relativePaths = (
-    await fg("**/*.md", {
-      cwd: canonicalPath,
-      onlyFiles: true,
-      dot: false,
-      ignore: [".git/**", "node_modules/**", ".obsidian/plugins/**"],
-    })
-  )
-    .map(normalizePath)
-    .sort();
+  const discoveredPaths: string[] = [];
+  for await (const relativePath of glob("**/*.md", {
+    cwd: canonicalPath,
+    exclude: [".git/**", "node_modules/**", ".obsidian/plugins/**"],
+  })) {
+    discoveredPaths.push(relativePath);
+  }
+  const relativePaths = discoveredPaths.map(normalizePath).sort();
 
   const issues: ImportIssue[] = [];
   const documents: VaultDocument[] = [];

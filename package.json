@@ -89,7 +89,6 @@
     "@fastify/rate-limit": "^11.2.0",
     "commander": "^15.0.0",
     "dotenv": "^17.4.2",
-    "fast-glob": "^3.3.3",
     "gray-matter": "^4.0.3",
     "mime-types": "^3.0.2",
     "minio": "^8.0.7",
