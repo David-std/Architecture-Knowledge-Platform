@@ -1,10 +1,4 @@
-import {
-  mkdtemp,
-  mkdir,
-  rename,
-  rm,
-  writeFile,
-} from "node:fs/promises";
+import { mkdtemp, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -210,7 +204,10 @@ integration("vault importer source occurrence identity", () => {
       ),
     ).toBe(true);
 
-    const issueRows = await db.pool.query<{ code: string; path: string | null }>(
+    const issueRows = await db.pool.query<{
+      code: string;
+      path: string | null;
+    }>(
       `select code,path
          from vault_import_issues
         where run_id=$1
@@ -266,7 +263,10 @@ integration("vault importer source occurrence identity", () => {
 
     await writeFile(
       path.join(sourceDirectory, "first.md"),
-      sourceDocument("First source updated", "The first source body was updated."),
+      sourceDocument(
+        "First source updated",
+        "The first source body was updated.",
+      ),
       "utf8",
     );
     await importVaultReadOnly(db, fixtureRoot, { spaceId, vaultKey });

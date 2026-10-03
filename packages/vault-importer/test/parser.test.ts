@@ -222,9 +222,9 @@ describe("imported source occurrence identity", () => {
       (document) => document.declaredExternalId === "SRC-DUPLICATE-001",
     );
     expect(duplicates).toHaveLength(2);
-    expect(new Set(duplicates.map((document) => document.externalId)).size).toBe(
-      2,
-    );
+    expect(
+      new Set(duplicates.map((document) => document.externalId)).size,
+    ).toBe(2);
     expect(
       duplicates.every((document) =>
         document.externalId.startsWith("SOURCE-OCCURRENCE-"),
@@ -280,13 +280,18 @@ describe("imported source occurrence identity", () => {
     );
     expect(
       inspection.relations.some(
-        (relation) => relation.from === "CONSUMER-001" && relation.target === "SRC-DUPLICATE-001",
+        (relation) =>
+          relation.from === "CONSUMER-001" &&
+          relation.target === "SRC-DUPLICATE-001",
       ),
     ).toBe(false);
 
     const retry = await inspectVault(root);
     expect(
-      retry.documents.map((document) => [document.relativePath, document.externalId]),
+      retry.documents.map((document) => [
+        document.relativePath,
+        document.externalId,
+      ]),
     ).toEqual(
       inspection.documents.map((document) => [
         document.relativePath,
@@ -296,7 +301,9 @@ describe("imported source occurrence identity", () => {
   });
 
   it("keeps same-body duplicate locators distinct", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "akp-source-occurrence-body-"));
+    const root = await mkdtemp(
+      path.join(tmpdir(), "akp-source-occurrence-body-"),
+    );
     temporaryRoots.push(root);
     const body = sourceDocument(
       ["# Repeated source", "", "The same body appears at two locators."].join(
@@ -311,12 +318,12 @@ describe("imported source occurrence identity", () => {
       (document) => document.declaredExternalId === "SRC-DUPLICATE-001",
     );
     expect(duplicates).toHaveLength(2);
-    expect(new Set(duplicates.map((document) => document.externalId)).size).toBe(
-      2,
-    );
-    expect(new Set(duplicates.map((document) => document.contentHash)).size).toBe(
-      1,
-    );
+    expect(
+      new Set(duplicates.map((document) => document.externalId)).size,
+    ).toBe(2);
+    expect(
+      new Set(duplicates.map((document) => document.contentHash)).size,
+    ).toBe(1);
     expect(duplicates.map((document) => document.relativePath)).toEqual([
       "one.md",
       "two.md",

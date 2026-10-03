@@ -658,11 +658,7 @@ export async function inspectVault(
         document.relativePath,
         occupiedExternalIds,
       );
-      markSourceOccurrenceIdentity(
-        document,
-        declaredId,
-        occurrenceExternalId,
-      );
+      markSourceOccurrenceIdentity(document, declaredId, occurrenceExternalId);
       if (document.relativePath === firstPath) continue;
       issues.push({
         severity: "warning",
