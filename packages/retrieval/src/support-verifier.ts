@@ -1380,6 +1380,20 @@ function compactHeaderSelectorMatch(
   return relevant.every((selector) => tokens.has(selector.token));
 }
 
+function compactTableHeaderSelectorsMatch(
+  passage: string,
+  query: string,
+): boolean {
+  let applicable = false;
+  for (const table of markdownTableEvidence(passage)) {
+    const result = compactHeaderSelectorMatch(table, query);
+    if (result === null) continue;
+    applicable = true;
+    if (result) return true;
+  }
+  return !applicable;
+}
+
 function tableQuantityWindows(
   passage: string,
   query: string,
@@ -1396,23 +1410,19 @@ function tableQuantityWindows(
       if (columns.length === 0) return [];
       return [{ value: run.value, columns: new Set(columns) }];
     });
-    const headerSelectorMatch = compactHeaderSelectorMatch(table, query);
-    if (bindings.length === 0 && headerSelectorMatch === null) continue;
+    if (bindings.length === 0) continue;
     applicable = true;
-    if (headerSelectorMatch === false) continue;
 
     for (const row of table.rows) {
-      const rowMatches =
-        bindings.length === 0 ||
-        bindings.every((binding) =>
-          row.cells.some(
-            (cell) =>
-              binding.columns.has(cell.columnIndex) &&
-              shortNumericRuns(cell.source).some(
-                (run) => run.value === binding.value,
-              ),
-          ),
-        );
+      const rowMatches = bindings.every((binding) =>
+        row.cells.some(
+          (cell) =>
+            binding.columns.has(cell.columnIndex) &&
+            shortNumericRuns(cell.source).some(
+              (run) => run.value === binding.value,
+            ),
+        ),
+      );
       if (!rowMatches) continue;
       windows.push({
         text: table.header.source.concat(String.fromCharCode(10), row.source),
@@ -1651,6 +1661,8 @@ export function verifyDeterministicPassageSupport(
     `${hit.title?.trim() || hit.document.title?.trim() || ""} ${passage}`,
     query,
   );
+  const compactHeaderSelectorsMatched =
+    hit.unitType !== "TABLE" || compactTableHeaderSelectorsMatch(passage, query);
   const queryTokens = normalizedAnswerabilityTokens(query);
   const salientQueryTokens = queryTokens.filter(
     (token) => token.length >= 3 && !ANSWERABILITY_STOPWORDS.has(token),
@@ -1762,6 +1774,8 @@ export function verifyDeterministicPassageSupport(
   ) {
     reason = "NO_CONCRETE_PASSAGE";
   } else if (!explicitYearsMatched) {
+    reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
+  } else if (!compactHeaderSelectorsMatched) {
     reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
   } else if (!tableSupportEligible) {
     reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
