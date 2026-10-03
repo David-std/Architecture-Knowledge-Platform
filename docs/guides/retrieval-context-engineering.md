@@ -56,6 +56,15 @@ are inherited from extraction provenance. A row or header is ranking context,
 and cannot donate answer bytes from another selected cell. Unparsed tables
 retain their original fallback representation.
 
+Available table and figure captions are source material too. Artifact rendering
+preserves each caption in reading order with the item's inherited page or table
+locator. A no-grid table keeps its existing text fallback, and a distinct
+caption is retained beside that text; equal caption and text are emitted once.
+When a caption is rendered as its own unit, it remains bound to that unit's
+provenance and cannot authorize an answer from another row, cell or neighboring
+unit. Citation spans use exact UTF-16 offsets in the bound Markdown source
+frame. Fidelity to the original binary is measured separately.
+
 Fusion preserves each document/unit pair as a separate identity. Document-only
 signals attach to a leaf only when the observed leaf channels agree on exactly
 one unit; otherwise they remain document-scoped. Reranking uses that same atomic
