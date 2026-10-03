@@ -1,9 +1,17 @@
-import { access, readFile } from "node:fs/promises";
+import { access, glob, readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import fg from "fast-glob";
 
 const root = process.cwd();
 const failures = [];
+
+async function matchingFiles(patterns, options) {
+  const files = [];
+  for await (const file of glob(patterns, options)) {
+    if ((await stat(path.resolve(options.cwd, file))).isFile())
+      files.push(file.replaceAll("\\", "/"));
+  }
+  return files;
+}
 const productGuides = [
   "docs/guides/team-context.md",
   "docs/guides/enterprise-deployment.md",
@@ -87,10 +95,7 @@ for (const file of required) {
 }
 
 const actualProductGuides = (
-  await fg(["docs/guides/*.md"], {
-    cwd: root,
-    onlyFiles: true,
-  })
+  await matchingFiles("docs/guides/*.md", { cwd: root })
 ).sort();
 const expectedProductGuides = [...productGuides].sort();
 if (
@@ -146,15 +151,17 @@ for (const limitation of requiredReleaseLimitations) {
   }
 }
 
-const markdownFiles = await fg(["*.md", "docs/**/*.md", "reports/**/*.md"], {
-  cwd: root,
-  onlyFiles: true,
-  ignore: [
-    "docs/archive/**",
-    "docs/assurance/archive/**",
-    "docs/assurance/releases/**",
-  ],
-});
+const markdownFiles = await matchingFiles(
+  ["*.md", "docs/**/*.md", "reports/**/*.md"],
+  {
+    cwd: root,
+    exclude: [
+      "docs/archive/**",
+      "docs/assurance/archive/**",
+      "docs/assurance/releases/**",
+    ],
+  },
+);
 for (const relativePath of markdownFiles) {
   const raw = await readFile(path.join(root, relativePath), "utf8");
   if (/\b(TODO|TBD)\b/.test(raw)) {

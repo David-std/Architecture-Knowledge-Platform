@@ -41,6 +41,37 @@ afterEach(async () => {
 });
 
 describe("parseWikiLinks", () => {
+  it("imports regular Markdown files while skipping matching directories and hidden inputs", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akp-vault-traversal-"));
+    temporaryRoots.push(root);
+    for (const directory of [
+      "folder.md",
+      ".hidden",
+      "nested/.hidden",
+      "node_modules",
+    ]) {
+      await mkdir(path.join(root, directory), { recursive: true });
+    }
+    for (const file of [
+      "visible.md",
+      "folder.md/note.md",
+      ".hidden/note.md",
+      "nested/.hidden/note.md",
+      "node_modules/note.md",
+    ]) {
+      await writeFile(
+        path.join(root, file),
+        "# Source\nRead-only fixture.\n",
+        "utf8",
+      );
+    }
+    const result = await inspectVault(root);
+    expect(result.documents.map((document) => document.relativePath)).toEqual([
+      "folder.md/note.md",
+      "visible.md",
+    ]);
+  });
+
   it("normalizes aliases, headings and extensions", () => {
     expect(
       parseWikiLinks(

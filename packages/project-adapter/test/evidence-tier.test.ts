@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -15,6 +15,33 @@ import {
 vi.setConfig({ testTimeout: 30_000 });
 
 describe("project evidence tiers", () => {
+  it("scans regular source files without treating matching directories or build output as source", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akp-project-traversal-"));
+    for (const directory of ["folder.java", "dist", "node_modules"]) {
+      await mkdir(path.join(root, directory), { recursive: true });
+    }
+    for (const file of [
+      "Visible.java",
+      "folder.java/Nested.java",
+      "dist/Generated.java",
+      "node_modules/Dependency.java",
+    ]) {
+      await writeFile(
+        path.join(root, file),
+        "@Service class Example {}",
+        "utf8",
+      );
+    }
+    const evidence = await new DeterministicProjectAdapter().scan({
+      repositoryPath: root,
+      commit: "fixture",
+    });
+    expect(evidence.map((entry) => entry.locator.path)).toEqual([
+      "Visible.java",
+      "folder.java/Nested.java",
+    ]);
+  });
+
   it("promotes evidence only through explicit stronger proof signals", () => {
     expect(transitionCodeEvidenceTier("AI_CANDIDATE", "MODEL_AGREEMENT")).toBe(
       "AI_CANDIDATE",
