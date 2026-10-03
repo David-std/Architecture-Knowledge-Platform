@@ -1,3 +1,4 @@
+// Experimental evidence only: never changes the production admission default.
 import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
