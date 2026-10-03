@@ -276,6 +276,73 @@ function markSourceOccurrenceIdentity(
   };
 }
 
+interface ExistingImportedDocument {
+  id: string;
+  path: string;
+  externalId: string | null;
+  contentHash: string | null;
+  frontmatter: Record<string, unknown> | null;
+}
+
+function sourceIdentityDeclaredId(
+  frontmatter: Record<string, unknown> | null,
+): string | null {
+  const value = frontmatter?.[IMPORT_IDENTITY_FRONTMATTER_KEY];
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const declaredId = (value as Record<string, unknown>).declaredId;
+  return typeof declaredId === "string" && declaredId.trim()
+    ? declaredId.trim()
+    : null;
+}
+
+function isSourceIdentityForDeclaredId(
+  document: ExistingImportedDocument,
+  declaredId: string,
+): boolean {
+  return (
+    document.externalId === declaredId ||
+    sourceIdentityDeclaredId(document.frontmatter) === declaredId
+  );
+}
+
+function setSourceOccurrenceMetadata(
+  document: VaultDocument,
+  declaredId: string,
+  externalId: string,
+  previousFrontmatter?: Record<string, unknown> | null,
+): void {
+  const currentValue = document.frontmatter[IMPORT_IDENTITY_FRONTMATTER_KEY];
+  const previousValue = previousFrontmatter?.[IMPORT_IDENTITY_FRONTMATTER_KEY];
+  const inherited =
+    currentValue &&
+    typeof currentValue === "object" &&
+    !Array.isArray(currentValue)
+      ? (currentValue as Record<string, unknown>)
+      : previousValue &&
+          typeof previousValue === "object" &&
+          !Array.isArray(previousValue)
+        ? (previousValue as Record<string, unknown>)
+        : {};
+  const occurrenceKey = portableVaultPathKey(document.relativePath);
+  document.frontmatter = {
+    ...document.frontmatter,
+    [IMPORT_IDENTITY_FRONTMATTER_KEY]: {
+      ...inherited,
+      version: 1,
+      kind: "declared-id-path-occurrence",
+      collision: "duplicate-declared-id",
+      declaredId,
+      externalId,
+      occurrenceKey: `path:${occurrenceKey}`,
+      path: document.relativePath,
+      resolution: "exact-path-only",
+    },
+  };
+  document.aliases = uniqueAliases([...document.aliases, declaredId]);
+}
+
 export function parseWikiLinks(body: string): string[] {
   const targets: string[] = [];
   const regex = /!?\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g;
@@ -1582,6 +1649,225 @@ export async function importVaultReadOnly(
       [spaceId, vaultId],
     );
 
+    const existingDocuments = await client.query<ExistingImportedDocument>(
+      `
+      select id,path,external_id as "externalId",
+             content_hash as "contentHash",frontmatter
+        from knowledge_documents
+       where space_id=$1 and vault_id=$2
+       for update
+      `,
+      [spaceId, vaultId],
+    );
+    const existingByPath = new Map(
+      existingDocuments.rows.map((document) => [document.path, document]),
+    );
+    const existingByExternalId = new Map<string, ExistingImportedDocument[]>();
+    const existingByDeclaredId = new Map<string, ExistingImportedDocument[]>();
+    for (const existing of existingDocuments.rows) {
+      if (existing.externalId) {
+        const byExternalId =
+          existingByExternalId.get(existing.externalId) ?? [];
+        byExternalId.push(existing);
+        existingByExternalId.set(existing.externalId, byExternalId);
+      }
+      const declaredId = sourceIdentityDeclaredId(existing.frontmatter);
+      if (declaredId || existing.externalId) {
+        const key = declaredId ?? existing.externalId;
+        if (key) {
+          const byDeclaredId = existingByDeclaredId.get(key) ?? [];
+          byDeclaredId.push(existing);
+          existingByDeclaredId.set(key, byDeclaredId);
+        }
+      }
+    }
+
+    const declaredIdGroups = new Map<string, VaultDocument[]>();
+    for (const document of inspection.documents) {
+      if (!document.declaredExternalId) continue;
+      const group = declaredIdGroups.get(document.declaredExternalId) ?? [];
+      group.push(document);
+      declaredIdGroups.set(document.declaredExternalId, group);
+    }
+    const currentPaths = new Set(
+      inspection.documents.map((document) => document.relativePath),
+    );
+
+    const reusedExistingIds = new Set<string>();
+    const identityAssignments = new Map<
+      VaultDocument,
+      { externalId: string; existing: ExistingImportedDocument | null }
+    >();
+
+    const findExistingSourceDocument = (
+      document: VaultDocument,
+      declaredId: string,
+    ): ExistingImportedDocument | null => {
+      const pathMatch = existingByPath.get(document.relativePath);
+      if (
+        pathMatch &&
+        isSourceIdentityForDeclaredId(pathMatch, declaredId) &&
+        !reusedExistingIds.has(pathMatch.id)
+      ) {
+        return pathMatch;
+      }
+
+      const candidates = (existingByDeclaredId.get(declaredId) ?? []).filter(
+        (candidate) =>
+          !reusedExistingIds.has(candidate.id) &&
+          (candidate.path === document.relativePath ||
+            !currentPaths.has(candidate.path)),
+      );
+      const exactDeclaredId = candidates.filter(
+        (candidate) => candidate.externalId === declaredId,
+      );
+      if (
+        exactDeclaredId.length === 1 &&
+        (declaredIdGroups.get(declaredId)?.length ?? 1) === 1
+      ) {
+        return exactDeclaredId[0] ?? null;
+      }
+
+      const sameBody = candidates.filter(
+        (candidate) => candidate.contentHash === document.contentHash,
+      );
+      if (sameBody.length === 1) {
+        return sameBody[0] ?? null;
+      }
+      return null;
+    };
+
+    for (const document of inspection.documents) {
+      const declaredId = document.declaredExternalId;
+      const groupSize = declaredId
+        ? (declaredIdGroups.get(declaredId)?.length ?? 1)
+        : 0;
+      let existing: ExistingImportedDocument | null = null;
+      if (declaredId) {
+        existing = findExistingSourceDocument(document, declaredId);
+      } else {
+        const pathMatch = existingByPath.get(document.relativePath);
+        if (
+          pathMatch &&
+          pathMatch.externalId === document.externalId &&
+          !reusedExistingIds.has(pathMatch.id)
+        ) {
+          existing = pathMatch;
+        } else {
+          const externalMatches = (
+            existingByExternalId.get(document.externalId) ?? []
+          ).filter((candidate) => !reusedExistingIds.has(candidate.id));
+          if (externalMatches.length === 1) {
+            existing = externalMatches[0] ?? null;
+          }
+        }
+      }
+
+      if (existing) reusedExistingIds.add(existing.id);
+      let externalId = existing?.externalId ?? document.externalId;
+      const declaredIdOwner = declaredId
+        ? (existingByExternalId.get(declaredId) ?? []).find(
+            (candidate) => candidate.id !== existing?.id,
+          )
+        : undefined;
+      if (declaredId && groupSize === 1 && existing && !declaredIdOwner) {
+        // A collision disappeared. Restore the source-declared stable id on
+        // the same database row so document/unit/history identity survives.
+        externalId = declaredId;
+      } else if (
+        declaredId &&
+        groupSize === 1 &&
+        existing &&
+        declaredIdOwner &&
+        existing.externalId !== declaredId
+      ) {
+        // The raw id belongs to another historical occurrence. Keep this
+        // surviving qualified occurrence addressable by its own id.
+        setSourceOccurrenceMetadata(
+          document,
+          declaredId,
+          externalId,
+          existing.frontmatter,
+        );
+      }
+      identityAssignments.set(document, { externalId, existing });
+    }
+
+    const occupiedExternalIds = new Set(
+      existingDocuments.rows.flatMap((document) =>
+        document.externalId ? [document.externalId] : [],
+      ),
+    );
+    const assignedExternalIds = new Set<string>();
+    const identityRemap = new Map<string, string>();
+    for (const document of inspection.documents) {
+      const assignment = identityAssignments.get(document);
+      if (!assignment) continue;
+      let externalId = assignment.externalId;
+      const existing = assignment.existing;
+      const occupiedByOtherExisting =
+        occupiedExternalIds.has(externalId) &&
+        existing?.externalId !== externalId;
+      if (assignedExternalIds.has(externalId) || occupiedByOtherExisting) {
+        if (!document.declaredExternalId || existing) {
+          throw new Error(
+            `VAULT_DOCUMENT_IDENTITY_CONFLICT:${document.relativePath}:${externalId}`,
+          );
+        }
+        externalId = allocateSourceOccurrenceExternalId(
+          document.declaredExternalId,
+          document.relativePath,
+          new Set([...occupiedExternalIds, ...assignedExternalIds]),
+        );
+        assignment.externalId = externalId;
+      }
+      assignedExternalIds.add(externalId);
+      identityRemap.set(document.externalId, externalId);
+      if (document.externalId !== externalId) {
+        if (document.declaredExternalId) {
+          setSourceOccurrenceMetadata(
+            document,
+            document.declaredExternalId,
+            externalId,
+          );
+        }
+        document.externalId = externalId;
+      }
+    }
+
+    const externalIdUpdates: Array<{
+      documentId: string;
+      externalId: string;
+    }> = [];
+    for (const document of inspection.documents) {
+      const assignment = identityAssignments.get(document);
+      const existing = assignment?.existing;
+      if (!existing || existing.externalId === document.externalId) continue;
+      const targetOwner = (
+        existingByExternalId.get(document.externalId) ?? []
+      ).find((candidate) => candidate.id !== existing.id);
+      if (targetOwner) {
+        throw new Error(
+          `VAULT_DOCUMENT_IDENTITY_CONFLICT:${document.relativePath}:${document.externalId}`,
+        );
+      }
+      externalIdUpdates.push({
+        documentId: existing.id,
+        externalId: document.externalId,
+      });
+    }
+
+    for (const update of externalIdUpdates) {
+      await client.query(
+        `
+        update knowledge_documents
+           set external_id=$1,updated_at=now()
+         where id=$2 and space_id=$3 and vault_id=$4
+        `,
+        [update.externalId, update.documentId, spaceId, vaultId],
+      );
+    }
+
     const importedIds: string[] = [];
     const databaseIdByExternalId = new Map<string, string>();
     for (const document of inspection.documents) {
@@ -1772,8 +2058,12 @@ export async function importVaultReadOnly(
     );
 
     for (const relation of inspection.relations) {
-      const from = databaseIdByExternalId.get(relation.from);
-      const to = databaseIdByExternalId.get(relation.to);
+      const from = databaseIdByExternalId.get(
+        identityRemap.get(relation.from) ?? relation.from,
+      );
+      const to = databaseIdByExternalId.get(
+        identityRemap.get(relation.to) ?? relation.to,
+      );
       if (!from || !to) continue;
       await client.query(
         `

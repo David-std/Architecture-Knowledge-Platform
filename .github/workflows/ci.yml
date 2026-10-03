@@ -88,6 +88,23 @@ jobs:
           pnpm --filter @akp/postgres test:integration \
             --reporter=default --reporter=junit \
             --outputFile.junit=../../reports/ci/postgres-integration-junit.xml
+      - name: Verify imported source identity on a fresh disposable database
+        env:
+          DATABASE_URL: postgres://akp:akp@localhost:55432/akp_importer_test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup_importer_database() {
+            docker compose exec -T postgres dropdb -U akp --if-exists akp_importer_test >/dev/null 2>&1 || true
+          }
+          trap cleanup_importer_database EXIT
+          cleanup_importer_database
+          docker compose exec -T postgres createdb -U akp akp_importer_test
+          pnpm db:migrate
+          mkdir -p reports/ci
+          pnpm --filter @akp/vault-importer test:integration \
+            --reporter=default --reporter=junit \
+            --outputFile.junit=../../reports/ci/importer-identity-integration-junit.xml
       - name: Run reasoning adversarial verification
         run: |
           pnpm --filter @akp/api exec vitest run test/reasoning-runtime.test.ts
