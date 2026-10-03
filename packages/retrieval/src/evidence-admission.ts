@@ -190,7 +190,7 @@ function spanTouchesHiddenSource(
 function assertionLike(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed) return false;
-  return !/[?？؟][\p{Pe}\p{Pf}"'\`*_]*\s*$/u.test(trimmed);
+  return !/[?？؟][\p{Pe}\p{Pf}"'`*_]*\s*$/u.test(trimmed);
 }
 
 function hardStructuralFactsSatisfied(
