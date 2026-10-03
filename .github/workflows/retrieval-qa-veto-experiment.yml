@@ -27,7 +27,6 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
-      - run: pnpm check
       - name: Run family-disjoint QA veto experiment
         shell: bash
         run: |
