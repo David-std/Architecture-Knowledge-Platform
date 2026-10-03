@@ -328,14 +328,16 @@ const QUESTIONS: QuestionFixture[] = [
     id: "dev-cap-assets-1",
     split: "development",
     family: "CAPTION_BOUND",
-    query: "Custody ledger alpha Asset SensorK Custodian Ivan Cole Site DockOne",
+    query:
+      "Custody ledger alpha Asset SensorK Custodian Ivan Cole Site DockOne",
     goldRowKey: rowKey("dev-assets", 3, 1),
   },
   {
     id: "dev-cap-assets-2",
     split: "development",
     family: "CAPTION_BOUND",
-    query: "Custody ledger alpha Asset RelayM Custodian Tessa Ford Site DockTwo",
+    query:
+      "Custody ledger alpha Asset RelayM Custodian Tessa Ford Site DockTwo",
     goldRowKey: rowKey("dev-assets", 3, 2),
   },
   {
@@ -564,7 +566,8 @@ const QUESTIONS: QuestionFixture[] = [
     id: "hold-neg-nearby-prose",
     split: "heldout",
     family: "NON_CAPTION_NEGATIVE",
-    query: "Matriz de prioridad histórica Equipo Plataforma Responsable Ana Ríos",
+    query:
+      "Matriz de prioridad histórica Equipo Plataforma Responsable Ana Ríos",
   },
   {
     id: "hold-neg-mismatch-locator",
@@ -668,9 +671,7 @@ function summarize(split: Split, observations: Observation[]): SplitSummary {
     negativeQuestions: negatives.length,
     recallAt1: recall(ranks, 1),
     recallAt3: recall(ranks, 3),
-    meanReciprocalRank: mean(
-      ranks.map((rank) => (rank > 0 ? 1 / rank : 0)),
-    ),
+    meanReciprocalRank: mean(ranks.map((rank) => (rank > 0 ? 1 / rank : 0))),
     falseMatchRate:
       negatives.length === 0
         ? null
@@ -872,17 +873,13 @@ async function main(): Promise<void> {
           heldout: summarize("heldout", observations),
         },
       ]),
-    ) as Record<
-      Arm,
-      { development: SplitSummary; heldout: SplitSummary }
-    >;
+    ) as Record<Arm, { development: SplitSummary; heldout: SplitSummary }>;
 
     const baseline = summaries["raw-row"];
     const candidate = summaries["explicit-caption-augmentation"];
     const familyRecall1 = (summary: SplitSummary, family: Family) =>
       summary.byFamily[family].recallAt1 ?? 0;
-    const negativeRate = (summary: SplitSummary) =>
-      summary.falseMatchRate ?? 0;
+    const negativeRate = (summary: SplitSummary) => summary.falseMatchRate ?? 0;
 
     const gates = {
       captionBindingMatchesFrozenFixture: true,
