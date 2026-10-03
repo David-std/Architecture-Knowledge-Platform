@@ -287,6 +287,14 @@ function locatorComment(locator: DocumentArtifact["locators"][number]): string {
   return fields.length ? `<!-- akp-locator: ${fields.join("; ")} -->\n` : "";
 }
 
+function renderedCaption(
+  item: DocumentArtifact["blocks"][number],
+  locator: string,
+): string {
+  const caption = item.caption ?? "";
+  return caption.trim() ? `${locator}${caption}` : "";
+}
+
 function renderItem(item: DocumentArtifact["blocks"][number]): string {
   const text = item.text?.trim() ?? "";
   const locator = locatorComment(item.locator);
@@ -299,6 +307,7 @@ function renderItem(item: DocumentArtifact["blocks"][number]): string {
     return text ? `${locator}- ${text}` : "";
   }
   if (item.kind === "table") {
+    const caption = renderedCaption(item, locator);
     const sourceHeaders = item.headers ?? [];
     const sourceRows = item.rows ?? [];
     const width = sourceRows.reduce(
@@ -315,8 +324,14 @@ function renderItem(item: DocumentArtifact["blocks"][number]): string {
         (row) =>
           `| ${Array.from({ length: width }, (_, column) => escapeTableCell(row[column] ?? "")).join(" | ")} |`,
       );
-      return `${locator}| ${headers.join(" | ")} |\n| ${headers.map(() => "---").join(" | ")} |${rows.length ? `\n${rows.join("\n")}` : ""}`;
+      const table = `${locator}| ${headers.join(" | ")} |\n| ${headers.map(() => "---").join(" | ")} |${rows.length ? `\n${rows.join("\n")}` : ""}`;
+      return caption ? `${caption}\n\n${table}` : table;
     }
+    const fallbackText = text ? `${locator}${text}` : "";
+    if (caption && text && (item.caption ?? "").trim() !== text) {
+      return `${caption}\n\n${fallbackText}`;
+    }
+    return caption || fallbackText;
   }
   if (item.kind === "code") {
     const language = String(item.metadata.language ?? "")
@@ -328,6 +343,15 @@ function renderItem(item: DocumentArtifact["blocks"][number]): string {
     return text ? `${locator}$$\n${text}\n$$` : "";
   }
   if (item.kind === "figure") {
+    const caption = item.caption ?? "";
+    const captionText = caption.trim();
+    if (captionText && (!text || captionText === text)) {
+      return `${locator}> Figure: ${caption}`;
+    }
+    if (captionText) {
+      const figure = `${locator}> Figure${text ? `: ${text}` : " (no caption extracted)"}`;
+      return `${renderedCaption(item, locator)}\n\n${figure}`;
+    }
     return `${locator}> Figure${text ? `: ${text}` : " (no caption extracted)"}`;
   }
   return text ? `${locator}${text}` : "";
