@@ -39,7 +39,7 @@ function response(): Record<string, unknown> {
     id: "table-3",
     kind: "table",
     text: "key | value",
-    locator: { ...locator, start_line: 3, end_line: 5 },
+    locator: { ...locator, table: 3, start_line: 3, end_line: 5 },
     metadata: {},
     headers: ["key", "value"],
     rows: [["mode", "local"]],
@@ -137,6 +137,7 @@ describe("canonical document artifact consumption", () => {
     expect(preview.markdown).toContain("| key | value |");
     expect(preview.markdown).toContain("```python");
     expect(preview.markdown).toContain("akp-locator");
+    expect(preview.markdown).toContain("table=3");
   });
 
   it("hashes configuration independently of object key order", () => {
@@ -197,12 +198,30 @@ describe("complete extraction material", () => {
     expect(markdown).toContain("| alpha | 12 |  |");
     expect(markdown).toContain("| beta | 36 | days |");
     const units = parseKnowledgeUnits("Extracted table", markdown);
-    const atomic = units.filter((unit) => !unit.containerOnly);
-    expect(atomic).toHaveLength(1);
-    expect(atomic[0]?.unitType).toBe("TABLE");
-    expect(atomic[0]?.body).toContain("| beta | 36 | days |");
-    expect(atomic[0]?.body).not.toContain("akp-locator");
-    expect(atomic[0]?.locator.sourceCommentSpans).toHaveLength(1);
+    const tableUnit = units.find((unit) => unit.unitType === "TABLE");
+    const rows = units.filter((unit) => unit.unitType === "TABLE_ROW");
+    const cells = units.filter((unit) => unit.unitType === "TABLE_CELL");
+    expect(tableUnit).toMatchObject({
+      containerOnly: true,
+      embeddingEligible: false,
+      locator: { table: 3 },
+    });
+    expect(tableUnit?.locator.sourceCommentSpans).toHaveLength(1);
+    expect(rows).toHaveLength(2);
+    expect(rows.map((unit) => unit.body)).toEqual([
+      "| alpha | 12 |  |",
+      "| beta | 36 | days |",
+    ]);
+    expect(rows.map((unit) => unit.locator)).toEqual([
+      expect.objectContaining({ table: 3, row: 1 }),
+      expect.objectContaining({ table: 3, row: 2 }),
+    ]);
+    expect(rows.every((unit) => unit.embeddingEligible)).toBe(true);
+    expect(cells).toHaveLength(5);
+    expect(
+      cells.find((unit) => unit.body === "days")?.locator,
+    ).toEqual(expect.objectContaining({ table: 3, row: 2, column: 3 }));
+    expect(rows.every((unit) => !unit.body.includes("akp-locator"))).toBe(true);
   });
 
   it("limits only the preview while retaining a later answer in the review draft", () => {

@@ -40,6 +40,10 @@ export interface ParsedKnowledgeUnit {
     contentHash: string;
     /** Source comment positions are provenance hints, never assertions. */
     sourceCommentSpans?: ReadonlyArray<{ startLine: number; endLine: number }>;
+    /** Portable source coordinates inherited from an akp-locator provenance hint. */
+    page?: number;
+    slide?: number;
+    sheet?: string;
     /** One-based structural table coordinates when this unit comes from a table. */
     table?: number;
     row?: number;
@@ -235,6 +239,15 @@ function atomicType(
     : structural;
 }
 
+interface StructuredLocatorHint {
+  page?: number;
+  slide?: number;
+  sheet?: string;
+  table?: number;
+  row?: number;
+  column?: number;
+}
+
 function lineOffsetAt(source: string, offset: number): number {
   let lines = 0;
   const bounded = Math.max(0, Math.min(offset, source.length));
@@ -242,6 +255,64 @@ function lineOffsetAt(source: string, offset: number): number {
     if (source.charCodeAt(index) === 10) lines += 1;
   }
   return lines;
+}
+
+function parseAkpLocatorHint(comment: string): StructuredLocatorHint | null {
+  const match = /^<!--\s*akp-locator:\s*([\s\S]*?)\s*-->$/u.exec(comment);
+  if (!match) return null;
+  const fields = new Map(
+    (match[1] ?? "")
+      .split(";")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .flatMap((entry) => {
+        const separator = entry.indexOf("=");
+        if (separator <= 0) return [];
+        return [
+          [
+            entry.slice(0, separator).trim().toLowerCase(),
+            entry.slice(separator + 1).trim(),
+          ] as const,
+        ];
+      }),
+  );
+  const positiveInteger = (key: string): number | undefined => {
+    const raw = fields.get(key);
+    if (!raw || !/^\d+$/u.test(raw)) return undefined;
+    const value = Number(raw);
+    return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+  };
+  const sheet = fields.get("sheet");
+  return {
+    ...(positiveInteger("page") === undefined
+      ? {}
+      : { page: positiveInteger("page")! }),
+    ...(positiveInteger("slide") === undefined
+      ? {}
+      : { slide: positiveInteger("slide")! }),
+    ...(sheet && sheet.length <= 256 ? { sheet } : {}),
+    ...(positiveInteger("table") === undefined
+      ? {}
+      : { table: positiveInteger("table")! }),
+    ...(positiveInteger("row") === undefined
+      ? {}
+      : { row: positiveInteger("row")! }),
+    ...(positiveInteger("column") === undefined
+      ? {}
+      : { column: positiveInteger("column")! }),
+  };
+}
+
+function inheritedLocatorCoordinates(
+  hint: StructuredLocatorHint | undefined,
+): StructuredLocatorHint {
+  if (!hint) return {};
+  return {
+    ...(hint.page === undefined ? {} : { page: hint.page }),
+    ...(hint.slide === undefined ? {} : { slide: hint.slide }),
+    ...(hint.sheet === undefined ? {} : { sheet: hint.sheet }),
+    ...(hint.table === undefined ? {} : { table: hint.table }),
+  };
 }
 
 function hasIndependentText(body: string): boolean {
@@ -308,11 +379,17 @@ export function parseKnowledgeUnits(
     number,
     Array<{ startLine: number; endLine: number }>
   >();
-  for (const { startLine, endLine } of clean.comments) {
+  const locatorHintsByContentLine = new Map<number, StructuredLocatorHint>();
+  for (const comment of clean.comments) {
+    const { startLine, endLine } = comment;
     const target = nextContentLine[endLine] ?? lines.length + 1;
     const existing = commentsByContentLine.get(target) ?? [];
     existing.push({ startLine, endLine });
     commentsByContentLine.set(target, existing);
+    const hint = parseAkpLocatorHint(
+      normalized.slice(comment.startOffset, comment.endOffset),
+    );
+    if (hint) locatorHintsByContentLine.set(target, hint);
   }
   const tree = markdownTree(clean.text);
   const headingNodes = tree.children.filter(
@@ -364,7 +441,13 @@ export function parseKnowledgeUnits(
           : undefined;
       const structuredTable =
         table && table.rows.length > 0 ? table : undefined;
-      const tableOrdinal = structuredTable ? ++tableIndex : undefined;
+      const locatorHint = locatorHintsByContentLine.get(block.startLine);
+      const localTableOrdinal = structuredTable ? ++tableIndex : undefined;
+      const tableOrdinal =
+        structuredTable === undefined
+          ? undefined
+          : (locatorHint?.table ?? localTableOrdinal);
+      const inheritedCoordinates = inheritedLocatorCoordinates(locatorHint);
       const unitKey = `${sectionKey}-${unitType.toLowerCase()}-${String(block.startLine).padStart(6, "0")}-${contentHash.slice(0, 10)}`;
       units.push({
         unitKey,
@@ -380,7 +463,12 @@ export function parseKnowledgeUnits(
           startLine: block.startLine,
           endLine: block.endLine,
           contentHash,
+          ...inheritedCoordinates,
           ...(tableOrdinal !== undefined ? { table: tableOrdinal } : {}),
+          ...(locatorHint?.row === undefined ? {} : { row: locatorHint.row }),
+          ...(locatorHint?.column === undefined
+            ? {}
+            : { column: locatorHint.column }),
           ...(commentsByContentLine.has(block.startLine)
             ? {
                 sourceCommentSpans: commentsByContentLine.get(block.startLine)!,
@@ -430,6 +518,7 @@ export function parseKnowledgeUnits(
             startLine: rowStartLine,
             endLine: rowEndLine,
             contentHash: rowHash,
+            ...inheritedCoordinates,
             table: tableOrdinal,
             row: rowNumber,
           },
@@ -467,6 +556,7 @@ export function parseKnowledgeUnits(
               startLine: cellStartLine,
               endLine: cellEndLine,
               contentHash: cellHash,
+              ...inheritedCoordinates,
               table: tableOrdinal,
               row: rowNumber,
               column: columnNumber,

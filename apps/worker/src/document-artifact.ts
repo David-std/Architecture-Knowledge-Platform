@@ -276,7 +276,9 @@ function locatorComment(locator: DocumentArtifact["locators"][number]): string {
     locator.page == null ? null : `page=${locator.page}`,
     locator.slide == null ? null : `slide=${locator.slide}`,
     locator.sheet == null ? null : `sheet=${locator.sheet}`,
+    locator.table == null ? null : `table=${locator.table}`,
     locator.row == null ? null : `row=${locator.row}`,
+    locator.column == null ? null : `column=${locator.column}`,
     locator.start_line == null ? null : `line=${locator.start_line}`,
     locator.heading_path.length
       ? `heading=${locator.heading_path.join(" / ")}`
