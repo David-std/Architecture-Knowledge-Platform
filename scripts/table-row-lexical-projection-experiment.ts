@@ -269,7 +269,7 @@ const QUESTIONS: QuestionFixture[] = [
     id: "hold-caption-clinic",
     split: "heldout",
     family: "CAPTION_HEADER_VALUE",
-    query: "Clinic response roster Clinic Surco Contact Elena Cruz SLA FourHours",
+    query:\n      "Clinic response roster Clinic Surco Contact Elena Cruz SLA FourHours",
     goldRowKey: rowKey("hold-healthcare", 6, 1),
   },
   {
@@ -393,9 +393,7 @@ function summarize(split: Split, observations: Observation[]): SplitSummary {
     recallAt1: recall(ranks, 1),
     recallAt3: recall(ranks, 3),
     recallAt5: recall(ranks, 5),
-    meanReciprocalRank: mean(
-      ranks.map((rank) => (rank > 0 ? 1 / rank : 0)),
-    ),
+    meanReciprocalRank: mean(ranks.map((rank) => (rank > 0 ? 1 / rank : 0))),
     negativeFalseMatchRate:
       negatives.length === 0
         ? null
@@ -516,10 +514,7 @@ async function main(): Promise<void> {
     }
 
     const observationsByArm = new Map<Arm, Observation[]>();
-    for (const arm of [
-      "raw-table-row-body",
-      "table-row-projection",
-    ] as const) {
+    for (const arm of ["raw-table-row-body", "table-row-projection"] as const) {
       const observations: Observation[] = [];
       for (const question of QUESTIONS) {
         const ranked = await db.pool.query<{
@@ -582,10 +577,7 @@ async function main(): Promise<void> {
           heldout: summarize("heldout", observations),
         },
       ]),
-    ) as Record<
-      Arm,
-      { development: SplitSummary; heldout: SplitSummary }
-    >;
+    ) as Record<Arm, { development: SplitSummary; heldout: SplitSummary }>;
 
     const baseline = summaries["raw-table-row-body"];
     const candidate = summaries["table-row-projection"];
@@ -630,7 +622,9 @@ async function main(): Promise<void> {
     const candidateSha = await gitHead();
     const baselineSha =
       process.env.AKP_TABLE_ROW_PROJECTION_BASELINE_SHA?.trim() || candidateSha;
-    const corpusHash = sha256(JSON.stringify({ documents: DOCUMENTS, questions: QUESTIONS }));
+    const corpusHash = sha256(
+      JSON.stringify({ documents: DOCUMENTS, questions: QUESTIONS }),
+    );
     const report = {
       schemaVersion: "akp.table-row-lexical-projection.v1",
       generatedAt: new Date().toISOString(),
@@ -697,7 +691,7 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   process.stderr.write(
-    (error instanceof Error ? error.stack ?? error.message : String(error)) +
+    (error instanceof Error ? (error.stack ?? error.message) : String(error)) +
       "\n",
   );
   process.exitCode = 1;
