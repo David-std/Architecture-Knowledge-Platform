@@ -16,7 +16,10 @@ import {
   buildEmbeddingIndex,
   rebuildCommunityIndex,
 } from "../packages/indexing/src/index.js";
-import { Postgres } from "../packages/postgres/src/index.js";
+import {
+  assertSyntheticFixtureDatabaseSafety,
+  Postgres,
+} from "../packages/postgres/src/index.js";
 import {
   assessRetrievalAnswerability,
   DeterministicQueryDecomposer,
@@ -70,6 +73,12 @@ type GoldCase = {
   gold_documents: string[];
   gold_evidence?: string[];
   gold_citations?: string[];
+  gold_support?: Array<{
+    id: string;
+    document: string;
+    all_terms: string[];
+    any_terms?: string[];
+  }>;
   must_not_include?: string[];
   expect_no_answer?: boolean;
   vault: string;
@@ -112,6 +121,7 @@ type StorageSnapshot = {
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
+assertSyntheticFixtureDatabaseSafety(databaseUrl);
 
 const repositoryRoot = path.resolve(".");
 const manifestPath = path.resolve(
@@ -135,6 +145,28 @@ function numeric(value: unknown): number {
     throw new Error(`Expected finite numeric value, received ${String(value)}`);
   }
   return parsed;
+}
+function normalizedPredicateText(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleLowerCase("en-US");
+}
+
+function passageMatchesGoldPredicate(
+  passage: string,
+  predicate: NonNullable<GoldCase["gold_support"]>[number],
+): boolean {
+  const normalized = normalizedPredicateText(passage);
+  const all = predicate.all_terms.every((term) =>
+    normalized.includes(normalizedPredicateText(term)),
+  );
+  const any =
+    !predicate.any_terms?.length ||
+    predicate.any_terms.some((term) =>
+      normalized.includes(normalizedPredicateText(term)),
+    );
+  return all && any;
 }
 
 async function storageSnapshot(db: Postgres): Promise<StorageSnapshot> {
@@ -521,6 +553,47 @@ async function executeCase(
   const availableChannels = new Set<
     "context-pack" | "exact" | "lexical" | "vector" | "graph" | "raw" | "code"
   >();
+  const baseRuntimeOptions = {
+    vaultIds: [vaultId],
+    channels: [...configuration.channels],
+    allowVectorForBenchmark: Boolean(configuration.allowVectorForBenchmark),
+    deterministicRerank: Boolean(configuration.deterministicRerank),
+    ...(configuration.associativePpr
+      ? {
+          retrievalPolicy: {
+            graphMode: "ASSOCIATIVE" as const,
+            channels: {
+              GRAPH_PPR: { enabled: true, weight: 1.1 },
+            },
+          },
+        }
+      : configuration.communityDrift
+        ? {
+            retrievalPolicy: {
+              graphMode: "DRIFT" as const,
+              channels: {
+                COMMUNITY: { enabled: true, weight: 1.1 },
+              },
+            },
+          }
+        : configuration.communityGlobal
+          ? {
+              retrievalPolicy: {
+                graphMode: "GLOBAL" as const,
+                channels: {
+                  COMMUNITY: { enabled: true, weight: 1.1 },
+                },
+              },
+            }
+          : {}),
+    ...(configuration.queryDecomposition
+      ? { queryTransformer: new DeterministicQueryDecomposer() }
+      : {}),
+    queryEmbeddingService,
+    graphScopes: [{ vaultId, pathPrefix: null }],
+    graphPolicy: { maxHops: 3, directionPolicy: "both" as const },
+  };
+
   const started = performance.now();
   let answerabilityCandidates: readonly QueryHit[] | undefined;
   const rawHits = await queryKnowledge(
@@ -537,49 +610,12 @@ async function executeCase(
       limit: 10,
     },
     {
-      vaultIds: [vaultId],
-      channels: [...configuration.channels],
-      allowVectorForBenchmark: Boolean(configuration.allowVectorForBenchmark),
-      deterministicRerank: Boolean(configuration.deterministicRerank),
-      ...(configuration.associativePpr
-        ? {
-            retrievalPolicy: {
-              graphMode: "ASSOCIATIVE" as const,
-              channels: {
-                GRAPH_PPR: { enabled: true, weight: 1.1 },
-              },
-            },
-          }
-        : configuration.communityDrift
-          ? {
-              retrievalPolicy: {
-                graphMode: "DRIFT" as const,
-                channels: {
-                  COMMUNITY: { enabled: true, weight: 1.1 },
-                },
-              },
-            }
-          : configuration.communityGlobal
-            ? {
-                retrievalPolicy: {
-                  graphMode: "GLOBAL" as const,
-                  channels: {
-                    COMMUNITY: { enabled: true, weight: 1.1 },
-                  },
-                },
-              }
-            : {}),
-      ...(configuration.queryDecomposition
-        ? { queryTransformer: new DeterministicQueryDecomposer() }
-        : {}),
-      queryEmbeddingService,
+      ...baseRuntimeOptions,
       warningSink: warnings,
       availableChannelSink: availableChannels,
       answerabilityCandidateSink: (candidates) => {
         answerabilityCandidates = candidates;
       },
-      graphScopes: [{ vaultId, pathPrefix: null }],
-      graphPolicy: { maxHops: 3, directionPolicy: "both" },
     },
   );
   const answerability = assessRetrievalAnswerability(
@@ -601,6 +637,24 @@ async function executeCase(
     warnings.push(`ANSWERABILITY_GATE_REJECTED:${answerability.reason}`);
   }
   const latencyMs = performance.now() - started;
+  const depthHits =
+    (testCase.gold_support?.length ?? 0) > 0
+      ? await queryKnowledge(
+          db,
+          {
+            query: testCase.query,
+            spaceId: fixture.spaceId,
+            vaultId,
+            vaultIds: [],
+            federated: false,
+            types: [],
+            minimumTrust: "MACHINE_SUPPORTED",
+            mode: "SOURCE_BACKED",
+            limit: 64,
+          },
+          baseRuntimeOptions,
+        )
+      : rawHits;
   const rankedDocumentIds = hits.flatMap((hit) =>
     hit.document.externalId ? [hit.document.externalId] : [],
   );
@@ -624,6 +678,52 @@ async function executeCase(
         )
       ).rows.flatMap((row) => row.source_ids)
     : [];
+  const goldSupportIds = (testCase.gold_support ?? []).map(
+    (predicate) => predicate.id,
+  );
+  const supportIdsForHits = (candidates: readonly QueryHit[]): string[] =>
+    (testCase.gold_support ?? []).flatMap((predicate) =>
+      candidates.some(
+        (hit) =>
+          hit.document.externalId === predicate.document &&
+          passageMatchesGoldPredicate(
+            hit.parentContext?.trim() || hit.excerpt,
+            predicate,
+          ),
+      )
+        ? [predicate.id]
+        : [],
+    );
+  const retrievedGoldSupportIds = supportIdsForHits(rawHits);
+  const goldSupportFirstRanks = (testCase.gold_support ?? []).map(
+    (predicate) => {
+      const index = depthHits.findIndex(
+        (hit) =>
+          hit.document.externalId === predicate.document &&
+          passageMatchesGoldPredicate(
+            hit.parentContext?.trim() || hit.excerpt,
+            predicate,
+          ),
+      );
+      return index < 0 ? null : index + 1;
+    },
+  );
+  const retrievedSupportIds = supportIdsForHits(hits);
+  const selectedGoldSupportCandidateCount = hits.filter((hit) =>
+    (testCase.gold_support ?? []).some(
+      (predicate) =>
+        hit.document.externalId === predicate.document &&
+        passageMatchesGoldPredicate(
+          hit.parentContext?.trim() || hit.excerpt,
+          predicate,
+        ),
+    ),
+  ).length;
+  for (const supportId of goldSupportIds) {
+    if (!retrievedSupportIds.includes(supportId)) {
+      warnings.push(`PREDICATE_SUPPORT_MISSED:${supportId}`);
+    }
+  }
   return {
     configurationName: configuration.name,
     caseId: testCase.id,
@@ -635,6 +735,16 @@ async function executeCase(
       : {}),
     ...(testCase.gold_citations
       ? { goldCitationIds: [...testCase.gold_citations] }
+      : {}),
+    ...(testCase.gold_support !== undefined
+      ? {
+          goldSupportIds,
+          retrievedGoldSupportIds,
+          goldSupportFirstRanks,
+          retrievedSupportIds,
+          selectedSupportCandidateCount: hits.length,
+          selectedGoldSupportCandidateCount,
+        }
       : {}),
     retrievedEvidenceIds,
     ...(testCase.must_not_include

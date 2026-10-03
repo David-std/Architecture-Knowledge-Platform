@@ -4,7 +4,10 @@ import {
   assessRetrievalAnswerability,
   retrievalAnswerabilityCandidateKey,
 } from "@akp/retrieval";
-import { partitionSearchHitsByAnswerability } from "../src/routes/search.js";
+import {
+  internalAnswerabilityCandidateLimit,
+  partitionSearchHitsByAnswerability,
+} from "../src/routes/search.js";
 
 function hit(id: string, unitId?: string): SearchHit {
   return {
@@ -30,6 +33,13 @@ function hit(id: string, unitId?: string): SearchHit {
 }
 
 describe("search answerability presentation", () => {
+  it("keeps an internal answerability pool wider than presentation limits", () => {
+    expect(internalAnswerabilityCandidateLimit(1)).toBe(64);
+    expect(internalAnswerabilityCandidateLimit(10)).toBe(64);
+    expect(internalAnswerabilityCandidateLimit(20)).toBe(80);
+    expect(internalAnswerabilityCandidateLimit(100)).toBe(200);
+  });
+
   it("moves unsupported candidates to exploratoryHits without treating them as evidence", () => {
     const candidate = hit("11111111-1111-4111-8111-111111111111");
     expect(partitionSearchHitsByAnswerability([candidate], [])).toEqual({
@@ -76,7 +86,7 @@ describe("search answerability presentation", () => {
     const definition: SearchHit = {
       ...hit(documentId, "22222222-2222-4222-8222-222222222223"),
       excerpt:
-        "Immutable change logs record every domain change and retain a complete operational history for later reconstruction.",
+        "Periodic checksum validation recomputes digests to detect accidental data corruption during storage.",
       fusionContributions: [
         {
           channel: "exact",
@@ -96,7 +106,7 @@ describe("search answerability presentation", () => {
     const condition: SearchHit = {
       ...hit(documentId, "22222222-2222-4222-8222-222222222224"),
       excerpt:
-        "Immutable change logs are a poor fit for simple mutable records because operational overhead outweighs the audit requirement.",
+        "Periodic checksum validation is a poor fit for battery-constrained sensors because repeated digest computation drains limited power.",
       fusionContributions: [
         {
           channel: "vector",
@@ -110,7 +120,7 @@ describe("search answerability presentation", () => {
     const candidates = [definition, condition];
     const assessment = assessRetrievalAnswerability(
       candidates,
-      "When should immutable change logs be avoided because operational overhead is high?",
+      "When should periodic checksum validation be avoided on battery-constrained sensors?",
     );
 
     expect(

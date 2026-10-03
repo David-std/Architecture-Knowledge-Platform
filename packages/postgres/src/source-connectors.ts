@@ -12,7 +12,10 @@ export interface SourceConnectorRegistrationInput {
   vaultId: string;
   connectorKey: string;
   sourceSystem: string;
-  publicKeyPem: string;
+  publicKeyPem?: string | null;
+  connectorMode?: "SIGNED_WEBHOOK" | "PROVIDER_PULL";
+  credentialRef?: string | null;
+  providerConfig?: Record<string, unknown>;
   descriptor: Record<string, unknown>;
   createdByUserId?: string | null;
   createdByPrincipalId?: string | null;
@@ -43,6 +46,11 @@ export interface SourceConnectorEventReceipt {
   duplicate: boolean;
   sequence: number;
 }
+
+export type ProviderSourceConnectorEventInput = Omit<
+  SourceConnectorEventInput,
+  "sequence"
+>;
 
 export interface AppliedSourceConnectorEvent {
   eventId: string;
@@ -80,6 +88,28 @@ function sourceConnectorError(code: string, statusCode: number): Error {
   return error;
 }
 
+function providerSourceVersionMillis(value: unknown): number {
+  const parsed = Date.parse(String(value ?? ""));
+  if (!Number.isFinite(parsed)) {
+    throw sourceConnectorError("PROVIDER_SOURCE_VERSION_INVALID", 409);
+  }
+  return parsed;
+}
+
+function providerProjectionShouldAdvance(
+  connectorMode: unknown,
+  incomingSourceVersion: unknown,
+  currentSourceVersion: string | null,
+): boolean {
+  if (String(connectorMode) !== "PROVIDER_PULL" || !currentSourceVersion) {
+    return true;
+  }
+  return (
+    providerSourceVersionMillis(incomingSourceVersion) >
+    providerSourceVersionMillis(currentSourceVersion)
+  );
+}
+
 export async function registerSourceConnector(
   db: Postgres,
   input: SourceConnectorRegistrationInput,
@@ -90,12 +120,16 @@ export async function registerSourceConnector(
     const inserted = await client.query<Record<string, unknown>>(
       `insert into source_connector_registrations(
          space_id,vault_id,connector_key,source_system,public_key_pem,descriptor,
-         created_by_user_id,created_by_principal_id
-       ) values($1,$2,$3,$4,$5,$6::jsonb,$7,$8)
+         created_by_user_id,created_by_principal_id,connector_mode,
+         credential_ref,provider_config
+       ) values($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11::jsonb)
        on conflict(vault_id,connector_key) do update
          set source_system=excluded.source_system,
              public_key_pem=excluded.public_key_pem,
              descriptor=excluded.descriptor,
+             connector_mode=excluded.connector_mode,
+             credential_ref=excluded.credential_ref,
+             provider_config=excluded.provider_config,
              state='ACTIVE',
              updated_at=now()
        returning *`,
@@ -104,10 +138,13 @@ export async function registerSourceConnector(
         input.vaultId,
         input.connectorKey,
         input.sourceSystem,
-        input.publicKeyPem,
+        input.publicKeyPem ?? null,
         JSON.stringify(input.descriptor),
         input.createdByUserId ?? null,
         input.createdByPrincipalId ?? null,
+        input.connectorMode ?? "SIGNED_WEBHOOK",
+        input.credentialRef ?? null,
+        JSON.stringify(input.providerConfig ?? {}),
       ],
     );
     const row = inserted.rows[0];
@@ -269,6 +306,153 @@ export async function appendSourceConnectorEvent(
   }
 }
 
+/**
+ * Append one provider-authenticated webhook event using an AKP-owned
+ * monotonically increasing inbox sequence. Provider delivery IDs remain the
+ * idempotency key; callers never invent a source sequence that could race.
+ */
+export async function appendProviderSourceConnectorEvent(
+  db: Postgres,
+  input: ProviderSourceConnectorEventInput,
+): Promise<SourceConnectorEventReceipt> {
+  if (!/^[a-f0-9]{64}$/u.test(input.payloadHash)) {
+    throw sourceConnectorError("SOURCE_CONNECTOR_PAYLOAD_HASH_INVALID", 400);
+  }
+  if (input.operation === "DELETE" && input.content != null) {
+    throw sourceConnectorError(
+      "SOURCE_CONNECTOR_DELETE_CONTENT_FORBIDDEN",
+      400,
+    );
+  }
+
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const registration = await client.query<{
+      state: string;
+      connector_mode: string;
+      applied_sequence: string | number;
+    }>(
+      `select r.state,r.connector_mode,c.applied_sequence
+         from source_connector_registrations r
+         join source_connector_checkpoints c on c.connector_id=r.id
+        where r.id=$1
+        for update of r,c`,
+      [input.connectorId],
+    );
+    const connector = registration.rows[0];
+    if (!connector)
+      throw sourceConnectorError("SOURCE_CONNECTOR_NOT_FOUND", 404);
+    if (connector.state !== "ACTIVE") {
+      throw sourceConnectorError("SOURCE_CONNECTOR_DISABLED", 409);
+    }
+    if (connector.connector_mode !== "PROVIDER_PULL") {
+      throw sourceConnectorError(
+        "SOURCE_CONNECTOR_PROVIDER_MODE_REQUIRED",
+        409,
+      );
+    }
+
+    const existing = await client.query<{
+      id: string;
+      sequence: string | number;
+      payload_hash: string;
+      status: SourceConnectorEventReceipt["status"];
+    }>(
+      `select id,sequence,payload_hash,status
+         from source_connector_events
+        where connector_id=$1 and event_id=$2`,
+      [input.connectorId, input.eventId],
+    );
+    const sameEvent = existing.rows[0];
+    if (sameEvent) {
+      if (sameEvent.payload_hash !== input.payloadHash) {
+        throw sourceConnectorError("SOURCE_CONNECTOR_EVENT_ID_CONFLICT", 409);
+      }
+      await client.query("commit");
+      return {
+        id: sameEvent.id,
+        status: sameEvent.status,
+        duplicate: true,
+        sequence: Number(sameEvent.sequence),
+      };
+    }
+
+    const nextSequence = await client.query<{ sequence: string | number }>(
+      `select greatest(
+           $2::bigint,
+           coalesce(max(sequence),0)
+         ) + 1 sequence
+         from source_connector_events
+        where connector_id=$1`,
+      [input.connectorId, connector.applied_sequence],
+    );
+    const sequence = Number(nextSequence.rows[0]?.sequence ?? 0);
+    if (!Number.isSafeInteger(sequence) || sequence < 1) {
+      throw sourceConnectorError("SOURCE_CONNECTOR_SEQUENCE_INVALID", 500);
+    }
+
+    const inserted = await client.query<{
+      id: string;
+      status: SourceConnectorEventReceipt["status"];
+      sequence: string | number;
+    }>(
+      `insert into source_connector_events(
+         connector_id,event_id,sequence,occurred_at,operation,object_id,
+         object_type,source_version,title,content,content_type,
+         permission_fidelity,permission_uncertain,acl_fingerprint,
+         metadata,payload_hash
+       ) values(
+         $1,$2,$3,$4::timestamptz,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
+         $15::jsonb,$16
+       )
+       returning id,status,sequence`,
+      [
+        input.connectorId,
+        input.eventId,
+        sequence,
+        input.occurredAt,
+        input.operation,
+        input.objectId,
+        input.objectType,
+        input.sourceVersion,
+        input.title ?? null,
+        input.content ?? null,
+        input.contentType ?? null,
+        input.permissionFidelity,
+        input.permissionUncertain,
+        input.aclFingerprint ?? null,
+        JSON.stringify(input.metadata),
+        input.payloadHash,
+      ],
+    );
+    const row = inserted.rows[0];
+    if (!row) throw new Error("SOURCE_CONNECTOR_EVENT_APPEND_FAILED");
+    await client.query(
+      `update source_connector_registrations
+          set last_event_at=greatest(
+                coalesce(last_event_at,$2::timestamptz),
+                $2::timestamptz
+              ),
+              updated_at=now()
+        where id=$1`,
+      [input.connectorId, input.occurredAt],
+    );
+    await client.query("commit");
+    return {
+      id: row.id,
+      status: row.status,
+      duplicate: false,
+      sequence: Number(row.sequence),
+    };
+  } catch (error) {
+    await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function applyNextSourceConnectorEvent(
   db: Postgres,
   options: { connectorId?: string } = {},
@@ -277,7 +461,7 @@ export async function applyNextSourceConnectorEvent(
   try {
     await client.query("begin");
     const selected = await client.query<Record<string, unknown>>(
-      `select e.*,r.space_id,r.vault_id
+      `select e.*,r.space_id,r.vault_id,r.connector_mode
          from source_connector_events e
          join source_connector_registrations r on r.id=e.connector_id
          join source_connector_checkpoints c on c.connector_id=e.connector_id
@@ -326,46 +510,100 @@ export async function applyNextSourceConnectorEvent(
     try {
       const lifecycle =
         String(event.operation) === "DELETE" ? "DELETED_TOMBSTONE" : "ACTIVE";
-      await client.query(
-        `insert into source_connector_objects(
-           connector_id,object_id,object_type,source_version,lifecycle,title,
-           content,content_type,permission_fidelity,permission_uncertain,
-           acl_fingerprint,metadata,source_sequence,observed_at
-         ) values(
-           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14::timestamptz
-         )
-         on conflict(connector_id,object_id) do update
-           set object_type=excluded.object_type,
-               source_version=excluded.source_version,
-               lifecycle=excluded.lifecycle,
-               title=excluded.title,
-               content=excluded.content,
-               content_type=excluded.content_type,
-               permission_fidelity=excluded.permission_fidelity,
-               permission_uncertain=excluded.permission_uncertain,
-               acl_fingerprint=excluded.acl_fingerprint,
-               metadata=excluded.metadata,
-               source_sequence=excluded.source_sequence,
-               observed_at=excluded.observed_at,
-               updated_at=now()
-         where source_connector_objects.source_sequence<excluded.source_sequence`,
-        [
-          event.connector_id,
-          event.object_id,
-          event.object_type,
-          event.source_version,
-          lifecycle,
-          event.title ?? null,
-          lifecycle === "DELETED_TOMBSTONE" ? null : (event.content ?? null),
-          event.content_type ?? null,
-          event.permission_fidelity,
-          event.permission_uncertain,
-          event.acl_fingerprint ?? null,
-          JSON.stringify(event.metadata ?? {}),
-          sequence,
-          event.occurred_at,
-        ],
+      const currentProjection =
+        String(event.connector_mode) === "PROVIDER_PULL"
+          ? await client.query<{ source_version: string }>(
+              `select source_version
+                 from source_connector_objects
+                where connector_id=$1 and object_id=$2
+                for update`,
+              [event.connector_id, event.object_id],
+            )
+          : null;
+      const projectionShouldAdvance = providerProjectionShouldAdvance(
+        event.connector_mode,
+        event.source_version,
+        currentProjection?.rows[0]?.source_version ?? null,
       );
+
+      if (projectionShouldAdvance) {
+        await client.query(
+          `insert into source_connector_objects(
+             connector_id,object_id,object_type,source_version,lifecycle,title,
+             content,content_type,permission_fidelity,permission_uncertain,
+             acl_fingerprint,metadata,source_sequence,observed_at
+           ) values(
+             $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,$14::timestamptz
+           )
+           on conflict(connector_id,object_id) do update
+             set object_type=excluded.object_type,
+                 source_version=excluded.source_version,
+                 lifecycle=excluded.lifecycle,
+                 title=excluded.title,
+                 content=excluded.content,
+                 content_type=excluded.content_type,
+                 permission_fidelity=excluded.permission_fidelity,
+                 permission_uncertain=excluded.permission_uncertain,
+                 acl_fingerprint=excluded.acl_fingerprint,
+                 metadata=excluded.metadata,
+                 source_sequence=excluded.source_sequence,
+                 observed_at=excluded.observed_at,
+                 updated_at=now()
+           where source_connector_objects.source_sequence<excluded.source_sequence`,
+          [
+            event.connector_id,
+            event.object_id,
+            event.object_type,
+            event.source_version,
+            lifecycle,
+            event.title ?? null,
+            lifecycle === "DELETED_TOMBSTONE" ? null : (event.content ?? null),
+            event.content_type ?? null,
+            event.permission_fidelity,
+            event.permission_uncertain,
+            event.acl_fingerprint ?? null,
+            JSON.stringify(event.metadata ?? {}),
+            sequence,
+            event.occurred_at,
+          ],
+        );
+        await client.query(
+          `update external_object_refs r
+              set source_revision=$3,
+                  title=coalesce($4,r.title),
+                  canonical_url=coalesce($5::jsonb->>'canonicalUrl',r.canonical_url),
+                  authority='MIRRORED_PROJECTION',
+                  metadata=$5::jsonb || jsonb_build_object(
+                    '_akpProvenance',
+                    coalesce(r.metadata->'_akpProvenance','{}'::jsonb) ||
+                    jsonb_build_object(
+                      'observationSource','AUTHENTICATED_PROVIDER_ADAPTER',
+                      'providerVerified',true,
+                      'connectorId',$1::text,
+                      'providerObjectId',$2::text,
+                      'providerHealth','AVAILABLE',
+                      'providerLastErrorCode',null,
+                      'lifecycle',$6::text
+                    )
+                  ),
+                  observed_at=$7::timestamptz,
+                  updated_at=now()
+             from external_object_provider_links l
+            where l.external_ref_id=r.id
+              and l.connector_id=$1
+              and l.object_id=$2`,
+          [
+            event.connector_id,
+            event.object_id,
+            event.source_version,
+            event.title ?? null,
+            JSON.stringify(event.metadata ?? {}),
+            lifecycle,
+            event.occurred_at,
+          ],
+        );
+      }
+
       const eventUpdated = await client.query(
         `update source_connector_events
             set status='APPLIED',applied_at=now(),error_code=null,
@@ -386,25 +624,27 @@ export async function applyNextSourceConnectorEvent(
         throw new Error("SOURCE_CONNECTOR_CHECKPOINT_FENCED");
       }
 
-      await client.query(
-        `insert into assurance_runs(
-           space_id,vault_id,trigger,detectors,idempotency_key
-         ) values(
-           $1,$2,'CONNECTOR_EVENT',
-           array[
-             'CONNECTOR_DELETION',
-             'CONNECTOR_FRESHNESS',
-             'CONNECTOR_ACL_DRIFT'
-           ]::text[],
-           $3
-         )
-         on conflict(space_id,vault_id,idempotency_key) do nothing`,
-        [
-          event.space_id,
-          event.vault_id,
-          `connector-event:${String(event.connector_id)}:${sequence}`,
-        ],
-      );
+      if (projectionShouldAdvance) {
+        await client.query(
+          `insert into assurance_runs(
+             space_id,vault_id,trigger,detectors,idempotency_key
+           ) values(
+             $1,$2,'CONNECTOR_EVENT',
+             array[
+               'CONNECTOR_DELETION',
+               'CONNECTOR_FRESHNESS',
+               'CONNECTOR_ACL_DRIFT'
+             ]::text[],
+             $3
+           )
+           on conflict(space_id,vault_id,idempotency_key) do nothing`,
+          [
+            event.space_id,
+            event.vault_id,
+            `connector-event:${String(event.connector_id)}:${sequence}`,
+          ],
+        );
+      }
       await client.query("release savepoint source_connector_apply");
       await client.query("commit");
       return {

@@ -205,7 +205,6 @@ export async function upsertExternalObjectRef(
     canonicalUrl?: string | null;
     sourceRevision?: string | null;
     title?: string | null;
-    authority?: ExternalObjectAuthority;
     workObjectClass?: WorkObjectClass | null;
     owners?: string[];
     metadata?: Record<string, unknown>;
@@ -228,7 +227,7 @@ export async function upsertExternalObjectRef(
        ) values(
          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13,$14
        )
-       on conflict(vault_id,provider,object_type,external_id) do update
+       on conflict(vault_id,session_id,provider,object_type,external_id)\n         where session_id is not null do update
          set session_id=excluded.session_id,
              canonical_url=excluded.canonical_url,
              source_revision=excluded.source_revision,
@@ -250,7 +249,7 @@ export async function upsertExternalObjectRef(
         input.canonicalUrl?.trim() || null,
         input.sourceRevision?.trim() || null,
         input.title?.trim() || null,
-        input.authority ?? "SYSTEM_OF_RECORD",
+        "REFERENCE",
         JSON.stringify(input.metadata ?? {}),
         JSON.stringify(input.owners ?? []),
         input.observedAt ?? new Date(),
@@ -276,6 +275,154 @@ export async function upsertExternalObjectRef(
           ? String(row.work_object_class)
           : null,
         owners: Array.isArray(row.owners) ? row.owners.map(String) : [],
+        sourceRevision: row.source_revision
+          ? String(row.source_revision)
+          : null,
+      },
+    });
+    await client.query("commit");
+    return normalizeExternalRef(row);
+  } catch (error) {
+    await client.query("rollback");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function linkProviderObjectRef(
+  db: Postgres,
+  input: {
+    sessionId: string;
+    actorId: string;
+    connectorId: string;
+    objectId: string;
+    workObjectClass?: WorkObjectClass | null;
+  },
+): Promise<ExternalObjectRefRecord> {
+  const client = await db.pool.connect();
+  try {
+    await client.query("begin");
+    const scope = await requireSessionParticipant(
+      client,
+      input.sessionId,
+      input.actorId,
+    );
+    const providerObject = await client.query<Record<string, unknown>>(
+      `select r.id connector_id,r.source_system,r.connector_mode,r.state,
+              o.object_id,o.object_type,o.source_version,o.lifecycle,o.title,
+              o.metadata,o.observed_at,c.provider_health,
+              c.provider_last_error_code
+         from source_connector_registrations r
+         join source_connector_objects o on o.connector_id=r.id
+         join source_connector_checkpoints c on c.connector_id=r.id
+        where r.id=$1 and o.object_id=$2
+          and r.space_id=$3 and r.vault_id=$4
+          and r.connector_mode='PROVIDER_PULL'
+          and r.state='ACTIVE'
+        limit 1`,
+      [input.connectorId, input.objectId, scope.spaceId, scope.vaultId],
+    );
+    const providerRow = providerObject.rows[0];
+    if (!providerRow) throw fabricError("PROVIDER_OBJECT_NOT_FOUND", 404);
+    if (String(providerRow.lifecycle) !== "ACTIVE") {
+      throw fabricError("PROVIDER_OBJECT_NOT_ACTIVE", 409);
+    }
+
+    const sourceMetadata = recordObject(providerRow.metadata);
+    const externalId =
+      (typeof sourceMetadata.key === "string" && sourceMetadata.key.trim()) ||
+      (typeof sourceMetadata.identifier === "string" &&
+        sourceMetadata.identifier.trim()) ||
+      String(providerRow.object_id);
+    const canonicalUrl =
+      typeof sourceMetadata.canonicalUrl === "string" &&
+      sourceMetadata.canonicalUrl.trim()
+        ? sourceMetadata.canonicalUrl.trim()
+        : null;
+    const providerHealth = String(providerRow.provider_health ?? "AVAILABLE");
+    const metadata = {
+      ...sourceMetadata,
+      _akpProvenance: {
+        observationSource: "AUTHENTICATED_PROVIDER_ADAPTER",
+        providerVerified: true,
+        connectorId: input.connectorId,
+        providerObjectId: String(providerRow.object_id),
+        providerHealth,
+        providerLastErrorCode: providerRow.provider_last_error_code
+          ? String(providerRow.provider_last_error_code)
+          : null,
+        lifecycle: String(providerRow.lifecycle),
+      },
+    };
+    const result = await client.query<Record<string, unknown>>(
+      `insert into external_object_refs(
+         space_id,vault_id,session_id,provider,object_type,external_id,
+         canonical_url,source_revision,title,authority,metadata,owners,
+         observed_at,work_object_class
+       ) values(
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,'MIRRORED_PROJECTION',$10::jsonb,
+         '[]'::jsonb,$11,$12
+       )
+       on conflict(vault_id,session_id,provider,object_type,external_id)\n         where session_id is not null do update
+         set session_id=excluded.session_id,
+             canonical_url=excluded.canonical_url,
+             source_revision=excluded.source_revision,
+             title=excluded.title,
+             authority='MIRRORED_PROJECTION',
+             work_object_class=excluded.work_object_class,
+             metadata=excluded.metadata,
+             observed_at=excluded.observed_at,
+             updated_at=now()
+       returning *`,
+      [
+        scope.spaceId,
+        scope.vaultId,
+        input.sessionId,
+        String(providerRow.source_system),
+        String(providerRow.object_type),
+        externalId,
+        canonicalUrl,
+        String(providerRow.source_version),
+        providerRow.title ? String(providerRow.title) : null,
+        JSON.stringify(metadata),
+        providerRow.observed_at,
+        input.workObjectClass ?? null,
+      ],
+    );
+    const row = result.rows[0];
+    if (!row) throw fabricError("PROVIDER_OBJECT_REF_LINK_FAILED", 500);
+
+    await client.query(
+      `insert into external_object_provider_links(
+         external_ref_id,connector_id,object_id
+       ) values($1,$2,$3)
+       on conflict(external_ref_id) do update
+         set connector_id=excluded.connector_id,
+             object_id=excluded.object_id,
+             linked_at=now()`,
+      [row.id, input.connectorId, input.objectId],
+    );
+
+    await appendOutboxEvent(client, {
+      eventType: "ExternalObjectRefUpserted",
+      resourceId: String(row.id),
+      organizationId: scope.organizationId,
+      spaceId: scope.spaceId,
+      vaultId: scope.vaultId,
+      payload: {
+        sessionId: input.sessionId,
+        actorId: input.actorId,
+        provider: String(row.provider),
+        objectType: String(row.object_type),
+        externalId: String(row.external_id),
+        authority: "MIRRORED_PROJECTION",
+        providerVerified: true,
+        connectorId: input.connectorId,
+        providerObjectId: input.objectId,
+        workObjectClass: row.work_object_class
+          ? String(row.work_object_class)
+          : null,
         sourceRevision: row.source_revision
           ? String(row.source_revision)
           : null,

@@ -141,9 +141,20 @@ export interface BenchmarkObservation {
   retrievedCitationIds?: string[];
   /** Documents actually assembled into model context. */
   contextDocumentIds?: string[];
-  /** Gold and retrieved support units/claims for claim-support recall. */
+  /** Gold support predicates and the subset accepted by the support gate. */
   goldSupportIds?: string[];
   retrievedSupportIds?: string[];
+  /** Gold support predicates present before passage-support admission. */
+  retrievedGoldSupportIds?: string[];
+  /**
+   * First pre-admission candidate rank for each goldSupportIds entry.
+   * A null rank means the labelled support was not recovered in the measured
+   * retrieval-depth window.
+   */
+  goldSupportFirstRanks?: Array<number | null>;
+  /** Passage-level selection counts after the support gate. */
+  selectedSupportCandidateCount?: number;
+  selectedGoldSupportCandidateCount?: number;
   /** Context items demonstrably used by the answer/agent. */
   usedContextIds?: string[];
   /** Explicit paired-noise judgement. True means the added noise caused failure. */
@@ -167,12 +178,25 @@ export interface BenchmarkCaseMetrics {
   ndcgAt10: number;
   evidenceRecall: number;
   contextPrecision: number;
+  /** Recall of gold support passages before the support-admission gate. */
+  goldSupportRetrievalRecall: number;
+  /** Recall of gold support predicates after support admission. */
   claimSupportRecall: number;
+  /** Precision of admitted passages against gold support labels. */
+  supportSelectionPrecision: number;
+  /** Pre-admission depth diagnostics for labelled positive support. */
+  firstGoldSupportRank: number | null;
+  goldSupportRecallAt8: number;
+  goldSupportRecallAt16: number;
+  goldSupportRecallAt32: number;
+  goldSupportRecallAt64: number;
   citationPrecision: number;
   contextUtilization: number;
   noiseSensitivity: number;
   faithfulness: number;
   noAnswerCorrect: boolean;
+  falseAbstention: boolean;
+  falseAcceptance: boolean;
   unsupportedClaim: boolean;
   estimatedTokens: number;
   latencyMs: number;
@@ -180,7 +204,10 @@ export interface BenchmarkCaseMetrics {
   /** False means the adapter/dataset did not provide evidence for this metric. */
   evidenceScored: boolean;
   contextPrecisionScored: boolean;
+  goldSupportRetrievalScored: boolean;
   claimSupportScored: boolean;
+  supportSelectionPrecisionScored: boolean;
+  goldSupportDepthScored: boolean;
   citationScored: boolean;
   contextUtilizationScored: boolean;
   noiseSensitivityScored: boolean;
@@ -201,8 +228,19 @@ export interface BenchmarkRunMetrics {
   evidenceRecallCoverage: number;
   meanContextPrecision: number;
   contextPrecisionCoverage: number;
+  meanGoldSupportRetrievalRecall: number;
+  goldSupportRetrievalCoverage: number;
   meanClaimSupportRecall: number;
   claimSupportRecallCoverage: number;
+  meanSupportSelectionPrecision: number;
+  supportSelectionPrecisionCoverage: number;
+  meanFirstGoldSupportRank: number;
+  goldSupportFirstRankFoundRate: number;
+  meanGoldSupportRecallAt8: number;
+  meanGoldSupportRecallAt16: number;
+  meanGoldSupportRecallAt32: number;
+  meanGoldSupportRecallAt64: number;
+  goldSupportDepthCoverage: number;
   meanCitationPrecision: number;
   citationPrecisionCoverage: number;
   meanContextUtilization: number;
@@ -212,6 +250,8 @@ export interface BenchmarkRunMetrics {
   meanFaithfulness: number;
   faithfulnessCoverage: number;
   unsupportedClaimRate: number;
+  falseAbstentionRate: number;
+  falseAcceptanceRate: number;
   noAnswerAccuracy: number;
   noAnswerCases: number;
   meanEstimatedTokens: number;
@@ -326,6 +366,78 @@ export function scoreBenchmarkObservation(
       : intersectionSize(retrievedSupport, observation.goldSupportIds!) /
         observation.goldSupportIds!.length
     : 0;
+  const goldSupportRetrievalScored =
+    observation.goldSupportIds !== undefined &&
+    observation.retrievedGoldSupportIds !== undefined;
+  const retrievedGoldSupport = unique(
+    observation.retrievedGoldSupportIds ?? [],
+  );
+  const goldSupportRetrievalRecall = goldSupportRetrievalScored
+    ? observation.goldSupportIds!.length === 0
+      ? 1
+      : intersectionSize(retrievedGoldSupport, observation.goldSupportIds!) /
+        observation.goldSupportIds!.length
+    : 0;
+  const supportSelectionPrecisionScored =
+    observation.goldSupportIds !== undefined &&
+    observation.selectedSupportCandidateCount !== undefined &&
+    observation.selectedGoldSupportCandidateCount !== undefined;
+  const selectedSupportCandidateCount =
+    observation.selectedSupportCandidateCount ?? 0;
+  const selectedGoldSupportCandidateCount =
+    observation.selectedGoldSupportCandidateCount ?? 0;
+  if (
+    !Number.isSafeInteger(selectedSupportCandidateCount) ||
+    selectedSupportCandidateCount < 0 ||
+    !Number.isSafeInteger(selectedGoldSupportCandidateCount) ||
+    selectedGoldSupportCandidateCount < 0 ||
+    selectedGoldSupportCandidateCount > selectedSupportCandidateCount
+  ) {
+    throw new Error("Benchmark support-selection counts are invalid.");
+  }
+  const supportSelectionPrecision = supportSelectionPrecisionScored
+    ? selectedSupportCandidateCount === 0
+      ? observation.goldSupportIds!.length === 0
+        ? 1
+        : 0
+      : selectedGoldSupportCandidateCount / selectedSupportCandidateCount
+    : 0;
+  const goldSupportDepthScored =
+    observation.goldSupportIds !== undefined &&
+    observation.goldSupportIds.length > 0 &&
+    observation.goldSupportFirstRanks !== undefined;
+  const goldSupportFirstRanks = observation.goldSupportFirstRanks ?? [];
+  if (
+    goldSupportDepthScored &&
+    goldSupportFirstRanks.length !== observation.goldSupportIds!.length
+  ) {
+    throw new Error(
+      "Benchmark gold-support first-rank labels must align with goldSupportIds.",
+    );
+  }
+  for (const rank of goldSupportFirstRanks) {
+    if (rank !== null && (!Number.isSafeInteger(rank) || rank < 1)) {
+      throw new Error(
+        "Benchmark gold-support first ranks must be positive integers or null.",
+      );
+    }
+  }
+  const foundGoldSupportRanks = goldSupportFirstRanks.filter(
+    (rank): rank is number => rank !== null,
+  );
+  const firstGoldSupportRank =
+    goldSupportDepthScored && foundGoldSupportRanks.length > 0
+      ? Math.min(...foundGoldSupportRanks)
+      : null;
+  const goldSupportRecallAt = (limit: number): number =>
+    goldSupportDepthScored
+      ? goldSupportFirstRanks.filter((rank) => rank !== null && rank <= limit)
+          .length / goldSupportFirstRanks.length
+      : 0;
+  const goldSupportRecallAt8 = goldSupportRecallAt(8);
+  const goldSupportRecallAt16 = goldSupportRecallAt(16);
+  const goldSupportRecallAt32 = goldSupportRecallAt(32);
+  const goldSupportRecallAt64 = goldSupportRecallAt(64);
 
   const contextUtilizationScored =
     observation.contextDocumentIds !== undefined &&
@@ -354,6 +466,12 @@ export function scoreBenchmarkObservation(
     observation.faithfulnessScore >= 0 &&
     observation.faithfulnessScore <= 1;
   const faithfulness = faithfulnessScored ? observation.faithfulnessScore! : 0;
+
+  const falseAbstention =
+    !expectedNoAnswer &&
+    observation.goldDocumentIds.length > 0 &&
+    !returnedAnswer;
+  const falseAcceptance = expectedNoAnswer && returnedAnswer;
 
   const unsupportedClaim =
     observation.unsupportedClaim ??
@@ -387,19 +505,31 @@ export function scoreBenchmarkObservation(
     ndcgAt10: idealDcg === 0 ? (expectedNoAnswer ? 1 : 0) : dcg / idealDcg,
     evidenceRecall,
     contextPrecision,
+    goldSupportRetrievalRecall,
     claimSupportRecall,
+    supportSelectionPrecision,
+    firstGoldSupportRank,
+    goldSupportRecallAt8,
+    goldSupportRecallAt16,
+    goldSupportRecallAt32,
+    goldSupportRecallAt64,
     citationPrecision,
     contextUtilization,
     noiseSensitivity,
     faithfulness,
     noAnswerCorrect,
+    falseAbstention,
+    falseAcceptance,
     unsupportedClaim,
     estimatedTokens: Math.max(0, observation.estimatedTokens ?? 0),
     latencyMs: safeDuration(observation.latencyMs),
     forbidden,
     evidenceScored,
     contextPrecisionScored,
+    goldSupportRetrievalScored,
     claimSupportScored,
+    supportSelectionPrecisionScored,
+    goldSupportDepthScored,
     citationScored,
     contextUtilizationScored,
     noiseSensitivityScored,
@@ -438,8 +568,20 @@ export function aggregateBenchmarkRun(
   const scoredContextPrecision = results.filter(
     (result) => result.metrics.contextPrecisionScored,
   );
+  const scoredGoldSupportRetrieval = results.filter(
+    (result) => result.metrics.goldSupportRetrievalScored,
+  );
   const scoredClaimSupport = results.filter(
     (result) => result.metrics.claimSupportScored,
+  );
+  const scoredSupportSelectionPrecision = results.filter(
+    (result) => result.metrics.supportSelectionPrecisionScored,
+  );
+  const scoredGoldSupportDepth = results.filter(
+    (result) => result.metrics.goldSupportDepthScored,
+  );
+  const foundGoldSupportDepth = scoredGoldSupportDepth.filter(
+    (result) => result.metrics.firstGoldSupportRank !== null,
   );
   const scoredContextUtilization = results.filter(
     (result) => result.metrics.contextUtilizationScored,
@@ -483,11 +625,60 @@ export function aggregateBenchmarkRun(
     ),
     contextPrecisionCoverage:
       results.length === 0 ? 0 : scoredContextPrecision.length / results.length,
+    meanGoldSupportRetrievalRecall: average(
+      scoredGoldSupportRetrieval.map(
+        (result) => result.metrics.goldSupportRetrievalRecall,
+      ),
+    ),
+    goldSupportRetrievalCoverage:
+      results.length === 0
+        ? 0
+        : scoredGoldSupportRetrieval.length / results.length,
     meanClaimSupportRecall: average(
       scoredClaimSupport.map((result) => result.metrics.claimSupportRecall),
     ),
     claimSupportRecallCoverage:
       results.length === 0 ? 0 : scoredClaimSupport.length / results.length,
+    meanSupportSelectionPrecision: average(
+      scoredSupportSelectionPrecision.map(
+        (result) => result.metrics.supportSelectionPrecision,
+      ),
+    ),
+    supportSelectionPrecisionCoverage:
+      results.length === 0
+        ? 0
+        : scoredSupportSelectionPrecision.length / results.length,
+    meanFirstGoldSupportRank: average(
+      foundGoldSupportDepth.map(
+        (result) => result.metrics.firstGoldSupportRank ?? 0,
+      ),
+    ),
+    goldSupportFirstRankFoundRate:
+      scoredGoldSupportDepth.length === 0
+        ? 0
+        : foundGoldSupportDepth.length / scoredGoldSupportDepth.length,
+    meanGoldSupportRecallAt8: average(
+      scoredGoldSupportDepth.map(
+        (result) => result.metrics.goldSupportRecallAt8,
+      ),
+    ),
+    meanGoldSupportRecallAt16: average(
+      scoredGoldSupportDepth.map(
+        (result) => result.metrics.goldSupportRecallAt16,
+      ),
+    ),
+    meanGoldSupportRecallAt32: average(
+      scoredGoldSupportDepth.map(
+        (result) => result.metrics.goldSupportRecallAt32,
+      ),
+    ),
+    meanGoldSupportRecallAt64: average(
+      scoredGoldSupportDepth.map(
+        (result) => result.metrics.goldSupportRecallAt64,
+      ),
+    ),
+    goldSupportDepthCoverage:
+      results.length === 0 ? 0 : scoredGoldSupportDepth.length / results.length,
     meanCitationPrecision: average(
       scoredCitations.map((result) => result.metrics.citationPrecision),
     ),
@@ -516,6 +707,16 @@ export function aggregateBenchmarkRun(
       results.length === 0
         ? 0
         : results.filter((result) => result.metrics.unsupportedClaim).length /
+          results.length,
+    falseAbstentionRate:
+      results.length === 0
+        ? 0
+        : results.filter((result) => result.metrics.falseAbstention).length /
+          results.length,
+    falseAcceptanceRate:
+      results.length === 0
+        ? 0
+        : results.filter((result) => result.metrics.falseAcceptance).length /
           results.length,
     noAnswerAccuracy:
       noAnswer.length === 0

@@ -133,9 +133,21 @@ jobs:
       - run: pnpm security:secrets
       - name: Install pinned Chromium for browser E2E
         run: pnpm exec playwright install --with-deps chromium
+      - name: Prepare disposable browser E2E database
+        env:
+          DATABASE_URL: postgres://akp:akp@localhost:55432/akp_browser_e2e
+        run: |
+          docker compose exec -T postgres dropdb -U akp --if-exists akp_browser_e2e
+          docker compose exec -T postgres createdb -U akp akp_browser_e2e
+          pnpm db:migrate
+          pnpm auth:provision
       - name: Run critical browser E2E
+        env:
+          DATABASE_URL: postgres://akp:akp@localhost:55432/akp_browser_e2e
         run: pnpm test:browser
-      - name: Re-run critical browser E2E on the same database
+      - name: Re-run critical browser E2E on the same disposable database
+        env:
+          DATABASE_URL: postgres://akp:akp@localhost:55432/akp_browser_e2e
         run: pnpm test:browser
       - name: Run temporal truth maintenance integration
         run: |

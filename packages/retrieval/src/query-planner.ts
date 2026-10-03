@@ -81,6 +81,25 @@ const exactPattern =
 const codeShapePattern =
   /(?:[/\\][\w.-]+\.(?:md|ts|tsx|js|jsx|java|cs|py|go|rs)|\b[A-Z][A-Za-z0-9]+(?:Service|Controller|Repository|Client|Handler)\b|\b[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*|\.[A-Za-z_][A-Za-z0-9_]*)+\b)/;
 
+function looksLikeProjectCodeRequest(query: string): boolean {
+  const normalized = query.trim().toLowerCase();
+  if (codeShapePattern.test(query)) return true;
+
+  if (
+    /\b(repository|repositorio|class|clase|symbol|simbolo|símbolo|function|funcion|función|method|metodo|método|file|archivo|path|ruta|commit)\b/u.test(
+      normalized,
+    )
+  ) {
+    return true;
+  }
+
+  if (!/\b(code|codigo|código)\b/u.test(normalized)) return false;
+
+  return /\b(show|find|locate|inspect|open|read|trace|implementation|implement|implemented|implements|call|calls|called|reference|references|referenced|where|line|lines|source file|source code|mostrar|buscar|ubicar|inspeccionar|abrir|leer|trazar|implementacion|implementación|implementa|llama|llamadas|referencia|referencias|donde|dónde|linea|línea|lineas|líneas)\b/u.test(
+    normalized,
+  );
+}
+
 const QUERY_SHAPE_KEYS: readonly (keyof QueryShape)[] = [
   "exactIdentifier",
   "naturalLanguageConceptual",
@@ -225,11 +244,7 @@ export function classifyQueryShape(
         normalized,
       ),
     codeSymbolOrPath:
-      intent === "PROJECT_CODE" ||
-      codeShapePattern.test(query) ||
-      /\b(code|codigo|código|symbol|simbolo|símbolo|class|clase|function|funcion|función|method|metodo|método|file|archivo|path|ruta|repository|repositorio)\b/u.test(
-        normalized,
-      ),
+      intent === "PROJECT_CODE" || looksLikeProjectCodeRequest(query),
     multiHop:
       intent === "IMPACT_ANALYSIS" ||
       /\b(multi[- ]?hop|trace|traverse|dependency path|dependency chain|impact|impacto|afecta|dependenc|cadena|recorrido)\b/u.test(
@@ -333,7 +348,14 @@ export function planQuery(
   let intent: QueryIntent;
   if (explicitIntent && QUERY_INTENTS.has(explicitIntent as QueryIntent)) {
     intent = explicitIntent as QueryIntent;
-  } else if (/\b(impact|impacto|afecta|dependenc)/.test(normalized))
+  } else if (
+    /\b(impact|impacto|affect|affects|affected|afecta|afectan|afectado|afectada|afectados|afectadas|blast radius|downstream|upstream|dependent|dependents|dependiente|dependientes)\b/u.test(
+      normalized,
+    ) ||
+    /\b(change|modify|cambiar|modificar|cambio)\b[^\n]{0,80}\b(dependency|dependencies|dependencia|dependencias)\b/u.test(
+      normalized,
+    )
+  )
     intent = "IMPACT_ANALYSIS";
   else if (
     /\b(source|fuente|evidencia|verify|verifica|citation|cita)\b/.test(
@@ -341,12 +363,8 @@ export function planQuery(
     )
   )
     intent = "SOURCE_VERIFICATION";
-  else if (
-    /\b(repository|repositorio|code|codigo|clase|symbol|commit)\b/.test(
-      normalized,
-    )
-  )
-    intent = "PROJECT_CODE";
+  else if (exactPattern.test(query)) intent = "EXACT_LOOKUP";
+  else if (looksLikeProjectCodeRequest(query)) intent = "PROJECT_CODE";
   else if (
     /\b(compare|comparison|comparar|versus| vs |diferencia)\b/.test(normalized)
   )
@@ -355,7 +373,6 @@ export function planQuery(
     intent = "WORKFLOW_EXECUTION";
   else if (/\b(global|sintesis|panorama|todo el corpus)\b/.test(normalized))
     intent = "GLOBAL_SYNTHESIS";
-  else if (exactPattern.test(query)) intent = "EXACT_LOOKUP";
   else intent = "CONCEPTUAL";
 
   const inferredShape = classifyQueryShape(query, intent);

@@ -12,6 +12,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
 import pg from "pg";
+import { assertSyntheticFixtureDatabaseSafety } from "../packages/postgres/src/database-safety.js";
 
 type Numeric = number | string;
 
@@ -105,6 +106,7 @@ type TargetResult = {
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
+assertSyntheticFixtureDatabaseSafety(databaseUrl);
 
 const args = process.argv.slice(2);
 

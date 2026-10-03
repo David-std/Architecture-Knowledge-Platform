@@ -20,7 +20,7 @@
       "intent": "CONCEPTUAL",
       "mandatoryTerms": ["approved Markdown", "Git", "rebuildable projections"],
       "forbiddenTerms": [],
-      "retrievalQuery": "canonical architecture",
+      "retrievalQuery": "canonical knowledge rebuildable projections",
       "goldCitations": ["repo://ARCHITECTURE.md"]
     },
     {
@@ -50,12 +50,15 @@
     {
       "id": "agent-public-project-code-health-boundary",
       "category": "project-code",
-      "query": "When implementing health endpoints, what distinction between liveness and readiness must the code preserve?",
+      "query": "What does healthReadiness call, and what does healthLiveness call?",
       "intent": "PROJECT_CODE",
-      "mandatoryTerms": ["API process", "required runtime dependencies"],
+      "mandatoryTerms": ["requiredRuntimeDependencies", "apiProcessAlive"],
       "forbiddenTerms": [],
-      "retrievalQuery": "runtime operations",
-      "goldCitations": ["repo://docs/runbooks/local-operations.md"]
+      "goldCitations": [
+        "code:akp-project:10000000-0000-4000-8000-000000000002:runtime-health@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:src/health.ts:2#apiProcessAlive",
+        "code:akp-project:10000000-0000-4000-8000-000000000002:runtime-health@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:src/health.ts:5#requiredRuntimeDependencies"
+      ],
+      "projectId": "20000000-0000-4000-8000-000000000001"
     },
     {
       "id": "agent-public-no-answer-cloud-region",

@@ -2661,7 +2661,7 @@ paths:
         - { $ref: "#/components/parameters/UuidId" }
       responses:
         "200":
-          description: External system-of-record references visible to the authorized session.
+          description: External coordination references and provider-backed projections visible to the authorized session.
           content:
             application/json:
               schema: { type: object, additionalProperties: true }
@@ -2671,7 +2671,8 @@ paths:
     post:
       tags: [Sessions]
       operationId: upsertSessionExternalObjectRef
-      x-akp-permission: knowledge:read
+      x-akp-permission: knowledge:propose
+      x-akp-principal-action: knowledge:propose
       parameters:
         - { $ref: "#/components/parameters/UuidId" }
         - { $ref: "#/components/parameters/IdempotencyKey" }
@@ -2690,9 +2691,6 @@ paths:
                 canonicalUrl: { type: string }
                 sourceRevision: { type: string }
                 title: { type: string }
-                authority:
-                  type: string
-                  enum: [SYSTEM_OF_RECORD, REFERENCE, MIRRORED_PROJECTION]
                 workObjectClass:
                   type: string
                   enum:
@@ -2729,6 +2727,86 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/provider-objects:
+    get:
+      tags: [Sessions]
+      operationId: listSessionProviderObjects
+      x-akp-permission: knowledge:read
+      description: >
+        Lists active external objects synchronized into the session vault by
+        authenticated read-only provider adapters. Provider credentials and
+        connector configuration are never returned, and these projections are
+        not approved AKP knowledge.
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sessions/{id}/provider-refs:
+    post:
+      tags: [Sessions]
+      operationId: linkSessionProviderObjectRef
+      x-akp-permission: knowledge:propose
+      x-akp-principal-action: knowledge:propose
+      description: >
+        Links an already-synchronized authenticated provider object to the
+        session. The caller supplies only connector/object identity and an
+        optional work class; provider identity, URL, source revision, metadata
+        and MIRRORED_PROJECTION authority are derived from AKP's connector
+        projection and cannot be asserted by the caller.
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [connectorId, objectId]
+              properties:
+                connectorId: { type: string, format: uuid }
+                objectId: { type: string, minLength: 1, maxLength: 2048 }
+                workObjectClass:
+                  type: string
+                  enum:
+                    [
+                      GOAL,
+                      PROJECT,
+                      WORK_ITEM,
+                      PULL_REQUEST,
+                      CODE_REVIEW,
+                      INCIDENT,
+                      CHANGE,
+                      BUILD,
+                      DEPLOYMENT,
+                      ENVIRONMENT,
+                      TEST_RUN,
+                      MEETING,
+                      MESSAGE,
+                      DOCUMENT,
+                      REPOSITORY,
+                      SERVICE,
+                    ]
+      responses:
+        "201":
+          description: Provider-backed reference linked as MIRRORED_PROJECTION.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   /v1/sessions/{id}/offline-drafts:
     get:
@@ -3453,6 +3531,121 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/source-connectors/providers:
+    post:
+      tags: [Sources]
+      operationId: registerProviderSourceConnector
+      x-akp-permission: admin
+      x-akp-idempotency-exempt: true
+      description: >
+        Register a read-only Jira or Linear provider connector. Only an
+        operator-owned credential reference and non-secret provider
+        configuration are persisted; provider secret bytes remain outside AKP
+        durable state. Provider projections remain UNTRUSTED_EXTERNAL
+        references and write-back is disabled. Polling is always available.
+        For Linear only, an optional webhookSecretRef enables authenticated
+        provider webhook ingestion without persisting the signing secret.
+        Native Jira Cloud webhooks remain polling-only in this direct mode.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [spaceId, vaultId, connectorKey, provider, credentialRef]
+              properties:
+                spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
+                connectorKey:
+                  {
+                    type: string,
+                    pattern: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+                  }
+                provider: { type: string, enum: [jira, linear] }
+                credentialRef:
+                  {
+                    type: string,
+                    pattern: "^[A-Z][A-Z0-9_]{1,127}$",
+                    description: "Environment/secret-store reference, never the provider secret itself.",
+                  }
+                webhookSecretRef:
+                  {
+                    type: string,
+                    pattern: "^[A-Z][A-Z0-9_]{1,127}$",
+                    description: "Linear-only environment/secret-store reference used to verify Linear-Signature. Direct Jira Cloud registration rejects this field.",
+                  }
+                baseUrl:
+                  {
+                    type: string,
+                    format: uri,
+                    description: "Required for Jira Cloud; optional Linear GraphQL endpoint override.",
+                  }
+                jql: { type: string, minLength: 1, maxLength: 4000 }
+                authorizationScheme:
+                  { type: string, enum: [RAW, BASIC, BEARER] }
+                freshnessSlaSeconds:
+                  { type: integer, minimum: 1, maximum: 31536000, default: 300 }
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /hooks/source-connectors/{id}/provider-events:
+    post:
+      tags: [Sources]
+      operationId: receiveProviderSourceConnectorWebhook
+      security: []
+      x-akp-idempotency-exempt: true
+      description: >
+        Authenticated provider webhook inbox for a registered PROVIDER_PULL
+        connector. The direct first-party path currently accepts Linear:
+        AKP verifies Linear-Signature against an operator-owned secret
+        reference, preserves Linear-Delivery as the idempotency key, checks
+        timestamp freshness, assigns a contiguous inbox sequence under lock,
+        and stores only UNTRUSTED_EXTERNAL reference metadata. Direct Jira
+        Cloud webhooks fail closed until an Atlassian-authenticated callback
+        mechanism is configured; Jira provider synchronization uses
+        authenticated polling.
+      parameters:
+        - {
+            name: id,
+            in: path,
+            required: true,
+            schema: { type: string, format: uuid },
+          }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          {
+            description: "Duplicate provider delivery already recorded.",
+            content:
+              {
+                application/json:
+                  { schema: { type: object, additionalProperties: true } },
+              },
+          }
+        "202":
+          {
+            description: "Verified provider delivery accepted into the connector inbox.",
+            content:
+              {
+                application/json:
+                  { schema: { type: object, additionalProperties: true } },
+              },
+          }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /hooks/source-connectors/{id}/events:
     post:

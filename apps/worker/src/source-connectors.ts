@@ -11,3 +11,12 @@ export function localGitSourceConnector(
 ): SourceConnectorPort {
   return new LocalGitSourceConnector(store, options);
 }
+
+export {
+  JiraCloudSourceConnector,
+  LinearSourceConnector,
+  type JiraCloudSourceConnectorOptions,
+  type LinearSourceConnectorOptions,
+  type ProviderHealth,
+  type ProviderHealthState,
+} from "./external-work-connectors.js";

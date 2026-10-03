@@ -10,6 +10,11 @@ export interface CodeChannelCandidate {
   id: string;
   documentRevision: string;
   reason: string;
+  /**
+   * Authorized deterministic Code Graph facts used as an answerability
+   * support surface. This is derived evidence, not retrieval-rank authority.
+   */
+  supportText?: string;
   citations: string[];
 }
 
@@ -382,6 +387,7 @@ export async function resolveProjectCodeRetrieval(
               id: project.document_id,
               documentRevision: project.document_revision,
               reason: uniqueReasons.join(" | "),
+              supportText: uniqueReasons.join("\n"),
               citations: [...citations].sort(),
             },
           ],

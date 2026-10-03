@@ -1200,8 +1200,11 @@ export function registerOperatorRoutes(
         db.pool.query(
           `
             select r.id,r.space_id,r.vault_id,r.connector_key,r.source_system,
-                   r.state,r.descriptor,r.last_event_at,c.applied_sequence,
-                   c.updated_at checkpoint_updated_at,
+                   r.state,r.descriptor,r.last_event_at,r.connector_mode,
+                   c.applied_sequence,c.updated_at checkpoint_updated_at,
+                   c.provider_checkpoint_kind,c.provider_checkpoint_value,
+                   c.provider_health,c.provider_last_success_at,
+                   c.provider_last_error_code,
                    case
                      when r.state<>'ACTIVE' then 'DISABLED'
                      when r.descriptor#>>'{incremental,webhook}'='true'

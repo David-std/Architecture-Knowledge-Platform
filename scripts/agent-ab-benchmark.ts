@@ -328,6 +328,7 @@ async function retrieveArmA(
     {
       query: retrievalQuery,
       intent: task.intent,
+      ...(task.projectId ? { projectId: task.projectId } : {}),
       spaceId: config.spaceId,
       vaultIds: config.vaultIds,
       federated: config.vaultIds.length > 1,
@@ -354,6 +355,7 @@ async function retrieveArmB(
     {
       query: retrievalQuery,
       intent: task.intent,
+      ...(task.projectId ? { projectId: task.projectId } : {}),
       spaceId: config.spaceId,
       vaultIds: config.vaultIds,
       federated: config.vaultIds.length > 1,
@@ -786,10 +788,16 @@ async function main(): Promise<void> {
       "agent-public-source-sanitized-packet",
       "agent-public-project-code-health-boundary",
     ]);
+    const rawSearchOptionalTaskIds = new Set(
+      selection.entries
+        .filter(({ task }) => task.intent === "PROJECT_CODE")
+        .map(({ task }) => task.id),
+    );
     for (const observation of observations) {
       if (!supportedTaskIds.has(observation.taskId)) continue;
       if (
         observation.arm === "A_RAW_SEARCH" &&
+        !rawSearchOptionalTaskIds.has(observation.taskId) &&
         (observation.contextTokens <= 0 ||
           Number(observation.retrievalMetadata.hits ?? 0) <= 0)
       ) {

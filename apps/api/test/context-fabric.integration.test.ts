@@ -4,7 +4,10 @@ import type { FastifyInstance } from "fastify";
 import { ConnectorCapabilities } from "@akp/contracts/connector-capabilities";
 import {
   Postgres,
+  appendSourceConnectorEvent,
+  applyNextSourceConnectorEvent,
   grantVaultMembership,
+  registerSourceConnector,
   upsertContextFabricPeer,
 } from "@akp/postgres";
 
@@ -22,6 +25,7 @@ const adminHeaders = { authorization: `Bearer ${adminToken}` };
 let app: FastifyInstance;
 let db: Postgres;
 let sessionId = "";
+const createdSessionIds: string[] = [];
 let peerIds: string[] = [];
 
 beforeAll(async () => {
@@ -51,16 +55,16 @@ beforeAll(async () => {
   );
   await db.pool.query(
     `insert into memberships(user_id,space_id,role,path_prefix) values
-      ($1,$3,'VIEWER',null),
+      ($1,$3,'CONTRIBUTOR',null),
       ($2,$3,'ADMIN',null)`,
     [actorId, adminId, spaceId],
   );
   await grantVaultMembership(db, {
     userId: actorId,
     vaultId,
-    role: "VIEWER",
+    role: "CONTRIBUTOR",
     pathPrefix: null,
-    permissions: ["knowledge:read", "source:read"],
+    permissions: ["knowledge:read", "knowledge:propose", "source:read"],
   });
   await db.pool.query(
     `insert into api_tokens(user_id,token_hash,label,scopes) values
@@ -74,7 +78,7 @@ beforeAll(async () => {
           {
             spaceId,
             pathPrefix: null,
-            permissions: ["knowledge:read", "source:read"],
+            permissions: ["knowledge:read", "knowledge:propose", "source:read"],
           },
         ],
       }),
@@ -110,10 +114,11 @@ afterAll(async () => {
            or ($2::text<>'' and (resource_id=$2 or metadata->>'sessionId'=$2))`,
       [[actorId, adminId], sessionId],
     );
-    if (sessionId) {
-      await db.pool.query("delete from agent_sessions where id=$1", [
-        sessionId,
-      ]);
+    if (createdSessionIds.length) {
+      await db.pool.query(
+        "delete from agent_sessions where id=any($1::uuid[])",
+        [createdSessionIds],
+      );
     }
     await db.pool.query(
       "delete from idempotency_records where actor_id=any($1::uuid[])",
@@ -187,6 +192,7 @@ describe("team context fabric integration", () => {
       contextRevisionSetHash: string;
     };
     sessionId = createdSession.id;
+    createdSessionIds.push(sessionId);
     expect(createdSession.contextRevisionSetHash).toMatch(/^[a-f0-9]{64}$/);
 
     const externalRef = await app.inject({
@@ -200,7 +206,9 @@ describe("team context fabric integration", () => {
         canonicalUrl: "https://example.test/issues/42",
         sourceRevision: "etag-42",
         title: "External system of record item",
-        authority: "SYSTEM_OF_RECORD",
+        // A relayed actor cannot self-assert provider authority. This legacy
+        // field is deliberately ignored by the route.
+        authority: "REFERENCE",
         metadata: { state: "OPEN" },
       },
     });
@@ -216,7 +224,7 @@ describe("team context fabric integration", () => {
       provider: "github",
       objectType: "issue",
       externalId: "GH-42",
-      authority: "SYSTEM_OF_RECORD",
+      authority: "REFERENCE",
     });
     const externalRefOutbox = await db.pool.query<{
       space_id: string;
@@ -234,7 +242,7 @@ describe("team context fabric integration", () => {
       payload: {
         sessionId,
         externalId: "GH-42",
-        authority: "SYSTEM_OF_RECORD",
+        authority: "REFERENCE",
       },
     });
 
@@ -247,6 +255,248 @@ describe("team context fabric integration", () => {
     expect(
       (listedRefs.json() as { refs: Array<{ externalId: string }> }).refs,
     ).toContainEqual(expect.objectContaining({ externalId: "GH-42" }));
+
+    const providerConnector = await registerSourceConnector(db, {
+      spaceId,
+      vaultId,
+      connectorKey: "provider-link-fixture",
+      sourceSystem: "linear",
+      publicKeyPem: null,
+      connectorMode: "PROVIDER_PULL",
+      credentialRef: "AKP_TEST_PROVIDER_CREDENTIAL",
+      providerConfig: {},
+      descriptor: {
+        schemaVersion: 1,
+        sourceSystem: "linear",
+        objectTypes: ["ISSUE"],
+        replication: "REFERENCE",
+        contentTrust: "UNTRUSTED_EXTERNAL",
+      },
+    });
+    const providerConnectorId = String(providerConnector.id);
+    await db.pool.query(
+      `insert into source_connector_objects(
+         connector_id,object_id,object_type,source_version,lifecycle,title,
+         content,content_type,permission_fidelity,permission_uncertain,
+         acl_fingerprint,metadata,source_sequence,observed_at
+       ) values(
+         $1,'provider-object-1','ISSUE','2026-09-28T10:00:00.000Z','ACTIVE',
+         'Provider verified issue',null,null,'SOURCE_ACL_MAPPED',true,
+         'provider-acl-v1',$2::jsonb,1,'2026-09-28T10:00:00Z'
+       )`,
+      [
+        providerConnectorId,
+        JSON.stringify({
+          provider: "linear",
+          providerVerified: true,
+          identifier: "ENG-101",
+          canonicalUrl: "https://linear.app/example/issue/ENG-101",
+        }),
+      ],
+    );
+    await db.pool.query(
+      `update source_connector_checkpoints
+          set applied_sequence=1,provider_health='AVAILABLE',
+              provider_checkpoint_kind='OPAQUE_CURSOR',
+              provider_checkpoint_value='2026-09-28T10:00:00Z'
+        where connector_id=$1`,
+      [providerConnectorId],
+    );
+
+    const providerObjects = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/provider-objects?limit=10`,
+      headers,
+    });
+    expect(providerObjects.statusCode, providerObjects.body).toBe(200);
+    expect(
+      (
+        providerObjects.json() as {
+          objects: Array<Record<string, unknown>>;
+        }
+      ).objects,
+    ).toContainEqual(
+      expect.objectContaining({
+        connectorId: providerConnectorId,
+        provider: "linear",
+        objectId: "provider-object-1",
+        externalId: "ENG-101",
+        sourceRevision: "2026-09-28T10:00:00.000Z",
+        providerHealth: "AVAILABLE",
+        lifecycle: "ACTIVE",
+      }),
+    );
+
+    const providerRef = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${sessionId}/provider-refs`,
+      headers,
+      payload: {
+        connectorId: providerConnectorId,
+        objectId: "provider-object-1",
+        workObjectClass: "WORK_ITEM",
+        authority: "SYSTEM_OF_RECORD",
+        sourceRevision: "client-forged",
+      },
+    });
+    expect(providerRef.statusCode, providerRef.body).toBe(201);
+    const providerRefBody = providerRef.json() as {
+      id: string;
+      externalId: string;
+      authority: string;
+      sourceRevision: string;
+      metadata: Record<string, unknown>;
+    };
+    expect(providerRefBody).toMatchObject({
+      externalId: "ENG-101",
+      authority: "MIRRORED_PROJECTION",
+      sourceRevision: "2026-09-28T10:00:00.000Z",
+      metadata: {
+        _akpProvenance: {
+          observationSource: "AUTHENTICATED_PROVIDER_ADAPTER",
+          providerVerified: true,
+          connectorId: providerConnectorId,
+          providerObjectId: "provider-object-1",
+          providerHealth: "AVAILABLE",
+          lifecycle: "ACTIVE",
+        },
+      },
+    });
+    expect(JSON.stringify(providerRefBody)).not.toContain("client-forged");
+
+    const secondSessionResponse = await app.inject({
+      method: "POST",
+      url: "/v1/sessions",
+      headers,
+      payload: {
+        spaceId,
+        vaultId,
+        purpose: "Second provider reference session",
+        contextBudget: 1024,
+      },
+    });
+    expect(secondSessionResponse.statusCode).toBe(201);
+    const secondSessionId = (secondSessionResponse.json() as { id: string }).id;
+    createdSessionIds.push(secondSessionId);
+    const secondProviderRef = await app.inject({
+      method: "POST",
+      url: `/v1/sessions/${secondSessionId}/provider-refs`,
+      headers,
+      payload: {
+        connectorId: providerConnectorId,
+        objectId: "provider-object-1",
+        workObjectClass: "WORK_ITEM",
+      },
+    });
+    expect(secondProviderRef.statusCode, secondProviderRef.body).toBe(201);
+    expect((secondProviderRef.json() as { id: string }).id).not.toBe(
+      providerRefBody.id,
+    );
+    const firstSessionRefsAfterSecondLink = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/external-refs`,
+      headers,
+    });
+    expect(
+      (
+        firstSessionRefsAfterSecondLink.json() as {
+          refs: Array<{ id: string }>;
+        }
+      ).refs,
+    ).toContainEqual(expect.objectContaining({ id: providerRefBody.id }));
+    await appendSourceConnectorEvent(db, {
+      connectorId: providerConnectorId,
+      eventId: "provider-update-2",
+      sequence: 2,
+      occurredAt: "2026-09-28T10:05:00Z",
+      operation: "UPSERT",
+      objectId: "provider-object-1",
+      objectType: "ISSUE",
+      sourceVersion: "2026-09-28T10:05:00.000Z",
+      title: "Provider verified issue updated",
+      permissionFidelity: "SOURCE_ACL_MAPPED",
+      permissionUncertain: true,
+      aclFingerprint: "provider-acl-v2",
+      metadata: {
+        provider: "linear",
+        providerVerified: true,
+        identifier: "ENG-101",
+        canonicalUrl: "https://linear.app/example/issue/ENG-101",
+      },
+      payloadHash: createHash("sha256")
+        .update("provider-update-2")
+        .digest("hex"),
+    });
+    expect(
+      await applyNextSourceConnectorEvent(db, {
+        connectorId: providerConnectorId,
+      }),
+    ).toMatchObject({ sequence: 2, operation: "UPSERT" });
+
+    const refreshedRefs = await app.inject({
+      method: "GET",
+      url: `/v1/sessions/${sessionId}/external-refs`,
+      headers,
+    });
+    const refreshedProvider = (
+      refreshedRefs.json() as {
+        refs: Array<{
+          id: string;
+          sourceRevision: string | null;
+          title: string | null;
+          metadata: Record<string, unknown>;
+        }>;
+      }
+    ).refs.find((ref) => ref.id === providerRefBody.id);
+    expect(refreshedProvider).toMatchObject({
+      sourceRevision: "2026-09-28T10:05:00.000Z",
+      title: "Provider verified issue updated",
+      metadata: {
+        _akpProvenance: {
+          providerVerified: true,
+          providerHealth: "AVAILABLE",
+          lifecycle: "ACTIVE",
+        },
+      },
+    });
+
+    await appendSourceConnectorEvent(db, {
+      connectorId: providerConnectorId,
+      eventId: "provider-delete-3",
+      sequence: 3,
+      occurredAt: "2026-09-28T10:10:00Z",
+      operation: "DELETE",
+      objectId: "provider-object-1",
+      objectType: "ISSUE",
+      sourceVersion: "2026-09-28T10:10:00.000Z",
+      permissionFidelity: "SOURCE_ACL_MAPPED",
+      permissionUncertain: true,
+      aclFingerprint: "provider-acl-v3",
+      metadata: { provider: "linear", deleted: true },
+      payloadHash: createHash("sha256")
+        .update("provider-delete-3")
+        .digest("hex"),
+    });
+    expect(
+      await applyNextSourceConnectorEvent(db, {
+        connectorId: providerConnectorId,
+      }),
+    ).toMatchObject({ sequence: 3, operation: "DELETE" });
+    const tombstoned = await db.pool.query<{
+      authority: string;
+      metadata: Record<string, unknown>;
+    }>(`select authority,metadata from external_object_refs where id=$1`, [
+      providerRefBody.id,
+    ]);
+    expect(tombstoned.rows[0]).toMatchObject({
+      authority: "MIRRORED_PROJECTION",
+      metadata: {
+        _akpProvenance: {
+          providerVerified: true,
+          lifecycle: "DELETED_TOMBSTONE",
+        },
+      },
+    });
 
     const beforeDocuments = await db.pool.query<{ count: number }>(
       "select count(*)::int count from knowledge_documents where vault_id=$1",

@@ -552,6 +552,7 @@ function contextRequest(task: AgentAbTask, config: Config) {
   return {
     query: task.retrievalQuery ?? task.query,
     intent: task.intent,
+    ...(task.projectId ? { projectId: task.projectId } : {}),
     spaceId: config.spaceId,
     vaultIds: config.vaultIds,
     federated: config.vaultIds.length > 1,
@@ -575,6 +576,7 @@ async function executeExpertCall(
       body: JSON.stringify({
         query: task.retrievalQuery ?? task.query,
         intent: task.intent,
+        ...(task.projectId ? { projectId: task.projectId } : {}),
         spaceId: config.spaceId,
         vaultIds: config.vaultIds,
         federated: config.vaultIds.length > 1,
@@ -627,6 +629,7 @@ async function executeFacadeCall(
       federated: config.vaultIds.length > 1,
       query: task.retrievalQuery ?? task.query,
       intent: task.intent,
+      ...(task.projectId ? { projectId: task.projectId } : {}),
       limit: 8,
       maxTokens: 8000,
       packetMode: "COMPACT_AGENT_PACKET",

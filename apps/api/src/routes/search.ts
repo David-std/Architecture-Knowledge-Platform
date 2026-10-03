@@ -26,6 +26,7 @@ import {
 } from "@akp/contracts";
 import {
   assessRetrievalAnswerability,
+  assessRetrievalAnswerabilityWithVerifier,
   buildContextPacket,
   buildContextPacketPair,
   ContextPacketBudgetError,
@@ -48,6 +49,8 @@ import {
   toPgVector,
   type ActiveEmbeddingGenerationDescriptor,
   type PersonalizedPageRankPolicy,
+  type QueryConditionedEvidenceVerifier,
+  type QueryConditionedEvidenceVerifierMode,
   type QueryPlan,
   type QueryPlannerCapabilities,
   type QueryTransformationKind,
@@ -218,6 +221,7 @@ interface CommunityCandidateRow extends DocumentChannelRow {
 
 interface CodeChannelRow extends DocumentChannelRow {
   match_reason?: string;
+  code_support_text?: string;
   code_citations?: string[];
 }
 
@@ -593,6 +597,14 @@ export interface SearchRouteDependencies {
   contextTokenizer?: Tokenizer;
   /** Optional experimental query transformer, normally controlled by feature flag. */
   queryTransformer?: QueryTransformerPort;
+  /**
+   * Optional query-conditioned verifier. It is never derived implicitly from
+   * an LLM provider; promotion requires explicit dependency wiring.
+   */
+  evidenceVerifier?: QueryConditionedEvidenceVerifier;
+  /** Injected verifiers default to SHADOW so evaluation cannot silently gate. */
+  evidenceVerifierMode?: QueryConditionedEvidenceVerifierMode;
+  evidenceVerifierMaxCandidates?: number;
 }
 
 interface StoredContextPacketRow {
@@ -1417,6 +1429,12 @@ function mergeVectorRows(rows: readonly VectorSearchRow[]): VectorSearchRow[] {
   );
 }
 
+export function internalAnswerabilityCandidateLimit(
+  presentationLimit: number,
+): number {
+  return Math.min(200, Math.max(64, presentationLimit * 4));
+}
+
 export async function queryKnowledge(
   db: Postgres,
   input: SearchInput,
@@ -1424,6 +1442,14 @@ export async function queryKnowledge(
 ): Promise<SearchHit[]> {
   if (!input.spaceId) throw new Error("SPACE_ID_REQUIRED");
   const spaceId = input.spaceId;
+  const internalCandidateLimit = internalAnswerabilityCandidateLimit(
+    input.limit,
+  );
+  telemetry.histogram(
+    "retrieval_answerability_internal_candidate_limit",
+    internalCandidateLimit,
+    { presentation_limit: String(input.limit) },
+  );
   const vaultIds = [
     ...new Set([
       ...(options.vaultIds ?? []),
@@ -1831,7 +1857,7 @@ export async function queryKnowledge(
           [
             spaceId,
             input.query,
-            Math.max(input.limit * 2, 20),
+            internalCandidateLimit,
             rawAuthorizationJson,
             queryAcronyms,
             documentScopeJson,
@@ -1979,7 +2005,7 @@ export async function queryKnowledge(
           [
             spaceId,
             assisted.query,
-            Math.max(input.limit * 3, 30),
+            internalCandidateLimit,
             rawAuthorizationJson,
             documentScopeJson,
           ],
@@ -2003,7 +2029,7 @@ export async function queryKnowledge(
     }
   }
   const lexical = {
-    rows: mergeLexicalRows(lexicalRows).slice(0, Math.max(input.limit * 3, 30)),
+    rows: mergeLexicalRows(lexicalRows).slice(0, internalCandidateLimit),
   };
   recordRetrievalCandidates("lexical", lexical.rows.length);
   if (channels.has("lexical")) {
@@ -2106,7 +2132,7 @@ export async function queryKnowledge(
                 spaceId,
                 toPgVector(queryVector),
                 generation.vaultId,
-                Math.max(input.limit * 3, 30),
+                internalCandidateLimit,
                 rawAuthorizationJson,
                 documentScopeJson,
               ],
@@ -2137,7 +2163,7 @@ export async function queryKnowledge(
     vector.rows.splice(
       0,
       vector.rows.length,
-      ...mergeVectorRows(vector.rows).slice(0, Math.max(input.limit * 3, 30)),
+      ...mergeVectorRows(vector.rows).slice(0, internalCandidateLimit),
     );
   }
 
@@ -2395,6 +2421,9 @@ export async function queryKnowledge(
             id: candidate.id,
             document_revision: candidate.documentRevision,
             match_reason: candidate.reason,
+            ...(candidate.supportText
+              ? { code_support_text: candidate.supportText }
+              : {}),
             code_citations: candidate.citations,
           })),
         }
@@ -2423,6 +2452,13 @@ export async function queryKnowledge(
   if (channels.has("code")) options.availableChannelSink?.add("code");
   const codeCitationsByCandidate = new Map(
     codeFallback.rows.map((row) => [String(row.id), row.code_citations ?? []]),
+  );
+  const codeSupportByCandidate = new Map(
+    codeFallback.rows.flatMap((row) =>
+      typeof row.code_support_text === "string" && row.code_support_text.trim()
+        ? [[String(row.id), row.code_support_text.trim()] as const]
+        : [],
+    ),
   );
 
   const candidateSeedIds = seedIds.filter((id) => UUID_PATTERN.test(id));
@@ -3157,16 +3193,14 @@ export async function queryKnowledge(
     retrievalCandidates,
     retrievalPolicy,
   );
-  // Answerability needs a background neighbour to distinguish two close
-  // relevant semantic hits from an ambiguous top pair. Keep at least three
-  // already-authorized fused candidates internally even when presentation
-  // limit is one; finalResults still honors input.limit below.
-  const answerabilityComparisonLimit = Math.max(input.limit * 2, 3);
+  // Answerability operates on a bounded internal pool independent from the
+  // visual/API presentation limit. A small presentation request must not hide
+  // a support-bearing semantic unit before passage verification runs.
   const fused = (
     await withSpan("retrieve.fuse", {}, async () =>
       reciprocalRankFusion(rankedChannels),
     )
-  ).slice(0, answerabilityComparisonLimit);
+  ).slice(0, internalCandidateLimit);
   if (fused.length === 0) {
     await finalizeTruthSnapshot();
     return [];
@@ -3421,6 +3455,10 @@ export async function queryKnowledge(
       const structuralContext = matchedUnit
         ? structuralContextByUnit.get(matchedUnit.unitId)
         : undefined;
+      const codeSupport = codeSupportByCandidate.get(item.id);
+      const answerabilityContext = [structuralContext?.context, codeSupport]
+        .filter((value): value is string => Boolean(value?.trim()))
+        .join("\n");
       return {
         documentId: String(row.id),
         vaultId,
@@ -3434,8 +3472,8 @@ export async function queryKnowledge(
         ...(structuralContext?.headingPath
           ? { headingPath: structuralContext.headingPath }
           : {}),
-        ...(structuralContext?.context
-          ? { parentContext: structuralContext.context }
+        ...(answerabilityContext
+          ? { parentContext: answerabilityContext.slice(0, 4_000) }
           : {}),
         document: {
           externalId: row.external_id ? String(row.external_id) : null,
@@ -3726,15 +3764,32 @@ export function registerSearchRoutes(
         throw error;
       }
       const answerabilityPool = answerabilityCandidates ?? hits;
-      const answerability = assessRetrievalAnswerability(
-        answerabilityPool,
-        parsed.data.query,
-        {},
-        {
-          allowGraphSupport: plan.intent === "IMPACT_ANALYSIS",
-          comparisonHits: answerabilityPool,
-        },
-      );
+      const answerabilityContext = {
+        allowGraphSupport: plan.intent === "IMPACT_ANALYSIS",
+        comparisonHits: answerabilityPool,
+      };
+      const answerability = dependencies.evidenceVerifier
+        ? await assessRetrievalAnswerabilityWithVerifier(
+            answerabilityPool,
+            parsed.data.query,
+            dependencies.evidenceVerifier,
+            {
+              mode: dependencies.evidenceVerifierMode ?? "SHADOW",
+              ...(dependencies.evidenceVerifierMaxCandidates === undefined
+                ? {}
+                : {
+                    maxCandidates: dependencies.evidenceVerifierMaxCandidates,
+                  }),
+            },
+            {},
+            answerabilityContext,
+          )
+        : assessRetrievalAnswerability(
+            answerabilityPool,
+            parsed.data.query,
+            {},
+            answerabilityContext,
+          );
       const partitioned = partitionSearchHitsByAnswerability(
         answerabilityPool,
         answerability.supportedCandidateKeys,
@@ -4695,24 +4750,41 @@ export function registerSearchRoutes(
         reasoningExecutionMode !== "PLAN" && directAnswerabilityCandidates
           ? directAnswerabilityCandidates
           : hits;
-      const answerability = assessRetrievalAnswerability(
-        answerabilityPool,
-        parsed.data.query,
-        {},
-        {
-          allowGraphSupport:
-            plan.intent === "IMPACT_ANALYSIS" ||
-            (reasoningExecutionMode === "PLAN" &&
-              hits.some((hit) =>
-                (hit.fusionContributions ?? []).some(
-                  (contribution) =>
-                    contribution.channel === "graph" ||
-                    contribution.channel === "graph-ppr",
-                ),
-              )),
-          comparisonHits: answerabilityPool,
-        },
-      );
+      const answerabilityContext = {
+        allowGraphSupport:
+          plan.intent === "IMPACT_ANALYSIS" ||
+          (reasoningExecutionMode === "PLAN" &&
+            hits.some((hit) =>
+              (hit.fusionContributions ?? []).some(
+                (contribution) =>
+                  contribution.channel === "graph" ||
+                  contribution.channel === "graph-ppr",
+              ),
+            )),
+        comparisonHits: answerabilityPool,
+      };
+      const answerability = dependencies.evidenceVerifier
+        ? await assessRetrievalAnswerabilityWithVerifier(
+            answerabilityPool,
+            parsed.data.query,
+            dependencies.evidenceVerifier,
+            {
+              mode: dependencies.evidenceVerifierMode ?? "SHADOW",
+              ...(dependencies.evidenceVerifierMaxCandidates === undefined
+                ? {}
+                : {
+                    maxCandidates: dependencies.evidenceVerifierMaxCandidates,
+                  }),
+            },
+            {},
+            answerabilityContext,
+          )
+        : assessRetrievalAnswerability(
+            answerabilityPool,
+            parsed.data.query,
+            {},
+            answerabilityContext,
+          );
       recordAnswerabilityDiagnostics(answerability, "context");
       const supportedCandidateKeys = new Set(
         answerability.supportedCandidateKeys,

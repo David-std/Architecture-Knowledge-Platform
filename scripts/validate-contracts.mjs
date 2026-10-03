@@ -686,6 +686,8 @@ for (const tool of mcp.tools ?? []) {
 const requiredWorkspaceMcpTools = [
   "akp_list_sessions",
   "akp_get_session_state",
+  "akp_list_external_references",
+  "akp_upsert_external_reference",
   "akp_update_work_context",
   "akp_claim_workspace_work",
   "akp_heartbeat_workspace_claim",

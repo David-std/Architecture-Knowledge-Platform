@@ -3,12 +3,14 @@ import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  assertSyntheticFixtureDatabaseSafety,
   Postgres,
   PostgresTemporalTruthStore,
 } from "../packages/postgres/src/index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required.");
+assertSyntheticFixtureDatabaseSafety(databaseUrl);
 
 const outputPath = path.resolve(
   process.env.AKP_REGISTERED_TEMPORAL_TRUTH_METRICS_REPORT ??

@@ -24,6 +24,9 @@ const tasks: AgentAbTask[] = AGENT_AB_REQUIRED_CATEGORIES.map(
               ? "PROJECT_CODE"
               : "CONCEPTUAL",
     mandatoryTerms: category === "no-answer" ? [] : ["required fact"],
+    ...(category === "project-code"
+      ? { projectId: "20000000-0000-4000-8000-000000000001" }
+      : {}),
     ...(category === "no-answer" ? {} : { goldCitations: ["doc-a@rev"] }),
     expectNoAnswer: category === "no-answer",
   }),

@@ -26,6 +26,27 @@ const MANAGED_REPO =
   process.env.AKP_MANAGED_REPO ?? "/tmp/akp-managed-knowledge";
 const REPORT_DIR = path.join(ROOT, "reports", "ci", "browser-e2e");
 
+function databaseName(databaseUrl) {
+  const pathname = new URL(databaseUrl).pathname.replace(/^\//u, "");
+  return decodeURIComponent(pathname);
+}
+
+const browserDatabaseName = databaseName(DATABASE_URL);
+const disposableDatabase = /(?:^|[_-])(test|e2e|ci)(?:$|[_-])/iu.test(
+  browserDatabaseName,
+);
+if (
+  !disposableDatabase &&
+  process.env.AKP_BROWSER_E2E_ALLOW_UNSAFE_DATABASE !== "1"
+) {
+  throw new Error(
+    "BROWSER_E2E_REQUIRES_DISPOSABLE_DATABASE: " +
+      browserDatabaseName +
+      ". Use a database name containing test/e2e/ci or set " +
+      "AKP_BROWSER_E2E_ALLOW_UNSAFE_DATABASE=1 explicitly.",
+  );
+}
+
 if (!ADMIN_TOKEN) {
   throw new Error("AKP_API_TOKEN is required for browser E2E.");
 }

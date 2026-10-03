@@ -7,6 +7,7 @@ import {
   modelRoutingCheck,
   overallDoctorStatus,
   renderDoctorReport,
+  syntheticFixtureResidueCheck,
   type DoctorReport,
 } from "./doctor.js";
 
@@ -143,6 +144,53 @@ describe("doctor rendering", () => {
     expect(rendered).toContain("AKP doctor: WARN");
     expect(rendered).toContain("[WARN] Backup recency");
     expect(rendered).toContain('\"ageHours\":48');
+  });
+
+  it("warns when known synthetic benchmark vaults remain in the operator database", async () => {
+    const query = vi.fn(async (sql: string) => {
+      expect(sql).toContain("synthetic://akp-scale/%");
+      return {
+        rows: [
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            vault_key: "agent-ab-architecture",
+            name: "Agent comparison architecture",
+            canonical_path: "benchmark/agent-ab/product-architecture",
+            total: 1,
+          },
+        ],
+      };
+    });
+    await expect(
+      syntheticFixtureResidueCheck({
+        pool: { query },
+      } as unknown as Postgres),
+    ).resolves.toMatchObject({
+      id: "synthetic-fixture-residue",
+      status: "WARN",
+      details: {
+        total: 1,
+        truncated: false,
+        vaults: [
+          {
+            vaultKey: "agent-ab-architecture",
+            canonicalPath: "benchmark/agent-ab/product-architecture",
+          },
+        ],
+      },
+    });
+  });
+
+  it("reports a clean database when no synthetic fixture markers remain", async () => {
+    const query = vi.fn(async () => ({ rows: [] }));
+    await expect(
+      syntheticFixtureResidueCheck({
+        pool: { query },
+      } as unknown as Postgres),
+    ).resolves.toMatchObject({
+      status: "OK",
+      details: { total: 0, vaults: [] },
+    });
   });
 
   it("reports current CODE graph health without treating retired history as stale", async () => {

@@ -9,6 +9,8 @@ import {
   Postgres,
   grantVaultMembership,
   listVaults,
+  reconcileEventQuarantine,
+  reconcileFailedIngest,
   registerVault,
 } from "@akp/postgres";
 import {
@@ -705,20 +707,163 @@ vault
     );
   });
 
+const reconcile = program
+  .command("reconcile")
+  .description("Append audited dispositions for terminal operational residue");
+
+reconcile
+  .command("quarantine")
+  .requiredOption("--event-id <uuid>", "Quarantined outbox event UUID")
+  .requiredOption("--consumer <name>", "Outbox consumer name")
+  .requiredOption(
+    "--disposition <kind>",
+    "RECOVERED_REPLAYED, SUPERSEDED_BY_VERIFIED_PROJECTION, or IRRECOVERABLE_RECONCILED",
+  )
+  .requiredOption(
+    "--actor <identity>",
+    "Operator identity recorded in the audit trail",
+  )
+  .requiredOption(
+    "--reason <text>",
+    "Why this terminal disposition is justified",
+  )
+  .requiredOption(
+    "--evidence <json>",
+    "Bounded JSON evidence for the disposition",
+  )
+  .option("--environment <name>", "Operational environment label", "default")
+  .action(
+    async (options: {
+      eventId: string;
+      consumer: string;
+      disposition: string;
+      actor: string;
+      reason: string;
+      evidence: string;
+      environment: string;
+    }) => {
+      const allowed = [
+        "RECOVERED_REPLAYED",
+        "SUPERSEDED_BY_VERIFIED_PROJECTION",
+        "IRRECOVERABLE_RECONCILED",
+      ] as const;
+      if (!(allowed as readonly string[]).includes(options.disposition)) {
+        throw new Error("Invalid quarantine disposition.");
+      }
+      const evidence = JSON.parse(options.evidence) as unknown;
+      if (
+        !evidence ||
+        Array.isArray(evidence) ||
+        typeof evidence !== "object"
+      ) {
+        throw new Error("--evidence must be a JSON object.");
+      }
+      printJson(
+        await withDatabase((db) =>
+          reconcileEventQuarantine(db, {
+            eventId: options.eventId,
+            consumerName: options.consumer,
+            environment: options.environment,
+            disposition: options.disposition as (typeof allowed)[number],
+            actor: options.actor,
+            rationale: options.reason,
+            evidence: evidence as Record<string, unknown>,
+          }),
+        ),
+      );
+    },
+  );
+
+reconcile
+  .command("ingest")
+  .requiredOption("--job-id <uuid>", "Failed ingest job UUID")
+  .requiredOption(
+    "--disposition <kind>",
+    "TERMINAL_FIXTURE_DISPOSITION, SUPERSEDED_BY_VERIFIED_PROJECTION, or IRRECOVERABLE_RECONCILED",
+  )
+  .requiredOption(
+    "--actor <identity>",
+    "Operator identity recorded in the audit trail",
+  )
+  .requiredOption(
+    "--reason <text>",
+    "Why this terminal disposition is justified",
+  )
+  .requiredOption(
+    "--evidence <json>",
+    "Bounded JSON evidence for the disposition",
+  )
+  .option("--environment <name>", "Operational environment label", "default")
+  .action(
+    async (options: {
+      jobId: string;
+      disposition: string;
+      actor: string;
+      reason: string;
+      evidence: string;
+      environment: string;
+    }) => {
+      const allowed = [
+        "TERMINAL_FIXTURE_DISPOSITION",
+        "SUPERSEDED_BY_VERIFIED_PROJECTION",
+        "IRRECOVERABLE_RECONCILED",
+      ] as const;
+      if (!(allowed as readonly string[]).includes(options.disposition)) {
+        throw new Error("Invalid ingest disposition.");
+      }
+      const evidence = JSON.parse(options.evidence) as unknown;
+      if (
+        !evidence ||
+        Array.isArray(evidence) ||
+        typeof evidence !== "object"
+      ) {
+        throw new Error("--evidence must be a JSON object.");
+      }
+      printJson(
+        await withDatabase((db) =>
+          reconcileFailedIngest(db, {
+            jobId: options.jobId,
+            environment: options.environment,
+            disposition: options.disposition as (typeof allowed)[number],
+            actor: options.actor,
+            rationale: options.reason,
+            evidence: evidence as Record<string, unknown>,
+          }),
+        ),
+      );
+    },
+  );
+
 program
   .command("doctor")
   .option("--format <format>", "json or human", "json")
-  .action(async (options: { format: string }) => {
-    const report = await withDatabase((db) => runDoctor(db));
-    if (options.format === "json") {
-      printJson(report);
-    } else if (options.format === "human") {
-      console.log(renderDoctorReport(report));
-    } else {
-      throw new Error("doctor --format must be json or human");
-    }
-    if (report.overall === "FAIL") process.exitCode = 1;
-  });
+  .option(
+    "--vault-id <uuid>",
+    "Limit operational residue diagnostics to one vault",
+  )
+  .option("--environment <name>", "Operational environment label", "default")
+  .action(
+    async (options: {
+      format: string;
+      vaultId?: string;
+      environment: string;
+    }) => {
+      const report = await withDatabase((db) =>
+        runDoctor(db, process.env, process.cwd(), {
+          ...(options.vaultId ? { vaultId: options.vaultId } : {}),
+          environment: options.environment,
+        }),
+      );
+      if (options.format === "json") {
+        printJson(report);
+      } else if (options.format === "human") {
+        console.log(renderDoctorReport(report));
+      } else {
+        throw new Error("doctor --format must be json or human");
+      }
+      if (report.overall === "FAIL") process.exitCode = 1;
+    },
+  );
 
 program.command("status").action(async () => {
   console.log(JSON.stringify(await api("/v1/status"), null, 2));

@@ -1,5 +1,6 @@
 import { metrics } from "@opentelemetry/api";
 import pg from "pg";
+import { assertTestDatabaseSafety } from "./database-safety.js";
 
 export type PostgresPoolClient = pg.PoolClient;
 
@@ -20,6 +21,8 @@ export * from "./temporal-truth.js";
 export * from "./context-fabric-node.js";
 export * from "./assurance.js";
 export * from "./source-connectors.js";
+export * from "./operational-reconciliation.js";
+export * from "./database-safety.js";
 
 export interface PostgresOptions {
   onIdleClientError?: (error: Error) => void;
@@ -29,6 +32,7 @@ export class Postgres {
   readonly pool: pg.Pool;
 
   constructor(databaseUrl: string, options: PostgresOptions = {}) {
+    assertTestDatabaseSafety(databaseUrl);
     this.pool = new pg.Pool({ connectionString: databaseUrl });
     this.pool.on("error", (error) => {
       options.onIdleClientError?.(error);

@@ -49,6 +49,47 @@ describe("query planner", () => {
     });
   });
 
+  it("does not treat dependency vocabulary alone as impact analysis", () => {
+    const policyRationale = planQuery(
+      "Why do dependencies point inward toward domain policies?",
+      {
+        vectorAvailable: true,
+        graphConsistent: true,
+        codeAdapterAvailable: true,
+      },
+    );
+    expect(policyRationale.intent).toBe("CONCEPTUAL");
+    expect(policyRationale.channels).toContain("vector");
+    expect(policyRationale.channels).not.toContain("code");
+
+    const codePolicyRationale = planQuery(
+      "Why should code dependencies point toward domain abstractions instead of framework details?",
+      {
+        vectorAvailable: true,
+        graphConsistent: true,
+        codeAdapterAvailable: true,
+      },
+    );
+    expect(codePolicyRationale.intent).toBe("CONCEPTUAL");
+    expect(codePolicyRationale.channels).toContain("vector");
+    expect(codePolicyRationale.channels).not.toContain("code");
+    expect(codePolicyRationale.shape.codeSymbolOrPath).toBe(false);
+
+    const conceptual = planQuery("Why are service dependencies documented?", {
+      vectorAvailable: true,
+      graphConsistent: true,
+    });
+    expect(conceptual.intent).toBe("CONCEPTUAL");
+    expect(conceptual.channels).toContain("vector");
+
+    expect(
+      planQuery("Which services are affected by this deployment change?", {
+        vectorAvailable: true,
+        graphConsistent: true,
+      }).intent,
+    ).toBe("IMPACT_ANALYSIS");
+  });
+
   it("reserves deeper graph traversal for impact analysis", () => {
     expect(
       planQuery("trace the dependency impact", "IMPACT_ANALYSIS", {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   compareDependencyPerspectives,
+  externalRefVerification,
   relatedObjectId,
   relationDirection,
 } from "./work-object";
@@ -54,6 +55,42 @@ describe("work object relations", () => {
         status: "PERSPECTIVE_GAP",
       },
     ]);
+  });
+
+  it("distinguishes authenticated provider projections from relayed refs", () => {
+    expect(
+      externalRefVerification({
+        authority: "MIRRORED_PROJECTION",
+        metadata: {
+          _akpProvenance: {
+            observationSource: "AUTHENTICATED_PROVIDER_ADAPTER",
+            providerVerified: true,
+            providerHealth: "DEGRADED",
+            lifecycle: "ACTIVE",
+          },
+        },
+      }),
+    ).toEqual({
+      status: "PROVIDER_VERIFIED",
+      label: "Verified through authenticated provider adapter",
+      providerHealth: "DEGRADED",
+      lifecycle: "ACTIVE",
+    });
+
+    expect(
+      externalRefVerification({
+        authority: "REFERENCE",
+        metadata: {
+          _akpProvenance: {
+            observationSource: "RELAYED_CLIENT",
+            providerVerified: false,
+          },
+        },
+      }),
+    ).toMatchObject({
+      status: "RELAYED_UNVERIFIED",
+      label: "Relayed by client · not provider-verified",
+    });
   });
 
   it("does not infer a relation from unrelated activity", () => {

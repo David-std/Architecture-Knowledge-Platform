@@ -20,6 +20,11 @@ export interface DoctorReport {
   checks: DoctorCheck[];
 }
 
+export interface DoctorScope {
+  vaultId?: string;
+  environment?: string;
+}
+
 interface DoctorEnvironment {
   readonly [key: string]: string | undefined;
 }
@@ -735,10 +740,58 @@ export async function graphChecks(db: Postgres): Promise<{
   return { graphs, code };
 }
 
+export async function syntheticFixtureResidueCheck(
+  db: Postgres,
+  vaultId?: string,
+): Promise<DoctorCheck> {
+  const result = await db.pool.query<{
+    id: string;
+    vault_key: string;
+    name: string;
+    canonical_path: string;
+    total: number;
+  }>(
+    `select id,vault_key,name,canonical_path,
+            count(*) over()::int total
+       from vaults
+      where enabled
+        and (
+          canonical_path like 'benchmark/%'
+          or canonical_path like 'synthetic://akp-scale/%'
+          or canonical_path like '/tmp/registered-%'
+        )
+        and ($1::uuid is null or id=$1::uuid)
+      order by created_at,id
+      limit 25`,
+    [vaultId ?? null],
+  );
+  const total = Number(result.rows[0]?.total ?? 0);
+  return {
+    id: "synthetic-fixture-residue",
+    label: "Synthetic fixture residue",
+    status: total > 0 ? "WARN" : "OK",
+    summary:
+      total > 0
+        ? "Synthetic benchmark/test vaults are present in this database."
+        : "No known AKP synthetic benchmark/test vault markers were found.",
+    details: {
+      total,
+      truncated: total > result.rows.length,
+      vaults: result.rows.map((row) => ({
+        id: row.id,
+        vaultKey: row.vault_key,
+        name: row.name,
+        canonicalPath: row.canonical_path,
+      })),
+    },
+  };
+}
+
 export async function runDoctor(
   db: Postgres,
   environment: DoctorEnvironment = process.env,
   cwd = process.cwd(),
+  scope: DoctorScope = {},
 ): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
 
@@ -777,39 +830,127 @@ export async function runDoctor(
   checks.push(managedGitCheck(environment));
 
   checks.push(
+    await safeCheck(
+      "synthetic-fixture-residue",
+      "Synthetic fixture residue",
+      () => syntheticFixtureResidueCheck(db, scope.vaultId),
+    ),
+  );
+
+  checks.push(
     await safeCheck("outbox-jobs", "Outbox and jobs", async () => {
       const result = await db.pool.query<{
-        quarantined: number;
+        quarantined_unresolved: number;
+        quarantined_reconciled: number;
         retrying: number;
-        ingest_failed: number;
+        ingest_failed_unresolved: number;
+        ingest_failed_reconciled: number;
         ingest_active: number;
       }>(
         `select
-          (select count(*)::int from event_deliveries where status='QUARANTINED') quarantined,
-          (select count(*)::int from event_deliveries where status='RETRY') retrying,
-          (select count(*)::int from ingest_jobs where state='FAILED') ingest_failed,
-          (select count(*)::int from ingest_jobs
-            where state = any($1::text[])
-              and cancelled_at is null) ingest_active`,
-        [[...DOCTOR_ACTIVE_INGEST_STATES]],
+          (
+            select count(*)::int
+              from event_deliveries d
+              join event_outbox o on o.event_id=d.event_id
+              left join lateral (
+                select q.id
+                  from event_quarantine q
+                 where q.event_id=d.event_id
+                   and q.consumer_name=d.consumer_name
+                 order by q.quarantined_at desc,q.id desc
+                 limit 1
+              ) q on true
+              left join operational_reconciliations r
+                on r.resource_type='EVENT_QUARANTINE'
+               and r.resource_key=d.event_id::text || ':' || d.consumer_name ||
+                    ':quarantine:' || q.id::text
+               and r.environment=$2
+             where d.status='QUARANTINED'
+               and ($1::uuid is null or o.vault_id=$1::uuid)
+               and r.id is null
+          ) quarantined_unresolved,
+          (
+            select count(*)::int
+              from event_deliveries d
+              join event_outbox o on o.event_id=d.event_id
+              join lateral (
+                select q.id
+                  from event_quarantine q
+                 where q.event_id=d.event_id
+                   and q.consumer_name=d.consumer_name
+                 order by q.quarantined_at desc,q.id desc
+                 limit 1
+              ) q on true
+              join operational_reconciliations r
+                on r.resource_type='EVENT_QUARANTINE'
+               and r.resource_key=d.event_id::text || ':' || d.consumer_name ||
+                    ':quarantine:' || q.id::text
+               and r.environment=$2
+             where d.status='QUARANTINED'
+               and ($1::uuid is null or o.vault_id=$1::uuid)
+          ) quarantined_reconciled,
+          (
+            select count(*)::int
+              from event_deliveries d
+              join event_outbox o on o.event_id=d.event_id
+             where d.status='RETRY'
+               and ($1::uuid is null or o.vault_id=$1::uuid)
+          ) retrying,
+          (
+            select count(*)::int
+              from ingest_jobs j
+              left join operational_reconciliations r
+                on r.resource_type='INGEST_JOB'
+               and r.resource_key=j.id::text
+               and r.environment=$2
+             where j.state='FAILED'
+               and ($1::uuid is null or j.vault_id=$1::uuid)
+               and r.id is null
+          ) ingest_failed_unresolved,
+          (
+            select count(*)::int
+              from ingest_jobs j
+              join operational_reconciliations r
+                on r.resource_type='INGEST_JOB'
+               and r.resource_key=j.id::text
+               and r.environment=$2
+             where j.state='FAILED'
+               and ($1::uuid is null or j.vault_id=$1::uuid)
+          ) ingest_failed_reconciled,
+          (
+            select count(*)::int
+              from ingest_jobs j
+             where j.state = any($3::text[])
+               and j.cancelled_at is null
+               and ($1::uuid is null or j.vault_id=$1::uuid)
+          ) ingest_active`,
+        [
+          scope.vaultId ?? null,
+          scope.environment?.trim() || "default",
+          [...DOCTOR_ACTIVE_INGEST_STATES],
+        ],
       );
       const row = result.rows[0]!;
       return {
         id: "outbox-jobs",
         label: "Outbox and jobs",
         status:
-          row.quarantined > 0
+          row.quarantined_unresolved > 0
             ? "FAIL"
-            : row.retrying > 0 || row.ingest_failed > 0
+            : row.retrying > 0 || row.ingest_failed_unresolved > 0
               ? "WARN"
               : "OK",
         summary:
-          row.quarantined > 0
-            ? "Quarantined outbox deliveries require operator attention."
-            : row.retrying > 0 || row.ingest_failed > 0
-              ? "Retrying deliveries or failed ingest jobs are present."
-              : "No quarantined deliveries or failed ingest jobs were found.",
-        details: row,
+          row.quarantined_unresolved > 0
+            ? "Unresolved quarantined outbox deliveries require operator attention."
+            : row.retrying > 0 || row.ingest_failed_unresolved > 0
+              ? "Retrying deliveries or unresolved failed ingest jobs are present."
+              : "No unresolved quarantined deliveries or failed ingest jobs were found.",
+        details: {
+          ...row,
+          vaultId: scope.vaultId ?? null,
+          environment: scope.environment?.trim() || "default",
+        },
       };
     }),
   );

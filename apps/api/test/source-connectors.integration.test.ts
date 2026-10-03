@@ -1,4 +1,4 @@
-import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
+import { createHmac, generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   Postgres,
@@ -22,6 +22,9 @@ describeDb("authenticated generic source connector webhook", () => {
     .export({ type: "spki", format: "pem" })
     .toString();
   let connectorId = "";
+  let providerConnectorId = "";
+  const providerWebhookSecret = "linear-webhook-integration-secret";
+  let previousProviderWebhookSecret: string | undefined;
 
   beforeAll(async () => {
     db = new Postgres(databaseUrl!);
@@ -82,12 +85,49 @@ describeDb("authenticated generic source connector webhook", () => {
     });
     connectorId = String(connector.id);
 
+    previousProviderWebhookSecret = process.env.AKP_TEST_LINEAR_WEBHOOK_SECRET;
+    process.env.AKP_TEST_LINEAR_WEBHOOK_SECRET = providerWebhookSecret;
+    const providerConnector = await registerSourceConnector(db, {
+      spaceId,
+      vaultId,
+      connectorKey: "linear-provider-webhook-fixture",
+      sourceSystem: "linear",
+      publicKeyPem: null,
+      connectorMode: "PROVIDER_PULL",
+      credentialRef: "AKP_TEST_LINEAR_API_TOKEN",
+      providerConfig: {
+        webhookSecretRef: "AKP_TEST_LINEAR_WEBHOOK_SECRET",
+      },
+      descriptor: {
+        schemaVersion: 1,
+        sourceSystem: "linear",
+        objectTypes: ["ISSUE"],
+        incremental: { cursor: true, webhook: true },
+        permissionFidelity: "SOURCE_ACL_MAPPED",
+        replication: "REFERENCE",
+        dataResidency: "EXTERNAL",
+        attachments: { supported: false },
+        rateLimit: { kind: "NONE" },
+        checkpointModel: "OPAQUE_CURSOR",
+        deletionPropagation: "NONE",
+        sourceVersioning: true,
+        contentTrust: "UNTRUSTED_EXTERNAL",
+      },
+    });
+    providerConnectorId = String(providerConnector.id);
+
     const module = await import("../src/server.js");
     app = module.buildServer();
   });
 
   afterAll(async () => {
     if (app) await app.close();
+    if (previousProviderWebhookSecret === undefined) {
+      delete process.env.AKP_TEST_LINEAR_WEBHOOK_SECRET;
+    } else {
+      process.env.AKP_TEST_LINEAR_WEBHOOK_SECRET =
+        previousProviderWebhookSecret;
+    }
     if (!db) return;
     await db.pool.query("delete from vaults where id=$1", [vaultId]);
     await db.pool.query("delete from spaces where id=$1", [spaceId]);
@@ -279,6 +319,134 @@ describeDb("authenticated generic source connector webhook", () => {
       [spaceId, vaultId, `connector-event:${connectorId}:1`],
     );
     expect(automaticAssurance.rows[0]?.count).toBe(1);
+  });
+
+  it("verifies a Linear raw-body webhook through Fastify and keeps replay idempotent", async () => {
+    const nowMs = Date.now();
+    const body = {
+      action: "update",
+      type: "Issue",
+      webhookTimestamp: nowMs,
+      data: {
+        id: "linear-issue-1",
+        identifier: "ENG-101",
+        title: "Linear provider issue",
+        updatedAt: new Date(nowMs).toISOString(),
+        url: "https://linear.app/example/issue/ENG-101",
+        team: { id: "team-1", key: "ENG" },
+        state: { name: "Started" },
+      },
+    };
+    const rawBody = JSON.stringify(body);
+    const signature = createHmac("sha256", providerWebhookSecret)
+      .update(rawBody)
+      .digest("hex");
+    const deliveryId = randomUUID();
+    const headers = {
+      "content-type": "application/json",
+      "linear-signature": signature,
+      "linear-delivery": deliveryId,
+      "linear-timestamp": String(nowMs),
+    };
+
+    const accepted = await app.inject({
+      method: "POST",
+      url: `/hooks/source-connectors/${providerConnectorId}/provider-events`,
+      headers,
+      payload: rawBody,
+    });
+    expect(accepted.statusCode, accepted.body).toBe(202);
+    expect(accepted.json()).toMatchObject({
+      connectorId: providerConnectorId,
+      provider: "linear",
+      duplicate: false,
+      sequence: 1,
+      status: "PENDING",
+    });
+
+    const replay = await app.inject({
+      method: "POST",
+      url: `/hooks/source-connectors/${providerConnectorId}/provider-events`,
+      headers,
+      payload: rawBody,
+    });
+    expect(replay.statusCode, replay.body).toBe(200);
+    expect(replay.json()).toMatchObject({
+      connectorId: providerConnectorId,
+      duplicate: true,
+      sequence: 1,
+    });
+
+    const stored = await db.pool.query<{
+      metadata: Record<string, unknown>;
+      status: string;
+    }>(
+      `select metadata,status
+         from source_connector_events
+        where connector_id=$1 and event_id=$2`,
+      [providerConnectorId, deliveryId],
+    );
+    expect(stored.rows[0]).toMatchObject({
+      status: "PENDING",
+      metadata: {
+        provider: "linear",
+        providerVerified: true,
+        identifier: "ENG-101",
+        _akpProviderObservation: {
+          providerVerified: true,
+          observedVia: "AUTHENTICATED_PROVIDER_WEBHOOK",
+        },
+      },
+    });
+
+    expect(
+      await applyNextSourceConnectorEvent(db, {
+        connectorId: providerConnectorId,
+      }),
+    ).toMatchObject({
+      connectorId: providerConnectorId,
+      eventId: deliveryId,
+      sequence: 1,
+      operation: "UPSERT",
+      objectId: "linear-issue-1",
+    });
+
+    const projected = await db.pool.query<{
+      lifecycle: string;
+      content_trust: string;
+      source_version: string;
+    }>(
+      `select lifecycle,content_trust,source_version
+         from source_connector_objects
+        where connector_id=$1 and object_id='linear-issue-1'`,
+      [providerConnectorId],
+    );
+    expect(projected.rows[0]).toMatchObject({
+      lifecycle: "ACTIVE",
+      content_trust: "UNTRUSTED_EXTERNAL",
+      source_version: body.data.updatedAt,
+    });
+
+    const rejectedDelivery = randomUUID();
+    const rejected = await app.inject({
+      method: "POST",
+      url: `/hooks/source-connectors/${providerConnectorId}/provider-events`,
+      headers: {
+        ...headers,
+        "linear-delivery": rejectedDelivery,
+        "linear-signature": "0".repeat(64),
+      },
+      payload: rawBody,
+    });
+    expect(rejected.statusCode, rejected.body).toBe(401);
+
+    const rejectedCount = await db.pool.query<{ count: number }>(
+      `select count(*)::int count
+         from source_connector_events
+        where connector_id=$1 and event_id=$2`,
+      [providerConnectorId, rejectedDelivery],
+    );
+    expect(rejectedCount.rows[0]?.count).toBe(0);
   });
 
   it("rejects tampered and stale signed events before they enter the inbox", async () => {

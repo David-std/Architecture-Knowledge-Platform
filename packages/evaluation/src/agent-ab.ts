@@ -22,6 +22,7 @@ export interface AgentAbTask extends AgentScoringTask {
   category: AgentAbTaskCategory;
   query: string;
   retrievalQuery?: string;
+  projectId?: string;
   intent:
     | "EXACT_LOOKUP"
     | "CONCEPTUAL"

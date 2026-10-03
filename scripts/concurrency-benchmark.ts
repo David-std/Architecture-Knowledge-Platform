@@ -4,6 +4,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import {
+  assertSyntheticFixtureDatabaseSafety,
   claimNextIngestJob,
   Postgres,
 } from "../packages/postgres/src/index.js";
@@ -47,6 +48,7 @@ type Fixture = {
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
+assertSyntheticFixtureDatabaseSafety(databaseUrl);
 
 const outputPath = path.resolve(
   process.env.AKP_CONCURRENCY_REPORT ?? "reports/ci/concurrency-benchmark.json",

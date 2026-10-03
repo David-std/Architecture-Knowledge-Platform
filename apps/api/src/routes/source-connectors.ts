@@ -1,7 +1,15 @@
-import { createHash, createPublicKey, verify } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  createPublicKey,
+  timingSafeEqual,
+  verify,
+} from "node:crypto";
+import { Readable } from "node:stream";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
+  appendProviderSourceConnectorEvent,
   appendSourceConnectorEvent,
   registerSourceConnector,
   resolveAuthorizedVaultScope,
@@ -70,6 +78,110 @@ export const SourceConnectorRegistrationSchema = z
 
 const RegistrationBody = SourceConnectorRegistrationSchema;
 
+export const ProviderSourceConnectorRegistrationSchema = z
+  .object({
+    spaceId: UUID,
+    vaultId: UUID,
+    connectorKey: z.string().regex(CONNECTOR_KEY),
+    provider: z.enum(["jira", "linear"]),
+    credentialRef: z.string().regex(/^[A-Z][A-Z0-9_]{1,127}$/),
+    webhookSecretRef: z
+      .string()
+      .regex(/^[A-Z][A-Z0-9_]{1,127}$/)
+      .optional(),
+    baseUrl: z.string().url().max(2048).optional(),
+    jql: z.string().trim().min(1).max(4000).optional(),
+    authorizationScheme: z.enum(["RAW", "BASIC", "BEARER"]).optional(),
+    freshnessSlaSeconds: z
+      .number()
+      .int()
+      .positive()
+      .max(31_536_000)
+      .default(300),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.provider === "jira" && !value.baseUrl) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["baseUrl"],
+        message: "Jira provider connectors require baseUrl.",
+      });
+    }
+    if (value.baseUrl) {
+      try {
+        const url = new URL(value.baseUrl);
+        const jiraCloud =
+          value.provider === "jira" &&
+          url.protocol === "https:" &&
+          url.username === "" &&
+          url.password === "" &&
+          url.pathname.replace(/\/+$/u, "") === "" &&
+          url.hostname.toLowerCase().endsWith(".atlassian.net");
+        const linearApi =
+          value.provider === "linear" &&
+          url.protocol === "https:" &&
+          url.username === "" &&
+          url.password === "" &&
+          url.hostname.toLowerCase() === "api.linear.app" &&
+          url.pathname.replace(/\/+$/u, "") === "/graphql";
+        if (!jiraCloud && !linearApi) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["baseUrl"],
+            message:
+              "Provider endpoint is outside the fail-closed Jira Cloud/Linear allowlist.",
+          });
+        }
+      } catch {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["baseUrl"],
+          message: "Provider endpoint is invalid.",
+        });
+      }
+    }
+    if (value.provider === "jira" && value.authorizationScheme === "RAW") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["authorizationScheme"],
+        message: "Jira Cloud provider auth must be BASIC or BEARER.",
+      });
+    }
+    if (value.provider === "linear" && value.authorizationScheme === "BASIC") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["authorizationScheme"],
+        message: "Linear provider auth must be RAW or BEARER.",
+      });
+    }
+    if (value.provider === "linear" && value.jql) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["jql"],
+        message: "JQL is only valid for Jira provider connectors.",
+      });
+    }
+    if (value.provider === "jira" && value.webhookSecretRef) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["webhookSecretRef"],
+        message:
+          "Direct Jira Cloud webhooks are polling-only until an Atlassian-authenticated callback mechanism is configured; do not invent an HMAC contract.",
+      });
+    }
+    if (value.provider === "jira" && /\border\s+by\b/iu.test(value.jql ?? "")) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["jql"],
+        message:
+          "Jira provider JQL must not include ORDER BY; AKP appends deterministic ordering.",
+      });
+    }
+  });
+
+const ProviderRegistrationBody = ProviderSourceConnectorRegistrationSchema;
+
 const WebhookBody = z
   .object({
     eventId: z.string().trim().min(1).max(200),
@@ -125,6 +237,238 @@ function headerValue(request: FastifyRequest, name: string): string | null {
   const raw = request.headers[name];
   const value = Array.isArray(raw) ? raw[0] : raw;
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+const providerWebhookRawBodies = new WeakMap<FastifyRequest, Buffer>();
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function textValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function millisecondsTimestamp(value: unknown): string | null {
+  const number =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && /^\d+$/u.test(value)
+        ? Number(value)
+        : Number.NaN;
+  if (!Number.isFinite(number)) return null;
+  const date = new Date(number);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function hmacSha256Matches(
+  rawBody: Buffer,
+  secret: string,
+  signatureHex: string,
+): boolean {
+  if (!/^[a-f0-9]{64}$/iu.test(signatureHex)) return false;
+  const expected = createHmac("sha256", secret).update(rawBody).digest();
+  const supplied = Buffer.from(signatureHex, "hex");
+  return (
+    supplied.length === expected.length && timingSafeEqual(supplied, expected)
+  );
+}
+
+export function verifyProviderWebhookSignature(input: {
+  provider: "jira" | "linear";
+  secret: string;
+  rawBody: Buffer;
+  headers: Readonly<Record<string, string | string[] | undefined>>;
+  body: unknown;
+  nowMs?: number;
+}): { accepted: boolean; eventId?: string; reason?: string } {
+  const headers = input.headers;
+  const readHeader = (name: string): string | null => {
+    const value = headers[name] ?? headers[name.toLowerCase()];
+    const first = Array.isArray(value) ? value[0] : value;
+    return typeof first === "string" && first.trim() ? first.trim() : null;
+  };
+
+  if (input.provider === "linear") {
+    const signature = readHeader("linear-signature");
+    const delivery = readHeader("linear-delivery");
+    const body = objectValue(input.body);
+    const timestamp =
+      millisecondsTimestamp(body.webhookTimestamp) ??
+      millisecondsTimestamp(readHeader("linear-timestamp"));
+    if (!signature || !delivery || !timestamp) {
+      return { accepted: false, reason: "LINEAR_WEBHOOK_AUTH_REQUIRED" };
+    }
+    const nowMs = input.nowMs ?? Date.now();
+    if (Math.abs(nowMs - new Date(timestamp).getTime()) > 60_000) {
+      return { accepted: false, reason: "LINEAR_WEBHOOK_TIMESTAMP_INVALID" };
+    }
+    if (!hmacSha256Matches(input.rawBody, input.secret, signature)) {
+      return { accepted: false, reason: "LINEAR_WEBHOOK_SIGNATURE_INVALID" };
+    }
+    return { accepted: true, eventId: delivery };
+  }
+
+  // Jira Cloud's standard webhook documentation provides a delivery
+  // identifier for retry deduplication but does not define a shared-secret
+  // HMAC equivalent to Linear-Signature. Treating an invented header as
+  // authentication would make the integration both incompatible and unsafe.
+  return { accepted: false, reason: "JIRA_DIRECT_WEBHOOK_UNSUPPORTED" };
+}
+
+export function providerWebhookEvent(input: {
+  provider: "jira" | "linear";
+  eventId: string;
+  body: unknown;
+  baseUrl?: string;
+}): Omit<
+  Parameters<typeof appendProviderSourceConnectorEvent>[1],
+  "connectorId" | "payloadHash"
+> {
+  const body = objectValue(input.body);
+  if (input.provider === "jira") {
+    const issue = objectValue(body.issue);
+    const fields = objectValue(issue.fields);
+    const project = objectValue(fields.project);
+    const security = objectValue(fields.security);
+    const assignee = objectValue(fields.assignee);
+    const status = objectValue(fields.status);
+    const objectId = textValue(issue.id) ?? textValue(issue.key);
+    const key = textValue(issue.key) ?? objectId;
+    const eventType = textValue(body.webhookEvent) ?? "";
+    const operation: "UPSERT" | "DELETE" = /_deleted$/iu.test(eventType)
+      ? "DELETE"
+      : "UPSERT";
+    const occurredAt =
+      millisecondsTimestamp(body.timestamp) ?? new Date().toISOString();
+    const sourceVersion = textValue(fields.updated) ?? occurredAt;
+    if (!objectId || !key)
+      throw new Error("JIRA_WEBHOOK_ISSUE_IDENTITY_INVALID");
+    const aclFingerprint = createHash("sha256")
+      .update(
+        JSON.stringify({
+          projectId: textValue(project.id),
+          securityId: textValue(security.id),
+        }),
+      )
+      .digest("hex");
+    return {
+      eventId: input.eventId,
+      occurredAt,
+      operation,
+      objectId,
+      objectType: "ISSUE",
+      sourceVersion,
+      title: textValue(fields.summary),
+      content: null,
+      contentType: null,
+      permissionFidelity: "SOURCE_ACL_MAPPED",
+      permissionUncertain: true,
+      aclFingerprint,
+      metadata: {
+        provider: "jira",
+        providerVerified: true,
+        key,
+        canonicalUrl: input.baseUrl
+          ? `${input.baseUrl.replace(/\/$/u, "")}/browse/${encodeURIComponent(key)}`
+          : null,
+        updatedAt: sourceVersion,
+        status: textValue(status.name),
+        projectId: textValue(project.id),
+        assigneeAccountId: textValue(assignee.accountId),
+        webhookEvent: eventType || null,
+        aclBasis: "API_VISIBILITY_PLUS_PROJECT_SECURITY_HINTS",
+        _akpProviderObservation: {
+          providerVerified: true,
+          observedVia: "AUTHENTICATED_PROVIDER_WEBHOOK",
+          sourceVersion,
+        },
+      },
+    };
+  }
+
+  const data = objectValue(body.data);
+  const action = (textValue(body.action) ?? "").toLocaleLowerCase("en-US");
+  const operation: "UPSERT" | "DELETE" =
+    action === "remove" || action === "delete" ? "DELETE" : "UPSERT";
+  const objectId = textValue(data.id);
+  const identifier = textValue(data.identifier) ?? objectId;
+  const team = objectValue(data.team);
+  const state = objectValue(data.state);
+  const assignee = objectValue(data.assignee);
+  const occurredAt =
+    millisecondsTimestamp(body.webhookTimestamp) ??
+    textValue(body.createdAt) ??
+    new Date().toISOString();
+  const sourceVersion =
+    textValue(data.updatedAt) ?? textValue(body.createdAt) ?? occurredAt;
+  if (!objectId || !identifier) {
+    throw new Error("LINEAR_WEBHOOK_ISSUE_IDENTITY_INVALID");
+  }
+  const aclFingerprint = createHash("sha256")
+    .update(JSON.stringify({ teamId: textValue(team.id) }))
+    .digest("hex");
+  return {
+    eventId: input.eventId,
+    occurredAt,
+    operation,
+    objectId,
+    objectType: "ISSUE",
+    sourceVersion,
+    title: textValue(data.title),
+    content: null,
+    contentType: null,
+    permissionFidelity: "SOURCE_ACL_MAPPED",
+    permissionUncertain: true,
+    aclFingerprint,
+    metadata: {
+      provider: "linear",
+      providerVerified: true,
+      identifier,
+      canonicalUrl: textValue(data.url),
+      updatedAt: sourceVersion,
+      teamId: textValue(team.id),
+      teamKey: textValue(team.key),
+      status: textValue(state.name),
+      assigneeId: textValue(assignee.id),
+      webhookAction: action || null,
+      aclBasis: "API_VISIBILITY_PLUS_TEAM_SCOPE_HINTS",
+      _akpProviderObservation: {
+        providerVerified: true,
+        observedVia: "AUTHENTICATED_PROVIDER_WEBHOOK",
+        sourceVersion,
+      },
+    },
+  };
+}
+
+async function captureProviderWebhookRawBody(
+  request: FastifyRequest,
+  payload: NodeJS.ReadableStream,
+): Promise<Readable> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of payload) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > WEBHOOK_MAX_BYTES) {
+      const error = new Error("PROVIDER_WEBHOOK_TOO_LARGE") as Error & {
+        statusCode?: number;
+      };
+      error.statusCode = 413;
+      throw error;
+    }
+    chunks.push(buffer);
+  }
+  const raw = Buffer.concat(chunks);
+  providerWebhookRawBodies.set(request, raw);
+  const replay = Readable.from([raw]) as Readable & {
+    receivedEncodedLength?: number;
+  };
+  replay.receivedEncodedLength = raw.length;
+  return replay;
 }
 
 export function sourceConnectorWebhookMessage(
@@ -290,6 +634,211 @@ export function registerSourceConnectorRoutes(
         sourceSystem: connector.source_system,
         descriptor: connector.descriptor,
         state: connector.state,
+      });
+    },
+  );
+
+  app.post(
+    "/v1/source-connectors/providers",
+    { preHandler: requirePermission("admin") },
+    async (request, reply) => {
+      const parsed = ProviderRegistrationBody.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({
+          code: "INVALID_PROVIDER_SOURCE_CONNECTOR",
+          issues: parsed.error.issues,
+        });
+      }
+      if (
+        !(await requireWholeVault(
+          db,
+          request,
+          reply,
+          "admin",
+          parsed.data.spaceId,
+          parsed.data.vaultId,
+        ))
+      ) {
+        return;
+      }
+      const actor = actorOf(request);
+      if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+
+      const descriptor = {
+        schemaVersion: 1,
+        sourceSystem: parsed.data.provider,
+        objectTypes: ["ISSUE"],
+        incremental: {
+          cursor: true,
+          webhook: Boolean(parsed.data.webhookSecretRef),
+        },
+        permissionFidelity: "SOURCE_ACL_MAPPED",
+        replication: "REFERENCE",
+        dataResidency: "EXTERNAL",
+        attachments: { supported: false },
+        rateLimit:
+          parsed.data.provider === "linear"
+            ? { kind: "DECLARED", requestsPerMinute: 40 }
+            : { kind: "NONE" },
+        checkpointModel: "OPAQUE_CURSOR",
+        deletionPropagation: "NONE",
+        sourceVersioning: true,
+        freshnessSlaSeconds: parsed.data.freshnessSlaSeconds,
+        contentTrust: "UNTRUSTED_EXTERNAL",
+        writeBack: "NONE",
+      };
+      const providerConfig = {
+        ...(parsed.data.baseUrl
+          ? parsed.data.provider === "linear"
+            ? { endpoint: parsed.data.baseUrl }
+            : { baseUrl: parsed.data.baseUrl }
+          : {}),
+        ...(parsed.data.jql ? { jql: parsed.data.jql } : {}),
+        ...(parsed.data.webhookSecretRef
+          ? { webhookSecretRef: parsed.data.webhookSecretRef }
+          : {}),
+        authorizationScheme:
+          parsed.data.authorizationScheme ??
+          (parsed.data.provider === "jira" ? "BASIC" : "RAW"),
+      };
+      const connector = await registerSourceConnector(db, {
+        spaceId: parsed.data.spaceId,
+        vaultId: parsed.data.vaultId,
+        connectorKey: parsed.data.connectorKey,
+        sourceSystem: parsed.data.provider,
+        publicKeyPem: null,
+        connectorMode: "PROVIDER_PULL",
+        credentialRef: parsed.data.credentialRef,
+        providerConfig,
+        descriptor,
+        createdByUserId: actor.id,
+        createdByPrincipalId: actor.principalId,
+      });
+      await audit(
+        db,
+        request,
+        "source_connector.provider.register",
+        "source_connector",
+        String(connector.id),
+        {
+          vaultId: parsed.data.vaultId,
+          connectorKey: parsed.data.connectorKey,
+          provider: parsed.data.provider,
+          credentialRef: parsed.data.credentialRef,
+          webhookEnabled: Boolean(parsed.data.webhookSecretRef),
+          writeBack: "NONE",
+        },
+        parsed.data.spaceId,
+      );
+      return reply.code(201).send({
+        id: connector.id,
+        spaceId: connector.space_id,
+        vaultId: connector.vault_id,
+        connectorKey: connector.connector_key,
+        sourceSystem: connector.source_system,
+        connectorMode: connector.connector_mode,
+        descriptor: connector.descriptor,
+        state: connector.state,
+      });
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/hooks/source-connectors/:id/provider-events",
+    {
+      bodyLimit: WEBHOOK_MAX_BYTES,
+      preParsing: async (request, _reply, payload) =>
+        captureProviderWebhookRawBody(request, payload),
+    },
+    async (request, reply) => {
+      if (!UUID.safeParse(request.params.id).success) {
+        return reply.code(404).send({ code: "SOURCE_CONNECTOR_NOT_FOUND" });
+      }
+      const rawBody = providerWebhookRawBodies.get(request);
+      providerWebhookRawBodies.delete(request);
+      if (!rawBody) {
+        return reply.code(400).send({ code: "PROVIDER_WEBHOOK_BODY_REQUIRED" });
+      }
+      const connector = await db.pool.query<{
+        id: string;
+        source_system: string;
+        connector_mode: string;
+        credential_ref: string | null;
+        provider_config: Record<string, unknown>;
+        state: string;
+      }>(
+        `select id,source_system,connector_mode,credential_ref,provider_config,state
+           from source_connector_registrations
+          where id=$1`,
+        [request.params.id],
+      );
+      const row = connector.rows[0];
+      if (
+        !row ||
+        row.state !== "ACTIVE" ||
+        row.connector_mode !== "PROVIDER_PULL" ||
+        (row.source_system !== "jira" && row.source_system !== "linear")
+      ) {
+        return reply.code(404).send({ code: "SOURCE_CONNECTOR_NOT_FOUND" });
+      }
+      const provider = row.source_system as "jira" | "linear";
+      const config =
+        row.provider_config &&
+        typeof row.provider_config === "object" &&
+        !Array.isArray(row.provider_config)
+          ? row.provider_config
+          : {};
+      const secretRef = textValue(config.webhookSecretRef);
+      const secret = secretRef ? process.env[secretRef]?.trim() : undefined;
+      if (!secret) {
+        return reply
+          .code(401)
+          .send({ code: "PROVIDER_WEBHOOK_SECRET_UNAVAILABLE" });
+      }
+      const verification = verifyProviderWebhookSignature({
+        provider,
+        secret,
+        rawBody,
+        headers: request.headers,
+        body: request.body,
+      });
+      if (!verification.accepted || !verification.eventId) {
+        return reply.code(401).send({
+          code: verification.reason ?? "PROVIDER_WEBHOOK_SIGNATURE_INVALID",
+        });
+      }
+
+      let event: Omit<
+        Parameters<typeof appendProviderSourceConnectorEvent>[1],
+        "connectorId" | "payloadHash"
+      >;
+      try {
+        event = providerWebhookEvent({
+          provider,
+          eventId: verification.eventId,
+          body: request.body,
+          ...(provider === "jira" && textValue(config.baseUrl)
+            ? { baseUrl: textValue(config.baseUrl)! }
+            : {}),
+        });
+      } catch (error) {
+        return reply.code(400).send({
+          code:
+            error instanceof Error
+              ? error.message
+              : "PROVIDER_WEBHOOK_PAYLOAD_INVALID",
+        });
+      }
+
+      const receipt = await appendProviderSourceConnectorEvent(db, {
+        connectorId: row.id,
+        ...event,
+        payloadHash: createHash("sha256").update(rawBody).digest("hex"),
+      });
+      return reply.code(receipt.duplicate ? 200 : 202).send({
+        ...receipt,
+        connectorId: row.id,
+        provider,
       });
     },
   );

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SearchHit } from "@akp/contracts";
 import {
   assessRetrievalAnswerability,
+  assessRetrievalAnswerabilityWithVerifier,
   collectCandidateAnswerabilitySignals,
   resolveRetrievalAnswerabilityPolicy,
   retrievalAnswerabilityCandidateKey,
@@ -16,6 +17,9 @@ function hit(
     excerpt: string;
     parentContext?: string;
     contributions: NonNullable<SearchHit["fusionContributions"]>;
+    type?: string;
+    trust?: SearchHit["trust"];
+    externalId?: string;
   },
 ): SearchHit {
   const documentId = `11111111-1111-4111-8111-${String(idSuffix).padStart(12, "0")}`;
@@ -26,14 +30,14 @@ function hit(
     unitId,
     unitType: "PARAGRAPH",
     document: {
-      externalId: `public-fixture-${idSuffix}`,
+      externalId: input.externalId ?? `public-fixture-${idSuffix}`,
       path: `docs/public-${idSuffix}.md`,
       title: input.title,
     },
     revision: "revision-1",
     title: input.title,
-    type: "concept",
-    trust: "HUMAN_REVIEWED",
+    type: input.type ?? "concept",
+    trust: input.trust ?? "HUMAN_REVIEWED",
     lifecycle: "ACTIVE",
     refreshStatus: "CURRENT",
     score: 1,
@@ -201,15 +205,38 @@ describe("retrieval answerability", () => {
     });
   });
 
+  it("accepts a bounded copular definition without treating topic proximity as evidence", () => {
+    const candidate = hit(30, {
+      title: "Canonical knowledge",
+      parentContext:
+        "Approved Markdown in managed Git is canonical knowledge. PostgreSQL, vector indexes, graphs, packets and caches are derived operational projections.",
+      excerpt: "Approved Markdown in managed Git is canonical knowledge.",
+      contributions: [contribution("vector", 0.86, 1)],
+    });
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "What is canonical knowledge in the platform, and which stores are derived projections?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      requiredAnswerCues: ["DEFINITION"],
+    });
+  });
+
   it("rejects a topical definition when the query asks for an avoidance condition, even on a direct channel", () => {
     const definition = hit(1, {
-      title: "Immutable change-log definition",
+      title: "Checksum validation definition",
       excerpt:
-        "Immutable change logs record every domain change and retain a complete operational history for later reconstruction.",
+        "Periodic checksum validation recomputes digests to detect accidental data corruption during storage.",
       contributions: [contribution("exact"), contribution("vector", 0.91, 1)],
     });
     const query =
-      "When should immutable change logs be avoided because operational overhead is high?";
+      "When should periodic checksum validation be avoided on battery-constrained sensors?";
 
     const result = assessRetrievalAnswerability([definition], query);
 
@@ -233,15 +260,15 @@ describe("retrieval answerability", () => {
 
   it("admits the condition-bearing unit instead of a topical definition from the same document", () => {
     const definition = hit(1, {
-      title: "Immutable change-log definition",
+      title: "Checksum validation definition",
       excerpt:
-        "Immutable change logs record every domain change and retain a complete operational history for later reconstruction.",
+        "Periodic checksum validation recomputes digests to detect accidental data corruption during storage.",
       contributions: [contribution("exact"), contribution("vector", 0.91, 1)],
     });
     const conditionBase = hit(2, {
-      title: "Immutable change-log trade-off",
+      title: "Checksum validation trade-off",
       excerpt:
-        "Immutable change logs are a poor fit for simple mutable records because operational overhead outweighs the audit requirement.",
+        "Periodic checksum validation is a poor fit for battery-constrained sensors because repeated digest computation drains limited power.",
       contributions: [contribution("vector", 0.89, 2)],
     });
     const condition: SearchHit = {
@@ -250,7 +277,7 @@ describe("retrieval answerability", () => {
       document: definition.document,
     };
     const query =
-      "When should immutable change logs be avoided because operational overhead is high?";
+      "When should periodic checksum validation be avoided on battery-constrained sensors?";
 
     const result = assessRetrievalAnswerability([definition, condition], query);
 
@@ -273,6 +300,579 @@ describe("retrieval answerability", () => {
         }),
       }),
     ]);
+  });
+
+  it("uses a scoped title and an explicitly linked continuation for an avoidance condition", () => {
+    const candidate = hit(31, {
+      title: "Reject durable change logs for simple record editing",
+      parentContext:
+        "Durable change logs are justified by replay, temporal reconstruction, or compliance traceability. Without those drivers, the log adds unjustified operational overhead.",
+      excerpt:
+        "Without those drivers, the log adds unjustified operational overhead.",
+      contributions: [contribution("vector", 0.86, 5)],
+    });
+    const query =
+      "When should a durable change log be avoided because of operating costs?";
+    const result = assessRetrievalAnswerability([candidate], query);
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
+    });
+    expect(["PASSAGE_TEXT_SUPPORT", "PASSAGE_CUE_SUPPORT"]).toContain(
+      result.reason,
+    );
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      requiredAnswerCues: expect.arrayContaining(["PREVENTION", "CONDITION"]),
+    });
+    expect(
+      result.candidateSignals[0]?.passageSupport.requiredAnswerCues,
+    ).not.toContain("QUANTITY");
+
+    const topical = hit(32, {
+      title: "Durable change log operating overhead",
+      excerpt:
+        "The durable change log adds operational overhead while recording each update.",
+      contributions: [contribution("vector", 0.85, 1)],
+    });
+    const rejected = assessRetrievalAnswerability([topical], query);
+    expect(rejected).toMatchObject({
+      supported: false,
+      reason: "SUPPORT_NOT_DEMONSTRATED",
+    });
+    expect(rejected.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: false,
+      reason: "ANSWER_CUE_MISMATCH",
+    });
+
+    const monthly = assessRetrievalAnswerability(
+      [candidate],
+      "What is the monthly operating cost of the durable change log?",
+    );
+    expect(monthly.supported).toBe(false);
+    expect(
+      monthly.candidateSignals[0]?.passageSupport.requiredAnswerCues,
+    ).toContain("QUANTITY");
+  });
+
+  it("accepts a bilingual architecture paraphrase without lowering the global overlap threshold", () => {
+    const candidate = hit(33, {
+      title: "Local patterns are not system architecture",
+      excerpt:
+        "Mediator y Facade no determinan el conjunto de módulos, límites ni la dirección global de dependencias.",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "Do Mediator and Facade patterns define the overall system architecture?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      requiredAnswerCues: ["YES_NO"],
+    });
+  });
+
+  it("maps diagram-view and mandatory-require language inside one bounded evidence unit", () => {
+    const candidate = hit(34, {
+      title: "AtlasKit selective views",
+      excerpt:
+        "Las vistas de AtlasKit se seleccionan según la necesidad; no son una lista obligatoria de entregables.",
+      contributions: [contribution("vector", 0.87, 4)],
+    });
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "Does AtlasKit require every level of diagram?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      requiredAnswerCues: ["YES_NO"],
+    });
+  });
+
+  it("does not treat policy as a rule request when policy is the object of a rationale question", () => {
+    const candidate = hit(35, {
+      title: "Dependency direction",
+      excerpt:
+        "Las dependencias apuntan hacia las políticas del dominio para mantenerlas independientes de frameworks y mecanismos externos.",
+      contributions: [contribution("vector", 0.88, 3)],
+    });
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "Why do dependencies point inward toward domain policies?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      requiredAnswerCues: ["RATIONALE"],
+    });
+  });
+
+  it("still recognizes an explicit policy request as a rule predicate", () => {
+    const candidate = hit(36, {
+      title: "Retry policy",
+      excerpt:
+        "The retry policy requires a bounded delay before another attempt.",
+      contributions: [contribution("vector", 0.82, 2)],
+    });
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "Which policy governs retry windows?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      requiredAnswerCues: ["RULE"],
+    });
+  });
+
+  it("rejects the same vocabulary when subject, predicate and object form a different relation", () => {
+    const correctRelation = hit(38, {
+      title: "Local patterns are not architecture",
+      excerpt:
+        "Strategy and Adapter are local patterns; they do not determine the overall system architecture.",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+    const wrongRelation = hit(37, {
+      title: "Java adapter profile",
+      excerpt:
+        "The persistence adapter defines a uniqueness strategy for generated record keys.",
+      contributions: [contribution("vector", 0.61, 51)],
+    });
+    const query =
+      "Do Strategy and Adapter patterns define the overall system architecture?";
+
+    const result = assessRetrievalAnswerability(
+      [correctRelation, wrongRelation],
+      query,
+    );
+
+    expect(result.supported).toBe(true);
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(correctRelation),
+    ]);
+    expect(result.candidateSignals).toEqual([
+      expect.objectContaining({
+        candidateKey: retrievalAnswerabilityCandidateKey(correctRelation),
+        passageSupport: expect.objectContaining({
+          supported: true,
+          vectorRank: 1,
+        }),
+      }),
+      expect.objectContaining({
+        candidateKey: retrievalAnswerabilityCandidateKey(wrongRelation),
+        passageSupport: expect.objectContaining({
+          supported: false,
+          vectorRank: 51,
+        }),
+      }),
+    ]);
+  });
+
+  it("keeps vector rank diagnostic instead of using it as a truth boundary", () => {
+    const candidate = hit(39, {
+      title: "Avoid durable change logs without explicit drivers",
+      parentContext:
+        "Durable change logs are justified by replay or audit requirements. Without those drivers, they add unjustified operational cost.",
+      excerpt: "Without those drivers, they add unjustified operational cost.",
+      contributions: [contribution("vector", 0.79, 6)],
+    });
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "When should a durable change log be avoided because of operating cost?",
+    );
+
+    expect(result.supported).toBe(true);
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(candidate),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      vectorRank: 6,
+      requiredAnswerCues: expect.arrayContaining(["PREVENTION", "CONDITION"]),
+    });
+  });
+
+  it("rescues a machine-supported claim from its atomic passage without treating metadata as evidence", () => {
+    const correctClaim = hit(40, {
+      title: "Local pattern scope",
+      type: "claim",
+      trust: "MACHINE_SUPPORTED",
+      externalId: "CLM-40",
+      excerpt:
+        "Strategy y Adapter son patrones locales. No determinan módulos, límites ni la dirección global de dependencias.",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+    const incidentalProfile = hit(41, {
+      title: "Java persistence profile",
+      type: "profile",
+      externalId: "PRO-41",
+      excerpt:
+        "The persistence adapter defines a uniqueness strategy for generated record keys.",
+      contributions: [contribution("vector", 0.62, 51)],
+    });
+    const query =
+      "Do Strategy and Adapter patterns define the overall system architecture?";
+
+    const result = assessRetrievalAnswerability(
+      [correctClaim, incidentalProfile],
+      query,
+    );
+
+    expect(result.supported).toBe(true);
+    expect(result.reason).toBe("CLAIM_RELATION_SUPPORT");
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(correctClaim),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      reason: "CLAIM_RELATION_SUPPORT",
+      vectorRank: 1,
+    });
+    expect(result.candidateSignals[1]?.passageSupport).toMatchObject({
+      supported: false,
+      vectorRank: 51,
+    });
+  });
+
+  it("parses grammatical modifiers around a yes-no relation without inflating subject overlap", () => {
+    const correctClaim = hit(147, {
+      title: "Mediator and Facade scope",
+      type: "claim",
+      trust: "MACHINE_SUPPORTED",
+      externalId: "CLM-147",
+      excerpt:
+        "Mediator y Facade son patrones locales. No determinan módulos, límites ni la dirección global de dependencias.",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+    const lexicalProfile = hit(148, {
+      title: "Facade routing profile",
+      type: "profile",
+      externalId: "PRO-148",
+      excerpt:
+        "A facade adapter defines a routing strategy for downstream calls.",
+      contributions: [contribution("vector", 0.61, 44)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [correctClaim, lexicalProfile],
+      "Does using Mediator or Facade define the overall architecture?",
+    );
+
+    expect(result.supported).toBe(true);
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(correctClaim),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      reason: "CLAIM_RELATION_SUPPORT",
+      claimRelationDiagnostics: {
+        eligibleClaim: true,
+        relationExtracted: true,
+        predicateMatched: true,
+        subjectAnchorCount: 2,
+        subjectOverlap: 2,
+        subjectMatched: true,
+        queryGlobalScope: true,
+        excerptGlobalScope: true,
+        objectOrScopeMatched: true,
+        supported: true,
+      },
+    });
+    expect(result.candidateSignals[1]?.passageSupport).toMatchObject({
+      supported: false,
+      claimRelationDiagnostics: expect.objectContaining({
+        eligibleClaim: false,
+        supported: false,
+      }),
+    });
+  });
+
+  it("matches a specific subject core without treating its generic model head as identity", () => {
+    const correctClaim = hit(150, {
+      title: "Orion policy selection",
+      type: "claim",
+      trust: "MACHINE_SUPPORTED",
+      externalId: "CLM-150",
+      excerpt:
+        "Las políticas de Orion se seleccionan según la necesidad; no son obligatorias para cada despliegue.",
+      contributions: [contribution("vector", 0.7, 34)],
+    });
+    const otherModelClaim = hit(151, {
+      title: "Atlas policy selection",
+      type: "claim",
+      trust: "MACHINE_SUPPORTED",
+      externalId: "CLM-151",
+      excerpt:
+        "Las políticas de Atlas se seleccionan según la necesidad; no son obligatorias para cada despliegue.",
+      contributions: [contribution("vector", 0.69, 35)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [correctClaim, otherModelClaim],
+      "Does the Orion model require every policy for each deployment?",
+    );
+
+    expect(result.supported).toBe(true);
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(correctClaim),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      claimRelationDiagnostics: expect.objectContaining({
+        subjectAnchorCount: 1,
+        subjectOverlap: 1,
+        subjectMatched: true,
+        objectOrScopeMatched: true,
+        supported: true,
+      }),
+    });
+    expect(result.candidateSignals[1]?.passageSupport).toMatchObject({
+      supported: false,
+      claimRelationDiagnostics: expect.objectContaining({
+        subjectAnchorCount: 1,
+        subjectOverlap: 0,
+        subjectMatched: false,
+        supported: false,
+      }),
+    });
+  });
+
+  it("rejects a reviewed claim with the same subject and predicate but a different object", () => {
+    const wrongClaim = hit(42, {
+      title: "Local pattern deployment scope",
+      type: "claim",
+      trust: "MACHINE_SUPPORTED",
+      externalId: "CLM-42",
+      excerpt:
+        "Strategy and Adapter patterns do not determine deployment schedules.",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+    const result = assessRetrievalAnswerability(
+      [wrongClaim],
+      "Do Strategy and Adapter patterns define the overall system architecture?",
+    );
+
+    expect(result.supported).toBe(false);
+    expect(result.supportedCandidateKeys).toEqual([]);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: false,
+      reason: "ANSWER_CUE_MISMATCH",
+    });
+  });
+
+  it("accepts a machine-supported selective-view claim even at a deep vector rank", () => {
+    const claim = hit(145, {
+      title: "Atlas selective views",
+      type: "claim",
+      trust: "MACHINE_SUPPORTED",
+      externalId: "CLM-145",
+      excerpt:
+        "Las vistas de Atlas se seleccionan según la necesidad; no son entregables obligatorios.",
+      contributions: [contribution("vector", 0.66, 34)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [claim],
+      "Does Atlas require every level of diagram for each project?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(claim)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      vectorRank: 34,
+    });
+    expect(["PASSAGE_CUE_SUPPORT", "CLAIM_RELATION_SUPPORT"]).toContain(
+      result.candidateSignals[0]?.passageSupport.reason,
+    );
+  });
+
+  it("supports rationale split across an explicitly linked adjacent sentence", () => {
+    const claim = hit(146, {
+      title: "Dependency direction",
+      type: "claim",
+      trust: "MACHINE_SUPPORTED",
+      externalId: "CLM-146",
+      parentContext:
+        "Dependencies point toward domain rules rather than framework details. This keeps domain decisions isolated from external mechanisms.",
+      excerpt:
+        "Dependencies point toward domain rules rather than framework details. This keeps domain decisions isolated from external mechanisms.",
+      contributions: [contribution("vector", 0.81, 8)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [claim],
+      "Why should implementation dependencies point toward domain rules instead of infrastructure details?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(claim)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      vectorRank: 8,
+      requiredAnswerCues: ["RATIONALE"],
+    });
+  });
+
+  it("accepts a bounded rationale expressed as preventing external detail leakage", () => {
+    const claim = hit(149, {
+      title: "Dependency boundary",
+      type: "claim",
+      trust: "MACHINE_SUPPORTED",
+      externalId: "CLM-149",
+      excerpt:
+        "Las dependencias apuntan hacia las políticas del dominio. Los detalles externos no deben filtrar sus nombres o formatos hacia el interior.",
+      contributions: [contribution("vector", 0.79, 8)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [claim],
+      "Why should code dependencies point toward policy rather than external details?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(claim)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      vectorRank: 8,
+      requiredAnswerCues: ["RATIONALE"],
+      matchedAnswerCues: ["RATIONALE"],
+    });
+    expect(
+      result.candidateSignals[0]?.passageSupport.boundedAnchorCoverage,
+    ).toBeGreaterThanOrEqual(0.4);
+  });
+
+  it("does not apply claim relation fallback to unreviewed claims", () => {
+    const unreviewed = hit(43, {
+      title: "Local pattern scope",
+      type: "claim",
+      trust: "UNVERIFIED",
+      externalId: "CLM-43",
+      excerpt:
+        "Strategy y Adapter son patrones locales. No determinan módulos, límites ni la dirección global de dependencias.",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+    const result = assessRetrievalAnswerability(
+      [unreviewed],
+      "Do Strategy and Adapter patterns define the overall system architecture?",
+    );
+
+    expect(result.supported).toBe(false);
+    expect(result.supportedCandidateKeys).toEqual([]);
+  });
+
+  it("accepts an explicit bilingual yes-no negation about the same relation", () => {
+    const candidate = hit(20, {
+      title: "Component scope",
+      excerpt:
+        "Proxy y Gateway no determinan todo el diseño del sistema; resuelven responsabilidades locales.",
+      contributions: [contribution("vector", 0.88, 1)],
+    });
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "Do Proxy and Gateway define the entire system design?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      requiredAnswerCues: ["YES_NO"],
+    });
+  });
+
+  it("requires a numeric quantity instead of accepting topical cost language", () => {
+    const topical = hit(21, {
+      title: "Retry capacity controls",
+      excerpt:
+        "Retry capacity is governed by traffic policy and bounded load reviews.",
+      contributions: [contribution("vector", 0.94, 1)],
+    });
+    const result = assessRetrievalAnswerability(
+      [topical],
+      "How many retry attempts are allowed per minute?",
+    );
+
+    expect(result).toMatchObject({
+      supported: false,
+      supportedCandidateKeys: [],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: false,
+      reason: "ANSWER_CUE_MISMATCH",
+    });
+    expect(
+      result.candidateSignals[0]?.passageSupport.requiredAnswerCues,
+    ).toContain("QUANTITY");
+  });
+
+  it("requires an explicit year when the question asks which year", () => {
+    const topical = hit(22, {
+      title: "Compatibility window history",
+      excerpt: "The compatibility window ended after the migration review.",
+      contributions: [contribution("vector", 0.93, 1)],
+    });
+    const result = assessRetrievalAnswerability(
+      [topical],
+      "Which year did the compatibility window end?",
+    );
+
+    expect(result.supported).toBe(false);
+    expect(
+      result.candidateSignals[0]?.passageSupport.requiredAnswerCues,
+    ).toContain("DATE_YEAR");
+  });
+
+  it("requires rationale and relation anchors in the same sentence", () => {
+    const thematic = hit(23, {
+      title: "Handler overview",
+      parentContext:
+        "Request handlers are documented for review. A deployment schedule changes because maintenance windows are short.",
+      excerpt: "Request handlers are documented for review.",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+    const correct = hit(24, {
+      title: "Handler contract rationale",
+      excerpt:
+        "Request handlers depend on stable contracts because transport details must remain replaceable.",
+      contributions: [contribution("vector", 0.89, 2)],
+    });
+    const query = "Why do request handlers depend on stable contracts?";
+    const result = assessRetrievalAnswerability([thematic, correct], query);
+
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(correct),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport.supported).toBe(false);
+    expect(result.candidateSignals[1]?.passageSupport.supported).toBe(true);
   });
 
   it("rejects a semantic neighbour that is relevant to the topic but does not answer", () => {
@@ -321,19 +921,26 @@ describe("retrieval answerability", () => {
     });
   });
 
-  it("treats exact and other direct channels as candidate-specific support", () => {
-    const direct = hit(1, {
+  it("uses direct-channel support only for an exact identifier whose identity matches", () => {
+    const directBase = hit(1, {
       title: "Canonical rule",
       excerpt: "Unrelated wording.",
       contributions: [contribution("exact"), contribution("vector", 0.6, 1)],
     });
-    const neighbour = hit(2, {
+    const direct: SearchHit = {
+      ...directBase,
+      document: {
+        ...directBase.document,
+        externalId: "RULE-AUTH-001",
+      },
+    };
+    const unrelatedExact = hit(2, {
       title: "Nearby topic",
       excerpt: "A nearby topic with no direct match.",
-      contributions: [contribution("vector", 0.59, 2)],
+      contributions: [contribution("exact"), contribution("vector", 0.59, 2)],
     });
     const result = assessRetrievalAnswerability(
-      [direct, neighbour],
+      [direct, unrelatedExact],
       "RULE-AUTH-001",
     );
 
@@ -342,6 +949,9 @@ describe("retrieval answerability", () => {
       reason: "DIRECT_CHANNEL_SUPPORT",
       supportedDocumentIds: [direct.documentId],
     });
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(direct),
+    ]);
     expect(result.candidateSignals[1]?.passageSupport.supported).toBe(false);
   });
 
@@ -369,7 +979,7 @@ describe("retrieval answerability", () => {
     });
   });
 
-  it("accepts graph evidence only for an explicit graph-oriented intent", () => {
+  it("does not let graph topology substitute for passage evidence", () => {
     const candidate = hit(1, {
       title: "Dependency relation",
       excerpt: "A graph neighbour discovered through an authorized path.",
@@ -391,9 +1001,9 @@ describe("retrieval answerability", () => {
         { allowGraphSupport: true },
       ),
     ).toMatchObject({
-      supported: true,
-      reason: "GRAPH_INTENT_SUPPORT",
-      supportedDocumentIds: [candidate.documentId],
+      supported: false,
+      reason: "SUPPORT_NOT_DEMONSTRATED",
+      supportedDocumentIds: [],
     });
   });
 
@@ -421,6 +1031,178 @@ describe("retrieval answerability", () => {
       supported: false,
       reason: "SUPPORT_NOT_DEMONSTRATED",
     });
+  });
+
+  it("keeps query-conditioned verification in shadow mode until promotion", async () => {
+    const candidate = hit(40, {
+      title: "Bounded semantic relation",
+      excerpt:
+        "The selected mechanism keeps the domain independent from external frameworks.",
+      contributions: [contribution("vector", 0.84, 3)],
+    });
+    const query =
+      "Why does the selected mechanism keep the domain independent?";
+    const baseline = assessRetrievalAnswerability([candidate], query);
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      query,
+      {
+        id: "fixture-verifier",
+        async verify(input) {
+          return {
+            decision: "SUPPORTS",
+            score: 0.91,
+            evidenceSpan: {
+              startOffset: 0,
+              endOffset: input.passage.length,
+            },
+            reason: "fixture support",
+          };
+        },
+      },
+      { mode: "SHADOW" },
+    );
+
+    expect(result.supported).toBe(baseline.supported);
+    expect(result.supportedCandidateKeys).toEqual(
+      baseline.supportedCandidateKeys,
+    );
+    expect(result.candidateSignals[0]?.queryConditionedEvidence).toMatchObject({
+      verifierId: "fixture-verifier",
+      mode: "SHADOW",
+      decision: "SUPPORTS",
+    });
+  });
+
+  it("enforces query-conditioned support on the exact candidate relation", async () => {
+    const wrong = hit(41, {
+      title: "Adapter example",
+      excerpt: "The adapter defines a uniqueness strategy for generated keys.",
+      contributions: [contribution("vector", 0.93, 1)],
+    });
+    const correct = hit(42, {
+      title: "Architecture boundary",
+      excerpt:
+        "Local patterns do not determine the overall system architecture.",
+      contributions: [contribution("vector", 0.88, 2)],
+    });
+    const query = "Do local patterns define the overall system architecture?";
+    const correctKey = retrievalAnswerabilityCandidateKey(correct);
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [wrong, correct],
+      query,
+      {
+        id: "fixture-verifier",
+        async verify(input) {
+          if (input.candidateKey === correctKey) {
+            return {
+              decision: "SUPPORTS",
+              evidenceSpan: {
+                startOffset: 0,
+                endOffset: input.passage.length,
+              },
+              reason: "relation is answered",
+            };
+          }
+          return {
+            decision: "INSUFFICIENT",
+            reason: "same vocabulary, different relation",
+          };
+        },
+      },
+      { mode: "ENFORCE" },
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([correctKey]);
+    expect(result.candidateSignals).toEqual([
+      expect.objectContaining({
+        candidateKey: retrievalAnswerabilityCandidateKey(wrong),
+        passageSupport: expect.objectContaining({
+          supported: false,
+          reason: "QUERY_CONDITIONED_INSUFFICIENT",
+        }),
+      }),
+      expect.objectContaining({
+        candidateKey: correctKey,
+        passageSupport: expect.objectContaining({
+          supported: true,
+          reason: "QUERY_CONDITIONED_SUPPORT",
+        }),
+        queryConditionedEvidence: expect.objectContaining({
+          decision: "SUPPORTS",
+          evidenceSpan: {
+            startOffset: 0,
+            endOffset: correct.excerpt.length,
+          },
+        }),
+      }),
+    ]);
+  });
+
+  it("does not let a query-conditioned verifier override a missing quantity", async () => {
+    const candidate = hit(43, {
+      title: "Operating cost overview",
+      excerpt:
+        "The subsystem has recurring operating cost, reviewed each month.",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "What is the monthly operating cost of the subsystem?",
+      {
+        id: "fixture-verifier",
+        async verify(input) {
+          return {
+            decision: "SUPPORTS",
+            score: 0.99,
+            evidenceSpan: {
+              startOffset: 0,
+              endOffset: input.passage.length,
+            },
+            reason: "model claims support",
+          };
+        },
+      },
+      { mode: "ENFORCE" },
+    );
+
+    expect(result.supported).toBe(false);
+    expect(result.supportedCandidateKeys).toEqual([]);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: false,
+      reason: "QUERY_CONDITIONED_INSUFFICIENT",
+    });
+  });
+
+  it("fails query-conditioned promotion closed when SUPPORTS lacks an evidence span", async () => {
+    const candidate = hit(44, {
+      title: "Scoped rule",
+      excerpt: "The scoped rule applies only after approval.",
+      contributions: [contribution("vector", 0.8, 1)],
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "When does the scoped rule apply?",
+      {
+        id: "fixture-verifier",
+        async verify() {
+          return {
+            decision: "SUPPORTS",
+            reason: "score-only support is not inspectable",
+          };
+        },
+      },
+      { mode: "ENFORCE" },
+    );
+
+    expect(result.supported).toBe(false);
+    expect(result.candidateSignals[0]?.queryConditionedEvidence).toMatchObject({
+      decision: "VERIFIER_ERROR",
+      reason: "QUERY_CONDITIONED_EVIDENCE_SPAN_REQUIRED",
+    });
+    expect(result.candidateSignals[0]?.passageSupport.reason).toBe(
+      "QUERY_CONDITIONED_VERIFIER_ERROR",
+    );
   });
 
   it("uses the comparison pool only for vector diagnostics, never as implicit support", () => {
@@ -453,8 +1235,5 @@ describe("retrieval answerability", () => {
     expect(() =>
       resolveRetrievalAnswerabilityPolicy({ minimumSalientOverlap: 0 }),
     ).toThrow("minimumSalientOverlap");
-    expect(() =>
-      resolveRetrievalAnswerabilityPolicy({ semanticCueMaxVectorRank: 0 }),
-    ).toThrow("semanticCueMaxVectorRank");
   });
 });

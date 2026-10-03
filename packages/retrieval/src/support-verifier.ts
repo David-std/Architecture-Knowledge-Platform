@@ -43,18 +43,24 @@ const ANSWERABILITY_STOPWORDS = new Set([
   "why",
 ]);
 
-export type PassageAnswerCue =
+export type PassageAnswerRequirement =
   | "PROCEDURE"
   | "PREVENTION"
   | "CONDITION"
   | "RATIONALE"
   | "RULE"
   | "DEFINITION"
-  | "COMPARISON";
+  | "COMPARISON"
+  | "YES_NO"
+  | "QUANTITY"
+  | "DATE_YEAR";
+
+export type PassageAnswerCue = PassageAnswerRequirement;
 
 export type PassageSupportReason =
   | "PASSAGE_TEXT_SUPPORT"
   | "PASSAGE_CUE_SUPPORT"
+  | "CLAIM_RELATION_SUPPORT"
   | "NO_CONCRETE_PASSAGE"
   | "ANSWER_CUE_MISMATCH"
   | "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
@@ -62,15 +68,30 @@ export type PassageSupportReason =
 export interface DeterministicPassageSupportPolicy {
   minimumSalientCoverage: number;
   minimumSalientOverlap: number;
-  semanticCueMaxVectorRank: number;
 }
 
 export const DEFAULT_DETERMINISTIC_PASSAGE_SUPPORT_POLICY: DeterministicPassageSupportPolicy =
   {
     minimumSalientCoverage: 0.4,
     minimumSalientOverlap: 2,
-    semanticCueMaxVectorRank: 5,
   };
+
+export interface ClaimRelationDiagnostics {
+  eligibleClaim: boolean;
+  relationExtracted: boolean;
+  predicateMatched: boolean;
+  subjectAnchorCount: number;
+  subjectOverlap: number;
+  subjectMatched: boolean;
+  objectAnchorCount: number;
+  objectOverlap: number;
+  queryGlobalScope: boolean;
+  excerptGlobalScope: boolean;
+  objectOrScopeMatched: boolean;
+  anchorCount: number;
+  anchorOverlap: number;
+  supported: boolean;
+}
 
 export interface DeterministicPassageSupportSignal {
   supported: boolean;
@@ -89,6 +110,9 @@ export interface DeterministicPassageSupportSignal {
   matchedAnswerCues: PassageAnswerCue[];
   answerCueCoverage: number;
   vectorRank: number | null;
+  claimRelationDiagnostics: ClaimRelationDiagnostics | null;
+  boundedAnchorCoverage: number;
+  boundedRelationRoleMatched: boolean;
 }
 
 function validFraction(value: unknown, field: string): number {
@@ -129,11 +153,6 @@ export function resolveDeterministicPassageSupportPolicy(
         DEFAULT_DETERMINISTIC_PASSAGE_SUPPORT_POLICY.minimumSalientOverlap,
       "minimumSalientOverlap",
     ),
-    semanticCueMaxVectorRank: validPositiveInteger(
-      input.semanticCueMaxVectorRank ??
-        DEFAULT_DETERMINISTIC_PASSAGE_SUPPORT_POLICY.semanticCueMaxVectorRank,
-      "semanticCueMaxVectorRank",
-    ),
   };
 }
 
@@ -161,14 +180,36 @@ function patternMatches(
   pattern: string,
 ): boolean {
   const prefix = pattern.endsWith("*");
-  const normalizedPattern = normalizedAnswerabilityTokens(
+  const patternTokens = normalizedAnswerabilityTokens(
     prefix ? pattern.slice(0, -1) : pattern,
-  ).join(" ");
-  if (!normalizedPattern) return false;
-  if (prefix && !normalizedPattern.includes(" ")) {
-    return tokens.some((token) => token.startsWith(normalizedPattern));
+  );
+  if (patternTokens.length === 0) return false;
+
+  if (!prefix) {
+    return normalizedText.includes(` ${patternTokens.join(" ")} `);
   }
-  return normalizedText.includes(` ${normalizedPattern} `);
+  if (patternTokens.length === 1) {
+    return tokens.some((token) => token.startsWith(patternTokens[0]!));
+  }
+
+  const fixedTokens = patternTokens.slice(0, -1);
+  const finalPrefix = patternTokens.at(-1)!;
+  for (
+    let index = 0;
+    index <= tokens.length - patternTokens.length;
+    index += 1
+  ) {
+    const fixedMatch = fixedTokens.every(
+      (token, offset) => tokens[index + offset] === token,
+    );
+    if (
+      fixedMatch &&
+      tokens[index + fixedTokens.length]?.startsWith(finalPrefix)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 const QUERY_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
@@ -189,7 +230,7 @@ const QUERY_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
   ],
   CONDITION: ["when", "cuando", "under what", "en que caso", "en que casos"],
   RATIONALE: ["why", "por que", "razon", "motivo"],
-  RULE: ["rule", "policy", "bounded", "regla", "politica"],
+  RULE: ["rule", "regla"],
   DEFINITION: ["what is", "que es", "define*", "significa*"],
   COMPARISON: [
     "compare*",
@@ -199,6 +240,9 @@ const QUERY_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "compar*",
     "frente a",
   ],
+  YES_NO: [],
+  QUANTITY: [],
+  DATE_YEAR: [],
 };
 
 const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
@@ -235,6 +279,11 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "side effect*",
     "poor fit",
     "not recommended",
+    "should not",
+    "do not use",
+    "reject*",
+    "discard*",
+    "unsuitable",
     "outweigh*",
     "evit*",
     "preven*",
@@ -242,6 +291,9 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "repet*",
     "dos veces",
     "sin efectos",
+    "rechaz*",
+    "descart*",
+    "no conviene",
   ],
   CONDITION: [
     "when",
@@ -257,6 +309,9 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "not recommended",
     "suitable only",
     "appropriate only",
+    "without",
+    "in absence",
+    "absent",
     "cuando",
     "si",
     "salvo",
@@ -264,6 +319,9 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "bajo",
     "caso",
     "umbral",
+    "sin",
+    "sin que",
+    "a falta de",
   ],
   RATIONALE: [
     "because",
@@ -274,6 +332,21 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "overhead",
     "complexity",
     "cost*",
+    "so",
+    "so that",
+    "in order to",
+    "to keep",
+    "to preserve",
+    "thereby",
+    "this keep*",
+    "this preserv*",
+    "this prevent*",
+    "this avoid*",
+    "this allow*",
+    "this ensur*",
+    "doing so",
+    "as a result",
+    "leak*",
     "porque",
     "debido",
     "razon",
@@ -281,6 +354,20 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "sobrecarga",
     "complejidad",
     "costo*",
+    "para",
+    "para que",
+    "con el fin de",
+    "de modo que",
+    "esto mantien*",
+    "esto preserv*",
+    "esto evit*",
+    "esto permit*",
+    "esto asegur*",
+    "al hacerlo",
+    "asi",
+    "de esta forma",
+    "de este modo",
+    "filtr*",
   ],
   RULE: [
     "bounded",
@@ -322,6 +409,32 @@ const PASSAGE_CUE_PATTERNS: Record<PassageAnswerCue, readonly string[]> = {
     "mejor",
     "peor",
   ],
+  YES_NO: [
+    "is",
+    "are",
+    "does",
+    "do",
+    "can",
+    "must",
+    "requires",
+    "require*",
+    "define*",
+    "determin*",
+    "es",
+    "son",
+    "puede",
+    "debe",
+    "exig*",
+    "requier*",
+    "defin*",
+    "determin*",
+    "no",
+    "not",
+    "never",
+    "nunca",
+  ],
+  QUANTITY: [],
+  DATE_YEAR: [],
 };
 
 function identifierLikeQuery(query: string): boolean {
@@ -340,15 +453,597 @@ function identifierLikeQuery(query: string): boolean {
   );
 }
 
+const QUESTION_SHAPE_TOKENS = new Set([
+  "all",
+  "are",
+  "can",
+  "como",
+  "cuanto",
+  "cuantos",
+  "cuanta",
+  "cuantas",
+  "cual",
+  "cuales",
+  "cuando",
+  "define",
+  "defines",
+  "do",
+  "does",
+  "entire",
+  "enough",
+  "every",
+  "overall",
+  "alone",
+  "es",
+  "exige",
+  "how",
+  "is",
+  "many",
+  "much",
+  "must",
+  "por",
+  "que",
+  "require",
+  "requires",
+  "should",
+  "son",
+  "toda",
+  "todas",
+  "todo",
+  "todos",
+  "what",
+  "when",
+  "which",
+  "why",
+]);
+
+function canonicalSemanticToken(token: string): string {
+  if (/^(architect|arquitect)/u.test(token)) return "architecture";
+  if (/^(pattern|patron)/u.test(token)) return "pattern";
+  if (/^(system|sistema)/u.test(token)) return "system";
+  if (/^(defin|determin)/u.test(token)) return "define";
+  if (/^(requir|exig|requier)/u.test(token)) return "require";
+  if (/^(view|vista|diagram|diagrama)/u.test(token)) return "view";
+  if (/^(mandatory|obligat|obligatori)/u.test(token)) return "require";
+  if (/^(dependenc|dependency|dependencies|dependient)/u.test(token))
+    return "dependency";
+  if (/^(polic|politic)/u.test(token)) return "policy";
+  if (/^(student|alumn|estudiant)/u.test(token)) return "student";
+  if (/^(withdraw|baja|retiro|retir)/u.test(token)) return "withdrawal";
+  if (/^(cancel|cancelar|cancelacion)/u.test(token)) return "cancel";
+  if (/^(enroll|registration|matricula|inscripcion)/u.test(token))
+    return "enrollment";
+  if (/^(universit|universidad)/u.test(token)) return "university";
+  if (/^(before|antes)/u.test(token)) return "before";
+  if (/^(deadline|limite|vencim)/u.test(token)) return "deadline";
+  if (/^(charge|payment|pago|cobro)/u.test(token)) return "payment";
+  if (/^(recurr|repeat|repet|again|otra)/u.test(token)) return "repeat";
+  if (/^(redeliver|replay|retry|reintent|reenv)/u.test(token)) return "retry";
+  if (/^(idempot|deduplic|suppress|stop|prevent|evit|deten)/u.test(token))
+    return "prevent-repeat";
+  if (
+    /^(cost|costo|coste|precio|importe|price|overhead|sobrecarga)/u.test(token)
+  )
+    return "cost";
+  if (/^(operat|operacion)/u.test(token)) return "operational";
+  if (/^(domain|dominio)/u.test(token)) return "domain";
+  if (/^(external|exterior|extern)/u.test(token)) return "external";
+  if (/^(detail|detalle)/u.test(token)) return "detail";
+  if (/^(toward|towards|hacia)/u.test(token)) return "toward";
+  if (/^(month|monthly|mensual|mes)/u.test(token)) return "month";
+  if (/^(year|ano)/u.test(token)) return "year";
+  if (/^(reason|razon|motivo|because|porque|debido)/u.test(token))
+    return "rationale";
+  if (/^(point|apunt)/u.test(token)) return "points";
+  if (/^(call|llam)/u.test(token)) return "call";
+  return token;
+}
+
+function semanticTokens(value: string): string[] {
+  return [
+    ...new Set(
+      normalizedAnswerabilityTokens(value).map((token) =>
+        canonicalSemanticToken(token),
+      ),
+    ),
+  ];
+}
+
+const YES_NO_RELATION_PREDICATES = new Set(["define", "require", "points"]);
+
+const RELATION_GRAMMAR_TOKENS = new Set([
+  "using",
+  "use",
+  "uses",
+  "used",
+  "via",
+  "through",
+  "or",
+  "either",
+  "both",
+  "usando",
+  "usar",
+  "mediante",
+  "o",
+]);
+
+const RELATION_GENERIC_SUBJECT_HEADS = new Set([
+  "model",
+  "modelo",
+  "pattern",
+  "system",
+  "framework",
+  "approach",
+  "enfoque",
+]);
+
+interface QueryRelationRoles {
+  predicates: string[];
+  subjectAnchors: string[];
+  objectAnchors: string[];
+}
+
+function orderedSemanticTokens(value: string): string[] {
+  return normalizedAnswerabilityTokens(value).map((token) =>
+    canonicalSemanticToken(token),
+  );
+}
+
+function relationAnchorEligible(token: string): boolean {
+  return (
+    token.length >= 2 &&
+    !ANSWERABILITY_STOPWORDS.has(token) &&
+    !QUESTION_SHAPE_TOKENS.has(token) &&
+    !YES_NO_RELATION_PREDICATES.has(token) &&
+    !RELATION_GRAMMAR_TOKENS.has(token)
+  );
+}
+
+function queryYesNoRelationRoles(query: string): QueryRelationRoles | null {
+  const ordered = orderedSemanticTokens(query);
+  const predicateIndex = ordered.findIndex((token) =>
+    YES_NO_RELATION_PREDICATES.has(token),
+  );
+  if (predicateIndex < 0) return null;
+
+  const predicate = ordered[predicateIndex]!;
+  const subjectAnchors = [
+    ...new Set(ordered.slice(0, predicateIndex).filter(relationAnchorEligible)),
+  ];
+  const objectAnchors = [
+    ...new Set(
+      ordered.slice(predicateIndex + 1).filter(relationAnchorEligible),
+    ),
+  ];
+
+  if (subjectAnchors.length === 0 || objectAnchors.length === 0) return null;
+  return {
+    predicates: [predicate],
+    subjectAnchors,
+    objectAnchors,
+  };
+}
+
+function relationRolesMatch(
+  window: string,
+  relation: QueryRelationRoles,
+): boolean {
+  const windowTokens = new Set(semanticTokens(window));
+  return (
+    relation.predicates.some((token) => windowTokens.has(token)) &&
+    relation.subjectAnchors.some((token) => windowTokens.has(token)) &&
+    relation.objectAnchors.some((token) => windowTokens.has(token))
+  );
+}
+
+function isSupportEligibleClaim(hit: SearchHit): boolean {
+  return (
+    hit.lifecycle === "ACTIVE" &&
+    (hit.trust === "MACHINE_SUPPORTED" ||
+      hit.trust === "HUMAN_REVIEWED" ||
+      hit.trust === "ATTESTED") &&
+    hit.type.trim().toLocaleLowerCase("en-US") === "claim"
+  );
+}
+
+function globalRelationScopePresent(value: string): boolean {
+  const normalized = normalizedMatchText(value).trim();
+  return /\b(?:overall|global|globally|entire|system wide|across the system|across system|globalmente|en todo el sistema|de todo el sistema)\b/u.test(
+    normalized,
+  );
+}
+
+function atomicClaimRelationDiagnostics(
+  hit: SearchHit,
+  excerpt: string,
+  query: string,
+): ClaimRelationDiagnostics {
+  const eligibleClaim = isSupportEligibleClaim(hit);
+  const relation = queryYesNoRelationRoles(query);
+  const queryAnchors = queryPredicateAnchors(query, ["YES_NO"]);
+  const excerptTokens = new Set(semanticTokens(excerpt));
+  const claimSubjectAnchors = relation
+    ? (() => {
+        const specific = relation.subjectAnchors.filter(
+          (token) => !RELATION_GENERIC_SUBJECT_HEADS.has(token),
+        );
+        return specific.length > 0 ? specific : relation.subjectAnchors;
+      })()
+    : [];
+  const predicateMatched =
+    relation?.predicates.some((token) => excerptTokens.has(token)) ?? false;
+  const subjectOverlap = claimSubjectAnchors.filter((token) =>
+    excerptTokens.has(token),
+  ).length;
+  const objectOverlap =
+    relation?.objectAnchors.filter((token) => excerptTokens.has(token))
+      .length ?? 0;
+  const anchorOverlap = queryAnchors.filter((token) =>
+    excerptTokens.has(token),
+  ).length;
+  const queryGlobalScope = globalRelationScopePresent(query);
+  const excerptGlobalScope = globalRelationScopePresent(excerpt);
+  const minimumSubjectOverlap =
+    claimSubjectAnchors.length > 0
+      ? Math.min(2, claimSubjectAnchors.length)
+      : 0;
+  const subjectMatched =
+    relation !== null && subjectOverlap >= minimumSubjectOverlap;
+  const objectOrScopeMatched =
+    relation !== null &&
+    (objectOverlap > 0 || (queryGlobalScope && excerptGlobalScope));
+  const supported =
+    eligibleClaim &&
+    Boolean(excerpt.trim()) &&
+    relation !== null &&
+    predicateMatched &&
+    subjectMatched &&
+    objectOrScopeMatched;
+
+  return {
+    eligibleClaim,
+    relationExtracted: relation !== null,
+    predicateMatched,
+    subjectAnchorCount: claimSubjectAnchors.length,
+    subjectOverlap,
+    subjectMatched,
+    objectAnchorCount: relation?.objectAnchors.length ?? 0,
+    objectOverlap,
+    queryGlobalScope,
+    excerptGlobalScope,
+    objectOrScopeMatched,
+    anchorCount: queryAnchors.length,
+    anchorOverlap,
+    supported,
+  };
+}
+
+function queryExplicitlyRequestsQuantity(query: string): boolean {
+  const normalized = normalizedMatchText(query).trim();
+  return (
+    /\b(?:how many|how much|cuant[oa]s?)\b/u.test(normalized) ||
+    /\bwhat\s+(?:does|do|did)\b.{0,80}\bcost\b/u.test(normalized) ||
+    /\b(?:what|which)\s+(?:is|are|was|were)\s+(?:the|its|their)?\s*(?:(?:monthly|annual|yearly|daily|weekly|operating|operational|infrastructure|estimated|expected|total)\s+){0,4}(?:cost|price|amount)\b/u.test(
+      normalized,
+    ) ||
+    /\bcuanto\s+cuesta\b/u.test(normalized) ||
+    /\b(?:cual|cuanto|cuanta)\s+(?:es|son|fue|eran)?\s*(?:el|la|los|las)?\s*(?:(?:mensual|anual|diario|semanal|operativo|operacional|infraestructura|estimado|esperado|total)\s+){0,4}(?:costo|coste|precio|importe|monto)\b/u.test(
+      normalized,
+    )
+  );
+}
+
+function queryExplicitlyRequestsRule(query: string): boolean {
+  const normalized = normalizedMatchText(query).trim();
+  return (
+    /\b(?:what|which)\s+(?:rule|policy)\b/u.test(normalized) ||
+    /\b(?:under|according to)\s+(?:what|which)\s+(?:rule|policy)\b/u.test(
+      normalized,
+    ) ||
+    /\b(?:que|cual)\s+(?:regla|politica)\b/u.test(normalized)
+  );
+}
+
 function queryAnswerCues(query: string): PassageAnswerCue[] {
   if (identifierLikeQuery(query)) return [];
   const normalized = normalizedMatchText(query);
   const tokens = normalizedAnswerabilityTokens(query);
-  return (Object.keys(QUERY_CUE_PATTERNS) as PassageAnswerCue[]).filter((cue) =>
-    QUERY_CUE_PATTERNS[cue].some((pattern) =>
-      patternMatches(normalized, tokens, pattern),
-    ),
+  const cues = new Set<PassageAnswerCue>();
+
+  const quantity = queryExplicitlyRequestsQuantity(query);
+  const dateYear =
+    /\b(which year|what year|in what year|que ano|en que ano|which date|what date|que fecha|en que fecha)\b/u.test(
+      normalized.trim(),
+    );
+  const yesNo =
+    /^(?:\s*[¿?]?\s*)?(?:do|does|did|is|are|can|could|should|must|will|would|es|son|puede|pueden|debe|deben|define|definen|determina|determinan|exige|exigen|requiere|requieren)\b/u.test(
+      normalized.trim(),
+    );
+
+  if (quantity) cues.add("QUANTITY");
+  if (dateYear) cues.add("DATE_YEAR");
+  if (yesNo) cues.add("YES_NO");
+  if (queryExplicitlyRequestsRule(query)) cues.add("RULE");
+
+  for (const cue of Object.keys(QUERY_CUE_PATTERNS) as PassageAnswerCue[]) {
+    if (
+      cue === "YES_NO" ||
+      cue === "QUANTITY" ||
+      cue === "DATE_YEAR" ||
+      cue === "RULE"
+    )
+      continue;
+    if (cue === "PROCEDURE" && quantity) continue;
+    // "Does X define Y?" asks for a yes/no assertion about a relation; it is
+    // not a request for a dictionary-style definition of Y.
+    if (cue === "DEFINITION" && (yesNo || quantity || dateYear)) continue;
+    if (
+      QUERY_CUE_PATTERNS[cue].some((pattern) =>
+        patternMatches(normalized, tokens, pattern),
+      )
+    ) {
+      cues.add(cue);
+    }
+  }
+
+  // "How can X be prevented/stopped?" asks for the prevention mechanism.
+  // PROCEDURE is a generic interrogative cue here, not a second independent
+  // predicate that the passage must prove.
+  if (cues.has("PREVENTION")) cues.delete("PROCEDURE");
+
+  return [...cues];
+}
+
+function explicitlyLinkedContinuation(sentence: string): boolean {
+  const normalized = normalizedMatchText(sentence).trim();
+  return /^(?:without (?:them|those|these|it)|in (?:their|its) absence|sin (?:ellos|ellas|estos|estas|eso|esos|esas)|a falta de (?:ellos|ellas|estos|estas|eso)|because of (?:this|that)|therefore|thus|consequently|this (?:keeps?|preserves?|prevents?|avoids?|allows?|ensures?)|doing so|as a result|por (?:ello|eso)|de modo que|esto (?:mantiene|preserva|evita|permite|asegura)|al hacerlo|asi|de esta forma|de este modo)\b/u.test(
+    normalized,
   );
+}
+
+function passageWindows(passage: string, title?: string): string[] {
+  // Evidence for an answer predicate must stay local. A unit title may scope a
+  // sentence, and an adjacent sentence may be joined only when it explicitly
+  // refers back to its predecessor. This captures bounded structures such as
+  // "Reject X" + "without those drivers..." without concatenating unrelated
+  // sibling sentences or the whole document.
+  const sentences = passage
+    .split(/(?<=[.!?;])\s+|\n+/u)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((sentence) => sentence.slice(0, 900).trim());
+  const boundedSentences =
+    sentences.length > 0 ? sentences : [passage.slice(0, 900).trim()];
+  const boundedTitle = title?.trim().slice(0, 240);
+  const windows = [...boundedSentences];
+
+  if (boundedTitle) {
+    for (const sentence of boundedSentences) {
+      windows.push(`${boundedTitle}: ${sentence}`.slice(0, 1200));
+    }
+  }
+
+  for (let index = 1; index < boundedSentences.length; index += 1) {
+    const current = boundedSentences[index]!;
+    if (!explicitlyLinkedContinuation(current)) continue;
+    const linked = `${boundedSentences[index - 1]} ${current}`.slice(0, 1800);
+    windows.push(linked);
+    if (boundedTitle) {
+      windows.push(`${boundedTitle}: ${linked}`.slice(0, 2040));
+    }
+  }
+
+  return [...new Set(windows.filter(Boolean))];
+}
+
+const CUE_TOKENS_THAT_REMAIN_PREDICATE_ANCHORS = new Set([
+  "duplicate",
+  "repeat",
+]);
+
+const PREDICATE_GRAMMAR_TOKENS = new Set([
+  "using",
+  "use",
+  "or",
+  "either",
+  "both",
+  "toward",
+  "rather",
+  "than",
+  "instead",
+  "via",
+  "through",
+  "usando",
+  "usar",
+  "o",
+  "hacia",
+  "mediante",
+]);
+
+function queryPredicateAnchors(
+  query: string,
+  requirements: readonly PassageAnswerCue[],
+): string[] {
+  const requirementWords = new Set<string>();
+  for (const requirement of requirements) {
+    for (const pattern of QUERY_CUE_PATTERNS[requirement] ?? []) {
+      for (const token of normalizedAnswerabilityTokens(
+        pattern.replace("*", ""),
+      )) {
+        const canonical = canonicalSemanticToken(token);
+        if (CUE_TOKENS_THAT_REMAIN_PREDICATE_ANCHORS.has(canonical)) continue;
+        requirementWords.add(canonical);
+      }
+    }
+  }
+  return [
+    ...new Set(
+      semanticTokens(query).filter(
+        (token) =>
+          token.length >= 2 &&
+          !ANSWERABILITY_STOPWORDS.has(token) &&
+          !QUESTION_SHAPE_TOKENS.has(token) &&
+          !PREDICATE_GRAMMAR_TOKENS.has(token) &&
+          !requirementWords.has(token),
+      ),
+    ),
+  ];
+}
+
+function quantitativeEvidenceMatches(window: string, query: string): boolean {
+  const hasNumber = /(?:^|\s)(?:[$€£S\/]\s*)?\d+(?:[.,]\d+)?(?:\s*%|\b)/u.test(
+    window,
+  );
+  if (!hasNumber) return false;
+  const normalizedQuery = normalizedMatchText(query);
+  const normalizedWindow = normalizedMatchText(window);
+  const asksMonthly = /\b(month|monthly|per month|mensual|por mes|mes)\b/u.test(
+    normalizedQuery,
+  );
+  if (
+    asksMonthly &&
+    !/\b(month|monthly|per month|mensual|por mes|mes)\b/u.test(normalizedWindow)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function dateYearEvidenceMatches(window: string, query: string): boolean {
+  const normalizedQuery = normalizedMatchText(query);
+  const asksYear = /\b(year|ano)\b/u.test(normalizedQuery);
+  if (asksYear) return /\b(?:19|20)\d{2}\b/u.test(window);
+  return (
+    /\b(?:19|20)\d{2}\b/u.test(window) ||
+    /\b\d{1,2}[\/-]\d{1,2}[\/-](?:\d{2}|\d{4})\b/u.test(window)
+  );
+}
+
+function answerRequirementsMatch(
+  window: string,
+  query: string,
+  required: readonly PassageAnswerCue[],
+): {
+  matched: PassageAnswerCue[];
+  allMatched: boolean;
+  relationRoleMatched: boolean;
+} {
+  const genericRequired = required.filter(
+    (cue) => cue !== "YES_NO" && cue !== "QUANTITY" && cue !== "DATE_YEAR",
+  );
+  const genericMatched = passageAnswerCues(window, genericRequired);
+  const matched = new Set<PassageAnswerCue>(genericMatched);
+
+  if (required.includes("DEFINITION") && !matched.has("DEFINITION")) {
+    const normalizedWindow = normalizedMatchText(window);
+    const windowTokens = new Set(semanticTokens(window));
+    const definitionAnchors = queryPredicateAnchors(query, ["DEFINITION"]);
+    const overlap = definitionAnchors.filter((token) =>
+      windowTokens.has(token),
+    );
+    const copularRelation =
+      /\b(is|are|means|defined|refers|consists|es|son|significa|define|consiste)\b/u.test(
+        normalizedWindow.trim(),
+      );
+    if (
+      copularRelation &&
+      overlap.length >= Math.min(2, definitionAnchors.length)
+    ) {
+      matched.add("DEFINITION");
+    }
+  }
+
+  if (
+    required.includes("QUANTITY") &&
+    quantitativeEvidenceMatches(window, query)
+  ) {
+    matched.add("QUANTITY");
+  }
+  if (
+    required.includes("DATE_YEAR") &&
+    dateYearEvidenceMatches(window, query)
+  ) {
+    matched.add("DATE_YEAR");
+  }
+  let relationRoleMatched = false;
+  if (required.includes("YES_NO")) {
+    const semanticWindow = new Set(semanticTokens(window));
+    const semanticQuery = semanticTokens(query);
+    const relation = queryYesNoRelationRoles(query);
+    if (relation) {
+      relationRoleMatched = relationRolesMatch(window, relation);
+      if (relationRoleMatched) matched.add("YES_NO");
+    } else {
+      const relationTokens = semanticQuery.filter((token) =>
+        ["define", "require", "dependency", "points"].includes(token),
+      );
+      const relationMatched =
+        relationTokens.length === 0 ||
+        relationTokens.some((token) => semanticWindow.has(token));
+      if (relationMatched) matched.add("YES_NO");
+    }
+  }
+
+  return {
+    matched: [...matched],
+    allMatched: required.every((cue) => matched.has(cue)),
+    relationRoleMatched,
+  };
+}
+
+function boundedPredicateSupport(
+  passage: string,
+  query: string,
+  required: readonly PassageAnswerCue[],
+  title?: string,
+): {
+  supported: boolean;
+  matchedAnswerCues: PassageAnswerCue[];
+  anchorCoverage: number;
+  semanticAnchorOverlap: string[];
+  relationRoleMatched: boolean;
+} {
+  const anchors = queryPredicateAnchors(query, required);
+  const requiredAnchorOverlap = Math.min(2, Math.max(1, anchors.length));
+  let best = {
+    supported: false,
+    matchedAnswerCues: [] as PassageAnswerCue[],
+    anchorCoverage: 0,
+    semanticAnchorOverlap: [] as string[],
+    relationRoleMatched: false,
+  };
+
+  for (const window of passageWindows(passage, title)) {
+    const windowTokens = new Set(semanticTokens(window));
+    const overlap = anchors.filter((token) => windowTokens.has(token));
+    const anchorCoverage =
+      anchors.length === 0 ? 1 : overlap.length / anchors.length;
+    const answer = answerRequirementsMatch(window, query, required);
+    const boundedDefinitionRelation =
+      required.includes("DEFINITION") &&
+      answer.matched.includes("DEFINITION") &&
+      overlap.length >= requiredAnchorOverlap;
+    const enoughAnchors =
+      anchors.length === 0 ||
+      (overlap.length >= requiredAnchorOverlap &&
+        (anchorCoverage >= 0.4 || boundedDefinitionRelation));
+    const supported = answer.allMatched && enoughAnchors;
+    if (
+      supported ||
+      anchorCoverage > best.anchorCoverage ||
+      answer.matched.length > best.matchedAnswerCues.length
+    ) {
+      best = {
+        supported,
+        matchedAnswerCues: answer.matched,
+        anchorCoverage,
+        semanticAnchorOverlap: overlap,
+        relationRoleMatched: answer.relationRoleMatched,
+      };
+    }
+    if (supported) break;
+  }
+  return best;
 }
 
 function passageAnswerCues(
@@ -384,15 +1079,16 @@ export function deterministicProjectionRetainsSupport(
   if (match < 0) return false;
 
   const requiredAnswerCues = queryAnswerCues(query);
-  if (requiredAnswerCues.length === 0) return true;
+  if (requiredAnswerCues.length === 0 && identifierLikeQuery(query))
+    return true;
 
   const passageWithoutQueryEcho =
     passage.slice(0, match) + " " + passage.slice(match + needle.length);
-  const matchedAnswerCues = passageAnswerCues(
+  return boundedPredicateSupport(
     passageWithoutQueryEcho,
+    query,
     requiredAnswerCues,
-  );
-  return matchedAnswerCues.length === requiredAnswerCues.length;
+  ).supported;
 }
 
 function minVectorRank(hit: SearchHit): number | null {
@@ -432,7 +1128,28 @@ export function verifyDeterministicPassageSupport(
       ? 0
       : salientOverlapTokens.length / salientQueryTokens.length;
   const requiredAnswerCues = queryAnswerCues(query);
-  const matchedAnswerCues = passageAnswerCues(passage, requiredAnswerCues);
+  const boundedSupport = boundedPredicateSupport(
+    passage,
+    query,
+    requiredAnswerCues,
+    hit.title?.trim() || hit.document.title?.trim() || undefined,
+  );
+  const claimRelationDiagnostics = requiredAnswerCues.includes("YES_NO")
+    ? atomicClaimRelationDiagnostics(hit, excerpt, query)
+    : null;
+  const claimRelationSupport =
+    claimRelationDiagnostics?.supported === true &&
+    requiredAnswerCues
+      .filter((cue) => cue !== "YES_NO")
+      .every((cue) => boundedSupport.matchedAnswerCues.includes(cue));
+  const matchedAnswerCues = claimRelationSupport
+    ? [
+        ...new Set<PassageAnswerCue>([
+          ...boundedSupport.matchedAnswerCues,
+          "YES_NO",
+        ]),
+      ]
+    : boundedSupport.matchedAnswerCues;
   const answerCueCoverage =
     requiredAnswerCues.length === 0
       ? 1
@@ -442,20 +1159,23 @@ export function verifyDeterministicPassageSupport(
     policy.minimumSalientOverlap,
     Math.max(1, salientQueryTokens.length),
   );
-  const requiredAnswerCuesSatisfied =
-    requiredAnswerCues.length === 0 || answerCueCoverage === 1;
+  const semanticTextSupport =
+    requiredAnswerCues.length === 0 &&
+    boundedSupport.supported &&
+    boundedSupport.semanticAnchorOverlap.length >=
+      Math.min(2, Math.max(1, queryPredicateAnchors(query, []).length));
   const strongTextSupport =
     passage.length > 0 &&
-    salientQueryTokens.length > 0 &&
-    salientOverlapTokens.length >= requiredOverlap &&
-    salientCoverage >= policy.minimumSalientCoverage &&
-    requiredAnswerCuesSatisfied;
+    boundedSupport.supported &&
+    ((salientQueryTokens.length > 0 &&
+      salientOverlapTokens.length >= requiredOverlap &&
+      salientCoverage >= policy.minimumSalientCoverage) ||
+      semanticTextSupport);
   const cueSemanticSupport =
     passage.length > 0 &&
     requiredAnswerCues.length > 0 &&
-    requiredAnswerCuesSatisfied &&
-    vectorRank !== null &&
-    vectorRank <= policy.semanticCueMaxVectorRank;
+    boundedSupport.supported &&
+    boundedSupport.semanticAnchorOverlap.length > 0;
 
   let reason: PassageSupportReason;
   if (!passage) {
@@ -464,6 +1184,8 @@ export function verifyDeterministicPassageSupport(
     reason = "PASSAGE_TEXT_SUPPORT";
   } else if (cueSemanticSupport) {
     reason = "PASSAGE_CUE_SUPPORT";
+  } else if (claimRelationSupport) {
+    reason = "CLAIM_RELATION_SUPPORT";
   } else if (
     requiredAnswerCues.length > 0 &&
     matchedAnswerCues.length < requiredAnswerCues.length
@@ -475,7 +1197,9 @@ export function verifyDeterministicPassageSupport(
 
   return {
     supported:
-      reason === "PASSAGE_TEXT_SUPPORT" || reason === "PASSAGE_CUE_SUPPORT",
+      reason === "PASSAGE_TEXT_SUPPORT" ||
+      reason === "PASSAGE_CUE_SUPPORT" ||
+      reason === "CLAIM_RELATION_SUPPORT",
     reason,
     passageSource,
     passageCharacters: passage.length,
@@ -492,5 +1216,8 @@ export function verifyDeterministicPassageSupport(
     matchedAnswerCues,
     answerCueCoverage,
     vectorRank,
+    claimRelationDiagnostics,
+    boundedAnchorCoverage: boundedSupport.anchorCoverage,
+    boundedRelationRoleMatched: boundedSupport.relationRoleMatched,
   };
 }

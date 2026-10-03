@@ -19,6 +19,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
 import pg from "pg";
+import { assertSyntheticFixtureDatabaseSafety } from "../packages/postgres/src/database-safety.js";
 import {
   buildContextPacket,
   type PacketCandidate,
@@ -175,8 +176,12 @@ type ScaleReport = {
   failure?: string;
 };
 
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl) throw new Error("DATABASE_URL is required");
+assertSyntheticFixtureDatabaseSafety(databaseUrl);
+
 const client = new pg.Client({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: databaseUrl,
   statement_timeout: 180_000,
 });
 let connectionError: string | undefined;

@@ -37,7 +37,7 @@ beforeAll(async () => {
     [actorId, `${actorId}@example.test`],
   );
   await db.pool.query(
-    "insert into memberships(user_id,space_id,role,path_prefix) values($1,$2,'VIEWER',null)",
+    "insert into memberships(user_id,space_id,role,path_prefix) values($1,$2,'CONTRIBUTOR',null)",
     [actorId, spaceId],
   );
   await grantVaultMembership(db, {
@@ -45,7 +45,7 @@ beforeAll(async () => {
     vaultId,
     role: "VIEWER",
     pathPrefix: null,
-    permissions: ["knowledge:read", "source:read"],
+    permissions: ["knowledge:read", "knowledge:propose", "source:read"],
   });
   await db.pool.query(
     `insert into api_tokens(user_id,token_hash,label,scopes)
@@ -58,7 +58,7 @@ beforeAll(async () => {
           {
             spaceId,
             pathPrefix: null,
-            permissions: ["knowledge:read", "source:read"],
+            permissions: ["knowledge:read", "knowledge:propose", "source:read"],
           },
         ],
       }),

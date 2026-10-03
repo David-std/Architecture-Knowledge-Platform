@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   Postgres,
+  appendProviderSourceConnectorEvent,
   appendSourceConnectorEvent,
   applyNextSourceConnectorEvent,
   registerSourceConnector,
@@ -333,6 +334,178 @@ describeDb("source connector no-gap inbox", () => {
       await db.pool.query(
         "delete from source_connector_events where connector_id=$1 and event_id=$2",
         [connectorId, input.eventId],
+      );
+    }
+  });
+
+  it("assigns provider webhook sequence under lock and deduplicates retries", async () => {
+    const provider = await registerSourceConnector(db, {
+      spaceId,
+      vaultId,
+      connectorKey: "provider-webhook-test",
+      sourceSystem: "linear",
+      publicKeyPem: null,
+      connectorMode: "PROVIDER_PULL",
+      credentialRef: "AKP_TEST_PROVIDER_TOKEN",
+      providerConfig: {
+        webhookSecretRef: "AKP_TEST_PROVIDER_WEBHOOK_SECRET",
+      },
+      descriptor: {
+        schemaVersion: 1,
+        sourceSystem: "linear",
+        checkpointModel: "OPAQUE_CURSOR",
+        contentTrust: "UNTRUSTED_EXTERNAL",
+        replication: "REFERENCE",
+      },
+    });
+    const providerId = String(provider.id);
+    const input = {
+      connectorId: providerId,
+      eventId: "provider-delivery-1",
+      occurredAt: "2026-09-28T22:00:00.000Z",
+      operation: "UPSERT" as const,
+      objectId: "lin-1",
+      objectType: "ISSUE",
+      sourceVersion: "2026-09-28T22:00:00.000Z",
+      title: "Provider issue",
+      content: null,
+      contentType: null,
+      permissionFidelity: "SOURCE_ACL_MAPPED" as const,
+      permissionUncertain: true,
+      aclFingerprint: "provider-acl",
+      metadata: { provider: "linear", providerVerified: true },
+      payloadHash: hash("provider-delivery-1"),
+    };
+
+    const receipts = await Promise.all([
+      appendProviderSourceConnectorEvent(db, input),
+      appendProviderSourceConnectorEvent(db, input),
+    ]);
+    expect(receipts.map((receipt) => receipt.duplicate).sort()).toEqual([
+      false,
+      true,
+    ]);
+    expect(new Set(receipts.map((receipt) => receipt.sequence)).size).toBe(1);
+    expect(receipts[0]?.sequence).toBe(1);
+
+    const second = await appendProviderSourceConnectorEvent(db, {
+      ...input,
+      eventId: "provider-delivery-2",
+      objectId: "lin-2",
+      payloadHash: hash("provider-delivery-2"),
+    });
+    expect(second).toMatchObject({ duplicate: false, sequence: 2 });
+
+    await db.pool.query(
+      "delete from source_connector_registrations where id=$1",
+      [providerId],
+    );
+  });
+
+  it("does not let delayed provider observations roll back a newer projection", async () => {
+    const provider = await registerSourceConnector(db, {
+      spaceId,
+      vaultId,
+      connectorKey: "provider-version-order-test",
+      sourceSystem: "linear",
+      publicKeyPem: null,
+      connectorMode: "PROVIDER_PULL",
+      credentialRef: "AKP_TEST_PROVIDER_TOKEN",
+      providerConfig: {},
+      descriptor: {
+        schemaVersion: 1,
+        sourceSystem: "linear",
+        checkpointModel: "OPAQUE_CURSOR",
+        contentTrust: "UNTRUSTED_EXTERNAL",
+        replication: "REFERENCE",
+      },
+    });
+    const providerId = String(provider.id);
+    const base = {
+      connectorId: providerId,
+      objectId: "lin-versioned",
+      objectType: "ISSUE",
+      content: null,
+      contentType: null,
+      permissionFidelity: "SOURCE_ACL_MAPPED" as const,
+      permissionUncertain: true,
+      aclFingerprint: "provider-acl",
+      metadata: { provider: "linear", providerVerified: true },
+    };
+
+    try {
+      await appendProviderSourceConnectorEvent(db, {
+        ...base,
+        eventId: "provider-newer",
+        occurredAt: "2026-09-28T22:00:00.000Z",
+        operation: "UPSERT",
+        sourceVersion: "2026-09-28T22:00:00.000Z",
+        title: "Newest provider title",
+        payloadHash: hash("provider-newer"),
+      });
+      expect(
+        await applyNextSourceConnectorEvent(db, { connectorId: providerId }),
+      ).toMatchObject({ eventId: "provider-newer", sequence: 1 });
+
+      await appendProviderSourceConnectorEvent(db, {
+        ...base,
+        eventId: "provider-delayed-update",
+        occurredAt: "2026-09-28T22:05:00.000Z",
+        operation: "UPSERT",
+        sourceVersion: "2026-09-28T21:00:00.000Z",
+        title: "Stale provider title",
+        payloadHash: hash("provider-delayed-update"),
+      });
+      expect(
+        await applyNextSourceConnectorEvent(db, { connectorId: providerId }),
+      ).toMatchObject({ eventId: "provider-delayed-update", sequence: 2 });
+
+      await appendProviderSourceConnectorEvent(db, {
+        ...base,
+        eventId: "provider-delayed-delete",
+        occurredAt: "2026-09-28T22:10:00.000Z",
+        operation: "DELETE",
+        sourceVersion: "2026-09-28T20:00:00.000Z",
+        title: null,
+        payloadHash: hash("provider-delayed-delete"),
+      });
+      expect(
+        await applyNextSourceConnectorEvent(db, { connectorId: providerId }),
+      ).toMatchObject({
+        eventId: "provider-delayed-delete",
+        operation: "DELETE",
+        sequence: 3,
+      });
+
+      const projection = await db.pool.query<{
+        source_version: string;
+        lifecycle: string;
+        title: string | null;
+        source_sequence: string | number;
+      }>(
+        `select source_version,lifecycle,title,source_sequence
+           from source_connector_objects
+          where connector_id=$1 and object_id=$2`,
+        [providerId, base.objectId],
+      );
+      expect(projection.rows[0]).toMatchObject({
+        source_version: "2026-09-28T22:00:00.000Z",
+        lifecycle: "ACTIVE",
+        title: "Newest provider title",
+        source_sequence: "1",
+      });
+
+      const checkpoint = await db.pool.query<{
+        applied_sequence: string | number;
+      }>(
+        "select applied_sequence from source_connector_checkpoints where connector_id=$1",
+        [providerId],
+      );
+      expect(Number(checkpoint.rows[0]?.applied_sequence)).toBe(3);
+    } finally {
+      await db.pool.query(
+        "delete from source_connector_registrations where id=$1",
+        [providerId],
       );
     }
   });

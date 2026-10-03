@@ -77,6 +77,16 @@ Deletion from a source invalidates or tombstones the external projection accordi
 
 An issue connector declares `HYBRID_CACHE`, `SOURCE_ACL_MAPPED`, `UPSERT`, eventual deletion and bounded write-back. AKP can use the cached issue for authorized workspace orientation, revalidate it when online and surface staleness when the provider is unavailable. The issue remains owned by the external tracker.
 
+## Jira and Linear read-only adapters
+
+AKP includes provider adapters for Jira Cloud issue references and Linear issue references. The deployed provider path is authenticated, cursor-based polling. Both adapters are read-only and declare `REFERENCE` replication, external residency, mapped/uncertain ACL fidelity, no write-back and `NONE` provider-pull deletion propagation. Authenticated `fetchById` is used only to revalidate visibility; a missing point read is treated as ambiguous rather than as proof of deletion. They preserve provider identity and revision timestamps and publish explicit provider health. Provider-authenticated reads mark their projection metadata as `providerVerified: true`; this means AKP observed the object through the authenticated adapter, not that the ticket content is approved knowledge.
+
+The agent bridge is intentionally weaker. `akp_upsert_external_reference` accepts the identity, URL, revision and bounded metadata an agent obtained through another provider MCP, but the API forces authority to `REFERENCE` and stamps `providerVerified: false`. A relayed copy cannot self-promote to `SYSTEM_OF_RECORD`.
+
+Linear provider webhooks are routed through a raw-body verification path into the same idempotent provider inbox. AKP validates the documented `Linear-Signature` HMAC, delivery identity and timestamp freshness before accepting an event. Native Jira Cloud provider webhooks are deliberately not advertised by direct provider registration: the standard Jira webhook documentation exposes a retry/deduplication identifier but does not define a Linear-equivalent shared-secret HMAC for this integration mode. Jira therefore remains authenticated polling-only unless a deployment supplies a separately authenticated Atlassian callback mechanism. Provider-pull absence reconciliation is separate: AKP rotates a bounded set of active projections and rechecks them with authenticated `fetchById`. Because provider visibility can change independently of object lifecycle, a missing point read degrades provider health and blocks checkpoint advancement instead of emitting a synthetic `DELETE`. Explicit provider deletion events, when available through a trusted connector path, continue to use the generic sequenced tombstone mechanism.
+
+CI exercises provider reads, pagination, provenance and the verification primitives with simulated responses. A claim of live Jira or Linear integration additionally requires a sandbox/account run with deployment credentials; simulated-provider coverage is not treated as that evidence.
+
 ## Limitations
 
 The generic connector contract does not imply a first-party adapter for every vendor. Permission fidelity and deletion guarantees are limited by what a provider exposes.
