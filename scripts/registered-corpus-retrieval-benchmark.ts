@@ -1145,8 +1145,10 @@ async function runUnitSelectionStudy(
         (candidate.channel === "LEXICAL" || candidate.channel === "VECTOR"),
     );
     for (const candidate of observedLeafCandidates) {
+      const channel: RetrievalCandidate["channel"] =
+        candidate.channel === "LEXICAL" ? "LEXICAL" : "VECTOR";
       const common = {
-        channel: candidate.channel,
+        channel,
         rank: candidate.rank,
         ...(candidate.rawScore === null
           ? {}
