@@ -152,7 +152,7 @@ export function rerankSearchHits(
   return output;
 }
 
-export type RerankFallbackWarning =export type RerankFallbackWarning =
+export type RerankFallbackWarning =
   "RERANKER_FALLBACK:INVALID_SCORE" | "RERANKER_FALLBACK:PROVIDER_ERROR";
 
 export interface SafeRerankResult {

@@ -148,7 +148,6 @@ describe("safe search hit reranking", () => {
     expect(second.rerankTrace).toBeUndefined();
   });
 
-
   it("allows distinct atomic units from the same document to be reranked independently", () => {
     const documentId = "00000000-0000-4000-8000-000000000003";
     const first = hit(documentId, "Shared document", "General context", {
