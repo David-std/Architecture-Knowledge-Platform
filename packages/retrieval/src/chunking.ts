@@ -5,6 +5,8 @@ import { gfmTable } from "micromark-extension-gfm-table";
 import { markdownTableEvidence } from "./markdown-table-evidence.js";
 import { markdownVisibleSource } from "./markdown-visible-source.js";
 
+export const MAX_EMBEDDING_UNIT_CHARACTERS = 1_200;
+
 export type KnowledgeUnitType =
   | "DOCUMENT"
   | "SECTION"
@@ -48,6 +50,7 @@ export interface ParsedKnowledgeUnit {
     table?: number;
     row?: number;
     column?: number;
+    fragment?: number;
   };
   containerOnly: boolean;
   embeddingEligible: boolean;
@@ -315,6 +318,78 @@ function inheritedLocatorCoordinates(
   };
 }
 
+interface EmbeddingFragment {
+  body: string;
+  startOffset: number;
+  endOffset: number;
+}
+
+function safeSplitBoundary(text: string, index: number): number {
+  if (index <= 0 || index >= text.length) return index;
+  const previous = text.charCodeAt(index - 1);
+  const current = text.charCodeAt(index);
+  return previous >= 0xd800 &&
+    previous <= 0xdbff &&
+    current >= 0xdc00 &&
+    current <= 0xdfff
+    ? index - 1
+    : index;
+}
+
+function splitEmbeddingBody(
+  body: string,
+  maxCharacters = MAX_EMBEDDING_UNIT_CHARACTERS,
+): EmbeddingFragment[] {
+  if (!Number.isSafeInteger(maxCharacters) || maxCharacters < 128) {
+    throw new Error("EMBEDDING_UNIT_CHARACTER_BUDGET_INVALID");
+  }
+  if (body.length <= maxCharacters) {
+    return [{ body, startOffset: 0, endOffset: body.length }];
+  }
+
+  const fragments: EmbeddingFragment[] = [];
+  let start = 0;
+  while (start < body.length) {
+    while (start < body.length && /\s/u.test(body[start]!)) start += 1;
+    if (start >= body.length) break;
+
+    let hardEnd = safeSplitBoundary(
+      body,
+      Math.min(body.length, start + maxCharacters),
+    );
+    let end = hardEnd;
+    if (hardEnd < body.length) {
+      const minimumBoundary = Math.min(
+        hardEnd,
+        start + Math.floor(maxCharacters * 0.6),
+      );
+      const window = body.slice(minimumBoundary, hardEnd);
+      let preferred = -1;
+      for (const match of window.matchAll(/(?:\n|[.!?;:]\s)/gu)) {
+        preferred = match.index + match[0].length;
+      }
+      if (preferred > 0) {
+        end = safeSplitBoundary(body, minimumBoundary + preferred);
+      }
+    }
+
+    let trimmedEnd = end;
+    while (trimmedEnd > start && /\s/u.test(body[trimmedEnd - 1]!)) {
+      trimmedEnd -= 1;
+    }
+    if (trimmedEnd <= start) {
+      trimmedEnd = hardEnd;
+    }
+    fragments.push({
+      body: body.slice(start, trimmedEnd),
+      startOffset: start,
+      endOffset: trimmedEnd,
+    });
+    start = Math.max(end, trimmedEnd);
+  }
+  return fragments;
+}
+
 function hasIndependentText(body: string): boolean {
   const text = body.replace(/\[\[[^\]]*\]\]/gu, "");
   const tree = fromMarkdown(text);
@@ -448,6 +523,16 @@ export function parseKnowledgeUnits(
           ? undefined
           : (locatorHint?.table ?? localTableOrdinal);
       const inheritedCoordinates = inheritedLocatorCoordinates(locatorHint);
+      const baseEmbeddingEligible =
+        structuredTable === undefined &&
+        (!["PARAGRAPH", "LIST"].includes(block.structuralType) ||
+          hasIndependentText(block.body));
+      const embeddingFragments =
+        baseEmbeddingEligible &&
+        ["PARAGRAPH", "LIST", "CODE"].includes(block.structuralType)
+          ? splitEmbeddingBody(block.body)
+          : [];
+      const splitForEmbedding = embeddingFragments.length > 1;
       const unitKey = `${sectionKey}-${unitType.toLowerCase()}-${String(block.startLine).padStart(6, "0")}-${contentHash.slice(0, 10)}`;
       units.push({
         unitKey,
@@ -475,12 +560,50 @@ export function parseKnowledgeUnits(
               }
             : {}),
         },
-        containerOnly: structuredTable !== undefined,
-        embeddingEligible:
-          structuredTable === undefined &&
-          (!["PARAGRAPH", "LIST"].includes(block.structuralType) ||
-            hasIndependentText(block.body)),
+        containerOnly: structuredTable !== undefined || splitForEmbedding,
+        embeddingEligible: baseEmbeddingEligible && !splitForEmbedding,
       });
+
+      if (splitForEmbedding) {
+        for (const [fragmentIndex, fragment] of embeddingFragments.entries()) {
+          const fragmentHash = hash(fragment.body);
+          const fragmentStartLine =
+            block.startLine +
+            lineOffsetAt(block.body, fragment.startOffset);
+          const fragmentEndLine =
+            block.startLine +
+            lineOffsetAt(
+              block.body,
+              Math.max(fragment.startOffset, fragment.endOffset - 1),
+            );
+          units.push({
+            unitKey: `${unitKey}-fragment-${String(fragmentIndex + 1).padStart(4, "0")}-${fragmentHash.slice(0, 10)}`,
+            parentUnitKey: unitKey,
+            unitType,
+            headingPath: [...path],
+            body: fragment.body,
+            contentHash: fragmentHash,
+            tokenEstimate: Math.ceil(fragment.body.length / 4),
+            structuralOrder: order++,
+            locator: {
+              kind: "markdown",
+              startLine: fragmentStartLine,
+              endLine: fragmentEndLine,
+              contentHash: fragmentHash,
+              ...inheritedCoordinates,
+              fragment: fragmentIndex + 1,
+              ...(commentsByContentLine.has(block.startLine)
+                ? {
+                    sourceCommentSpans:
+                      commentsByContentLine.get(block.startLine)!,
+                  }
+                : {}),
+            },
+            containerOnly: false,
+            embeddingEligible: true,
+          });
+        }
+      }
 
       if (!structuredTable || tableOrdinal === undefined) continue;
       const tableHeader = structuredTable.header.cells

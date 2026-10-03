@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseKnowledgeUnits } from "../src/chunking.js";
+import {
+  MAX_EMBEDDING_UNIT_CHARACTERS,
+  parseKnowledgeUnits,
+} from "../src/chunking.js";
 
 describe("hierarchical chunking", () => {
   it("keeps fenced examples within their structural section", () => {
@@ -68,6 +71,37 @@ describe("hierarchical chunking", () => {
       "FIGURE",
       "EQUATION",
     ]);
+  });
+
+  it("splits oversized prose into bounded retrievable fragments", () => {
+    const decisive =
+      "The final recovery marker remains discoverable after splitting.";
+    const longBody = `${"Neutral architectural context. ".repeat(70)}${decisive}`;
+    const units = parseKnowledgeUnits(
+      "Long evidence",
+      `# Long evidence\n${longBody}`,
+    );
+    const container = units.find(
+      (unit) =>
+        unit.unitType === "PARAGRAPH" &&
+        unit.containerOnly &&
+        unit.body === longBody,
+    );
+    expect(container?.embeddingEligible).toBe(false);
+    const fragments = units.filter(
+      (unit) =>
+        unit.parentUnitKey === container?.unitKey && unit.embeddingEligible,
+    );
+    expect(fragments.length).toBeGreaterThan(1);
+    expect(
+      fragments.every(
+        (unit) => unit.body.length <= MAX_EMBEDDING_UNIT_CHARACTERS,
+      ),
+    ).toBe(true);
+    expect(fragments.some((unit) => unit.body.includes(decisive))).toBe(true);
+    expect(fragments.map((unit) => unit.locator.fragment)).toEqual(
+      fragments.map((_, index) => index + 1),
+    );
   });
 
   it("assigns stable distinct keys to repeated identical blocks", () => {

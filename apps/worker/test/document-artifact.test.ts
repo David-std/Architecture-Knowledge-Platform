@@ -266,6 +266,7 @@ describe("complete extraction material", () => {
         unit.body.includes("The recovery window is 47 minutes."),
     );
     expect(answer?.embeddingEligible).toBe(true);
+    expect(answer?.body.length).toBeLessThanOrEqual(1_200);
     expect(
       units
         .filter((unit) => !unit.containerOnly)
