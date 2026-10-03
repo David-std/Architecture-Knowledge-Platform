@@ -28,6 +28,8 @@ export interface VaultDocument {
   relativePath: string;
   absolutePath: string;
   externalId: string;
+  /** The source-declared id, when this document has one. */
+  declaredExternalId: string | null;
   title: string;
   type: string;
   lifecycle: string;
@@ -134,6 +136,20 @@ function normalizeProfile(
 const sha256 = (input: string | Buffer): string =>
   createHash("sha256").update(input).digest("hex");
 
+const IMPORT_IDENTITY_FRONTMATTER_KEY = "__akp_import_identity";
+const SOURCE_OCCURRENCE_EXTERNAL_ID_PREFIX = "SOURCE-OCCURRENCE-";
+
+interface SourceOccurrenceIdentity {
+  version: 1;
+  kind: "declared-id-path-occurrence";
+  collision: "duplicate-declared-id";
+  declaredId: string;
+  externalId: string;
+  occurrenceKey: string;
+  path: string;
+  resolution: "exact-path-only";
+}
+
 function asStrings(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String).filter(Boolean);
   if (typeof value === "string") {
@@ -192,6 +208,72 @@ function uniqueAliases(values: readonly string[]): string[] {
     aliases.push(trimmed);
   }
   return aliases;
+}
+
+function appendReferenceCandidate(
+  references: Map<string, string[]>,
+  reference: string,
+  externalId: string,
+): void {
+  const key = reference.toLocaleLowerCase("en-US");
+  const candidates = references.get(key) ?? [];
+  if (!candidates.includes(externalId)) candidates.push(externalId);
+  references.set(key, candidates);
+}
+
+function sourceOccurrenceCandidate(
+  declaredId: string,
+  relativePath: string,
+  attempt: number,
+): string {
+  const occurrenceKey = portableVaultPathKey(relativePath);
+  return `${SOURCE_OCCURRENCE_EXTERNAL_ID_PREFIX}${sha256(
+    `v1\0${declaredId}\0${occurrenceKey}\0${attempt}`,
+  )
+    .slice(0, 32)
+    .toUpperCase()}`;
+}
+
+function allocateSourceOccurrenceExternalId(
+  declaredId: string,
+  relativePath: string,
+  occupied: Set<string>,
+): string {
+  for (let attempt = 0; ; attempt += 1) {
+    const candidate = sourceOccurrenceCandidate(
+      declaredId,
+      relativePath,
+      attempt,
+    );
+    if (!occupied.has(candidate)) {
+      occupied.add(candidate);
+      return candidate;
+    }
+  }
+}
+
+function markSourceOccurrenceIdentity(
+  document: VaultDocument,
+  declaredId: string,
+  externalId: string,
+): void {
+  const occurrenceKey = portableVaultPathKey(document.relativePath);
+  const metadata: SourceOccurrenceIdentity = {
+    version: 1,
+    kind: "declared-id-path-occurrence",
+    collision: "duplicate-declared-id",
+    declaredId,
+    externalId,
+    occurrenceKey: `path:${occurrenceKey}`,
+    path: document.relativePath,
+    resolution: "exact-path-only",
+  };
+  document.externalId = externalId;
+  document.aliases = uniqueAliases([...document.aliases, declaredId]);
+  document.frontmatter = {
+    ...document.frontmatter,
+    [IMPORT_IDENTITY_FRONTMATTER_KEY]: metadata,
+  };
 }
 
 export function parseWikiLinks(body: string): string[] {
@@ -343,21 +425,36 @@ function resolveLink(
   target: string,
   byStem: Map<string, string[]>,
   byPath: Map<string, string>,
-): string | null {
+  byReference: Map<string, string[]>,
+): { externalId: string | null; ambiguous: boolean } {
   const normalized = normalizePath(target).replace(/^\/+/, "");
   const direct = byPath.get(normalized.toLowerCase());
-  if (direct) return direct;
+  if (direct) return { externalId: direct, ambiguous: false };
 
   const fromDirectory = path.posix.dirname(fromPath);
   const relativeTarget = path.posix
     .normalize(path.posix.join(fromDirectory, normalized))
     .replace(/^\.\//, "");
   const nearby = byPath.get(relativeTarget.toLowerCase());
-  if (nearby) return nearby;
+  if (nearby) return { externalId: nearby, ambiguous: false };
 
-  const candidates =
-    byStem.get(path.posix.basename(normalized).toLowerCase()) ?? [];
-  return candidates.length === 1 ? (candidates[0] ?? null) : null;
+  const referenceCandidates = [
+    ...new Set(byReference.get(normalized.toLowerCase()) ?? []),
+  ];
+  if (referenceCandidates.length === 1) {
+    return { externalId: referenceCandidates[0] ?? null, ambiguous: false };
+  }
+  if (referenceCandidates.length > 1) {
+    return { externalId: null, ambiguous: true };
+  }
+
+  const candidates = [
+    ...new Set(byStem.get(path.posix.basename(normalized).toLowerCase()) ?? []),
+  ];
+  return {
+    externalId: candidates.length === 1 ? (candidates[0] ?? null) : null,
+    ambiguous: candidates.length > 1,
+  };
 }
 
 function componentCount(
@@ -414,7 +511,6 @@ export async function inspectVault(
 
   const issues: ImportIssue[] = [];
   const documents: VaultDocument[] = [];
-  const seenIds = new Map<string, string>();
   const seenPortablePaths = new Map<string, string>();
 
   for (const relativePath of relativePaths) {
@@ -471,19 +567,6 @@ export async function inspectVault(
         message: "Operational Markdown must declare a stable frontmatter id.",
       });
     }
-    if (operational) {
-      const existing = seenIds.get(externalId);
-      if (existing) {
-        issues.push({
-          severity: "error",
-          code: "DUPLICATE_STABLE_ID",
-          path: relativePath,
-          message: `Stable id ${externalId} is already used by ${existing}.`,
-        });
-      } else {
-        seenIds.set(externalId, relativePath);
-      }
-    }
 
     const type = transferArtifact
       ? "raw-transfer-artifact"
@@ -533,6 +616,7 @@ export async function inspectVault(
       relativePath,
       absolutePath,
       externalId,
+      declaredExternalId: operational && declaredId ? declaredId : null,
       title,
       type,
       lifecycle: normalizeLifecycle(frontmatter, { archival }),
@@ -548,16 +632,65 @@ export async function inspectVault(
     });
   }
 
+  const declaredIdGroups = new Map<string, VaultDocument[]>();
+  for (const document of documents) {
+    if (!document.declaredExternalId) continue;
+    const group = declaredIdGroups.get(document.declaredExternalId) ?? [];
+    group.push(document);
+    declaredIdGroups.set(document.declaredExternalId, group);
+  }
+
+  // A declared id is the stable identity only while it is unique in this
+  // source snapshot. Once the source declares it more than once, each file
+  // receives a deterministic path occurrence key so the importer cannot
+  // overwrite one legitimate source with another. The raw id remains an
+  // alias and in projection metadata, where callers can see why the alias is
+  // ambiguous and use an exact path to select an occurrence.
+  const occupiedExternalIds = new Set(
+    documents.map((document) => document.externalId),
+  );
+  for (const [declaredId, group] of declaredIdGroups) {
+    if (group.length < 2) continue;
+    const firstPath = group[0]?.relativePath ?? "";
+    for (const document of group) {
+      const occurrenceExternalId = allocateSourceOccurrenceExternalId(
+        declaredId,
+        document.relativePath,
+        occupiedExternalIds,
+      );
+      markSourceOccurrenceIdentity(
+        document,
+        declaredId,
+        occurrenceExternalId,
+      );
+      if (document.relativePath === firstPath) continue;
+      issues.push({
+        severity: "warning",
+        code: "DUPLICATE_STABLE_ID",
+        path: document.relativePath,
+        message:
+          `Stable id ${declaredId} is declared by multiple source paths; ` +
+          `this occurrence is qualified from ${firstPath}.`,
+      });
+    }
+  }
+
   const byPath = new Map<string, string>();
   const byStem = new Map<string, string[]>();
+  const byReference = new Map<string, string[]>();
   for (const document of documents) {
     const withoutExtension = document.relativePath.replace(/\.md$/i, "");
     byPath.set(withoutExtension.toLowerCase(), document.externalId);
     const stem = path.posix.basename(withoutExtension).toLowerCase();
-    byStem.set(stem, [...(byStem.get(stem) ?? []), document.externalId]);
-    byPath.set(document.externalId.toLowerCase(), document.externalId);
-    for (const alias of document.aliases)
-      byPath.set(alias.toLowerCase(), document.externalId);
+    appendReferenceCandidate(byStem, stem, document.externalId);
+    appendReferenceCandidate(
+      byReference,
+      document.externalId,
+      document.externalId,
+    );
+    for (const alias of document.aliases) {
+      appendReferenceCandidate(byReference, alias, document.externalId);
+    }
   }
 
   const relations: VaultInspection["relations"] = [];
@@ -569,19 +702,25 @@ export async function inspectVault(
   }
   for (const document of documents) {
     for (const target of document.links) {
-      const resolved = resolveLink(
+      const resolution = resolveLink(
         document.relativePath,
         target,
         byStem,
         byPath,
+        byReference,
       );
+      const resolved = resolution.externalId;
       if (!resolved) {
         unresolvedLinks += 1;
         issues.push({
           severity: "warning",
-          code: "UNRESOLVED_LINK",
+          code: resolution.ambiguous
+            ? "AMBIGUOUS_DOCUMENT_REFERENCE"
+            : "UNRESOLVED_LINK",
           path: document.relativePath,
-          message: `Could not resolve wikilink [[${target}]].`,
+          message: resolution.ambiguous
+            ? `Wikilink [[${target}]] matches multiple source occurrences; use an exact path.`
+            : `Could not resolve wikilink [[${target}]].`,
         });
         continue;
       }
@@ -682,12 +821,14 @@ export async function inspectVault(
           .split(/[|#]/)[0]
           ?.trim();
         if (!target) continue;
-        const resolved = resolveLink(
+        const resolution = resolveLink(
           document.relativePath,
           target,
           byStem,
           byPath,
+          byReference,
         );
+        const resolved = resolution.externalId;
         if (!resolved) {
           const looksLikeKnowledgeReference =
             rawTarget.includes("[[") ||
@@ -695,7 +836,14 @@ export async function inspectVault(
             /^(?:SRC|CLM|CON|PAT|RUL|WF|REQ|QAS|BC|ADR|C4|ARC|API|EVT|TST|FIT|EVD|PRO|SKL|EVAL|AKS)-/i.test(
               target,
             );
-          if (warnWhenUnresolved && looksLikeKnowledgeReference) {
+          if (warnWhenUnresolved && resolution.ambiguous) {
+            issues.push({
+              severity: "warning",
+              code: "AMBIGUOUS_TYPED_RELATION",
+              path: document.relativePath,
+              message: `${field} target ${rawTarget} matches multiple source occurrences; use an exact path.`,
+            });
+          } else if (warnWhenUnresolved && looksLikeKnowledgeReference) {
             issues.push({
               severity: "warning",
               code: "UNRESOLVED_TYPED_RELATION",
@@ -790,7 +938,7 @@ export async function inspectVault(
         (document) =>
           document.operational &&
           !profile.rootRouterDocuments.includes(document.relativePath) &&
-          !document.externalId.startsWith("RAW-"),
+          document.declaredExternalId !== null,
       ).length,
       links: documents.reduce(
         (sum, document) => sum + document.links.length,

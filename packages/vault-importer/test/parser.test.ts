@@ -163,6 +163,167 @@ describe("title fallback and portable aliases", () => {
   });
 });
 
+describe("imported source occurrence identity", () => {
+  const sourceDocument = (body: string): string =>
+    [
+      "---",
+      "id: SRC-DUPLICATE-001",
+      "type: source-note",
+      "status: active",
+      "---",
+      body,
+    ].join("\n");
+
+  it("qualifies duplicate ids, preserves raw aliases, and abstains on ambiguous references", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akp-source-occurrence-"));
+    temporaryRoots.push(root);
+    const sources = path.join(root, "sources");
+    await mkdir(sources, { recursive: true });
+    await writeFile(
+      path.join(sources, "first.md"),
+      sourceDocument(
+        [
+          "# First source occurrence",
+          "",
+          "The first legitimate source body.",
+        ].join("\n"),
+      ),
+      "utf8",
+    );
+    await writeFile(
+      path.join(sources, "second.md"),
+      sourceDocument(
+        [
+          "# Second source occurrence",
+          "",
+          "The second legitimate source body differs.",
+        ].join("\n"),
+      ),
+      "utf8",
+    );
+    await writeFile(
+      path.join(root, "consumer.md"),
+      [
+        "---",
+        "id: CONSUMER-001",
+        "type: source-note",
+        "status: active",
+        "---",
+        "# Consumer",
+        "",
+        "The raw id [[SRC-DUPLICATE-001]] is ambiguous.",
+        "The exact path [[sources/first]] is authoritative for this link.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const inspection = await inspectVault(root);
+    const duplicates = inspection.documents.filter(
+      (document) => document.declaredExternalId === "SRC-DUPLICATE-001",
+    );
+    expect(duplicates).toHaveLength(2);
+    expect(new Set(duplicates.map((document) => document.externalId)).size).toBe(
+      2,
+    );
+    expect(
+      duplicates.every((document) =>
+        document.externalId.startsWith("SOURCE-OCCURRENCE-"),
+      ),
+    ).toBe(true);
+    expect(
+      duplicates.every((document) =>
+        document.aliases.includes("SRC-DUPLICATE-001"),
+      ),
+    ).toBe(true);
+    expect(
+      duplicates.map((document) => document.frontmatter.__akp_import_identity),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          declaredId: "SRC-DUPLICATE-001",
+          collision: "duplicate-declared-id",
+          resolution: "exact-path-only",
+          path: "sources/first.md",
+        }),
+        expect.objectContaining({
+          declaredId: "SRC-DUPLICATE-001",
+          collision: "duplicate-declared-id",
+          resolution: "exact-path-only",
+          path: "sources/second.md",
+        }),
+      ]),
+    );
+    expect(inspection.metrics.operationalDocuments).toBe(3);
+    expect(inspection.metrics.stableIds).toBe(3);
+    expect(inspection.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "DUPLICATE_STABLE_ID",
+          path: "sources/second.md",
+        }),
+        expect.objectContaining({
+          code: "AMBIGUOUS_DOCUMENT_REFERENCE",
+          path: "consumer.md",
+        }),
+      ]),
+    );
+    expect(inspection.relations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "CONSUMER-001",
+          to: duplicates.find(
+            (document) => document.relativePath === "sources/first.md",
+          )?.externalId,
+          target: "sources/first",
+        }),
+      ]),
+    );
+    expect(
+      inspection.relations.some(
+        (relation) => relation.from === "CONSUMER-001" && relation.target === "SRC-DUPLICATE-001",
+      ),
+    ).toBe(false);
+
+    const retry = await inspectVault(root);
+    expect(
+      retry.documents.map((document) => [document.relativePath, document.externalId]),
+    ).toEqual(
+      inspection.documents.map((document) => [
+        document.relativePath,
+        document.externalId,
+      ]),
+    );
+  });
+
+  it("keeps same-body duplicate locators distinct", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akp-source-occurrence-body-"));
+    temporaryRoots.push(root);
+    const body = sourceDocument(
+      ["# Repeated source", "", "The same body appears at two locators."].join(
+        "\n",
+      ),
+    );
+    await writeFile(path.join(root, "one.md"), body, "utf8");
+    await writeFile(path.join(root, "two.md"), body, "utf8");
+
+    const inspection = await inspectVault(root);
+    const duplicates = inspection.documents.filter(
+      (document) => document.declaredExternalId === "SRC-DUPLICATE-001",
+    );
+    expect(duplicates).toHaveLength(2);
+    expect(new Set(duplicates.map((document) => document.externalId)).size).toBe(
+      2,
+    );
+    expect(new Set(duplicates.map((document) => document.contentHash)).size).toBe(
+      1,
+    );
+    expect(duplicates.map((document) => document.relativePath)).toEqual([
+      "one.md",
+      "two.md",
+    ]);
+  });
+});
+
 describe("portable vault paths", () => {
   const document = (id: string): string =>
     [
