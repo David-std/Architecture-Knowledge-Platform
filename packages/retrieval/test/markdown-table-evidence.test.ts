@@ -46,9 +46,7 @@ describe("GFM table evidence source binding", () => {
       containerOnly: true,
       embeddingEligible: false,
     });
-    expect(
-      units.filter((unit) => unit.embeddingEligible),
-    ).toMatchObject([
+    expect(units.filter((unit) => unit.embeddingEligible)).toMatchObject([
       {
         unitType: "TABLE_ROW",
         body: "A\\|B | `ok`",
