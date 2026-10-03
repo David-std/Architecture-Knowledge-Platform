@@ -23,22 +23,79 @@ function requiredEnv(name) {
   return value;
 }
 
-async function githubJson(url, token) {
-  const response = await fetch(url, {
-    headers: {
-      accept: "application/vnd.github+json",
-      authorization: `Bearer ${token}`,
-      "x-github-api-version": "2022-11-28",
-    },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(
-      `GitHub API ${response.status} ${response.statusText}: ${body.slice(0, 500)}`,
-    );
+const GITHUB_API_MAX_ATTEMPTS = 5;
+const GITHUB_API_RETRY_BASE_MS = 1_000;
+
+function retryDelayMs(response, attempt) {
+  const retryAfter = Number(response?.headers?.get("retry-after"));
+  if (Number.isFinite(retryAfter) && retryAfter >= 0) {
+    return Math.min(30_000, retryAfter * 1_000);
   }
-  return response.json();
+  return Math.min(
+    30_000,
+    GITHUB_API_RETRY_BASE_MS * 2 ** Math.max(0, attempt - 1),
+  );
+}
+
+function retryableStatus(response) {
+  return (
+    response.status === 408 ||
+    response.status === 429 ||
+    response.status >= 500 ||
+    (response.status === 403 && response.headers.has("retry-after"))
+  );
+}
+
+async function githubJson(url, token) {
+  let lastError;
+  for (let attempt = 1; attempt <= GITHUB_API_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          accept: "application/vnd.github+json",
+          authorization: `Bearer ${token}`,
+          "x-github-api-version": "2022-11-28",
+        },
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (response.ok) return response.json();
+
+      const body = await response.text();
+      const error = new Error(
+        `GitHub API ${response.status} ${response.statusText}: ${body.slice(0, 500)}`,
+      );
+      if (!retryableStatus(response) || attempt === GITHUB_API_MAX_ATTEMPTS) {
+        throw error;
+      }
+      lastError = error;
+      const delayMs = retryDelayMs(response, attempt);
+      console.warn(
+        JSON.stringify({
+          status: "GITHUB_API_RETRY",
+          attempt,
+          maxAttempts: GITHUB_API_MAX_ATTEMPTS,
+          responseStatus: response.status,
+          delayMs,
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    } catch (error) {
+      lastError = error;
+      if (attempt === GITHUB_API_MAX_ATTEMPTS) throw error;
+      const delayMs = retryDelayMs(null, attempt);
+      console.warn(
+        JSON.stringify({
+          status: "GITHUB_API_RETRY",
+          attempt,
+          maxAttempts: GITHUB_API_MAX_ATTEMPTS,
+          responseStatus: null,
+          delayMs,
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError ?? new Error("GitHub API request failed");
 }
 
 const repository = requiredEnv("GITHUB_REPOSITORY");
