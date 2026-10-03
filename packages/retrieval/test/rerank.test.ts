@@ -170,8 +170,7 @@ describe("safe search hit reranking", () => {
       first.unitId,
     ]);
     expect(output.map((candidate) => candidate.rerankTrace?.preRank)).toEqual([
-      2,
-      1,
+      2, 1,
     ]);
     expect(() =>
       rerankSearchHits(
