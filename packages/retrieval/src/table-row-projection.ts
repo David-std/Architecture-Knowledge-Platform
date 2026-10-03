@@ -83,7 +83,7 @@ function captionForTable(
         unit.locator.endLine <= table.locator.startLine &&
         samePortableScope(unit, table),
     )
-    .sort((left, right) => right.structuralOrder - left.structuralOrder)[0]?.body;
+    .sort((left, right) => right.structuralOrder - left.structuralOrder)[0]\n    ?.body;
 }
 
 function rowText(
