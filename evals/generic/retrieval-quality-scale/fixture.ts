@@ -57,7 +57,7 @@ export interface ScaleCaseDefinition {
 }
 
 export interface ScaleFixtureDefinition {
-  version: "r8-quality-scale-v1";
+  version: "r8-quality-scale-v2";
   vaults: readonly {
     key: ScaleVaultKey;
     name: string;
@@ -74,7 +74,7 @@ export interface ScaleFixtureDefinition {
  * and never alter these source labels.
  */
 export const R8_QUALITY_SCALE_FIXTURE: ScaleFixtureDefinition = {
-  version: "r8-quality-scale-v1",
+  version: "r8-quality-scale-v2",
   vaults: [
     {
       key: "gold",
@@ -346,6 +346,32 @@ export const R8_QUALITY_SCALE_FIXTURE: ScaleFixtureDefinition = {
       id: "r8-noanswer-encryption",
       slice: "noanswer",
       query: "What encryption mode is mandated for this benchmark corpus?",
+      vaults: ["gold"],
+      gold: [],
+      expectNoAnswer: true,
+    },
+    {
+      id: "r8-noanswer-audit-region",
+      slice: "noanswer",
+      query:
+        "Which geographic region is mandated for storage of production audit logs?",
+      vaults: ["gold"],
+      gold: [],
+      expectNoAnswer: true,
+    },
+    {
+      id: "r8-noanswer-boundary-owner",
+      slice: "noanswer",
+      query: "Who is the named human owner of the boundary decision record?",
+      vaults: ["gold"],
+      gold: [],
+      expectNoAnswer: true,
+    },
+    {
+      id: "r8-noanswer-key-rotation",
+      slice: "noanswer",
+      query:
+        "How often must the encryption key be rotated for this benchmark corpus?",
       vaults: ["gold"],
       gold: [],
       expectNoAnswer: true,

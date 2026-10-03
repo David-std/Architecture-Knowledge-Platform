@@ -156,7 +156,7 @@ jobs:
           const report = JSON.parse(
             readFileSync("reports/ci/retrieval-quality-scale.json", "utf8"),
           );
-          if (report.schemaVersion !== "akp.retrieval-quality-scale.v1") {
+          if (report.schemaVersion !== "akp.retrieval-quality-scale.v2") {
             throw new Error(`Unexpected R8 schema: ${report.schemaVersion}`);
           }
           if (report.evidenceLevel !== "SYNTHETIC_ISOLATED_POSTGRES") {
@@ -231,6 +231,19 @@ jobs:
                 `R8 row ${row.distractorCount} must report both any-hit and required-unit recall.`,
               );
             }
+            if (
+              (row.falseAcceptance?.negativeCases ?? 0) < 4 ||
+              typeof row.falseAcceptance?.negativeFalseAcceptanceRate !== "number"
+            ) {
+              throw new Error(
+                `R8 row ${row.distractorCount} lacks sufficient explicit no-answer false-acceptance evidence.`,
+              );
+            }
+            if (typeof row.falseAcceptance?.outsideClosedGoldRate !== "number") {
+              throw new Error(
+                `R8 row ${row.distractorCount} lacks the outside-closed-gold admission diagnostic.`,
+              );
+            }
             for (const result of row.cases ?? []) {
               if ((result.goldTargets?.length ?? 0) === 0) continue;
               if (!result.goldStagePresence || !result.stageAttribution) {
@@ -286,7 +299,10 @@ jobs:
             targets: report.scope.targets,
             finalFamilies: rows.at(-1)?.distractorFamilies,
             finalRecallAt10: rows.at(-1)?.relevance?.recallAtK?.["10"],
-            finalFalseAcceptance: rows.at(-1)?.falseAcceptance?.rate,
+            finalNegativeFalseAcceptance:
+              rows.at(-1)?.falseAcceptance?.negativeFalseAcceptanceRate,
+            finalOutsideClosedGoldAdmission:
+              rows.at(-1)?.falseAcceptance?.outsideClosedGoldRate,
           }, null, 2));
           NODE
       - name: Capture R8 scale diagnostics

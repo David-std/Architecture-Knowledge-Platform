@@ -156,7 +156,7 @@ interface TargetResult {
 }
 
 interface BenchmarkReport {
-  schemaVersion: "akp.retrieval-quality-scale.v1";
+  schemaVersion: "akp.retrieval-quality-scale.v2";
   generatedAt: string;
   outcome: Outcome;
   promotionScope: "benchmark-evidence-only";
@@ -581,8 +581,7 @@ function experimentContract(
       "goldUnitAnyHitAt10",
       "mrr",
       "ndcg",
-      "falseAcceptance",
-      "ADMISSION_FALSE_POSITIVE",
+      "outsideClosedGoldAdmissionDiagnostic",
       "negativeFalseAcceptance",
       "p50QueryLatencyMs",
       "p95QueryLatencyMs",
@@ -591,9 +590,9 @@ function experimentContract(
       "storageDeltaBytes",
     ],
     expectedFailureIfWrong:
-      "Gold unit recall, MRR or nDCG declines materially, or false acceptance rises as distractorCount increases.",
+      "Gold unit recall, MRR or nDCG declines materially, or explicit no-answer false acceptance rises as distractorCount increases.",
     promotionRule:
-      "PROMOTE benchmark evidence only when the full target matrix reaches 100000, baseline and final false acceptance are at most 0.20, and no declared quality guardrail regresses beyond the configured tolerance; otherwise REJECT on a measured regression or INCONCLUSIVE when scope is incomplete.",
+      "PROMOTE benchmark evidence only when the full target matrix reaches 100000, baseline and final each contain at least four explicit no-answer cases, negative false acceptance is at most 0.20, and no declared ranking-quality guardrail regresses beyond the configured tolerance; outside-closed-gold admission remains diagnostic because the closed gold set is not complete semantic authority.",
     rollback:
       "Discard this benchmark arm/report; no runtime provider, reranker or default configuration is changed.",
   };
@@ -780,7 +779,9 @@ async function runBenchmark(
             recallAt10: baselineResult.relevance.recallAtK["10"] ?? 0,
             mrr: baselineResult.relevance.mrr,
             ndcg: baselineResult.relevance.ndcg,
-            falseAcceptanceRate: baselineResult.falseAcceptance.rate,
+            negativeCases: baselineResult.falseAcceptance.negativeCases,
+            negativeFalseAcceptanceRate:
+              baselineResult.falseAcceptance.negativeFalseAcceptanceRate,
           }
         : null,
       final: finalResult
@@ -788,7 +789,9 @@ async function runBenchmark(
             recallAt10: finalResult.relevance.recallAtK["10"] ?? 0,
             mrr: finalResult.relevance.mrr,
             ndcg: finalResult.relevance.ndcg,
-            falseAcceptanceRate: finalResult.falseAcceptance.rate,
+            negativeCases: finalResult.falseAcceptance.negativeCases,
+            negativeFalseAcceptanceRate:
+              finalResult.falseAcceptance.negativeFalseAcceptanceRate,
           }
         : null,
       contractComplete: contractValidation.complete,
@@ -801,7 +804,7 @@ async function runBenchmark(
       cleanupRemaining.units === 0 &&
       cleanupRemaining.embeddings === 0;
     return {
-      schemaVersion: "akp.retrieval-quality-scale.v1",
+      schemaVersion: "akp.retrieval-quality-scale.v2",
       generatedAt: new Date().toISOString(),
       outcome: reportOutcome,
       promotionScope: "benchmark-evidence-only",
@@ -851,7 +854,8 @@ async function runBenchmark(
         "gold-unit Recall@1/5/10/20",
         "MRR",
         "nDCG",
-        "admitted units outside the closed benchmark gold set, separated from ranking relevance",
+        "negative false acceptance on explicitly labelled no-answer cases",
+        "admitted units outside the closed benchmark gold set as a non-authoritative diagnostic",
         "p50/p95 query latency",
         "lexical projection/index write time",
         "projected update time",

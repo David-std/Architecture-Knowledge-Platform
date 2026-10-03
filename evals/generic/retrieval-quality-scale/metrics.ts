@@ -23,10 +23,14 @@ export interface FalseAcceptanceMetrics {
   cases: number;
   answerableCases: number;
   negativeCases: number;
-  falseAcceptances: number;
+  /** Diagnostic only: positive cases admitting units outside the closed gold set. */
+  outsideClosedGoldAdmissions: number;
+  /** True false acceptances on cases explicitly labelled no-answer. */
   negativeFalseAcceptances: number;
-  rate: number | null;
-  negativeRate: number | null;
+  /** Diagnostic only; closed gold is not complete semantic authority. */
+  outsideClosedGoldRate: number | null;
+  /** Promotion guardrail over explicit no-answer cases only. */
+  negativeFalseAcceptanceRate: number | null;
 }
 
 export interface ExperimentContract {
@@ -60,7 +64,8 @@ export interface QualityScaleOutcomeSnapshot {
   recallAt10: number;
   mrr: number;
   ndcg: number;
-  falseAcceptanceRate: number | null;
+  negativeCases: number;
+  negativeFalseAcceptanceRate: number | null;
 }
 
 export interface QualityScaleOutcomeInput {
@@ -70,12 +75,15 @@ export interface QualityScaleOutcomeInput {
   reducedScope: boolean;
 }
 
+const MIN_R8_NEGATIVE_CASES = 4;
+
 /**
  * Apply the R8 promotion rule to the fixed-gold baseline and 100K snapshots.
  *
- * The absolute false-acceptance ceiling is intentional: a final rate above
- * 0.20 rejects even when the increase from baseline is less than 0.05. This
- * keeps the executable gate aligned with the experiment contract.
+ * Closed-gold membership is authoritative for ranking relevance, but it is not
+ * complete semantic authority over every other active source. Therefore the
+ * executable false-acceptance gate uses only explicitly labelled no-answer
+ * cases. Outside-closed-gold admissions remain visible diagnostics.
  */
 export function classifyQualityScaleOutcome(
   input: QualityScaleOutcomeInput,
@@ -84,9 +92,11 @@ export function classifyQualityScaleOutcome(
   if (!input.baseline || !input.final) return "INCONCLUSIVE";
 
   const { baseline, final } = input;
-  const baselineFalseAcceptanceRate = baseline.falseAcceptanceRate;
-  const finalFalseAcceptanceRate = final.falseAcceptanceRate;
+  const baselineFalseAcceptanceRate = baseline.negativeFalseAcceptanceRate;
+  const finalFalseAcceptanceRate = final.negativeFalseAcceptanceRate;
   if (
+    baseline.negativeCases < MIN_R8_NEGATIVE_CASES ||
+    final.negativeCases < MIN_R8_NEGATIVE_CASES ||
     baselineFalseAcceptanceRate === null ||
     finalFalseAcceptanceRate === null
   ) {
@@ -246,17 +256,17 @@ export function scoreFalseAcceptance(
   const answerableCases = observations.filter(
     (observation) => observation.expectNoAnswer !== true,
   );
-  let falseAcceptances = 0;
+  let outsideClosedGoldAdmissions = 0;
   let negativeFalseAcceptances = 0;
   for (const observation of observations) {
     const admitted = observation.admittedUnitKeys ?? [];
     const gold = new Set(observation.goldUnitKeys);
-    const falseAcceptance =
+    const outsideClosedGold =
       observation.expectNoAnswer === true
         ? admitted.length > 0
         : admitted.some((key) => !gold.has(key));
-    if (falseAcceptance) falseAcceptances += 1;
-    if (observation.expectNoAnswer === true && falseAcceptance) {
+    if (outsideClosedGold) outsideClosedGoldAdmissions += 1;
+    if (observation.expectNoAnswer === true && outsideClosedGold) {
       negativeFalseAcceptances += 1;
     }
   }
@@ -264,11 +274,13 @@ export function scoreFalseAcceptance(
     cases: observations.length,
     answerableCases: answerableCases.length,
     negativeCases: negativeCases.length,
-    falseAcceptances,
+    outsideClosedGoldAdmissions,
     negativeFalseAcceptances,
-    rate:
-      observations.length === 0 ? null : falseAcceptances / observations.length,
-    negativeRate:
+    outsideClosedGoldRate:
+      observations.length === 0
+        ? null
+        : outsideClosedGoldAdmissions / observations.length,
+    negativeFalseAcceptanceRate:
       negativeCases.length === 0
         ? null
         : negativeFalseAcceptances / negativeCases.length,

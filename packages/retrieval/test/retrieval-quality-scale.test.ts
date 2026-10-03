@@ -157,10 +157,10 @@ describe("R8 fixed-gold quality metrics", () => {
       },
     ]);
 
-    expect(metrics.falseAcceptances).toBe(2);
-    expect(metrics.rate).toBe(0.5);
+    expect(metrics.outsideClosedGoldAdmissions).toBe(2);
+    expect(metrics.outsideClosedGoldRate).toBe(0.5);
     expect(metrics.negativeFalseAcceptances).toBe(1);
-    expect(metrics.negativeRate).toBe(0.5);
+    expect(metrics.negativeFalseAcceptanceRate).toBe(0.5);
   });
 
   it("scales every adversarial distractor family with the corpus", () => {
@@ -178,18 +178,19 @@ describe("R8 fixed-gold quality metrics", () => {
     }
   });
 
-  it("enforces the absolute false-acceptance ceiling at 100K", () => {
+  it("gates promotion on explicit no-answer false acceptance", () => {
     const baseline = {
       recallAt10: 1,
       mrr: 1,
       ndcg: 1,
-      falseAcceptanceRate: 0.18,
+      negativeCases: 4,
+      negativeFalseAcceptanceRate: 0.18,
     };
 
     expect(
       classifyQualityScaleOutcome({
         baseline,
-        final: { ...baseline, falseAcceptanceRate: 0.22 },
+        final: { ...baseline, negativeFalseAcceptanceRate: 0.22 },
         contractComplete: true,
         reducedScope: false,
       }),
@@ -198,11 +199,20 @@ describe("R8 fixed-gold quality metrics", () => {
     expect(
       classifyQualityScaleOutcome({
         baseline,
-        final: { ...baseline, falseAcceptanceRate: 0.19 },
+        final: { ...baseline, negativeFalseAcceptanceRate: 0.19 },
         contractComplete: true,
         reducedScope: false,
       }),
     ).toBe("PROMOTE");
+
+    expect(
+      classifyQualityScaleOutcome({
+        baseline: { ...baseline, negativeCases: 1 },
+        final: baseline,
+        contractComplete: true,
+        reducedScope: false,
+      }),
+    ).toBe("INCONCLUSIVE");
   });
 
   it("requires every normative experiment contract field", () => {
