@@ -23,7 +23,9 @@ import {
 import {
   assessRetrievalAnswerability,
   DeterministicQueryDecomposer,
+  LOCAL_MULTILINGUAL_BGE_RERANKER_DESCRIPTOR,
   LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
+  LocalBgeCrossEncoderReranker,
   LocalSemanticEmbeddingAdapter,
   MULTILINGUAL_E5_SMALL_DIMENSIONS,
   parseKnowledgeUnits,
@@ -161,6 +163,15 @@ const outputPath = path.resolve(
     "reports/ci/registered-corpus-retrieval-benchmark.json",
 );
 
+const R3_GREEN_BASELINE_SHA =
+  "ada069f13bd6566b71367f3ae983c196e9d84382";
+const R4_RERANK_ARMS = [
+  { poolDepth: 20, shortlist: 8 },
+  { poolDepth: 50, shortlist: 10 },
+  { poolDepth: 100, shortlist: 12 },
+  { poolDepth: 100, shortlist: 20 },
+] as const;
+
 function sha256(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -193,6 +204,31 @@ function passageMatchesGoldPredicate(
       normalized.includes(normalizedPredicateText(term)),
     );
   return all && any;
+}
+
+
+function resolveGoldUnitIds(
+  testCase: GoldCase,
+  unitsByDocument: ReadonlyMap<string, readonly UnitizedUnit[]>,
+): {
+  goldUnitIds: Set<string>;
+  unresolvedPredicates: string[];
+} {
+  const goldUnitIds = new Set<string>();
+  const unresolvedPredicates: string[] = [];
+  for (const predicate of testCase.gold_support ?? []) {
+    const matches = (unitsByDocument.get(predicate.document) ?? []).filter(
+      (unit) =>
+        unit.embeddingEligible &&
+        passageMatchesGoldPredicate(unit.body, predicate),
+    );
+    if (matches.length === 0) {
+      unresolvedPredicates.push(predicate.id);
+      continue;
+    }
+    for (const match of matches) goldUnitIds.add(match.id);
+  }
+  return { goldUnitIds, unresolvedPredicates };
 }
 
 async function storageSnapshot(db: Postgres): Promise<StorageSnapshot> {
@@ -1058,20 +1094,10 @@ async function runUnitSelectionStudy(
     cases: GoldCase[];
   },
   fixture: Fixture,
-  adapter: LocalSemanticEmbeddingAdapter,
   queryEmbeddingService: QueryEmbeddingService,
+  unitsByDocument: ReadonlyMap<string, readonly UnitizedUnit[]>,
+  generationCount: number,
 ) {
-  const unitsByDocument = await seedUnitizedCorpus(
-    db,
-    dataset.manifest,
-    fixture,
-  );
-  const generations = await buildRealEmbeddings(
-    db,
-    dataset.manifest,
-    fixture,
-    adapter,
-  );
   const labelled = dataset.cases.filter(
     (testCase) => (testCase.gold_support?.length ?? 0) > 0,
   );
@@ -1082,21 +1108,9 @@ async function runUnitSelectionStudy(
   for (const testCase of labelled) {
     const vaultId = fixture.vaultIds.get(testCase.vault);
     if (!vaultId) throw new Error(`Unknown case vault ${testCase.vault}`);
-    const goldUnitIds = new Set<string>();
-    const unresolvedForCase: string[] = [];
-    for (const predicate of testCase.gold_support ?? []) {
-      const matches = (unitsByDocument.get(predicate.document) ?? []).filter(
-        (unit) =>
-          unit.embeddingEligible &&
-          passageMatchesGoldPredicate(unit.body, predicate),
-      );
-      if (matches.length === 0) {
-        unresolvedForCase.push(predicate.id);
-        unresolvedPredicates.push(predicate.id);
-        continue;
-      }
-      for (const match of matches) goldUnitIds.add(match.id);
-    }
+    const { goldUnitIds, unresolvedPredicates: unresolvedForCase } =
+      resolveGoldUnitIds(testCase, unitsByDocument);
+    unresolvedPredicates.push(...unresolvedForCase);
     if (unresolvedForCase.length > 0 || goldUnitIds.size === 0) {
       results.push({
         caseId: testCase.id,
@@ -1283,11 +1297,383 @@ async function runUnitSelectionStudy(
     decision,
     productionDefaultChanged: true,
     selectedProductionDefault: "UNIT_AWARE_RRF",
-    generationCount: generations.length,
+    generationCount,
     goldDerivation:
       "Gold units are derived only from versioned gold_support predicates matched against embedding-eligible parseKnowledgeUnits output; no private vocabulary or manual unit labels are added.",
     claimBoundary:
       "This registered public-product slice replays legacy document-keyed and unit-keyed RRF from the same measured lexical/vector channel candidates. A PROMOTE result supports the unit-aware production default; the study remains independent from that default.",
+    results,
+  };
+}
+
+
+function rankingCandidateIdentity(hit: QueryHit): string {
+  return hit.unitId ? `${hit.documentId}:${hit.unitId}` : hit.documentId;
+}
+
+function firstGoldUnitRank(
+  hits: readonly QueryHit[],
+  goldUnitIds: ReadonlySet<string>,
+): number | null {
+  const index = hits.findIndex(
+    (hit) => hit.unitId !== undefined && goldUnitIds.has(hit.unitId),
+  );
+  return index < 0 ? null : index + 1;
+}
+
+function summarizeRerankRanks(ranks: readonly (number | null)[]) {
+  return {
+    cases: ranks.length,
+    recall:
+      ranks.length === 0
+        ? null
+        : ranks.filter((rank) => rank !== null).length / ranks.length,
+    mrr:
+      ranks.length === 0
+        ? null
+        : ranks.reduce<number>(
+            (sum, rank) => sum + (rank === null ? 0 : 1 / rank),
+            0,
+          ) / ranks.length,
+    ndcg:
+      ranks.length === 0
+        ? null
+        : ranks.reduce<number>(
+            (sum, rank) =>
+              sum + (rank === null ? 0 : 1 / Math.log2(rank + 1)),
+            0,
+          ) / ranks.length,
+  };
+}
+
+async function runRerankStudy(
+  db: Postgres,
+  dataset: {
+    manifest: ResolvedManifest;
+    cases: GoldCase[];
+  },
+  fixture: Fixture,
+  queryEmbeddingService: QueryEmbeddingService,
+  unitsByDocument: ReadonlyMap<string, readonly UnitizedUnit[]>,
+  generations: readonly ActiveEmbeddingGenerationDescriptor[],
+  reranker: LocalBgeCrossEncoderReranker,
+  repositorySha: string,
+  datasetHash: string,
+  modelLoadLatencyMs: number,
+) {
+  const labelled = dataset.cases.filter(
+    (testCase) => (testCase.gold_support?.length ?? 0) > 0,
+  );
+  const unresolvedPredicates: string[] = [];
+  const results = [];
+  let scoredCandidates = 0;
+  let scoringLatencyMs = 0;
+
+  for (const testCase of labelled) {
+    const vaultId = fixture.vaultIds.get(testCase.vault);
+    if (!vaultId) throw new Error(`Unknown case vault ${testCase.vault}`);
+    const { goldUnitIds, unresolvedPredicates: unresolvedForCase } =
+      resolveGoldUnitIds(testCase, unitsByDocument);
+    unresolvedPredicates.push(...unresolvedForCase);
+    if (unresolvedForCase.length > 0 || goldUnitIds.size === 0) {
+      results.push({
+        caseId: testCase.id,
+        status: "UNRESOLVED_GOLD_UNIT",
+        unresolvedPredicates: unresolvedForCase,
+      });
+      continue;
+    }
+
+    const frozenPool = await queryKnowledge(
+      db,
+      {
+        query: testCase.query,
+        spaceId: fixture.spaceId,
+        vaultId,
+        vaultIds: [],
+        federated: false,
+        types: [],
+        minimumTrust: "MACHINE_SUPPORTED",
+        mode: "SOURCE_BACKED",
+        limit: 100,
+      },
+      {
+        vaultIds: [vaultId],
+        channels: ["exact", "lexical", "vector"],
+        allowVectorForBenchmark: true,
+        benchmarkCandidatePoolLimit: 100,
+        queryEmbeddingService,
+      },
+    );
+
+    const passages = frozenPool.map(
+      (hit) => `${hit.title}\n${hit.excerpt}`,
+    );
+    const started = performance.now();
+    const scores = await reranker.scoreMany(testCase.query, passages);
+    scoringLatencyMs += performance.now() - started;
+    scoredCandidates += scores.length;
+    if (scores.length !== frozenPool.length) {
+      throw new Error("R4_RERANK_SCORE_COUNT_MISMATCH");
+    }
+
+    const scored = frozenPool.map((hit, index) => ({
+      hit,
+      preRank: index + 1,
+      score: scores[index]!,
+    }));
+
+    const arms = R4_RERANK_ARMS.map(({ poolDepth, shortlist }) => {
+      const baselinePool = frozenPool.slice(0, poolDepth);
+      const rerankedPool = scored
+        .filter((entry) => entry.preRank <= poolDepth)
+        .sort(
+          (left, right) =>
+            right.score - left.score ||
+            left.preRank - right.preRank ||
+            rankingCandidateIdentity(left.hit).localeCompare(
+              rankingCandidateIdentity(right.hit),
+            ),
+        )
+        .map((entry) => entry.hit);
+      const baselineRank = firstGoldUnitRank(
+        baselinePool.slice(0, shortlist),
+        goldUnitIds,
+      );
+      const rerankedRank = firstGoldUnitRank(
+        rerankedPool.slice(0, shortlist),
+        goldUnitIds,
+      );
+      return {
+        poolDepth,
+        shortlist,
+        poolGoldPresent:
+          firstGoldUnitRank(baselinePool, goldUnitIds) !== null,
+        baselineRank,
+        rerankedRank,
+      };
+    });
+
+    results.push({
+      caseId: testCase.id,
+      status: "MEASURED",
+      goldUnitAlternatives: goldUnitIds.size,
+      frozenPoolCandidates: frozenPool.length,
+      arms,
+    });
+  }
+
+  type MeasuredResult = {
+    caseId: string;
+    status: "MEASURED";
+    goldUnitAlternatives: number;
+    frozenPoolCandidates: number;
+    arms: Array<{
+      poolDepth: number;
+      shortlist: number;
+      poolGoldPresent: boolean;
+      baselineRank: number | null;
+      rerankedRank: number | null;
+    }>;
+  };
+  const measured = results.filter(
+    (result): result is MeasuredResult => result.status === "MEASURED",
+  );
+
+  const armSummaries = R4_RERANK_ARMS.map(({ poolDepth, shortlist }) => {
+    const observations = measured.map((result) => {
+      const arm = result.arms.find(
+        (entry) =>
+          entry.poolDepth === poolDepth && entry.shortlist === shortlist,
+      );
+      if (!arm) throw new Error("R4_RERANK_ARM_MISSING");
+      return arm;
+    });
+    const candidateGoldCoverage =
+      observations.length === 0
+        ? null
+        : observations.filter((entry) => entry.poolGoldPresent).length /
+          observations.length;
+    const baselineRanks = observations.map((entry) => entry.baselineRank);
+    const rerankedRanks = observations.map((entry) => entry.rerankedRank);
+    const baseline = summarizeRerankRanks(baselineRanks);
+    const reranked = summarizeRerankRanks(rerankedRanks);
+    const goldDroppedByRerank = observations.filter(
+      (entry) =>
+        entry.baselineRank !== null && entry.rerankedRank === null,
+    ).length;
+    const goldRecoveredByRerank = observations.filter(
+      (entry) =>
+        entry.baselineRank === null && entry.rerankedRank !== null,
+    ).length;
+    const rankRegressions = observations.filter(
+      (entry) =>
+        entry.baselineRank !== null &&
+        entry.rerankedRank !== null &&
+        entry.rerankedRank > entry.baselineRank,
+    ).length;
+    const rankImprovements = observations.filter(
+      (entry) =>
+        (entry.baselineRank === null && entry.rerankedRank !== null) ||
+        (entry.baselineRank !== null &&
+          entry.rerankedRank !== null &&
+          entry.rerankedRank < entry.baselineRank),
+    ).length;
+    const comparable =
+      unresolvedPredicates.length === 0 &&
+      candidateGoldCoverage === 1 &&
+      baseline.recall !== null &&
+      baseline.mrr !== null &&
+      baseline.ndcg !== null &&
+      reranked.recall !== null &&
+      reranked.mrr !== null &&
+      reranked.ndcg !== null;
+    const epsilon = 1e-12;
+    const guardrailsPass =
+      comparable &&
+      goldDroppedByRerank === 0 &&
+      rankRegressions === 0 &&
+      reranked.recall! + epsilon >= baseline.recall! &&
+      reranked.mrr! + epsilon >= baseline.mrr! &&
+      reranked.ndcg! + epsilon >= baseline.ndcg!;
+    const improved =
+      guardrailsPass &&
+      (reranked.mrr! > baseline.mrr! + epsilon ||
+        reranked.ndcg! > baseline.ndcg! + epsilon);
+    return {
+      poolDepth,
+      shortlist,
+      candidateGoldCoverage,
+      baseline,
+      reranked,
+      delta: {
+        recall:
+          baseline.recall === null || reranked.recall === null
+            ? null
+            : reranked.recall - baseline.recall,
+        mrr:
+          baseline.mrr === null || reranked.mrr === null
+            ? null
+            : reranked.mrr - baseline.mrr,
+        ndcg:
+          baseline.ndcg === null || reranked.ndcg === null
+            ? null
+            : reranked.ndcg - baseline.ndcg,
+      },
+      goldDroppedByRerank,
+      goldRecoveredByRerank,
+      rankRegressions,
+      rankImprovements,
+      comparable,
+      decision: !comparable
+        ? "INCONCLUSIVE"
+        : improved
+          ? "PROMOTE"
+          : "REJECT",
+    };
+  });
+
+  const allComparable =
+    measured.length === labelled.length &&
+    unresolvedPredicates.length === 0 &&
+    armSummaries.every((arm) => arm.comparable);
+  const allGuardrailsPass =
+    allComparable &&
+    armSummaries.every(
+      (arm) =>
+        arm.goldDroppedByRerank === 0 &&
+        arm.rankRegressions === 0 &&
+        (arm.delta.recall ?? -1) >= -1e-12 &&
+        (arm.delta.mrr ?? -1) >= -1e-12 &&
+        (arm.delta.ndcg ?? -1) >= -1e-12,
+    );
+  const anyRankingImprovement =
+    armSummaries.some(
+      (arm) =>
+        (arm.delta.mrr ?? 0) > 1e-12 || (arm.delta.ndcg ?? 0) > 1e-12,
+    );
+  const experimentDisposition = !allComparable
+    ? "INCONCLUSIVE"
+    : allGuardrailsPass && anyRankingImprovement
+      ? "PROMOTE"
+      : "REJECT";
+  const selection =
+    experimentDisposition === "PROMOTE"
+      ? "BGE_V2_M3_CROSS_ENCODER"
+      : experimentDisposition === "REJECT"
+        ? "NO_RERANK_ADVANTAGE"
+        : "INCONCLUSIVE";
+
+  const configurationHash = sha256(
+    JSON.stringify({
+      independentVariable: "reranker",
+      baseline: "UNIT_AWARE_RRF_ORDER",
+      challenger: LOCAL_MULTILINGUAL_BGE_RERANKER_DESCRIPTOR,
+      inputAssembly: "title-newline-atomic-excerpt",
+      arms: R4_RERANK_ARMS,
+      retrievalChannels: ["exact", "lexical", "vector"],
+    }),
+  );
+
+  return {
+    status: "MEASURED",
+    phase: "R4",
+    experimentDisposition,
+    selection,
+    independentVariable: "reranker",
+    baseline: "UNIT_AWARE_RRF_ORDER",
+    challenger: {
+      ...LOCAL_MULTILINGUAL_BGE_RERANKER_DESCRIPTOR,
+      inputAssembly: "title-newline-atomic-excerpt",
+    },
+    productionDefaultChanged: false,
+    enforcementEnabled: false,
+    casesLabelled: labelled.length,
+    casesMeasured: measured.length,
+    unresolvedPredicates: [...new Set(unresolvedPredicates)].sort(),
+    modelLoadLatencyMs,
+    scoringLatencyMs,
+    scoredCandidates,
+    arms: armSummaries,
+    experiment: {
+      hypothesis:
+        "A pinned multilingual BGE cross-encoder can improve ranking inside a frozen authorized hybrid pool without dropping a gold unit from the declared shortlist.",
+      failureStage: "RERANKING",
+      baselineSha: R3_GREEN_BASELINE_SHA,
+      candidateSha: repositorySha,
+      datasetVersion: dataset.manifest.name,
+      datasetHash,
+      indexGeneration: {
+        corpusRevision: fixture.corpusRevision,
+        embeddingGenerations: generations.map((generation) => ({
+          vaultId: generation.vaultId,
+          generationId: generation.generationId,
+          corpusRevision: generation.corpusRevision,
+        })),
+      },
+      embeddingModelRevision:
+        LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR.modelRevision,
+      rerankerRevision: LOCAL_MULTILINGUAL_BGE_RERANKER_DESCRIPTOR.revision,
+      readerRevision: "NOT_APPLICABLE_R4_RELEVANCE_ONLY",
+      configurationHash,
+      singleIndependentVariable:
+        "UNIT_AWARE_RRF_ORDER versus BGE_V2_M3_CROSS_ENCODER_ORDER",
+      primaryMetric: "MRR_AND_NDCG_AT_DECLARED_SHORTLIST",
+      guardrailMetrics: [
+        "candidateGoldCoverage=1",
+        "goldDroppedByRerank=0",
+        "rankRegressions=0",
+        "shortlistRecall does not decrease",
+      ],
+      expectedFailureIfWrong:
+        "BGE leaves ranking unchanged, worsens a gold rank, or drops a gold unit from a declared shortlist.",
+      promotionRule:
+        "PROMOTE only when every declared arm is comparable, no arm drops or regresses a gold unit, recall/MRR/nDCG never decrease, and at least one arm strictly improves MRR or nDCG.",
+      rollback:
+        "Keep production reranking unchanged; this measurement is shadow-only and can be removed without changing retrieval behavior.",
+    },
+    claimBoundary:
+      "R4 freezes the authorized/truth-valid unit-aware hybrid pool before scoring. BGE relevance only reorders that pool; it does not retrieve new candidates, authorize content, establish evidence support, or gate admission.",
     results,
   };
 }
@@ -1308,6 +1694,10 @@ async function main(): Promise<void> {
   process.env.AKP_VECTOR_ENABLED = "true";
   const db = new Postgres(databaseUrl);
   const dataset = await loadDataset();
+  const sortedFixtureHashes = Object.entries(dataset.hashes).sort(
+    ([left], [right]) => left.localeCompare(right),
+  );
+  const fixtureHash = sha256(JSON.stringify(sortedFixtureHashes));
   const fixture = createFixture(dataset.manifest);
   const unitSelectionFixture = createFixture(dataset.manifest);
   const adapter = new LocalSemanticEmbeddingAdapter({
@@ -1425,13 +1815,52 @@ async function main(): Promise<void> {
       claimBoundary:
         "This isolates the residual lexical assertion-recall path on the registered corpus; it does not alter production selection.",
     };
+    const unitizedUnitsByDocument = await seedUnitizedCorpus(
+      db,
+      dataset.manifest,
+      unitSelectionFixture,
+    );
+    const unitizedGenerations = await buildRealEmbeddings(
+      db,
+      dataset.manifest,
+      unitSelectionFixture,
+      adapter,
+    );
     const unitSelectionStudy = await runUnitSelectionStudy(
       db,
       dataset,
       unitSelectionFixture,
-      adapter,
       queryEmbeddingService,
+      unitizedUnitsByDocument,
+      unitizedGenerations.length,
     );
+
+    const bgeReranker = new LocalBgeCrossEncoderReranker({
+      ...(process.env.AKP_MODEL_CACHE_DIR?.trim()
+        ? { cacheDir: process.env.AKP_MODEL_CACHE_DIR }
+        : {}),
+      localFilesOnly: process.env.AKP_LOCAL_FILES_ONLY === "1",
+    });
+    const bgeLoadStarted = performance.now();
+    await bgeReranker.load();
+    const bgeModelLoadLatencyMs = performance.now() - bgeLoadStarted;
+    let rerankStudy;
+    try {
+      rerankStudy = await runRerankStudy(
+        db,
+        dataset,
+        unitSelectionFixture,
+        queryEmbeddingService,
+        unitizedUnitsByDocument,
+        unitizedGenerations,
+        bgeReranker,
+        repositoryState.commit,
+        fixtureHash,
+        bgeModelLoadLatencyMs,
+      );
+    } finally {
+      await bgeReranker.dispose();
+    }
 
     const isolationViolations = runs.flatMap((run) =>
       run.results.flatMap((result) => {
@@ -1566,10 +1995,6 @@ async function main(): Promise<void> {
       };
     });
 
-    const sortedFixtureHashes = Object.entries(dataset.hashes).sort(
-      ([left], [right]) => left.localeCompare(right),
-    );
-    const fixtureHash = sha256(JSON.stringify(sortedFixtureHashes));
     const configurationHash = sha256(
       JSON.stringify({
         configurations: configurations.map((configuration) => ({
@@ -1590,6 +2015,13 @@ async function main(): Promise<void> {
           labelledCases: dataset.cases.filter(
             (testCase) => (testCase.gold_support?.length ?? 0) > 0,
           ).length,
+        },
+        rerankStudy: {
+          baselineSha: R3_GREEN_BASELINE_SHA,
+          baseline: "UNIT_AWARE_RRF_ORDER",
+          challenger: LOCAL_MULTILINGUAL_BGE_RERANKER_DESCRIPTOR,
+          arms: R4_RERANK_ARMS,
+          productionDefaultChanged: false,
         },
       }),
     );
@@ -1643,7 +2075,7 @@ async function main(): Promise<void> {
     };
 
     const report = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       generatedAt: new Date().toISOString(),
       historicalBaseline: V03_RETRIEVAL_BASELINE,
       evidence: {
@@ -1654,7 +2086,7 @@ async function main(): Promise<void> {
         limitations: [
           "Stage diagnostics retain gold document/unit identities, but exact gold spans and final generation are not annotated or measured by this pack.",
           "The corpus is the product's own public documentation, not a private customer vault or production traffic sample.",
-          "The primary comparison matrix retains its one-unit-per-document compatibility projection; unitSelectionStudy separately rebuilds the same public Markdown with production parseKnowledgeUnits for a controlled multi-unit comparison.",
+          "The primary comparison matrix retains its one-unit-per-document compatibility projection; unitSelectionStudy and rerankStudy separately rebuild the same public Markdown with production parseKnowledgeUnits for controlled multi-unit comparisons.",
           "The corpus is small and single-product; results are not evidence of domain-general retrieval superiority.",
         ],
         notMeasured: [
@@ -1712,6 +2144,7 @@ async function main(): Promise<void> {
       },
       assertionRecallStudy,
       unitSelectionStudy,
+      rerankStudy,
       productionDefault: {
         status: "NOT_SELECTED",
         reason:
@@ -1732,6 +2165,7 @@ async function main(): Promise<void> {
           candidateDepthStudy: report.candidateDepthStudy,
           assertionRecallStudy: report.assertionRecallStudy,
           unitSelectionStudy: report.unitSelectionStudy,
+          rerankStudy: report.rerankStudy,
           productionDefault: report.productionDefault,
           reproducibility: {
             commit: report.reproducibility.tool.versionOrCommit,

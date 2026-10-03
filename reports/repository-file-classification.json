@@ -3462,6 +3462,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/local-bge-reranker.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/local-multilingual-nli-evidence.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3628,6 +3633,11 @@
     },
     {
       "path": "packages/retrieval/test/evidence-source-selection.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/local-bge-reranker.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
