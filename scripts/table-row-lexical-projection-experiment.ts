@@ -39,6 +39,7 @@ interface RankedRow {
   rowKey: string;
   documentKey: string;
   score: number;
+  fullRowMatch: boolean;
 }
 
 interface Observation {
@@ -47,7 +48,7 @@ interface Observation {
   query: string;
   goldRowKey?: string;
   rank: number | null;
-  returnedAny: boolean;
+  anyFullRowMatch: boolean;
   topRows: RankedRow[];
 }
 
@@ -56,7 +57,7 @@ interface FamilySummary {
   positiveQuestions: number;
   recallAt1: number | null;
   negativeQuestions: number;
-  negativeFalseMatchRate: number | null;
+  negativeFullRowMatchRate: number | null;
 }
 
 interface SplitSummary {
@@ -67,7 +68,7 @@ interface SplitSummary {
   recallAt3: number | null;
   recallAt5: number | null;
   meanReciprocalRank: number | null;
-  negativeFalseMatchRate: number | null;
+  negativeFullRowMatchRate: number | null;
   byFamily: Record<Family, FamilySummary>;
   observations: Observation[];
 }
@@ -367,10 +368,10 @@ function familySummary(
     positiveQuestions: positives.length,
     recallAt1: recall(ranks, 1),
     negativeQuestions: negatives.length,
-    negativeFalseMatchRate:
+    negativeFullRowMatchRate:
       negatives.length === 0
         ? null
-        : negatives.filter((entry) => entry.returnedAny).length /
+        : negatives.filter((entry) => entry.anyFullRowMatch).length /
           negatives.length,
   };
 }
@@ -395,10 +396,10 @@ function summarize(split: Split, observations: Observation[]): SplitSummary {
     recallAt3: recall(ranks, 3),
     recallAt5: recall(ranks, 5),
     meanReciprocalRank: mean(ranks.map((rank) => (rank > 0 ? 1 / rank : 0))),
-    negativeFalseMatchRate:
+    negativeFullRowMatchRate:
       negatives.length === 0
         ? null
-        : negatives.filter((entry) => entry.returnedAny).length /
+        : negatives.filter((entry) => entry.anyFullRowMatch).length /
           negatives.length,
     byFamily: Object.fromEntries(
       FAMILIES.map((family) => [family, familySummary(selected, family)]),
@@ -415,6 +416,18 @@ async function main(): Promise<void> {
   try {
     await db.pool.query(
       [
+        "create temporary table akp_table_row_document_eval (",
+        "document_key text primary key,",
+        "split text not null,",
+        "title_vector tsvector not null,",
+        "body_vector tsvector not null,",
+        "search_vector tsvector not null",
+        ") on commit preserve rows",
+      ].join("\n"),
+    );
+
+    await db.pool.query(
+      [
         "create temporary table akp_table_row_projection_eval (",
         "row_key text not null,",
         "document_key text not null,",
@@ -429,6 +442,22 @@ async function main(): Promise<void> {
         ") on commit preserve rows",
       ].join("\n"),
     );
+
+    for (const document of DOCUMENTS) {
+      await db.pool.query(
+        [
+          "insert into akp_table_row_document_eval(",
+          "document_key,split,title_vector,body_vector,search_vector",
+          ")",
+          "select $1,$2,",
+          "to_tsvector('simple', $3),",
+          "to_tsvector('simple', $4),",
+          "setweight(to_tsvector('simple', $3), 'B') ||",
+          "setweight(to_tsvector('simple', $4), 'D')",
+        ].join("\n"),
+        [document.id, document.split, document.title, document.source],
+      );
+    }
 
     const materializedRows: Array<{
       rowKey: string;
@@ -522,27 +551,47 @@ async function main(): Promise<void> {
           row_key: string;
           document_key: string;
           score: number;
+          full_row_match: boolean;
         }>(
           [
             "with query as (",
             "select plainto_tsquery('simple', $2) terms",
-            "), scored as (",
-            "select e.row_key,e.document_key,e.structural_order,",
-            "12 * ts_rank_cd(e.heading_vector,q.terms) +",
-            "8 * ts_rank_cd(e.unit_vector,q.terms) +",
-            "ts_rank_cd(e.body_vector,q.terms) score",
-            "from akp_table_row_projection_eval e",
+            "), eligible_documents as (",
+            "select d.document_key,d.title_vector,d.body_vector,d.search_vector,",
+            "q.terms",
+            "from akp_table_row_document_eval d",
             "cross join query q",
-            "where e.arm=$1",
-            "and e.search_vector @@ q.terms",
-            "), best_unit_per_document as (",
-            "select distinct on (document_key)",
-            "row_key,document_key,structural_order,score",
-            "from scored",
-            "order by document_key,score desc,structural_order,row_key",
+            "where d.search_vector @@ q.terms",
+            "or exists (",
+            "select 1",
+            "from akp_table_row_projection_eval matching_row",
+            "where matching_row.document_key=d.document_key",
+            "and matching_row.arm=$1",
+            "and matching_row.search_vector @@ q.terms",
             ")",
-            "select row_key,document_key,score",
-            "from best_unit_per_document",
+            "), scored as (",
+            "select d.document_key,best_row.row_key,",
+            "20 * ts_rank_cd(d.title_vector,d.terms) +",
+            "2 * ts_rank_cd(d.body_vector,d.terms) +",
+            "coalesce(best_row.unit_score,0) score,",
+            "coalesce(best_row.full_row_match,false) full_row_match",
+            "from eligible_documents d",
+            "left join lateral (",
+            "select e.row_key,e.structural_order,",
+            "12 * ts_rank_cd(e.heading_vector,d.terms) +",
+            "8 * ts_rank_cd(e.unit_vector,d.terms) +",
+            "ts_rank_cd(e.body_vector,d.terms) unit_score,",
+            "e.search_vector @@ d.terms full_row_match",
+            "from akp_table_row_projection_eval e",
+            "where e.document_key=d.document_key",
+            "and e.arm=$1",
+            "order by unit_score desc,e.structural_order,e.row_key",
+            "limit 1",
+            ") best_row on true",
+            ")",
+            "select row_key,document_key,score,full_row_match",
+            "from scored",
+            "where row_key is not null",
             "order by score desc,document_key,row_key",
           ].join("\n"),
           [arm, question.query],
@@ -551,6 +600,7 @@ async function main(): Promise<void> {
           rowKey: entry.row_key,
           documentKey: entry.document_key,
           score: Number(entry.score),
+          fullRowMatch: entry.full_row_match,
         }));
         const foundIndex = question.goldRowKey
           ? ranked.rows.findIndex(
@@ -563,7 +613,7 @@ async function main(): Promise<void> {
           query: question.query,
           ...(question.goldRowKey ? { goldRowKey: question.goldRowKey } : {}),
           rank: foundIndex >= 0 ? foundIndex + 1 : null,
-          returnedAny: ranked.rows.length > 0,
+          anyFullRowMatch: ranked.rows.some((entry) => entry.full_row_match),
           topRows,
         });
       }
@@ -589,7 +639,7 @@ async function main(): Promise<void> {
     const controlRecall = (summary: SplitSummary) =>
       summary.byFamily.VALUE_ONLY_CONTROL.recallAt1 ?? 0;
     const negativeRate = (summary: SplitSummary) =>
-      summary.negativeFalseMatchRate ?? 0;
+      summary.negativeFullRowMatchRate ?? 0;
 
     const gates = {
       developmentHeaderImproves:
@@ -641,8 +691,11 @@ async function main(): Promise<void> {
         score:
           "12*ts_rank_cd(heading)+8*ts_rank_cd(unit-metadata)+ts_rank_cd(body)",
         eligibility:
-          "setweight(heading,A)||setweight(unit-metadata,B)||setweight(body,C) @@ query",
-        bestUnitPerDocument: true,
+          "document lexical search match OR full unit lexical search match",
+        documentScore:
+          "20*ts_rank_cd(title)+2*ts_rank_cd(body)+best-unit-score",
+        bestUnitPerDocument:
+          "lateral best unit by 12*heading+8*unit-metadata+body without requiring full unit match",
       },
       experiment: {
         baselineSha,
@@ -662,10 +715,10 @@ async function main(): Promise<void> {
         "header-value retrieval",
         "explicit-caption plus header-value retrieval",
         "value-only control retrieval",
-        "cross-row negative false-match rate",
+        "cross-row negative full-row-match rate",
       ],
       notMeasured: [
-        "document exact channel",
+        "document exact channel and non-table units",
         "query transformations and assertion recall",
         "vector retrieval",
         "fusion and reranking",
@@ -675,7 +728,7 @@ async function main(): Promise<void> {
         "production activation",
       ],
       limitation:
-        "This is a controlled lexical representation probe over parser-derived Markdown table rows. It does not establish end-to-end R5/R6/R7/R9 closure.",
+        "This is a controlled lexical representation probe over parser-derived Markdown table rows. It reproduces document lexical eligibility and best-row scoring for the signals represented by the fixture, but it does not include non-table units, exact/symbol channels, transformed queries, fusion, evidence admission or end-to-end R5/R6/R7/R9 closure.",
     };
 
     const output = path.resolve(
