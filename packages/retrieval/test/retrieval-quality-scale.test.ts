@@ -102,7 +102,7 @@ describe("R8 fixed-gold quality metrics", () => {
         baseline,
         final: { ...baseline, falseAcceptanceRate: 0.22 },
         contractComplete: true,
-        smoke: false,
+        reducedScope: false,
       }),
     ).toBe("REJECT");
 
@@ -111,7 +111,7 @@ describe("R8 fixed-gold quality metrics", () => {
         baseline,
         final: { ...baseline, falseAcceptanceRate: 0.19 },
         contractComplete: true,
-        smoke: false,
+        reducedScope: false,
       }),
     ).toBe("PROMOTE");
   });

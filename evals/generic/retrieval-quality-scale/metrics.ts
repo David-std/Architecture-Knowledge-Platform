@@ -64,7 +64,7 @@ export interface QualityScaleOutcomeInput {
   baseline: QualityScaleOutcomeSnapshot | null;
   final: QualityScaleOutcomeSnapshot | null;
   contractComplete: boolean;
-  smoke: boolean;
+  reducedScope: boolean;
 }
 
 /**
@@ -77,7 +77,7 @@ export interface QualityScaleOutcomeInput {
 export function classifyQualityScaleOutcome(
   input: QualityScaleOutcomeInput,
 ): QualityScaleOutcome {
-  if (input.smoke || !input.contractComplete) return "INCONCLUSIVE";
+  if (input.reducedScope || !input.contractComplete) return "INCONCLUSIVE";
   if (!input.baseline || !input.final) return "INCONCLUSIVE";
 
   const { baseline, final } = input;

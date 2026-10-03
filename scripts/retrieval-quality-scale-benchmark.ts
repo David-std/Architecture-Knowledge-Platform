@@ -148,8 +148,8 @@ interface BenchmarkReport {
   promotionScope: "benchmark-evidence-only";
   evidenceLevel: "SYNTHETIC_ISOLATED_POSTGRES";
   scope: {
-    runKind: "FULL" | "SMOKE";
-    smokeBoundary: string | null;
+    runKind: "FULL" | "REDUCED_SCOPE";
+    reducedScopeBoundary: string | null;
     arm: BenchmarkArm;
     queryLimit: number;
     targets: number[];
@@ -218,7 +218,7 @@ function parsePositiveInteger(value: string | undefined, name: string): number {
   return parsed;
 }
 
-function parseTargets(value: string | undefined, smoke: boolean): number[] {
+function parseTargets(value: string | undefined, reducedScope: boolean): number[] {
   const raw = value ?? REQUIRED_TARGETS.join(",");
   const targets = raw
     .split(",")
@@ -233,8 +233,8 @@ function parseTargets(value: string | undefined, smoke: boolean): number[] {
       throw new Error("distractor counts must be strictly ascending");
     }
   }
-  if (targets.some((target) => target < 1_000) && !smoke) {
-    throw new Error("counts below 1000 require the explicit --smoke flag");
+  if (targets.some((target) => target < 1_000) && !reducedScope) {
+    throw new Error("counts below 1000 require the explicit --reduced-scope flag");
   }
   if (targets.some((target) => target > 100_000)) {
     throw new Error("this benchmark refuses distractor counts above 100000");
@@ -510,7 +510,7 @@ function experimentContract(
 
 function usage(): void {
   process.stdout.write(
-    `Usage: tsx scripts/retrieval-quality-scale-benchmark.ts [options]\n\nOptions:\n  --distractor-counts <list>  Ascending counts (default: 1000,10000,20000,50000,100000)\n  --iterations <n>             Query repetitions per case and target (default: 3)\n  --seed <text>                Deterministic source/content seed (default: akp-r8-quality-v1)\n  --arm <name>                 exact+lexical (default) or hybrid-e5 (optional real E5)\n  --smoke                      Permit counts below 1000; report remains out of full scope\n  --output <path>              JSON output (default: .work/retrieval-quality-scale/r8-benchmark.json)\n  --stdout                     Print JSON and do not write an output file\n  --help                       Show this help\n\nDATABASE_URL must point to a disposable synthetic PostgreSQL database.\nThe hybrid-e5 arm requires AKP_MODEL_CACHE_DIR and uses the pinned local E5 descriptor.\n`,
+    `Usage: tsx scripts/retrieval-quality-scale-benchmark.ts [options]\n\nOptions:\n  --distractor-counts <list>  Ascending counts (default: 1000,10000,20000,50000,100000)\n  --iterations <n>             Query repetitions per case and target (default: 3)\n  --seed <text>                Deterministic source/content seed (default: akp-r8-quality-v1)\n  --arm <name>                 exact+lexical (default) or hybrid-e5 (optional real E5)\n  --reduced-scope              Permit counts below 1000; report remains out of full scope\n  --output <path>              JSON output (default: .work/retrieval-quality-scale/r8-benchmark.json)\n  --stdout                     Print JSON and do not write an output file\n  --help                       Show this help\n\nDATABASE_URL must point to a disposable synthetic PostgreSQL database.\nThe hybrid-e5 arm requires AKP_MODEL_CACHE_DIR and uses the pinned local E5 descriptor.\n`,
   );
 }
 
@@ -520,7 +520,7 @@ async function runBenchmark(
   iterations: number,
   seed: string,
   arm: BenchmarkArm,
-  smoke: boolean,
+  reducedScope: boolean,
 ): Promise<BenchmarkReport> {
   assertSyntheticFixtureDatabaseSafety(databaseUrl);
   const db = new Postgres(databaseUrl);
@@ -695,7 +695,7 @@ async function runBenchmark(
           }
         : null,
       contractComplete: contractValidation.complete,
-      smoke,
+      reducedScope,
     });
     const cleanupRemaining = await cleanupScaleDatabaseFixture(db, fixture);
     remainingRows = cleanupRemaining;
@@ -710,9 +710,9 @@ async function runBenchmark(
       promotionScope: "benchmark-evidence-only",
       evidenceLevel: "SYNTHETIC_ISOLATED_POSTGRES",
       scope: {
-        runKind: smoke ? "SMOKE" : "FULL",
-        smokeBoundary: smoke
-          ? "Counts below 1000 are smoke-only and do not satisfy R8 full-scale DoD."
+        runKind: reducedScope ? "REDUCED_SCOPE" : "FULL",
+        reducedScopeBoundary: reducedScope
+          ? "Counts below 1000 are reduced-scope only and do not satisfy R8 full-scale DoD."
           : null,
         arm,
         queryLimit: QUERY_LIMIT,
@@ -826,8 +826,8 @@ async function main(): Promise<void> {
     usage();
     return;
   }
-  const smoke = hasFlag(argv, "--smoke");
-  const targets = parseTargets(parseArg(argv, "--distractor-counts"), smoke);
+  const reducedScope = hasFlag(argv, "--reduced-scope");
+  const targets = parseTargets(parseArg(argv, "--distractor-counts"), reducedScope);
   const iterations = parsePositiveInteger(
     parseArg(argv, "--iterations") ?? "3",
     "iterations",
@@ -845,7 +845,7 @@ async function main(): Promise<void> {
     iterations,
     seed,
     armValue,
-    smoke,
+    reducedScope,
   );
   const outputPath = path.resolve(
     parseArg(argv, "--output") ??
