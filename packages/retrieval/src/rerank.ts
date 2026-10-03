@@ -62,18 +62,24 @@ export function resolveSearchHitReranker(
  * lifecycle, citations, warnings, graph provenance and conflict-relevant
  * metadata. Only score, reasons and rerankTrace are extended.
  */
+function rerankCandidateIdentity(
+  hit: Pick<SearchHit, "documentId" | "unitId">,
+): string {
+  return hit.unitId ? `${hit.documentId}:${hit.unitId}` : hit.documentId;
+}
+
 export function rerankSearchHits(
   query: string,
   hits: readonly SearchHit[],
   reranker: SearchHitReranker,
 ): SearchHit[] {
-  const ids = hits.map((hit) => hit.documentId);
+  const ids = hits.map(rerankCandidateIdentity);
   if (new Set(ids).size !== ids.length) {
     throw new Error("RERANK_DUPLICATE_CANDIDATE_ID");
   }
 
-  const preRankByDocument = new Map(
-    hits.map((hit, index) => [hit.documentId, index + 1]),
+  const preRankByCandidate = new Map(
+    hits.map((hit, index) => [rerankCandidateIdentity(hit), index + 1]),
   );
   const scored = hits.map((hit) => {
     const result = reranker.score(query, hit);
@@ -94,9 +100,11 @@ export function rerankSearchHits(
   scored.sort(
     (left, right) =>
       right.rerankScore - left.rerankScore ||
-      (preRankByDocument.get(left.hit.documentId) ?? 0) -
-        (preRankByDocument.get(right.hit.documentId) ?? 0) ||
-      left.hit.documentId.localeCompare(right.hit.documentId),
+      (preRankByCandidate.get(rerankCandidateIdentity(left.hit)) ?? 0) -
+        (preRankByCandidate.get(rerankCandidateIdentity(right.hit)) ?? 0) ||
+      rerankCandidateIdentity(left.hit).localeCompare(
+        rerankCandidateIdentity(right.hit),
+      ),
   );
 
   const output = scored.map(({ hit, rerankScore, reason }, index) => ({
@@ -107,7 +115,8 @@ export function rerankSearchHits(
       : [...hit.reasons, reason],
     rerankTrace: {
       reranker: reranker.id,
-      preRank: preRankByDocument.get(hit.documentId) ?? index + 1,
+      preRank:
+        preRankByCandidate.get(rerankCandidateIdentity(hit)) ?? index + 1,
       postRank: index + 1,
       preScore: hit.score,
       postScore: rerankScore,
@@ -118,7 +127,9 @@ export function rerankSearchHits(
             ...hit.retrievalTrace,
             rerank: {
               reranker: reranker.id,
-              preRank: preRankByDocument.get(hit.documentId) ?? index + 1,
+              preRank:
+                preRankByCandidate.get(rerankCandidateIdentity(hit)) ??
+                index + 1,
               postRank: index + 1,
               preScore: hit.score,
               postScore: rerankScore,
@@ -131,17 +142,17 @@ export function rerankSearchHits(
       : {}),
   }));
 
-  const outputIds = output.map((hit) => hit.documentId);
+  const outputIds = output.map(rerankCandidateIdentity);
   if (
     outputIds.length !== ids.length ||
-    outputIds.some((id) => !preRankByDocument.has(id))
+    outputIds.some((id) => !preRankByCandidate.has(id))
   ) {
     throw new Error("RERANK_CANDIDATE_SET_CHANGED");
   }
   return output;
 }
 
-export type RerankFallbackWarning =
+export type RerankFallbackWarning =export type RerankFallbackWarning =
   "RERANKER_FALLBACK:INVALID_SCORE" | "RERANKER_FALLBACK:PROVIDER_ERROR";
 
 export interface SafeRerankResult {
