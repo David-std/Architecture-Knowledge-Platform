@@ -3452,6 +3452,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/evidence-admission.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/evidence-reader.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3623,6 +3628,11 @@
     },
     {
       "path": "packages/retrieval/test/evaluation-recordings.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/evidence-admission.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
