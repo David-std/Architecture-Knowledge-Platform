@@ -192,15 +192,14 @@ try {
         !testCase.requireSplit ||
         (fragments.length > 1 &&
           fragments.every((unit) => unit.embeddingEligible)),
-      splitChildrenPreserveParentLineage:
-        fragments.every((unit, index) => {
-          const parent = fragmentParents[index];
-          return (
-            parent !== undefined &&
-            unit.locator.startChar >= parent.locator.startChar &&
-            unit.locator.endChar <= parent.locator.endChar
-          );
-        }),
+      splitChildrenPreserveParentLineage: fragments.every((unit, index) => {
+        const parent = fragmentParents[index];
+        return (
+          parent !== undefined &&
+          unit.locator.startChar >= parent.locator.startChar &&
+          unit.locator.endChar <= parent.locator.endChar
+        );
+      }),
       requiredMarkersRemainInEmbeddingEligibleLeaves: markerLeaves.length > 0,
       exactDuplicateLeavesRemainSourceDistinct:
         testCase.family !== "DUPLICATE_CONTAINER" ||
@@ -210,8 +209,7 @@ try {
             new Set(group.startChars).size === group.count,
         ),
       exactDuplicateLeavesRetainEqualContentHash:
-        testCase.family !== "DUPLICATE_CONTAINER" ||
-        duplicateGroups.length > 0,
+        testCase.family !== "DUPLICATE_CONTAINER" || duplicateGroups.length > 0,
       tableContainerIsNotEmbeddingEligible: tableContainers.every(
         (unit) => unit.containerOnly && !unit.embeddingEligible,
       ),
