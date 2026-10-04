@@ -3497,11 +3497,6 @@
       "reason": "runtime, build or operational code"
     },
     {
-      "path": "packages/retrieval/src/proposition-projection.ts",
-      "category": "PRODUCT_CODE",
-      "reason": "runtime, build or operational code"
-    },
-    {
       "path": "packages/retrieval/src/local-bge-reranker.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3548,6 +3543,11 @@
     },
     {
       "path": "packages/retrieval/src/ppr.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/proposition-projection.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -3692,11 +3692,6 @@
       "reason": "executable product test"
     },
     {
-      "path": "packages/retrieval/test/proposition-projection.test.ts",
-      "category": "PRODUCT_TEST",
-      "reason": "executable product test"
-    },
-    {
       "path": "packages/retrieval/test/local-bge-reranker.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -3733,6 +3728,11 @@
     },
     {
       "path": "packages/retrieval/test/ppr.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/proposition-projection.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
