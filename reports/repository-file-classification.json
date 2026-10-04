@@ -2397,6 +2397,16 @@
       "reason": "corpus-agnostic product evaluation"
     },
     {
+      "path": "evals/generic/structured-proposition-family-disjoint/manifest.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/structured-proposition-family-disjoint/README.md",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
       "path": "evals/generic/synonyms/basic.jsonl",
       "category": "PRODUCT_EVAL",
       "reason": "corpus-agnostic product evaluation"
@@ -4178,6 +4188,11 @@
     },
     {
       "path": "scripts/seed-recovery-verification.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/structured-proposition-family-disjoint-benchmark.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
