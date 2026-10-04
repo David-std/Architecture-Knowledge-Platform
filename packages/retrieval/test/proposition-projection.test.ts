@@ -1,7 +1,4 @@
-import type {
-  TemporalFactView,
-  TruthSupportSet,
-} from "@akp/contracts";
+import type { TemporalFactView, TruthSupportSet } from "@akp/contracts";
 import { describe, expect, it } from "vitest";
 import {
   canonicalTemporalFactObject,
@@ -17,9 +14,7 @@ const FACT_ID = "44444444-4444-4444-8444-444444444444";
 const EVIDENCE_A = "55555555-5555-4555-8555-555555555555";
 const EVIDENCE_B = "66666666-6666-4666-8666-666666666666";
 
-function fact(
-  override: Partial<TemporalFactView> = {},
-): TemporalFactView {
+function fact(override: Partial<TemporalFactView> = {}): TemporalFactView {
   return {
     id: FACT_ID,
     spaceId: SPACE_ID,
@@ -49,9 +44,7 @@ function fact(
   };
 }
 
-function support(
-  override: Partial<TruthSupportSet> = {},
-): TruthSupportSet {
+function support(override: Partial<TruthSupportSet> = {}): TruthSupportSet {
   return {
     schemaVersion: 1,
     id: SUPPORT_ID,
@@ -110,9 +103,7 @@ describe("temporal fact proposition projection", () => {
       kind: "CLAIM",
       subjectRefs: ["policy:admin-access"],
       predicate: "requires_mfa",
-      objectRefs: [
-        '{"channel":"security key","levels":[2,1],"required":true}',
-      ],
+      objectRefs: ['{"channel":"security key","levels":[2,1],"required":true}'],
       derivation: "TEMPORAL_TRUTH",
       revision: "a".repeat(64),
       supportSetId: SUPPORT_ID,
@@ -135,7 +126,10 @@ describe("temporal fact proposition projection", () => {
   });
 
   it.each([
-    ["disputed lifecycle", { lifecycle: "DISPUTED" } as Partial<TemporalFactView>],
+    [
+      "disputed lifecycle",
+      { lifecycle: "DISPUTED" } as Partial<TemporalFactView>,
+    ],
     [
       "disputed support",
       { supportState: "DISPUTED" } as Partial<TemporalFactView>,
@@ -149,10 +143,7 @@ describe("temporal fact proposition projection", () => {
       projectSupportedTemporalFact({
         fact: fact(override),
         supportSet: support(),
-        evidence: [
-          evidence(EVIDENCE_A, "A"),
-          evidence(EVIDENCE_B, "B"),
-        ],
+        evidence: [evidence(EVIDENCE_A, "A"), evidence(EVIDENCE_B, "B")],
       }),
     ).toBeNull();
   });
