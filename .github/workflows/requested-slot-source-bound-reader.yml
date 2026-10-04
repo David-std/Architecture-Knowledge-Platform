@@ -28,6 +28,8 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Build experiment workspace dependencies
+        run: pnpm --filter @akp/contracts build
       - name: Verify focused reader and slot tests
         run: |
           pnpm --filter @akp/retrieval exec vitest run             test/evidence-reader.test.ts             test/requested-answer-slot.test.ts
