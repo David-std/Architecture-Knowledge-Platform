@@ -28,6 +28,12 @@ jobs:
         run: |
           pnpm exec prettier --check             scripts/contextual-persisted-generation-benchmark.ts             .github/workflows/contextual-title-heading-persisted-generation.yml
           pnpm check
+      - name: Capture canonical formatter output
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p reports/ci
+          pnpm exec prettier scripts/contextual-persisted-generation-benchmark.ts > reports/ci/contextual-persisted-generation-benchmark.formatted.ts
       - run: pnpm build
       - run: docker compose up -d --wait postgres
       - run: pnpm db:migrate
@@ -122,6 +128,7 @@ jobs:
             reports/ci/contextual-title-heading-persisted-generation.log
             reports/ci/contextual-persisted-model-prefetch.log
             reports/ci/contextual-persisted-generations.csv
+            reports/ci/contextual-persisted-generation-benchmark.formatted.ts
           if-no-files-found: warn
           retention-days: 14
       - name: Stop disposable services
