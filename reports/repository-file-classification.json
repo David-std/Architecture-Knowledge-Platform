@@ -4217,6 +4217,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/verify-imported-structured-row-e2e.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/verify-runtime.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -4318,6 +4323,11 @@
     },
     {
       "path": "test/fixtures/vault/30-concepts/bounded-context.md",
+      "category": "FIXTURE_GENERIC",
+      "reason": "portable test or evaluation fixture"
+    },
+    {
+      "path": "test/fixtures/vault/40-structured/release-matrices.md",
       "category": "FIXTURE_GENERIC",
       "reason": "portable test or evaluation fixture"
     },
