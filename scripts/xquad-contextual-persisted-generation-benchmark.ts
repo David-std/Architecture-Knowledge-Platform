@@ -172,9 +172,10 @@ function rate(numerator: number, denominator: number): number {
   return denominator === 0 ? 1 : numerator / denominator;
 }
 
-async function fetchPinnedFile(
-  source: { path: string; gitBlobSha: string },
-): Promise<{ identity: SourceIdentity; text: string }> {
+async function fetchPinnedFile(source: {
+  path: string;
+  gitBlobSha: string;
+}): Promise<{ identity: SourceIdentity; text: string }> {
   const url = `https://raw.githubusercontent.com/${XQUAD_REPOSITORY}/${XQUAD_COMMIT}/${source.path}`;
   let lastError: unknown;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -231,7 +232,9 @@ function parseLanguage(language: Language, raw: string): ParsedLanguage {
 
   for (const [articleIndex, article] of dataset.data.entries()) {
     if (!article.title || !Array.isArray(article.paragraphs)) {
-      throw new Error(`XQuAD ${language} article ${articleIndex} is malformed.`);
+      throw new Error(
+        `XQuAD ${language} article ${articleIndex} is malformed.`,
+      );
     }
     for (const [paragraphIndex, paragraph] of article.paragraphs.entries()) {
       if (!paragraph.context || !Array.isArray(paragraph.qas)) {
@@ -671,7 +674,9 @@ const [enSource, esSource, readmeSource, licenseSource] = await Promise.all([
   fetchPinnedFile(SOURCES.license),
 ]);
 if (
-  !readmeSource.text.includes("240 paragraphs and 1190 question-answer pairs") ||
+  !readmeSource.text.includes(
+    "240 paragraphs and 1190 question-answer pairs",
+  ) ||
   !readmeSource.text.includes("entirely parallel") ||
   !readmeSource.text.includes("there are no unanswerable questions")
 ) {
@@ -697,11 +702,9 @@ const alignment = validateAlignment(parsed.en, parsed.es);
 const corpusRevision =
   "xquad-contextual-" +
   sha256(
-    [
-      XQUAD_COMMIT,
-      enSource.identity.sha256,
-      esSource.identity.sha256,
-    ].join(":"),
+    [XQUAD_COMMIT, enSource.identity.sha256, esSource.identity.sha256].join(
+      ":",
+    ),
   ).slice(0, 16);
 
 const db = new Postgres(databaseUrl);
