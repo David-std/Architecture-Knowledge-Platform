@@ -204,7 +204,8 @@ try {
       candidate[0]?.documentId === document.document_id &&
       candidate[0]?.unitId === green!.id,
     candidateReportsStructuredContext:
-      candidate[0]?.reasons.includes("lexical:structured-context-terms") === true,
+      candidate[0]?.reasons.includes("lexical:structured-context-terms") ===
+      true,
     positiveFullMatchIsGreenOnly:
       Boolean(green) &&
       positiveFullMatchIds.length === 1 &&
