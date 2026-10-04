@@ -77,6 +77,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".github/workflows/requested-answer-followup-normal-pipeline.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".github/workflows/requested-answer-followup-shadow.yml",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -2487,6 +2492,11 @@
       "reason": "versioned registered product evaluation"
     },
     {
+      "path": "evals/registered/requested-answer-followup-normal-pipeline.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
       "path": "evals/registered/v0.3-capability-maturity-baseline.json",
       "category": "PRODUCT_EVAL",
       "reason": "versioned registered product evaluation"
@@ -4198,6 +4208,11 @@
     },
     {
       "path": "scripts/release-assurance-workflows.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/requested-answer-followup-normal-pipeline-experiment.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
