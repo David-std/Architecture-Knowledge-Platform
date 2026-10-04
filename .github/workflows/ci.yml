@@ -85,6 +85,24 @@ jobs:
           docker compose exec -T postgres createdb -U akp akp_structured_row_test
           pnpm db:migrate
           pnpm --filter @akp/api exec vitest run             --config vitest.integration.config.ts             test/lexical-ranking.integration.test.ts             --no-file-parallelism
+      - name: Verify governed proposition shadow admission on an isolated database
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'experiment/governed-proposition-shadow-admission'
+        env:
+          DATABASE_URL: postgres://akp:akp@localhost:55432/akp_governed_shadow_test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup_governed_shadow_database() {
+            docker compose exec -T postgres dropdb -U akp --if-exists akp_governed_shadow_test >/dev/null 2>&1 || true
+          }
+          trap cleanup_governed_shadow_database EXIT
+          cleanup_governed_shadow_database
+          docker compose exec -T postgres createdb -U akp akp_governed_shadow_test
+          pnpm db:migrate
+          pnpm --filter @akp/api exec vitest run \
+            --config vitest.integration.config.ts \
+            test/governed-proposition-shadow.integration.test.ts \
+            --no-file-parallelism
       - name: Run PostgreSQL persistence integration on an isolated database
         env:
           DATABASE_URL: postgres://akp:akp@localhost:55432/akp_postgres_test
