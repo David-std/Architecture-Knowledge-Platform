@@ -105,9 +105,9 @@ function canonicalJsonValue(
 /**
  * Canonicalizes a temporal fact object without interpreting field names.
  *
- * Primitive values retain their textual identity. Arrays and records are
- * serialized with stable key ordering, and unsupported/non-JSON values fail
- * closed.
+ * Values retain their JSON identity with stable record key ordering. Field
+ * names are never reinterpreted as semantic slots, and unsupported/non-JSON
+ * values fail closed.
  */
 export function canonicalTemporalFactObject(value: unknown): string | null {
   return canonicalJsonValue(value, new WeakSet<object>());
