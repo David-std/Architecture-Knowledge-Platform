@@ -63,7 +63,6 @@ function locatorSpan(
     : null;
 }
 
-
 async function candidateHeadSha(): Promise<string | null> {
   const eventPath = process.env.GITHUB_EVENT_PATH?.trim();
   if (!eventPath) return null;
@@ -207,7 +206,7 @@ try {
   const negativeFullMatchIds = await fullMatches(negativeQuery);
   const baselineTopUnitId = baseline[0]?.unitId ?? null;
   const baselineTopUnit = baselineTopUnitId
-    ? (
+    ? ((
         await db.pool.query<UnitDiagnostic>(
           `
           select id,unit_key,unit_type,body,structural_order
@@ -218,7 +217,7 @@ try {
           `,
           [baselineTopUnitId, document.lexical_revision],
         )
-      ).rows[0] ?? null
+      ).rows[0] ?? null)
     : null;
 
   const checks = {
@@ -232,8 +231,7 @@ try {
       silver!.body === "| Gateway | Nia Brooks | Zone9 |",
     sourceSpansExact,
     baselineOffDoesNotSelectTargetRow:
-      Boolean(gold) &&
-      baseline[0]?.unitId !== gold!.id,
+      Boolean(gold) && baseline[0]?.unitId !== gold!.id,
     candidateOnSelectsTargetRow:
       Boolean(gold) &&
       candidate[0]?.documentId === document.document_id &&
