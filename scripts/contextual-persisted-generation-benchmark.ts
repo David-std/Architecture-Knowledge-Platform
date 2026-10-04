@@ -240,7 +240,8 @@ async function measureGeneration(
 
   for (const [index, query] of fixture.queries.entries()) {
     const queryVector = queryVectors[index];
-    if (!queryVector) throw new Error("Missing query vector for " + query.id + ".");
+    if (!queryVector)
+      throw new Error("Missing query vector for " + query.id + ".");
     const started = performance.now();
     const ranked = await db.pool.query<{ unit_key: string; score: number }>(
       `select u.unit_key,
@@ -316,10 +317,9 @@ async function generationEvidence(
   const generation = await db.pool.query<{
     status: string;
     input_strategy: string;
-  }>(
-    `select status,input_strategy from embedding_generations where id=$1`,
-    [generationId],
-  );
+  }>(`select status,input_strategy from embedding_generations where id=$1`, [
+    generationId,
+  ]);
   const rows = await db.pool.query<{
     vector_rows: number;
     matching_input_hashes: number;
@@ -343,7 +343,8 @@ async function generationEvidence(
   );
   const current = generation.rows[0];
   const counts = rows.rows[0];
-  if (!current || !counts) throw new Error("Persisted generation evidence is missing.");
+  if (!current || !counts)
+    throw new Error("Persisted generation evidence is missing.");
   return {
     status: current.status,
     inputStrategy: current.input_strategy,
@@ -457,7 +458,9 @@ try {
       evidence.matchingInputHashes !== ids.unitCount ||
       evidence.complete !== true
     ) {
-      throw new Error("Persisted generation is incomplete or fingerprint-invalid.");
+      throw new Error(
+        "Persisted generation is incomplete or fingerprint-invalid.",
+      );
     }
   }
 
@@ -547,8 +550,7 @@ try {
       recallAtK: contextualMetrics.recallAtK - rawMetrics.recallAtK,
       mrr: contextualMetrics.mrr - rawMetrics.mrr,
       contextPrecisionAtK:
-        contextualMetrics.contextPrecisionAtK -
-        rawMetrics.contextPrecisionAtK,
+        contextualMetrics.contextPrecisionAtK - rawMetrics.contextPrecisionAtK,
       buildLatencyMs: contextualBuildLatencyMs - rawBuildLatencyMs,
       meanQueryLatencyMs:
         contextualMetrics.meanQueryLatencyMs - rawMetrics.meanQueryLatencyMs,
