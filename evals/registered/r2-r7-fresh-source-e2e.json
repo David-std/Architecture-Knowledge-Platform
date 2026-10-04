@@ -43,22 +43,10 @@
       "table": {
         "startLine": 9,
         "endLine": 12,
-        "headers": [
-          "Service",
-          "Region",
-          "Recovery target"
-        ],
+        "headers": ["Service", "Region", "Recovery target"],
         "rows": [
-          [
-            "Atlas relay",
-            "Lima",
-            "17 minutes"
-          ],
-          [
-            "Boreal cache",
-            "Quito",
-            "29 minutes"
-          ]
+          ["Atlas relay", "Lima", "17 minutes"],
+          ["Boreal cache", "Quito", "29 minutes"]
         ]
       }
     }
@@ -110,11 +98,7 @@
       "id": "answerable-atlas-recovery",
       "query": "What recovery target is documented for the Atlas relay in the Lima staging cluster?",
       "expectNoAnswer": false,
-      "requiredEvidenceTerms": [
-        "Atlas relay",
-        "Lima",
-        "17 minutes"
-      ],
+      "requiredEvidenceTerms": ["Atlas relay", "Lima", "17 minutes"],
       "requireSupportedAdmission": true,
       "requireContextPacket": true
     },
