@@ -1225,7 +1225,6 @@ describe("product lifecycle E2E", () => {
     ).toBe(true);
   }, 180_000);
 
-
   const freshSourceIt =
     process.env.AKP_RUN_R2_R7_FRESH_E2E === "1" ? it : it.skip;
 
@@ -1548,8 +1547,7 @@ describe("product lifecycle E2E", () => {
             unit.body === expected.exactBody &&
             (expected.table === undefined ||
               unit.locator.table === expected.table) &&
-            (expected.row === undefined ||
-              unit.locator.row === expected.row) &&
+            (expected.row === undefined || unit.locator.row === expected.row) &&
             (expected.column === undefined ||
               unit.locator.column === expected.column),
         );
@@ -1558,9 +1556,7 @@ describe("product lifecycle E2E", () => {
           JSON.stringify({ expected, units: units.rows }),
         ).toBeDefined();
         expect(match?.embedding_eligible).toBe(expected.embeddingEligible);
-        expect(match?.locator.sourceFrame).toBe(
-          "markdown-body-cache-raw-v1",
-        );
+        expect(match?.locator.sourceFrame).toBe("markdown-body-cache-raw-v1");
         expect(match?.locator.sourceEncoding).toBe("utf-16-code-units");
         expect(match?.locator.sourceTextProjection).toBe(
           "visible-markdown-lf-trim-v1",
