@@ -25,7 +25,8 @@ export * from "./query-transform.js";
 export * from "./support-verifier.js";
 export * from "./assertion-recall.js";
 export * from "./answerability.js";
-export * from "./evidence-admission.js";\nexport * from "./proposition-projection.js";
+export * from "./evidence-admission.js";
+export * from "./proposition-projection.js";
 export * from "./quality-diagnostics.js";
 
 export * from "./embedding-input.js";
