@@ -201,3 +201,20 @@ export function projectTableRows(
     ];
   });
 }
+
+
+/**
+ * Materializes the deterministic TABLE_ROW lexical projection by canonical
+ * parsed unit key. Non-table units intentionally have no structured context.
+ */
+export function tableRowLexicalContextByUnitKey(
+  title: string,
+  sourceBody: string,
+): ReadonlyMap<string, string> {
+  return new Map(
+    projectTableRows(title, sourceBody).map((projection) => [
+      projection.unitKey,
+      projection.lexicalText,
+    ]),
+  );
+}
