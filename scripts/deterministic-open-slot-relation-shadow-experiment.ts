@@ -122,8 +122,7 @@ const CASES: CaseFixture[] = [
     family: "OPEN_SLOT_RELATION",
     query: "Who reviews the retry policy before publication?",
     title: "Retry policy review",
-    passage:
-      "Avery Chen reviews the retry policy before publication.",
+    passage: "Avery Chen reviews the retry policy before publication.",
     expectedAnswerable: true,
   },
   {
@@ -262,7 +261,9 @@ function summarize(rows: readonly Observation[]) {
     negatives: negatives.length,
     baseline: metrics("baselineSupported"),
     candidate: metrics("candidateSupported"),
-    narrowedCases: rows.filter((row) => row.candidateNarrowed).map((row) => row.id),
+    narrowedCases: rows
+      .filter((row) => row.candidateNarrowed)
+      .map((row) => row.id),
   };
 }
 
@@ -407,7 +408,7 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   process.stderr.write(
-    (error instanceof Error ? error.stack ?? error.message : String(error)) +
+    (error instanceof Error ? (error.stack ?? error.message) : String(error)) +
       "\n",
   );
   process.exitCode = 1;
