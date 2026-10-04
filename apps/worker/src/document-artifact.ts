@@ -253,20 +253,10 @@ function artifactItems(artifact: DocumentArtifact): DocumentArtifact["blocks"] {
       .filter((item) => item.id)
       .map((item) => [String(item.id), item] as const),
   );
-  const blockIds = new Set(
-    artifact.blocks
-      .map((item) => item.id)
-      .filter((id): id is string => typeof id === "string"),
-  );
   const candidates = artifact.blocks.length
-    ? [
-        ...artifact.blocks.map((item) =>
-          item.id ? (specializedById.get(String(item.id)) ?? item) : item,
-        ),
-        ...specialized.filter(
-          (item) => item.id && !blockIds.has(String(item.id)),
-        ),
-      ]
+    ? artifact.blocks.map((item) =>
+        item.id ? (specializedById.get(String(item.id)) ?? item) : item,
+      )
     : specialized;
   const byId = new Map(
     candidates
