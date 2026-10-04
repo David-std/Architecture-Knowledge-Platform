@@ -259,7 +259,8 @@ async function loadInputs() {
   const corpusPath = path.resolve(experiment.sourceInputs.corpusManifest.path);
   const casesPath = path.resolve(experiment.sourceInputs.cases.path);
   if (
-    gitBlobSha(corpusPath) !== experiment.sourceInputs.corpusManifest.gitBlobSha ||
+    gitBlobSha(corpusPath) !==
+      experiment.sourceInputs.corpusManifest.gitBlobSha ||
     gitBlobSha(casesPath) !== experiment.sourceInputs.cases.gitBlobSha
   ) {
     throw new Error("Registered public corpus inputs changed after freeze.");
@@ -285,7 +286,9 @@ async function loadInputs() {
     expectedIds.size !== cases.length ||
     [...expectedIds].some((id) => !actualIds.has(id))
   ) {
-    throw new Error("Frozen case selection no longer matches registered cases.");
+    throw new Error(
+      "Frozen case selection no longer matches registered cases.",
+    );
   }
 
   const vaults: ResolvedVault[] = [];
@@ -485,9 +488,7 @@ async function buildEmbeddings(
       batchSize: 8,
     });
     if (!built.activated || built.generation.status !== "ACTIVE") {
-      throw new Error(
-        `Embedding generation did not activate for ${vault.id}`,
-      );
+      throw new Error(`Embedding generation did not activate for ${vault.id}`);
     }
     generations.push({
       vault: vault.id,
@@ -624,9 +625,9 @@ function splitMetrics(rows: readonly CaseObservation[]) {
       goldSupportCount === 0
         ? 1
         : answerable.reduce(
-              (sum, row) => sum + row[key].goldSupportRecovered.length,
-              0,
-            ) / goldSupportCount,
+            (sum, row) => sum + row[key].goldSupportRecovered.length,
+            0,
+          ) / goldSupportCount,
     noAnswerFalseAcceptance:
       noAnswer.length === 0
         ? 0
@@ -709,9 +710,14 @@ try {
 
     const initialCandidates = await retrieve(testCase.query);
     const initialAssessment = supportAssessment(
-      assessRetrievalAnswerability(initialCandidates, testCase.query, {}, {
-        comparisonHits: initialCandidates,
-      }),
+      assessRetrievalAnswerability(
+        initialCandidates,
+        testCase.query,
+        {},
+        {
+          comparisonHits: initialCandidates,
+        },
+      ),
     );
     const assessmentQueries: string[] = [];
     const followUp = await runRequestedAnswerFollowUp({
@@ -722,9 +728,14 @@ try {
       assess: (candidates, originalQuery) => {
         assessmentQueries.push(originalQuery);
         return supportAssessment(
-          assessRetrievalAnswerability(candidates, originalQuery, {}, {
-            comparisonHits: candidates,
-          }),
+          assessRetrievalAnswerability(
+            candidates,
+            originalQuery,
+            {},
+            {
+              comparisonHits: candidates,
+            },
+          ),
         );
       },
     });
@@ -803,9 +814,8 @@ try {
   const unsupportedQueryFollowUpRate =
     unsupportedRows.length === 0
       ? 0
-      : unsupportedRows.filter(
-            (row) => row.followUp.followUpAttemptCount > 0,
-          ).length / unsupportedRows.length;
+      : unsupportedRows.filter((row) => row.followUp.followUpAttemptCount > 0)
+          .length / unsupportedRows.length;
   const reassessmentQueries = observations.flatMap(
     (row) => row.followUp.assessmentQueries,
   );
@@ -910,8 +920,7 @@ try {
     productionBehaviorChanged: false,
     productionAdmissionChanged: false,
     routeWiringChanged: false,
-    retrievalConfiguration:
-      inputs.experiment.protocol.retrievalConfiguration,
+    retrievalConfiguration: inputs.experiment.protocol.retrievalConfiguration,
     fixture: {
       corpus: inputs.corpus.name,
       documents: inputs.corpus.vaults.reduce(
