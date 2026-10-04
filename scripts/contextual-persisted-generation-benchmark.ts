@@ -4,7 +4,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
-import { Postgres } from "@akp/postgres";
+import { Postgres } from "../packages/postgres/src/index.js";
 import { buildEmbeddingIndex } from "../packages/indexing/src/index.js";
 import {
   LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
