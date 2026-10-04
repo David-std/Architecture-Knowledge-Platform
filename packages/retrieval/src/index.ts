@@ -27,6 +27,7 @@ export * from "./assertion-recall.js";
 export * from "./answerability.js";
 export * from "./evidence-admission.js";
 export * from "./requested-answer-slot.js";
+export * from "./requested-answer-followup.js";
 export * from "./proposition-projection.js";
 export * from "./quality-diagnostics.js";
 
