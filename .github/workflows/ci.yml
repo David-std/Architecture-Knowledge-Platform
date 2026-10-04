@@ -71,6 +71,8 @@ jobs:
       - run: pnpm auth:provision
       - name: Run pnpm check
         run: pnpm check
+      - name: Run structured proposition family-disjoint holdout
+        run: pnpm benchmark:structured-proposition-family-disjoint
       - name: Verify structured row lexical context wiring on an isolated database
         env:
           DATABASE_URL: postgres://akp:akp@localhost:55432/akp_structured_row_test
