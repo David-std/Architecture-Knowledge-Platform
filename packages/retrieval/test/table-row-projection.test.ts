@@ -18,6 +18,7 @@ describe("table row projection", () => {
     expect(projections[0]).toMatchObject({
       kind: "TABLE_ROW",
       derivation: "DETERMINISTIC_PARSED",
+      unitKey: "table:1:row:1",
       tableIndex: 1,
       rowIndex: 1,
       title: "Reliability report",
