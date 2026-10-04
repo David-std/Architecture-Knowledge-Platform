@@ -20,11 +20,7 @@
     "heldoutVault": "product-operations",
     "noTuningAfterHeldout": true,
     "retrievalConfiguration": {
-      "channels": [
-        "exact",
-        "lexical",
-        "vector"
-      ],
+      "channels": ["exact", "lexical", "vector"],
       "embeddingProvider": "local-multilingual-e5-small",
       "deterministicRerank": false,
       "queryTransformation": false,
@@ -36,14 +32,8 @@
     "relevanceCanGrantSupport": false
   },
   "casePolicy": {
-    "primaryLabels": [
-      "gold_support",
-      "expect_no_answer"
-    ],
-    "controls": [
-      "exact",
-      "graph"
-    ],
+    "primaryLabels": ["gold_support", "expect_no_answer"],
+    "controls": ["exact", "graph"],
     "totalRegisteredCases": 13,
     "primaryCaseIds": [
       "public-architecture-canonical",
