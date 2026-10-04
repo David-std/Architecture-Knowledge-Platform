@@ -97,6 +97,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".github/workflows/xquad-contextual-persisted-generation.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".gitignore",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -4293,6 +4298,11 @@
     },
     {
       "path": "scripts/verify-upgrade-migrations.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/xquad-contextual-persisted-generation-benchmark.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
