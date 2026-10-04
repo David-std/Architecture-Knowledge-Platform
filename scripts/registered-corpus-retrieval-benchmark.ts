@@ -681,6 +681,7 @@ function benchmarkConfigurations(): BenchmarkConfiguration[] {
     "vector-only",
     "graph-only",
     "lexical+vector",
+    "exact+lexical+vector",
     "lexical+vector+graph",
     "lexical+graph",
     "vector+graph",
@@ -1913,7 +1914,7 @@ async function main(): Promise<void> {
 
     const ablationStages = [
       { stage: "BASELINE_EXACT_LEXICAL", configuration: "exact+lexical" },
-      { stage: "ADD_DENSE", configuration: "lexical+vector" },
+      { stage: "ADD_DENSE", configuration: "exact+lexical+vector" },
       {
         stage: "ADD_TYPED_GRAPH",
         configuration: "lexical+vector+graph",

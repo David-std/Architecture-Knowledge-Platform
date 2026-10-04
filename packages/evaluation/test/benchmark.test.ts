@@ -7,6 +7,15 @@ import {
   selectBenchmarkDefault,
 } from "../src/index.js";
 
+const benchmarkConfiguration = (name: string) => {
+  const configuration = RETRIEVAL_BENCHMARK_MATRIX.find(
+    (candidate) => candidate.name === name,
+  );
+  if (!configuration)
+    throw new Error(`Missing benchmark configuration: ${name}`);
+  return configuration;
+};
+
 describe("retrieval benchmark matrix", () => {
   it("contains the auditable retrieval configurations including real PPR", () => {
     expect(RETRIEVAL_BENCHMARK_MATRIX.map(({ name }) => name)).toEqual([
@@ -15,6 +24,7 @@ describe("retrieval benchmark matrix", () => {
       "vector-only",
       "graph-only",
       "lexical+vector",
+      "exact+lexical+vector",
       "lexical+graph",
       "vector+graph",
       "context-pack+lexical+graph",
@@ -26,12 +36,20 @@ describe("retrieval benchmark matrix", () => {
       "lexical+vector+graph+community-global",
       "lexical+vector+query-decomposition",
     ]);
-    expect(RETRIEVAL_BENCHMARK_MATRIX).toHaveLength(15);
+    expect(RETRIEVAL_BENCHMARK_MATRIX).toHaveLength(16);
     expect(
       RETRIEVAL_BENCHMARK_MATRIX.filter(({ channels }) =>
         channels.includes("vector"),
       ).every(({ allowVectorForBenchmark }) => allowVectorForBenchmark),
     ).toBe(true);
+    expect(
+      RETRIEVAL_BENCHMARK_MATRIX.find(
+        ({ name }) => name === "exact+lexical+vector",
+      ),
+    ).toMatchObject({
+      channels: ["exact", "lexical", "vector"],
+      allowVectorForBenchmark: true,
+    });
     expect(
       RETRIEVAL_BENCHMARK_MATRIX.find(
         ({ name }) => name === "lexical+vector+graph",
@@ -337,7 +355,7 @@ describe("benchmark metrics", () => {
       },
     ];
     const run = aggregateBenchmarkRun(
-      RETRIEVAL_BENCHMARK_MATRIX[1]!,
+      benchmarkConfiguration("exact+lexical"),
       observations,
     );
     expect(run.cases).toBe(3);
@@ -356,7 +374,7 @@ describe("benchmark metrics", () => {
     expect(run.faithfulnessCoverage).toBe(0);
 
     const vector = aggregateBenchmarkRun(
-      RETRIEVAL_BENCHMARK_MATRIX[8]!,
+      benchmarkConfiguration("full-hybrid-rrf"),
       observations.map((observation) => ({
         ...observation,
         configurationName: "full-hybrid-rrf",
@@ -392,16 +410,19 @@ describe("benchmark metrics", () => {
   });
 
   it("does not select a vector-only or empty benchmark as a runtime default", () => {
-    const vectorOnly = aggregateBenchmarkRun(RETRIEVAL_BENCHMARK_MATRIX[2]!, [
-      {
-        configurationName: "vector-only",
-        caseId: "vector-case",
-        slice: "conceptual",
-        rankedDocumentIds: ["doc-a"],
-        goldDocumentIds: ["doc-a"],
-        returnedAnswer: true,
-      },
-    ]);
+    const vectorOnly = aggregateBenchmarkRun(
+      benchmarkConfiguration("vector-only"),
+      [
+        {
+          configurationName: "vector-only",
+          caseId: "vector-case",
+          slice: "conceptual",
+          rankedDocumentIds: ["doc-a"],
+          goldDocumentIds: ["doc-a"],
+          returnedAnswer: true,
+        },
+      ],
+    );
     expect(selectBenchmarkDefault([vectorOnly])).toMatchObject({
       selectedDefault: null,
       measuredCandidate: null,
@@ -412,7 +433,7 @@ describe("benchmark metrics", () => {
     });
 
     const emptyBaseline = aggregateBenchmarkRun(
-      RETRIEVAL_BENCHMARK_MATRIX[1]!,
+      benchmarkConfiguration("exact+lexical"),
       [],
     );
     expect(selectBenchmarkDefault([emptyBaseline])).toMatchObject({
