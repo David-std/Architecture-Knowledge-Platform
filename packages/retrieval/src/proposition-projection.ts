@@ -17,8 +17,7 @@ export interface GovernedPropositionEvidence {
   readonly excerpt: string;
 }
 
-export interface PropositionEvidenceReference
-  extends GovernedPropositionEvidence {}
+export interface PropositionEvidenceReference extends GovernedPropositionEvidence {}
 
 export interface TemporalFactPropositionProjection {
   readonly sourceFactId: string;
@@ -169,7 +168,8 @@ export function projectSupportedTemporalFact(
   if (!object || !fact.subjectRef.trim() || !fact.predicate.trim()) return null;
 
   const requestedEvidenceIds = [...new Set(supportSet.evidenceIds)].sort();
-  if (requestedEvidenceIds.length !== supportSet.evidenceIds.length) return null;
+  if (requestedEvidenceIds.length !== supportSet.evidenceIds.length)
+    return null;
 
   const byId = new Map<string, GovernedPropositionEvidence>();
   for (const evidence of input.evidence) {
@@ -214,11 +214,10 @@ function exactUniqueSpan(
   excerpt: string,
 ): { startOffset: number; endOffset: number } | null {
   const startOffset = passage.indexOf(excerpt);
-  if (startOffset < 0 || passage.lastIndexOf(excerpt) !== startOffset) return null;
+  if (startOffset < 0 || passage.lastIndexOf(excerpt) !== startOffset)
+    return null;
   const endOffset = startOffset + excerpt.length;
-  if (
-    !sourceSpanUsesCodePointBoundaries(passage, startOffset, endOffset)
-  ) {
+  if (!sourceSpanUsesCodePointBoundaries(passage, startOffset, endOffset)) {
     return null;
   }
   return { startOffset, endOffset };
