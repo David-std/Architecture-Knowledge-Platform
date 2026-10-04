@@ -184,7 +184,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: xquad-contextual-persisted-generalization-\${{ github.run_id }}
+          name: xquad-contextual-persisted-generalization-${{ github.run_id }}
           path: |
             reports/ci/xquad-contextual-persisted-generalization.json
             reports/ci/xquad-contextual-persisted-generalization.log
