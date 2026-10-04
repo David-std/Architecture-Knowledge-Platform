@@ -2,6 +2,24 @@ import { describe, expect, it } from "vitest";
 import { parseKnowledgeUnits } from "../src/chunking.js";
 import { projectTableRows } from "../src/table-row-projection.js";
 
+function locatedCaptionSource(
+  captionLocator: string,
+  tableLocator: string,
+  caption: string,
+  firstCell: string,
+): string {
+  return [
+    "# Scope matrix",
+    `<!-- akp-locator: ${captionLocator} -->`,
+    caption,
+    "",
+    `<!-- akp-locator: ${tableLocator} -->`,
+    "| Key | Value |",
+    "| --- | --- |",
+    `| ${firstCell} | retained |`,
+  ].join("\n");
+}
+
 describe("table row projection", () => {
   it("derives explicit header-value pairs while preserving exact source spans", () => {
     const source = [
@@ -116,5 +134,88 @@ describe("table row projection", () => {
     ).toBe("José   Pérez");
     expect(projection?.sourceBodyHash).toMatch(/^[a-f0-9]{64}$/u);
     expect(projection?.tableId).toBe(`${projection?.sourceBodyHash}:table:1`);
+  });
+
+  it.each([
+    ["same page", "page=4; table=7", "page=4; table=7", true],
+    ["same slide", "slide=2; table=7", "slide=2; table=7", true],
+    ["same sheet", "sheet=Orders; table=7", "sheet=Orders; table=7", true],
+    ["both absent", "table=7", "table=7", true],
+    ["different page", "page=4; table=7", "page=5; table=7", false],
+    ["different slide", "slide=2; table=7", "slide=3; table=7", false],
+    [
+      "different sheet",
+      "sheet=Orders; table=7",
+      "sheet=Archive; table=7",
+      false,
+    ],
+    ["caption scoped and table absent", "page=4; table=7", "table=7", false],
+    ["caption absent and table scoped", "table=7", "page=4; table=7", false],
+  ] as const)(
+    "matches captions only for equal portable scope: %s",
+    (_label, captionLocator, tableLocator, shouldAttach) => {
+      const source = locatedCaptionSource(
+        captionLocator,
+        tableLocator,
+        "Scoped caption",
+        "row-value",
+      );
+      const [projection] = projectTableRows("Scope fixture", source);
+
+      expect(projection?.caption).toBe(
+        shouldAttach ? "Scoped caption" : undefined,
+      );
+      expect(projection?.tableIndex).toBe(7);
+      expect(projection?.rowIndex).toBe(1);
+      expect(
+        source.slice(
+          projection!.sourceSpan.startOffset,
+          projection!.sourceSpan.endOffset,
+        ),
+      ).toBe("| row-value | retained |");
+      for (const cell of projection?.cells ?? []) {
+        expect(
+          source.slice(cell.sourceSpan.startOffset, cell.sourceSpan.endOffset),
+        ).toBe(cell.rawValue);
+      }
+    },
+  );
+
+  it("excludes hidden HTML comments while retaining visible projection and exact spans", () => {
+    const source = [
+      "# Hidden scope",
+      "<!-- akp-locator: page=4; table=7 -->",
+      "Caption visible <!-- HIDDEN_CAPTION -->",
+      "",
+      "<!-- akp-locator: page=4; table=7 -->",
+      "| <!-- HIDDEN_HEADER --> Public header | Value |",
+      "| --- | --- |",
+      "| Public value | 42 |",
+    ].join("\n");
+
+    const [projection] = projectTableRows("Hidden scope fixture", source);
+
+    expect(projection).toMatchObject({
+      tableIndex: 7,
+      rowIndex: 1,
+      caption: "Caption visible",
+      cells: [
+        { header: "Public header", rawValue: "Public value" },
+        { header: "Value", rawValue: "42" },
+      ],
+    });
+    expect(projection?.lexicalText).not.toContain("HIDDEN_");
+    expect(projection?.embeddingText).not.toContain("HIDDEN_");
+    expect(
+      source.slice(
+        projection!.sourceSpan.startOffset,
+        projection!.sourceSpan.endOffset,
+      ),
+    ).toBe("| Public value | 42 |");
+    for (const cell of projection?.cells ?? []) {
+      expect(
+        source.slice(cell.sourceSpan.startOffset, cell.sourceSpan.endOffset),
+      ).toBe(cell.rawValue);
+    }
   });
 });

@@ -50,15 +50,10 @@ function samePortableScope(
   right: ParsedKnowledgeUnit,
 ): boolean {
   const keys = ["page", "slide", "sheet"] as const;
-  return keys.every((key) => {
-    const leftValue = left.locator[key];
-    const rightValue = right.locator[key];
-    return (
-      leftValue === undefined ||
-      rightValue === undefined ||
-      leftValue === rightValue
-    );
-  });
+  // An omitted coordinate is unknown, not a wildcard. Captions and tables
+  // match only when every portable coordinate has the same value, including
+  // both sides being omitted.
+  return keys.every((key) => left.locator[key] === right.locator[key]);
 }
 
 function captionForTable(
