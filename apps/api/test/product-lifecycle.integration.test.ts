@@ -1654,6 +1654,9 @@ describe("product lifecycle E2E", () => {
           unitId?: string;
           excerpt: string;
           citations: string[];
+          retrievalTrace?: {
+            contributions: Array<{ candidateRevision?: string | null }>;
+          };
         }>;
         scope: { vaultIds: string[] };
       };
@@ -1671,9 +1674,16 @@ describe("product lifecycle E2E", () => {
         goldHit?.citations.some(
           (citation) =>
             citation.includes(oracle.publication.persistedPathSuffix) &&
-            citation.includes(indexRow.corpus_revision),
+            citation.includes(documentRow.current_revision),
         ),
         JSON.stringify(goldHit),
+      ).toBe(true);
+      expect(
+        goldHit?.retrievalTrace?.contributions.some(
+          (contribution) =>
+            contribution.candidateRevision === indexRow.corpus_revision,
+        ),
+        JSON.stringify(goldHit?.retrievalTrace),
       ).toBe(true);
 
       const context = await app.inject({
@@ -1722,7 +1732,7 @@ describe("product lifecycle E2E", () => {
         contextBody.citations.some(
           (citation) =>
             citation.includes(oracle.publication.persistedPathSuffix) &&
-            citation.includes(indexRow.corpus_revision),
+            citation.includes(documentRow.current_revision),
         ),
         JSON.stringify(contextBody.citations),
       ).toBe(true);
