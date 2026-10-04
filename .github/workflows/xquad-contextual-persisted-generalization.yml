@@ -1,0 +1,197 @@
+name: xquad-contextual-persisted-generalization
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  xquad-persisted-generalization:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'eval/xquad-contextual-persisted-generalization'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      AKP_MODEL_CACHE_DIR: /tmp/akp-model-cache
+      AKP_XQUAD_DIR: .cache/xquad
+      AKP_XQUAD_REPORT: reports/ci/xquad-contextual-persisted-generalization.json
+      XQUAD_COMMIT: 7d30520c717524000f0d9d2f9c10a069acd9d285
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate experiment source
+        run: |
+          pnpm exec prettier --check \
+            scripts/xquad-contextual-persisted-generalization.ts \
+            .github/workflows/xquad-contextual-persisted-generalization.yml
+          pnpm check
+      - name: Capture canonical formatter output
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p reports/ci
+          pnpm exec prettier scripts/xquad-contextual-persisted-generalization.ts \
+            > reports/ci/xquad-contextual-persisted-generalization.formatted.ts
+      - run: pnpm build
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Download pinned XQuAD EN/ES source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$AKP_XQUAD_DIR"
+          base="https://raw.githubusercontent.com/google-deepmind/xquad/$XQUAD_COMMIT"
+          for file in xquad.en.json xquad.es.json README.md CC-BY-SA4.0.txt; do
+            curl --fail --location --retry 3 --retry-all-errors \
+              "$base/$file" \
+              --output "$AKP_XQUAD_DIR/$file"
+          done
+      - name: Warm pinned multilingual semantic model cache
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci "$AKP_MODEL_CACHE_DIR"
+          pnpm exec tsx scripts/preload-semantic-model.ts \
+            2>&1 | tee reports/ci/xquad-model-prefetch.log
+          echo "AKP_LOCAL_FILES_ONLY=1" >> "$GITHUB_ENV"
+      - name: Execute full pinned XQuAD persisted-generation A/B
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm exec tsx scripts/xquad-contextual-persisted-generalization.ts \
+            2>&1 | tee reports/ci/xquad-contextual-persisted-generalization.log
+      - name: Validate XQuAD evidence
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(
+            readFileSync(
+              "reports/ci/xquad-contextual-persisted-generalization.json",
+              "utf8",
+            ),
+          );
+
+          if (!["PROMOTE", "REJECT", "INCONCLUSIVE"].includes(report.outcome)) {
+            throw new Error("XQuAD experiment did not produce a governed outcome.");
+          }
+          if (
+            report.productionDefaultsChanged !== false ||
+            report.retrievalOnly !== true ||
+            report.admissionMeasured !== false ||
+            report.rawCorpusMaterialPersistedInReport !== false
+          ) {
+            throw new Error("XQuAD experiment crossed its claim boundary.");
+          }
+          if (
+            report.upstream?.commit !==
+              "7d30520c717524000f0d9d2f9c10a069acd9d285" ||
+            report.dataset?.en?.articles !== 48 ||
+            report.dataset?.es?.articles !== 48 ||
+            report.dataset?.en?.paragraphs !== 240 ||
+            report.dataset?.es?.paragraphs !== 240 ||
+            report.dataset?.en?.questions !== 1190 ||
+            report.dataset?.es?.questions !== 1190 ||
+            report.dataset?.en?.exactAnswerOffsets !== 1190 ||
+            report.dataset?.es?.exactAnswerOffsets !== 1190 ||
+            report.dataset?.alignedQuestionIdsAndParagraphs !== 1190
+          ) {
+            throw new Error("Pinned XQuAD provenance or cardinalities changed.");
+          }
+          if (
+            report.dataset?.contextMetadata?.titleProvidedByDataset !== true ||
+            report.dataset?.contextMetadata?.headingPathProvidedByDataset !== false ||
+            report.dataset?.contextMetadata?.injectedHeadingPath !== false
+          ) {
+            throw new Error("XQuAD title/heading provenance is invalid.");
+          }
+
+          const generationIds = [];
+          for (const language of ["en", "es"]) {
+            for (const armName of ["bodyOnly", "titleHeading"]) {
+              const arm = report.generations?.[language]?.[armName];
+              if (
+                arm?.persisted?.status !== "READY" ||
+                arm?.persisted?.complete !== true ||
+                arm?.persisted?.vectorRows !== 240 ||
+                arm?.persisted?.matchingInputHashes !== 240 ||
+                arm?.embeddingsCreated !== 240 ||
+                arm?.embeddingsReused !== 0
+              ) {
+                throw new Error(
+                  language + "/" + armName + " is not a complete fresh generation.",
+                );
+              }
+              generationIds.push(arm.generationId);
+            }
+            if (
+              report.generations?.[language]?.bodyOnly?.persisted?.inputStrategy ===
+              report.generations?.[language]?.titleHeading?.persisted?.inputStrategy
+            ) {
+              throw new Error(language + " A/B did not vary input strategy.");
+            }
+          }
+          if (new Set(generationIds).size !== 4) {
+            throw new Error("XQuAD generations are not all distinct.");
+          }
+
+          for (const sliceName of ["en-en", "es-es", "en-es", "es-en"]) {
+            const slice = report.slices?.[sliceName];
+            if (
+              slice?.queryCount !== 1190 ||
+              slice?.observations?.length !== 1190 ||
+              slice.paired.improved +
+                slice.paired.regressed +
+                slice.paired.tied !==
+                1190
+            ) {
+              throw new Error("Invalid full-dataset slice " + sliceName + ".");
+            }
+          }
+
+          console.log(
+            JSON.stringify(
+              {
+                outcome: report.outcome,
+                upstream: report.upstream,
+                dataset: report.dataset,
+                slices: Object.fromEntries(
+                  Object.entries(report.slices).map(([name, slice]) => [
+                    name,
+                    {
+                      bodyOnly: slice.bodyOnly,
+                      titleHeading: slice.titleHeading,
+                      delta: slice.delta,
+                      paired: slice.paired,
+                    },
+                  ]),
+                ),
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Upload XQuAD evidence without corpus bytes
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: xquad-contextual-persisted-generalization-\${{ github.run_id }}
+          path: |
+            reports/ci/xquad-contextual-persisted-generalization.json
+            reports/ci/xquad-contextual-persisted-generalization.log
+            reports/ci/xquad-model-prefetch.log
+            reports/ci/xquad-contextual-persisted-generalization.formatted.ts
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
