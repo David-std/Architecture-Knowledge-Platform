@@ -28,18 +28,12 @@ describe("requested-answer follow-up", () => {
       "Who is the designated custodian of the audit ledger?",
       "custodian audit ledger",
     ],
-    [
-      "Where does collector persist telemetry?",
-      "persist collector telemetry",
-    ],
+    ["Where does collector persist telemetry?", "persist collector telemetry"],
     [
       "Quién es la persona responsable de la cola crítica?",
       "responsable cola critica",
     ],
-    [
-      "Dónde publica servicio eventos?",
-      "publica servicio eventos",
-    ],
+    ["Dónde publica servicio eventos?", "publica servicio eventos"],
   ])("builds bounded projected query for %s", (query, expected) => {
     const coverage = assessRequestedAnswerCoverage(query, assessment(false));
     expect(coverage.status).toBe("MISSING");
@@ -105,13 +99,11 @@ describe("requested-answer follow-up", () => {
       expect(query).toBe("persist collector telemetry");
       return ["cold-archive"];
     });
-    const assess = vi.fn(
-      (candidates: readonly string[], query: string) => {
-        expect(candidates).toEqual(["cold-archive"]);
-        expect(query).toBe(original);
-        return assessment(true);
-      },
-    );
+    const assess = vi.fn((candidates: readonly string[], query: string) => {
+      expect(candidates).toEqual(["cold-archive"]);
+      expect(query).toBe(original);
+      return assessment(true);
+    });
 
     const result = await runRequestedAnswerFollowUp({
       query: original,
