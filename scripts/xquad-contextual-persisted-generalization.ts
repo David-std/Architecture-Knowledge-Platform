@@ -549,10 +549,7 @@ async function buildArm(
     throw new Error("XQuAD generation was not freshly inferred.");
   }
 
-  const persisted = await generationEvidence(
-    db,
-    built.generation.generationId,
-  );
+  const persisted = await generationEvidence(db, built.generation.generationId);
   if (
     persisted.status !== "READY" ||
     persisted.complete !== true ||
@@ -725,10 +722,9 @@ async function measureSlice(
 
 async function cleanup(db: Postgres, ids: FixtureIds): Promise<void> {
   for (const vaultId of Object.values(ids.vaultIds)) {
-    await db.pool.query(
-      "delete from vault_index_revisions where vault_id=$1",
-      [vaultId],
-    );
+    await db.pool.query("delete from vault_index_revisions where vault_id=$1", [
+      vaultId,
+    ]);
     await db.pool.query("delete from embedding_generations where vault_id=$1", [
       vaultId,
     ]);
@@ -746,10 +742,7 @@ async function cleanup(db: Postgres, ids: FixtureIds): Promise<void> {
 const [enFile, esFile, readmeFile, licenseFile] = await Promise.all([
   readPinnedFile(upstream.files.en.name, upstream.files.en.gitBlobSha),
   readPinnedFile(upstream.files.es.name, upstream.files.es.gitBlobSha),
-  readPinnedFile(
-    upstream.files.readme.name,
-    upstream.files.readme.gitBlobSha,
-  ),
+  readPinnedFile(upstream.files.readme.name, upstream.files.readme.gitBlobSha),
   readPinnedFile(
     upstream.files.license.name,
     upstream.files.license.gitBlobSha,
@@ -808,10 +801,7 @@ try {
     provider.embedQueries(es.questions.map((question) => question.text)),
   ]);
 
-  const generations: Record<
-    Language,
-    Record<StrategyName, BuildEvidence>
-  > = {
+  const generations: Record<Language, Record<StrategyName, BuildEvidence>> = {
     en: {
       bodyOnly: await buildArm(db, {
         spaceId: root.spaceId,
