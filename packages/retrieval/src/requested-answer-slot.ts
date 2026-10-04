@@ -1,8 +1,5 @@
 export type RequestedAnswerSlotRole =
-  | "SUBJECT"
-  | "OBJECT"
-  | "RELATION_VALUE"
-  | "LOCATION";
+  "SUBJECT" | "OBJECT" | "RELATION_VALUE" | "LOCATION";
 
 export type RequestedAnswerSlotLanguage = "EN" | "ES";
 
@@ -42,12 +39,7 @@ const EN_AUXILIARIES = new Set([
   "must",
   "will",
 ]);
-const ES_AUXILIARIES = new Set([
-  "puede",
-  "pueden",
-  "debe",
-  "deben",
-]);
+const ES_AUXILIARIES = new Set(["puede", "pueden", "debe", "deben"]);
 
 const COPULAS = new Set([
   "is",
@@ -144,7 +136,8 @@ function auxiliaryObjectProjection(
   const tail = contentAnchors(after.slice(2));
   if (!subjectAnchor || !relationAnchor) return null;
   return {
-    role: tokens[0] === "where" || tokens[0] === "donde" ? "LOCATION" : "OBJECT",
+    role:
+      tokens[0] === "where" || tokens[0] === "donde" ? "LOCATION" : "OBJECT",
     relationAnchor,
     boundArgumentAnchors: [subjectAnchor, ...tail],
     language,
@@ -157,7 +150,12 @@ function directSubjectProjection(
   language: RequestedAnswerSlotLanguage,
 ): RequestedAnswerSlotProjection | null {
   const first = tokens[0]!;
-  if (first === "who" || first === "whom" || first === "quien" || first === "quienes") {
+  if (
+    first === "who" ||
+    first === "whom" ||
+    first === "quien" ||
+    first === "quienes"
+  ) {
     const relationAnchor = contentAnchors(tokens.slice(1, 2))[0];
     const boundArgumentAnchors = contentAnchors(tokens.slice(2));
     if (!relationAnchor || boundArgumentAnchors.length === 0) return null;
