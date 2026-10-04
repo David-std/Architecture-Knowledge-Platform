@@ -4,3 +4,5 @@ reports/document-intelligence/benchmark.json
 reports/retrieval/offline-benchmark.json
 reports/retrieval/curated-benchmark.json
 reports/scale/*.json
+# Frozen byte-exact source oracle: formatting would invalidate its source hash.
+test/fixtures/r2-r7-fresh-source/fidelity-probe.md
