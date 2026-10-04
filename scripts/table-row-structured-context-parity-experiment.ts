@@ -397,8 +397,7 @@ const QUESTIONS: QuestionFixture[] = [
     id: "dev-neg-cross-row",
     split: "development",
     family: "CROSS_ROW_NEGATIVE",
-    query:
-      "Blue release matrix Component API Owner Devon Price Slot SlotA",
+    query: "Blue release matrix Component API Owner Devon Price Slot SlotA",
   },
   {
     id: "dev-neg-cross-document",
@@ -534,7 +533,8 @@ async function gitHead(): Promise<string> {
 }
 
 async function candidateHeadSha(): Promise<string> {
-  const explicit = process.env.AKP_TABLE_ROW_STRUCTURED_CONTEXT_CANDIDATE_SHA?.trim();
+  const explicit =
+    process.env.AKP_TABLE_ROW_STRUCTURED_CONTEXT_CANDIDATE_SHA?.trim();
   if (explicit) return explicit;
   const eventPath = process.env.GITHUB_EVENT_PATH?.trim();
   if (eventPath) {
@@ -872,8 +872,7 @@ async function main(): Promise<void> {
 
     const gates = {
       captionBindingMatchesFrozenFixture: true,
-      changedRowsExactlyAllRows:
-        changedRows === rows.length && changedRows > 0,
+      changedRowsExactlyAllRows: changedRows === rows.length && changedRows > 0,
       developmentCaptionRecallImproves:
         familyRecall(candidate.development, "CAPTION_DISAMBIGUATION") >
           familyRecall(baseline.development, "CAPTION_DISAMBIGUATION") &&
