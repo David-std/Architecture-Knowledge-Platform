@@ -85,9 +85,9 @@ function evaluateCase(fixture: CaseFixture) {
     ? actual === null
     : Boolean(
         roleCorrect &&
-          relationAnchorCorrect &&
-          boundArgumentsCorrect &&
-          languageCorrect,
+        relationAnchorCorrect &&
+        boundArgumentsCorrect &&
+        languageCorrect,
       );
   return {
     id: fixture.id,
@@ -130,7 +130,8 @@ function summarize(rows: ReturnType<typeof evaluateCase>[]) {
     unsupportedFalseProjectionRate:
       unsupported.length === 0
         ? 0
-        : unsupported.filter((row) => row.projected).length / unsupported.length,
+        : unsupported.filter((row) => row.projected).length /
+          unsupported.length,
     rows,
   };
 }
@@ -143,7 +144,9 @@ async function main(): Promise<void> {
   const manifestRaw = await readFile(manifestPath, "utf8");
   const manifest = JSON.parse(manifestRaw) as Manifest;
   if (!manifest.frozen || !manifest.protocol.familyDisjoint) {
-    throw new Error("requested-answer-slot manifest must be frozen and family-disjoint");
+    throw new Error(
+      "requested-answer-slot manifest must be frozen and family-disjoint",
+    );
   }
   const developmentFamilies = new Set(manifest.protocol.developmentFamilies);
   const heldoutFamilies = new Set(manifest.protocol.heldoutFamilies);
@@ -151,9 +154,7 @@ async function main(): Promise<void> {
     throw new Error("development and heldout families must be disjoint");
   }
 
-  const development = summarize(
-    manifest.splits.development.map(evaluateCase),
-  );
+  const development = summarize(manifest.splits.development.map(evaluateCase));
   const heldout = summarize(manifest.splits.heldout.map(evaluateCase));
   const rules = manifest.promotionRule;
   const gates = {
@@ -207,7 +208,7 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   process.stderr.write(
-    (error instanceof Error ? error.stack ?? error.message : String(error)) +
+    (error instanceof Error ? (error.stack ?? error.message) : String(error)) +
       "\n",
   );
   process.exitCode = 1;
