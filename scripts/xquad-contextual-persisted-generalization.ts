@@ -361,9 +361,9 @@ async function seedRoot(
     ],
   );
   await db.pool.query(
-    \`insert into spaces(
+    `insert into spaces(
        id,organization_id,slug,name,visibility,knowledge_repo_path
-     ) values($1,$2,$3,$4,'PRIVATE',$5)\`,
+     ) values($1,$2,$3,$4,'PRIVATE',$5)`,
     [
       spaceId,
       organizationId,
@@ -383,10 +383,10 @@ async function seedCorpus(
 ): Promise<string> {
   const vaultId = randomUUID();
   await db.pool.query(
-    \`insert into vaults(
+    `insert into vaults(
        id,space_id,canonical_path,name,read_only,current_revision,
        vault_key,local_path,visibility,enabled
-     ) values($1,$2,$3,$4,true,$5,$6,$3,'PRIVATE',true)\`,
+     ) values($1,$2,$3,$4,true,$5,$6,$3,'PRIVATE',true)`,
     [
       vaultId,
       root.spaceId,
@@ -397,10 +397,10 @@ async function seedCorpus(
     ],
   );
   await db.pool.query(
-    \`insert into vault_index_revisions(
+    `insert into vault_index_revisions(
        space_id,vault_id,corpus_revision,lexical_revision,graph_revision,
        context_pack_revision,status,warnings
-     ) values($1,$2,$3,$3,$3,$3,'DEGRADED','[]'::jsonb)\`,
+     ) values($1,$2,$3,$3,$3,$3,'DEGRADED','[]'::jsonb)`,
     [root.spaceId, vaultId, corpusRevision],
   );
 
@@ -411,14 +411,14 @@ async function seedCorpus(
       .map((paragraph) => paragraph.context)
       .join("\n\n");
     await db.pool.query(
-      \`insert into knowledge_documents(
+      `insert into knowledge_documents(
          id,space_id,vault_id,path,external_id,title,type,lifecycle,
          trust_tier,current_revision,body_cache,frontmatter,aliases,layer,
          content_hash,token_estimate,raw_links
        ) values(
          $1,$2,$3,$4,$5,$6,'concept','ACTIVE','HUMAN_REVIEWED',$7,$8,
          $9::jsonb,'{}','concept',$10,$11,'[]'::jsonb
-       )\`,
+       )`,
       [
         documentId,
         root.spaceId,
@@ -440,7 +440,7 @@ async function seedCorpus(
 
     for (const [paragraphIndex, paragraph] of article.paragraphs.entries()) {
       await db.pool.query(
-        \`insert into knowledge_units(
+        `insert into knowledge_units(
            id,document_id,space_id,vault_id,unit_key,unit_type,heading_path,
            body,content_hash,corpus_revision,lifecycle,trust_tier,source_ids,
            token_estimate,document_revision,permissions,locator,structural_order,
@@ -449,7 +449,7 @@ async function seedCorpus(
            $1,$2,$3,$4,$5,'PARAGRAPH','{}',$6,$7,$8,
            'ACTIVE','HUMAN_REVIEWED','{}',$9,$8,'{}'::jsonb,$10::jsonb,
            $11,false,true
-         )\`,
+         )`,
         [
           randomUUID(),
           documentId,
@@ -489,7 +489,7 @@ async function generationEvidence(
     vector_rows: number;
     matching_input_hashes: number;
   }>(
-    \`select count(*)::int vector_rows,
+    `select count(*)::int vector_rows,
             count(*) filter(
               where e.input_hash=akp_embedding_passage_input_hash(
                 g.input_strategy,d.title,u.heading_path,u.body
@@ -499,7 +499,7 @@ async function generationEvidence(
        join embedding_generations g on g.id=e.generation_id
        join knowledge_units u on u.id=e.unit_id
        join knowledge_documents d on d.id=u.document_id
-      where e.generation_id=$1\`,
+      where e.generation_id=$1`,
     [generationId],
   );
   const complete = await db.pool.query<{ complete: boolean }>(
@@ -597,14 +597,14 @@ async function firstGoldRanks(
 
     const started = performance.now();
     const ranked = await db.pool.query<{ unit_key: string }>(
-      \`select u.unit_key
+      `select u.unit_key
          from unit_embeddings e
          join knowledge_units u on u.id=e.unit_id
         where e.generation_id=$1
           and u.corpus_revision=$3
           and u.lifecycle in ('ACTIVE','DISPUTED')
         order by e.embedding <=> $2::vector asc,u.unit_key asc
-        limit $4\`,
+        limit $4`,
       [generationId, pgVector(vector), corpusRevision, topK],
     );
     latencyMs += performance.now() - started;
