@@ -144,6 +144,30 @@ describe("canonical document artifact consumption", () => {
     expect(preview.markdown).toContain("table=3");
   });
 
+  it("enriches generic block entries from specialized artifact arrays", () => {
+    const parsed = parseCanonicalExtractionResponse(response(), {
+      sourceId,
+      sourceHash,
+    });
+    const richTable = parsed.artifact.tables[0]!;
+    const genericTable = {
+      ...richTable,
+      headers: undefined,
+      rows: undefined,
+    };
+    const artifact = {
+      ...parsed.artifact,
+      blocks: parsed.artifact.blocks.map((item) =>
+        item.id === richTable.id ? genericTable : item,
+      ),
+      tables: [richTable],
+    };
+
+    const markdown = renderDocumentArtifactMarkdown(artifact);
+    expect(markdown).toContain("| key | value |");
+    expect(markdown).toContain("| mode | local |");
+  });
+
   it("hashes configuration independently of object key order", () => {
     expect(documentArtifactConfigurationHash({ beta: 2, alpha: 1 })).toBe(
       documentArtifactConfigurationHash({ alpha: 1, beta: 2 }),
