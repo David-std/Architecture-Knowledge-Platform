@@ -17,6 +17,7 @@ jobs:
       AKP_RUN_REAL_MODEL_TESTS: "1"
       AKP_RUN_R2_R7_FRESH_E2E: "1"
       AKP_VECTOR_ENABLED: "true"
+      AKP_EMBEDDING_PROVIDER: local-multilingual-e5
       AKP_MODEL_CACHE_DIR: /tmp/akp-model-cache
       AKP_LOCAL_FILES_ONLY: "1"
       AKP_EXTRACTOR_URL: http://127.0.0.1:8090
