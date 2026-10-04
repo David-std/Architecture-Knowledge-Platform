@@ -71,6 +71,9 @@ jobs:
       - run: pnpm auth:provision
       - name: Run pnpm check
         run: pnpm check
+      - name: Run structured table-row context parity experiment
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'experiment/table-row-structured-context-parity'
+        run: pnpm exec tsx scripts/table-row-structured-context-parity-experiment.ts
       - name: Run PostgreSQL persistence integration on an isolated database
         env:
           DATABASE_URL: postgres://akp:akp@localhost:55432/akp_postgres_test
