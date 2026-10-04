@@ -11,10 +11,10 @@ const benchmarkConfiguration = (name: string) => {
   const configuration = RETRIEVAL_BENCHMARK_MATRIX.find(
     (candidate) => candidate.name === name,
   );
-  if (!configuration) throw new Error(`Missing benchmark configuration: ${name}`);
+  if (!configuration)
+    throw new Error(`Missing benchmark configuration: ${name}`);
   return configuration;
 };
-
 
 describe("retrieval benchmark matrix", () => {
   it("contains the auditable retrieval configurations including real PPR", () => {
@@ -410,16 +410,19 @@ describe("benchmark metrics", () => {
   });
 
   it("does not select a vector-only or empty benchmark as a runtime default", () => {
-    const vectorOnly = aggregateBenchmarkRun(benchmarkConfiguration("vector-only"), [
-      {
-        configurationName: "vector-only",
-        caseId: "vector-case",
-        slice: "conceptual",
-        rankedDocumentIds: ["doc-a"],
-        goldDocumentIds: ["doc-a"],
-        returnedAnswer: true,
-      },
-    ]);
+    const vectorOnly = aggregateBenchmarkRun(
+      benchmarkConfiguration("vector-only"),
+      [
+        {
+          configurationName: "vector-only",
+          caseId: "vector-case",
+          slice: "conceptual",
+          rankedDocumentIds: ["doc-a"],
+          goldDocumentIds: ["doc-a"],
+          returnedAnswer: true,
+        },
+      ],
+    );
     expect(selectBenchmarkDefault([vectorOnly])).toMatchObject({
       selectedDefault: null,
       measuredCandidate: null,
