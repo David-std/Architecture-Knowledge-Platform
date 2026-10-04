@@ -2504,7 +2504,7 @@
     {
       "path": "evals/registered/unit-strategy-token-window.json",
       "category": "PRODUCT_EVAL",
-      "reason": "corpus-agnostic product evaluation"
+      "reason": "versioned registered product evaluation"
     },
     {
       "path": "evals/registered/v0.3-capability-maturity-baseline.json",
