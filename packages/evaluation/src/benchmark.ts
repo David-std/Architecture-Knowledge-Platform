@@ -62,6 +62,11 @@ const RETRIEVAL_BENCHMARK_MATRIX_SOURCE: readonly BenchmarkConfiguration[] = [
     channels: ["lexical", "vector"],
     allowVectorForBenchmark: true,
   },
+  {
+    name: "exact+lexical+vector",
+    channels: ["exact", "lexical", "vector"],
+    allowVectorForBenchmark: true,
+  },
   { name: "lexical+graph", channels: ["lexical", "graph"] },
   {
     name: "vector+graph",
