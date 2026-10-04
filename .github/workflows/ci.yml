@@ -71,6 +71,11 @@ jobs:
       - run: pnpm auth:provision
       - name: Run pnpm check
         run: pnpm check
+      - name: Run requested answer slot family-disjoint projection
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'experiment/requested-answer-slot-projection'
+        env:
+          AKP_REQUESTED_SLOT_REPORT: reports/ci/requested-answer-slot-projection.json
+        run: pnpm exec tsx scripts/requested-answer-slot-projection-experiment.ts
       - name: Run structured proposition family-disjoint holdout
         run: pnpm benchmark:structured-proposition-family-disjoint
       - name: Verify structured row lexical context wiring on an isolated database
