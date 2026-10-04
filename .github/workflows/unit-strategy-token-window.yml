@@ -1,0 +1,97 @@
+name: unit-strategy-token-window
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-strategy-token-window:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'eval/unit-strategy-token-window'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AKP_MODEL_CACHE_DIR: /tmp/akp-model-cache
+      AKP_UNIT_STRATEGY_REPORT: reports/ci/unit-strategy-token-window.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate measurement source
+        run: |
+          pnpm exec prettier --check \
+            evals/registered/unit-strategy-token-window.json \
+            packages/retrieval/scripts/unit-strategy-token-window-benchmark.ts \
+            .github/workflows/unit-strategy-token-window.yml
+          pnpm check
+      - name: Warm pinned multilingual semantic model cache
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci "$AKP_MODEL_CACHE_DIR"
+          pnpm exec tsx scripts/preload-semantic-model.ts \
+            2>&1 | tee reports/ci/unit-strategy-model-prefetch.log
+          echo "AKP_LOCAL_FILES_ONLY=1" >> "$GITHUB_ENV"
+      - name: Measure unit strategy with exact tokenizer and real model
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm --filter @akp/retrieval exec tsx \
+            scripts/unit-strategy-token-window-benchmark.ts \
+            2>&1 | tee reports/ci/unit-strategy-token-window.log
+      - name: Validate governed measurement outcome
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(
+            readFileSync("reports/ci/unit-strategy-token-window.json", "utf8"),
+          );
+          const allowed = new Set([
+            "MEASURED_WITHIN_MODEL_WINDOW",
+            "MEASURED_TOKEN_WINDOW_GAP",
+          ]);
+          if (!allowed.has(report.outcome)) {
+            throw new Error("Unit strategy measurement is invalid: " + String(report.outcome));
+          }
+          if (
+            report.productionDefaultsChanged !== false ||
+            report.runtimeChanged !== false ||
+            report.structuralGatesPass !== true ||
+            report.totals?.vectorsCreated !== report.totals?.embeddingEligibleUnits
+          ) {
+            throw new Error("Unit strategy structural/vector invariants failed.");
+          }
+          console.log(
+            JSON.stringify(
+              {
+                outcome: report.outcome,
+                tokenWindowComplete: report.tokenWindowComplete,
+                totals: report.totals,
+                violations: report.tokenWindowViolations,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Upload unit-strategy measurement evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-strategy-token-window-${{ github.run_id }}
+          path: |
+            reports/ci/unit-strategy-token-window.json
+            reports/ci/unit-strategy-token-window.log
+            reports/ci/unit-strategy-model-prefetch.log
+          if-no-files-found: warn
+          retention-days: 14
