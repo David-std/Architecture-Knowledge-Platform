@@ -1,0 +1,129 @@
+name: contextual-title-heading-persisted-generation
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  persisted-generation-ab:
+    if: github.event.pull_request.head.ref == 'eval/contextual-title-heading-persisted-generation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      AKP_MODEL_CACHE_DIR: /tmp/akp-model-cache
+      AKP_CONTEXTUAL_PERSISTED_REPORT: reports/ci/contextual-title-heading-persisted-generation.json
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate experiment source
+        run: |
+          pnpm exec prettier --check             scripts/contextual-persisted-generation-benchmark.ts             .github/workflows/contextual-title-heading-persisted-generation.yml
+          pnpm check
+      - run: pnpm build
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Warm pinned multilingual semantic model cache
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci "$AKP_MODEL_CACHE_DIR"
+          pnpm exec tsx scripts/preload-semantic-model.ts             2>&1 | tee reports/ci/contextual-persisted-model-prefetch.log
+          echo "AKP_LOCAL_FILES_ONLY=1" >> "$GITHUB_ENV"
+      - name: Execute fresh persisted-generation A/B
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm exec tsx scripts/contextual-persisted-generation-benchmark.ts             2>&1 | tee reports/ci/contextual-title-heading-persisted-generation.log
+      - name: Validate persisted-generation evidence
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(
+            readFileSync(
+              "reports/ci/contextual-title-heading-persisted-generation.json",
+              "utf8",
+            ),
+          );
+          if (!["PROMOTE", "REJECT", "INCONCLUSIVE"].includes(report.outcome)) {
+            throw new Error("Experiment did not produce a governed outcome.");
+          }
+          if (
+            report.productionDefaultsChanged !== false ||
+            report.retrievalOnly !== true ||
+            report.admissionMeasured !== false
+          ) {
+            throw new Error("Experiment crossed its retrieval-only boundary.");
+          }
+          const expectedUnits = report.fixture?.units;
+          for (const armName of ["bodyOnly", "titleHeading"]) {
+            const arm = report.arms?.[armName];
+            if (
+              arm?.persisted?.status !== "READY" ||
+              arm?.persisted?.complete !== true ||
+              arm?.persisted?.vectorRows !== expectedUnits ||
+              arm?.persisted?.matchingInputHashes !== expectedUnits ||
+              arm?.build?.embeddingsCreated !== expectedUnits ||
+              arm?.build?.embeddingsReused !== 0
+            ) {
+              throw new Error(
+                "Arm " + armName + " is not a complete fresh persisted generation.",
+              );
+            }
+          }
+          if (
+            report.arms.bodyOnly.generationId ===
+            report.arms.titleHeading.generationId
+          ) {
+            throw new Error("A/B arms unexpectedly share one generation.");
+          }
+          if (
+            report.arms.bodyOnly.persisted.inputStrategy ===
+            report.arms.titleHeading.persisted.inputStrategy
+          ) {
+            throw new Error("A/B arms did not vary input strategy.");
+          }
+          console.log(
+            JSON.stringify(
+              {
+                outcome: report.outcome,
+                fixture: report.fixture,
+                bodyOnly: report.arms.bodyOnly.metrics,
+                titleHeading: report.arms.titleHeading.metrics,
+                deltas: report.deltas,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Capture persisted generation rows
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p reports/ci
+          docker compose exec -T postgres psql -X -U akp -d akp             -c "\copy (select provider,model,model_revision,dimensions,input_strategy,status,count(*) over () generation_rows from embedding_generations order by created_at) to stdout with csv header"             > reports/ci/contextual-persisted-generations.csv 2>&1 || true
+      - name: Upload persisted-generation evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: contextual-title-heading-persisted-generation-${{ github.run_id }}
+          path: |
+            reports/ci/contextual-title-heading-persisted-generation.json
+            reports/ci/contextual-title-heading-persisted-generation.log
+            reports/ci/contextual-persisted-model-prefetch.log
+            reports/ci/contextual-persisted-generations.csv
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
