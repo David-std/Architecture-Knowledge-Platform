@@ -4192,6 +4192,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/verify-imported-structured-row-e2e-fresh.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/verify-managed-git-restore.ps1",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -4318,6 +4323,11 @@
     },
     {
       "path": "test/fixtures/vault/30-concepts/bounded-context.md",
+      "category": "FIXTURE_GENERIC",
+      "reason": "portable test or evaluation fixture"
+    },
+    {
+      "path": "test/fixtures/vault/41-structured/incident-matrices.md",
       "category": "FIXTURE_GENERIC",
       "reason": "portable test or evaluation fixture"
     },
