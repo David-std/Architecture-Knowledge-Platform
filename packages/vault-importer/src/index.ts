@@ -11,6 +11,7 @@ import {
   embeddingPassageText,
   firstMarkdownHeadingLabel,
   parseKnowledgeUnits,
+  tableRowLexicalContextByUnitKey,
   serializeEmbeddingRuntime,
   toPgVector,
 } from "@akp/retrieval";
@@ -1998,6 +1999,10 @@ export async function importVaultReadOnly(
       );
 
       const units = parseKnowledgeUnits(document.title, document.body);
+      const lexicalContextByUnitKey = tableRowLexicalContextByUnitKey(
+        document.title,
+        document.body,
+      );
       const unitIdByKey = new Map<string, string>();
       for (const unit of units) {
         const insertedUnit = await client.query<{ id: string }>(
@@ -2006,9 +2011,9 @@ export async function importVaultReadOnly(
             document_id,space_id,vault_id,unit_key,unit_type,heading_path,body,
             content_hash,corpus_revision,document_revision,lifecycle,trust_tier,
             source_ids,token_estimate,parent_unit_id,permissions,locator,
-            structural_order,container_only,embedding_eligible
+            structural_order,container_only,embedding_eligible,lexical_context
           ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
-                   $16::jsonb,$17::jsonb,$18,$19,$20)
+                   $16::jsonb,$17::jsonb,$18,$19,$20,$21)
           on conflict(document_id,unit_key,corpus_revision)
           do update set
             space_id=excluded.space_id,
@@ -2028,6 +2033,7 @@ export async function importVaultReadOnly(
             structural_order=excluded.structural_order,
             container_only=excluded.container_only,
             embedding_eligible=excluded.embedding_eligible,
+            lexical_context=excluded.lexical_context,
             updated_at=now()
           returning id
           `,
@@ -2054,6 +2060,7 @@ export async function importVaultReadOnly(
             unit.structuralOrder,
             unit.containerOnly,
             unit.embeddingEligible,
+            lexicalContextByUnitKey.get(unit.unitKey) ?? "",
           ],
         );
         const insertedUnitId = insertedUnit.rows[0]?.id;
