@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "akp.requested-answer-followup-normal-pipeline.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-04",
+  "baselineSha": "a2d53f977ece55db445acff13c5826c357bfc755",
+  "sourceInputs": {
+    "corpusManifest": {
+      "path": "evals/registered/public-product-corpus.json",
+      "gitBlobSha": "8d55c59e21af4e73bc46d16f9bdc12177bbc6ee4"
+    },
+    "cases": {
+      "path": "evals/registered/public-product-corpus-cases.jsonl",
+      "gitBlobSha": "175a689ca70bf7e5ca705e285f7e37178bd94ff5"
+    },
+    "selectionPolicy": "Evaluate every registered case exactly once. Primary quality cases are those with gold_support or expect_no_answer=true; exact/graph cases remain control-only. No case may be dropped after execution."
+  },
+  "protocol": {
+    "independentVariable": "Candidate arm may execute zero-or-one runRequestedAnswerFollowUp pass after the baseline governed assessment is unsupported. Both retrieval passes use the same queryKnowledge configuration and scope; the second assessment receives the original user query.",
+    "developmentVault": "product-architecture",
+    "heldoutVault": "product-operations",
+    "noTuningAfterHeldout": true,
+    "retrievalConfiguration": {
+      "channels": [
+        "exact",
+        "lexical",
+        "vector"
+      ],
+      "embeddingProvider": "local-multilingual-e5-small",
+      "deterministicRerank": false,
+      "queryTransformation": false,
+      "presentationLimit": 10
+    },
+    "productionBehaviorChanged": false,
+    "productionAdmissionChanged": false,
+    "routeWiringChanged": false,
+    "relevanceCanGrantSupport": false
+  },
+  "casePolicy": {
+    "primaryLabels": [
+      "gold_support",
+      "expect_no_answer"
+    ],
+    "controls": [
+      "exact",
+      "graph"
+    ],
+    "totalRegisteredCases": 13,
+    "primaryCaseIds": [
+      "public-architecture-canonical",
+      "public-architecture-publication-recovery",
+      "public-architecture-cross-language",
+      "public-architecture-no-answer",
+      "public-operations-readiness",
+      "public-operations-audit-redaction",
+      "public-operations-error-book",
+      "public-operations-cross-language",
+      "public-operations-no-answer"
+    ],
+    "controlCaseIds": [
+      "public-architecture-exact",
+      "public-architecture-graph",
+      "public-operations-exact",
+      "public-operations-graph"
+    ]
+  },
+  "decisionRule": {
+    "requiredInvariantGates": {
+      "maxFollowUpAttemptsPerCase": 1,
+      "unsupportedQueryFollowUpRate": 0,
+      "reassessmentUsesOriginalQueryRate": 1,
+      "newCrossVaultViolationCount": 0,
+      "newWrongGoldDocumentAdmissionCount": 0,
+      "productionBehaviorChanged": false,
+      "productionAdmissionChanged": false,
+      "routeWiringChanged": false,
+      "relevanceCanGrantSupport": false
+    },
+    "qualityFrontier": {
+      "developmentAnswerableAdmissionRecallNonRegression": true,
+      "heldoutAnswerableAdmissionRecallNonRegression": true,
+      "developmentGoldSupportRecallNonRegression": true,
+      "heldoutGoldSupportRecallNonRegression": true,
+      "developmentNoAnswerFalseAcceptanceNonRegression": true,
+      "heldoutNoAnswerFalseAcceptanceNonRegression": true,
+      "criticalCaseNonRegression": true,
+      "requireAtLeastOneCorrectHeldoutRecoveryForPromotion": true
+    },
+    "outcomes": {
+      "promote": "PROMOTE_TO_ROUTE_SHADOW_CANDIDATE",
+      "noAdvantage": "REJECT_NO_MEASURED_ADVANTAGE",
+      "regression": "REJECT_REGRESSION",
+      "invalid": "INVALID_EXPERIMENT"
+    },
+    "claimBoundary": "A promotion only permits a separate route-level SHADOW integration experiment. It does not enable production follow-up and does not prove private-corpus or broad retrieval-quality generalization."
+  }
+}
