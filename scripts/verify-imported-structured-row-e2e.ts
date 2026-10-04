@@ -186,7 +186,7 @@ try {
   const negativeFullMatchIds = await fullMatches(negativeQuery);
 
   const checks = {
-    importedDocumentResolved: document.path === "40-structured/release-matrices.md",
+    importedDocumentResolved:\n      document.path === "40-structured/release-matrices.md",
     exactlyTwoStructuredRows: rows.length === 2,
     explicitCaptionsBound: Boolean(blue && green),
     canonicalBodiesIdentical:
