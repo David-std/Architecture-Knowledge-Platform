@@ -202,7 +202,6 @@ export function projectTableRows(
   });
 }
 
-
 /**
  * Materializes the deterministic TABLE_ROW lexical projection by canonical
  * parsed unit key. Non-table units intentionally have no structured context.
