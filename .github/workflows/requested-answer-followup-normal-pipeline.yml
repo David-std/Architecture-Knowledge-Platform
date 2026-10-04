@@ -20,6 +20,8 @@ jobs:
       AKP_REQUESTED_ANSWER_FOLLOWUP_NORMAL_REPORT: reports/ci/requested-answer-followup-normal-pipeline.json
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
         with: { version: 10.34.5 }
       - uses: actions/setup-node@v7
