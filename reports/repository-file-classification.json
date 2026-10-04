@@ -4192,6 +4192,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/verify-imported-structured-row-e2e.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/verify-managed-git-restore.ps1",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -4213,11 +4218,6 @@
     },
     {
       "path": "scripts/verify-restored-derived-context.ts",
-      "category": "PRODUCT_CODE",
-      "reason": "runtime, build or operational code"
-    },
-    {
-      "path": "scripts/verify-imported-structured-row-e2e.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
