@@ -525,6 +525,7 @@ function benchmarkConfigurations(): BenchmarkConfiguration[] {
     "vector-only",
     "graph-only",
     "lexical+vector",
+    "exact+lexical+vector",
     "lexical+graph",
     "vector+graph",
     "context-pack+lexical+graph",
