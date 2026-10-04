@@ -534,7 +534,7 @@ async function gitHead(): Promise<string> {
 }
 
 async function candidateHeadSha(): Promise<string> {
-  const explicit = process.env.AKP_TABLE_CAPTION_PARITY_CANDIDATE_SHA?.trim();
+  const explicit = process.env.AKP_TABLE_ROW_STRUCTURED_CONTEXT_CANDIDATE_SHA?.trim();
   if (explicit) return explicit;
   const eventPath = process.env.GITHUB_EVENT_PATH?.trim();
   if (eventPath) {
