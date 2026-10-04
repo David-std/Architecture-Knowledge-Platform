@@ -1,0 +1,120 @@
+name: requested-answer-followup-normal-pipeline
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  requested-answer-followup-normal-pipeline:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'experiment/requested-answer-followup-normal-pipeline'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      AKP_RUN_REAL_MODEL_TESTS: "1"
+      AKP_VECTOR_ENABLED: "true"
+      AKP_MODEL_CACHE_DIR: /tmp/akp-model-cache
+      AKP_REQUESTED_ANSWER_FOLLOWUP_NORMAL_REPORT: reports/ci/requested-answer-followup-normal-pipeline.json
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate experiment source
+        run: |
+          pnpm exec prettier --check \
+            evals/registered/requested-answer-followup-normal-pipeline.json \
+            scripts/requested-answer-followup-normal-pipeline-experiment.ts \
+            .github/workflows/requested-answer-followup-normal-pipeline.yml
+          pnpm check
+      - name: Warm pinned multilingual semantic model cache
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci "$AKP_MODEL_CACHE_DIR"
+          pnpm exec tsx scripts/preload-semantic-model.ts \
+            2>&1 | tee reports/ci/requested-answer-followup-model-prefetch.log
+          echo "AKP_LOCAL_FILES_ONLY=1" >> "$GITHUB_ENV"
+      - run: pnpm build
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Execute frozen normal-pipeline follow-up experiment
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm exec tsx scripts/requested-answer-followup-normal-pipeline-experiment.ts \
+            2>&1 | tee reports/ci/requested-answer-followup-normal-pipeline.log
+      - name: Validate governed outcome and claim boundary
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync(
+              "reports/ci/requested-answer-followup-normal-pipeline.json",
+              "utf8",
+            ),
+          );
+          const allowed = new Set([
+            "PROMOTE_TO_ROUTE_SHADOW_CANDIDATE",
+            "REJECT_NO_MEASURED_ADVANTAGE",
+            "REJECT_REGRESSION",
+          ]);
+          if (!allowed.has(report.outcome)) {
+            throw new Error(
+              "Normal-pipeline requested-answer experiment is invalid: " +
+                String(report.outcome),
+            );
+          }
+          if (
+            report.productionBehaviorChanged !== false ||
+            report.productionAdmissionChanged !== false ||
+            report.routeWiringChanged !== false
+          ) {
+            throw new Error("Experiment crossed its production claim boundary.");
+          }
+          if (
+            report.metrics?.maxFollowUpAttempts > 1 ||
+            report.metrics?.unsupportedQueryFollowUpRate !== 0 ||
+            report.metrics?.reassessmentUsesOriginalQueryRate !== 1 ||
+            report.metrics?.newCrossVaultViolationCount !== 0 ||
+            report.metrics?.newWrongGoldDocumentAdmissionCount !== 0
+          ) {
+            throw new Error("Requested-answer follow-up invariants failed.");
+          }
+          console.log(
+            JSON.stringify(
+              {
+                outcome: report.outcome,
+                development: report.metrics?.development,
+                heldout: report.metrics?.heldout,
+                gates: report.gates,
+                nonRegression: report.nonRegression,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Upload requested-answer normal-pipeline evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: requested-answer-followup-normal-pipeline-${{ github.run_id }}
+          path: |
+            reports/ci/requested-answer-followup-normal-pipeline.json
+            reports/ci/requested-answer-followup-normal-pipeline.log
+            reports/ci/requested-answer-followup-model-prefetch.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
