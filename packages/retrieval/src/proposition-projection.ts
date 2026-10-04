@@ -60,7 +60,10 @@ function canonicalJsonValue(
   seen: WeakSet<object>,
 ): string | null {
   if (value === null) return "null";
-  if (typeof value === "string") return value.trim() ? value.trim() : null;
+  if (typeof value === "string") {
+    const normalized = value.trim();
+    return normalized ? JSON.stringify(normalized) : null;
+  }
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "number") {
     return Number.isFinite(value) ? String(value) : null;
@@ -91,7 +94,7 @@ function canonicalJsonValue(
     for (const key of keys) {
       const projected = canonicalJsonValue(record[key], seen);
       if (projected === null) return null;
-      fields.push(`${JSON.stringify(key)}:${JSON.stringify(projected)}`);
+      fields.push(`${JSON.stringify(key)}:${projected}`);
     }
     return `{${fields.join(",")}}`;
   } finally {
@@ -130,8 +133,9 @@ function evidenceReferenceValid(
  * Projects only already-governed temporal truth into a structured proposition.
  *
  * This function performs no semantic extraction from prose. It refuses facts
- * that are not current/supported, support sets without explicit evidence, and
- * incomplete or cross-scope evidence.
+ * that are not current/supported, support sets that are not evidence-only,
+ * and incomplete or cross-scope evidence. Mixed/alternative support remains
+ * out of scope until the active support path can be proven explicitly.
  */
 export function projectSupportedTemporalFact(
   input: TemporalFactPropositionProjectionInput,
@@ -145,11 +149,18 @@ export function projectSupportedTemporalFact(
   ) {
     return null;
   }
+  const evidenceOnlySupport =
+    supportSet.factIds.length === 0 &&
+    supportSet.sourceArtifactIds.length === 0 &&
+    supportSet.sourceRevisionHashes.length === 0 &&
+    supportSet.sourceEpisodeIds.length === 0 &&
+    supportSet.alternativeSupportGroups.length === 0;
   if (
     fact.supportSetId !== supportSet.id ||
     fact.spaceId !== supportSet.spaceId ||
     fact.vaultId !== supportSet.vaultId ||
-    supportSet.evidenceIds.length === 0
+    supportSet.evidenceIds.length === 0 ||
+    !evidenceOnlySupport
   ) {
     return null;
   }
