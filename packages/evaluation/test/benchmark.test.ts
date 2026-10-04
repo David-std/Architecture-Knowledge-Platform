@@ -15,6 +15,7 @@ describe("retrieval benchmark matrix", () => {
       "vector-only",
       "graph-only",
       "lexical+vector",
+      "exact+lexical+vector",
       "lexical+graph",
       "vector+graph",
       "context-pack+lexical+graph",
@@ -26,12 +27,20 @@ describe("retrieval benchmark matrix", () => {
       "lexical+vector+graph+community-global",
       "lexical+vector+query-decomposition",
     ]);
-    expect(RETRIEVAL_BENCHMARK_MATRIX).toHaveLength(15);
+    expect(RETRIEVAL_BENCHMARK_MATRIX).toHaveLength(16);
     expect(
       RETRIEVAL_BENCHMARK_MATRIX.filter(({ channels }) =>
         channels.includes("vector"),
       ).every(({ allowVectorForBenchmark }) => allowVectorForBenchmark),
     ).toBe(true);
+    expect(
+      RETRIEVAL_BENCHMARK_MATRIX.find(
+        ({ name }) => name === "exact+lexical+vector",
+      ),
+    ).toMatchObject({
+      channels: ["exact", "lexical", "vector"],
+      allowVectorForBenchmark: true,
+    });
     expect(
       RETRIEVAL_BENCHMARK_MATRIX.find(
         ({ name }) => name === "lexical+vector+graph",
