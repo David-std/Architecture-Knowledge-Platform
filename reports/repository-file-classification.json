@@ -4022,6 +4022,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/deterministic-open-slot-relation-shadow-experiment.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/document_intelligence_benchmark.py",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
