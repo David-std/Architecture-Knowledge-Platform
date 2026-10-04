@@ -526,6 +526,12 @@ export interface RetrievalExecutionOptions {
   benchmarkCandidatePoolLimit?: number;
   /** Registered benchmark-only switch for the residual assertion-recall path. */
   benchmarkDisableAssertionRecall?: boolean;
+  /**
+   * Experimental library-only opt-in for deterministic TABLE_ROW structured
+   * lexical context. HTTP requests cannot set this option and the default path
+   * remains byte-for-byte compatible with the current lexical vectors.
+   */
+  experimentalStructuredRowLexicalContext?: boolean;
   vaultIds?: string[];
   /** Exact, authorized Code Graph candidates resolved by the HTTP boundary. */
   codeCandidates?: CodeChannelCandidate[];
@@ -1458,6 +1464,8 @@ export async function queryKnowledge(
   if (!input.spaceId) throw new Error("SPACE_ID_REQUIRED");
   const spaceId = input.spaceId;
   const benchmarkCandidatePoolLimit = options.benchmarkCandidatePoolLimit;
+  const structuredRowLexicalContext =
+    options.experimentalStructuredRowLexicalContext === true;
   if (
     (benchmarkCandidatePoolLimit !== undefined ||
       options.benchmarkDisableAssertionRecall === true) &&
@@ -1916,6 +1924,16 @@ export async function queryKnowledge(
 
   const lexicalRows: LexicalSearchRow[] = [];
   const assertionRecallRows: LexicalSearchRow[] = [];
+  const unitLexicalSearchVector = (alias: string) =>
+    structuredRowLexicalContext
+      ? `${alias}.lexical_augmented_search_vector`
+      : `${alias}.lexical_search_vector`;
+  const structuredRowContextScoreSql = structuredRowLexicalContext
+    ? " + ts_rank_cd(u.lexical_context_vector,d.terms)"
+    : "";
+  const structuredRowContextMatchSql = structuredRowLexicalContext
+    ? "u.lexical_context_vector @@ d.terms"
+    : "false";
   if (channels.has("lexical") || channels.has("graph")) {
     for (const assisted of assistedQueries) {
       const queryLexical = (orTerms: string | null) =>
@@ -1965,7 +1983,7 @@ export async function queryKnowledge(
                       and matching_unit.lifecycle ${lifecycleClause}
                       and ${trustClause("matching_unit.")}
                       and (
-                        matching_unit.lexical_search_vector @@ query.terms
+                        ${unitLexicalSearchVector("matching_unit")} @@ query.terms
                         or matching_unit.lexical_symbol_vector @@ query.symbol_terms
                       )
                  )
@@ -2004,6 +2022,8 @@ export async function queryKnowledge(
                        then 'lexical:heading-terms'
                      when best_unit.unit_match
                        then 'lexical:unit-terms'
+                     when best_unit.context_match
+                       then 'lexical:structured-context-terms'
                      when best_unit.symbol_match
                        then 'lexical:symbol-terms'
                      else 'lexical:body-terms'
@@ -2013,9 +2033,9 @@ export async function queryKnowledge(
                 select u.id unit_id,u.unit_type,
                        12 * ts_rank_cd(u.lexical_heading_vector,d.terms) +
                         8 * ts_rank_cd(u.lexical_unit_vector,d.terms) +
-                            ts_rank_cd(u.lexical_body_vector,d.terms) +
+                            ts_rank_cd(u.lexical_body_vector,d.terms)${structuredRowContextScoreSql} +
                        case
-                         when not (u.lexical_search_vector @@ d.terms)
+                         when not (${unitLexicalSearchVector("u")} @@ d.terms)
                           and u.lexical_symbol_vector @@ d.symbol_terms
                          then 10 * ts_rank_cd(
                            u.lexical_symbol_vector,
@@ -2025,6 +2045,7 @@ export async function queryKnowledge(
                        end unit_score,
                        u.lexical_heading_vector @@ d.terms heading_match,
                        u.lexical_unit_vector @@ d.terms unit_match,
+                       ${structuredRowContextMatchSql} context_match,
                        u.lexical_symbol_vector @@ d.symbol_terms symbol_match
                   from knowledge_units u
                  where u.document_id=d.id
