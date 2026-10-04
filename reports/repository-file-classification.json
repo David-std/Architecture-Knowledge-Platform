@@ -4147,17 +4147,17 @@
       "reason": "runtime, build or operational code"
     },
     {
-      "path": "scripts/table-row-structured-context-parity-experiment.ts",
-      "category": "PRODUCT_CODE",
-      "reason": "runtime, build or operational code"
-    },
-    {
       "path": "scripts/scan-secrets.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
     {
       "path": "scripts/seed-recovery-verification.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/table-row-structured-context-parity-experiment.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
