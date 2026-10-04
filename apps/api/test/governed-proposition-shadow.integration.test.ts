@@ -29,10 +29,7 @@ describe.skipIf(!databaseUrl)("governed proposition shadow admission", () => {
       await db.pool.query(
         `insert into organizations(id,slug,name)
          values($1,$2,'Governed proposition shadow')`,
-        [
-          organizationId,
-          "governed-shadow-" + organizationId.slice(0, 8),
-        ],
+        [organizationId, "governed-shadow-" + organizationId.slice(0, 8)],
       );
       await db.pool.query(
         `insert into spaces(
