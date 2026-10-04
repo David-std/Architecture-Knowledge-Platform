@@ -1,0 +1,142 @@
+{
+  "schemaVersion": "akp.requested-answer-followup-shadow.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-04",
+  "baselineSha": "d36231af1c69705d92f21e2bc95bf5c8c93b71cf",
+  "protocol": {
+    "singleIndependentVariable": "Allow zero-or-one retrieval-only follow-up derived exclusively from the existing RequestedAnswerSlot projection when the initial governed answerability assessment is unsupported. Admission remains unchanged and is re-run against the original query.",
+    "developmentFamilies": [
+      "SUBJECT_DIRECT",
+      "OBJECT_AUXILIARY"
+    ],
+    "heldoutFamilies": [
+      "COPULAR_RELATION",
+      "LOCATION",
+      "UNSUPPORTED"
+    ],
+    "familyDisjoint": true,
+    "noTuningAfterHeldout": true,
+    "productionBehaviorChanged": false,
+    "productionAdmissionChanged": false,
+    "retrievalQualityMeasured": false
+  },
+  "promotionRule": {
+    "developmentStrictContractAccuracy": 1,
+    "heldoutStrictContractAccuracy": 1,
+    "maxFollowUpAttempts": 1,
+    "unsupportedQueryFollowUpRate": 0,
+    "originalQueryReassessmentRate": 1,
+    "relevanceCanGrantSupport": false,
+    "promotionScope": "SHADOW_ORCHESTRATOR_ONLY"
+  },
+  "splits": {
+    "development": [
+      {
+        "id": "dev-subject-covered",
+        "family": "SUBJECT_DIRECT",
+        "query": "Who reviews release exceptions before deployment?",
+        "initialSupported": true,
+        "followUpSupported": false,
+        "expected": {
+          "outcome": "SUPPORTED_INITIAL",
+          "followUpAttemptCount": 0,
+          "followUpQuery": null,
+          "assessCallCount": 0
+        }
+      },
+      {
+        "id": "dev-object-recovered",
+        "family": "OBJECT_AUXILIARY",
+        "query": "What artifact does gateway publish to the registry?",
+        "initialSupported": false,
+        "followUpSupported": true,
+        "expected": {
+          "outcome": "SUPPORTED_FOLLOW_UP",
+          "followUpAttemptCount": 1,
+          "followUpQuery": "publish gateway to registry",
+          "assessCallCount": 1
+        }
+      },
+      {
+        "id": "dev-subject-still-missing",
+        "family": "SUBJECT_DIRECT",
+        "query": "Who reviews release exceptions before deployment?",
+        "initialSupported": false,
+        "followUpSupported": false,
+        "expected": {
+          "outcome": "INSUFFICIENT_KNOWLEDGE",
+          "followUpAttemptCount": 1,
+          "followUpQuery": "reviews release exceptions before deployment",
+          "assessCallCount": 1
+        }
+      }
+    ],
+    "heldout": [
+      {
+        "id": "hold-relation-recovered",
+        "family": "COPULAR_RELATION",
+        "query": "Who is the designated custodian of the audit ledger?",
+        "initialSupported": false,
+        "followUpSupported": true,
+        "expected": {
+          "outcome": "SUPPORTED_FOLLOW_UP",
+          "followUpAttemptCount": 1,
+          "followUpQuery": "custodian audit ledger",
+          "assessCallCount": 1
+        }
+      },
+      {
+        "id": "hold-location-es-recovered",
+        "family": "LOCATION",
+        "query": "Dónde publica servicio eventos?",
+        "initialSupported": false,
+        "followUpSupported": true,
+        "expected": {
+          "outcome": "SUPPORTED_FOLLOW_UP",
+          "followUpAttemptCount": 1,
+          "followUpQuery": "publica servicio eventos",
+          "assessCallCount": 1
+        }
+      },
+      {
+        "id": "hold-location-en-still-missing",
+        "family": "LOCATION",
+        "query": "Where does collector persist telemetry?",
+        "initialSupported": false,
+        "followUpSupported": false,
+        "expected": {
+          "outcome": "INSUFFICIENT_KNOWLEDGE",
+          "followUpAttemptCount": 1,
+          "followUpQuery": "persist collector telemetry",
+          "assessCallCount": 1
+        }
+      },
+      {
+        "id": "hold-unsupported-why",
+        "family": "UNSUPPORTED",
+        "query": "Why does gateway retry?",
+        "initialSupported": false,
+        "followUpSupported": true,
+        "expected": {
+          "outcome": "INSUFFICIENT_KNOWLEDGE",
+          "followUpAttemptCount": 0,
+          "followUpQuery": null,
+          "assessCallCount": 0
+        }
+      },
+      {
+        "id": "hold-unsupported-prose",
+        "family": "UNSUPPORTED",
+        "query": "Explain the deployment pipeline.",
+        "initialSupported": false,
+        "followUpSupported": true,
+        "expected": {
+          "outcome": "INSUFFICIENT_KNOWLEDGE",
+          "followUpAttemptCount": 0,
+          "followUpQuery": null,
+          "assessCallCount": 0
+        }
+      }
+    ]
+  }
+}
