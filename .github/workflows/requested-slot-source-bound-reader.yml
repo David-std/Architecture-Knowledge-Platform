@@ -1,0 +1,148 @@
+name: requested-slot-source-bound-reader
+
+on:
+  pull_request:
+
+jobs:
+  shadow-reader:
+    if: github.event.pull_request.head.ref == 'experiment/requested-slot-source-bound-reader'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      AKP_LOCAL_AGENT_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
+      AKP_LOCAL_AGENT_MODEL_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
+      AKP_LOCAL_AGENT_DTYPE: q4
+      AKP_LOCAL_AGENT_PORT: "18081"
+      AKP_REQUESTED_SLOT_READER_BASE_URL: http://127.0.0.1:18081/chat/completions
+      AKP_REQUESTED_SLOT_READER_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
+      AKP_REQUESTED_SLOT_READER_MODEL_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
+      AKP_REQUESTED_SLOT_READER_DTYPE: q4
+      AKP_REQUESTED_SLOT_READER_REPORT: reports/ci/requested-slot-source-bound-reader.json
+      AKP_REQUESTED_SLOT_READER_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Verify focused reader and slot tests
+        run: |
+          pnpm --filter @akp/retrieval exec vitest run             test/evidence-reader.test.ts             test/requested-answer-slot.test.ts
+          pnpm typecheck:evidence-benchmarks
+      - name: Prepare experiment evidence
+        run: mkdir -p reports/ci
+      - name: Start pinned local real-model provider
+        shell: bash
+        run: |
+          pnpm --filter @akp/retrieval exec tsx scripts/local-agent-provider.ts             > reports/ci/requested-slot-reader-provider.log 2>&1 &
+          echo $! > /tmp/requested-slot-reader-provider.pid
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:18081/health               > reports/ci/requested-slot-reader-provider-health.json; then
+              cat reports/ci/requested-slot-reader-provider-health.json
+              exit 0
+            fi
+            sleep 5
+          done
+          cat reports/ci/requested-slot-reader-provider.log >&2
+          exit 1
+      - name: Execute frozen requested-slot reader experiment
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm exec tsx scripts/requested-slot-source-bound-reader-experiment.ts             2>&1 | tee reports/ci/requested-slot-source-bound-reader.log
+      - name: Validate experiment integrity
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync(
+              "reports/ci/requested-slot-source-bound-reader.json",
+              "utf8",
+            ),
+          );
+          const health = JSON.parse(
+            readFileSync(
+              "reports/ci/requested-slot-reader-provider-health.json",
+              "utf8",
+            ),
+          );
+
+          if (
+            !["PROMOTE_TO_SHADOW_READER", "REJECT"].includes(report.outcome)
+          ) {
+            throw new Error("Experiment did not produce a governed outcome.");
+          }
+          if (
+            report.productionBehaviorChanged !== false ||
+            report.productionAdmissionChanged !== false ||
+            report.providerDefaultsChanged !== false
+          ) {
+            throw new Error("Shadow experiment changed a production boundary.");
+          }
+          if (
+            health.model !== "onnx-community/Qwen2.5-0.5B-Instruct" ||
+            health.revision !==
+              "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0" ||
+            health.dtype !== "q4"
+          ) {
+            throw new Error("Experiment provider identity is not pinned.");
+          }
+          for (const split of ["development", "heldout"]) {
+            for (const arm of ["baseline", "candidate"]) {
+              const rows = report.observations?.[split]?.[arm];
+              if (!Array.isArray(rows) || rows.length === 0) {
+                throw new Error(`Missing ${split}/${arm} observations.`);
+              }
+              for (const row of rows) {
+                for (const candidate of row.candidates ?? []) {
+                  if (
+                    candidate.decision === "SUPPORTS" &&
+                    candidate.sourceBound !== true
+                  ) {
+                    throw new Error(
+                      `Non-source-bound SUPPORTS in ${split}/${arm}/${row.id}`,
+                    );
+                  }
+                }
+              }
+            }
+          }
+
+          console.log(
+            JSON.stringify(
+              {
+                outcome: report.outcome,
+                gates: report.gates,
+                heldout: report.metrics?.heldout,
+                datasetHash: report.datasetHash,
+                configurationHash: report.configurationHash,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Upload requested-slot reader evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: requested-slot-source-bound-reader-${{ github.run_id }}
+          path: |
+            reports/ci/requested-slot-source-bound-reader.json
+            reports/ci/requested-slot-source-bound-reader.log
+            reports/ci/requested-slot-reader-provider-health.json
+            reports/ci/requested-slot-reader-provider.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Stop local provider
+        if: always()
+        shell: bash
+        run: |
+          if [ -f /tmp/requested-slot-reader-provider.pid ]; then
+            kill "$(cat /tmp/requested-slot-reader-provider.pid)" 2>/dev/null || true
+          fi
