@@ -2,13 +2,14 @@ name: contextual-title-heading-persisted-generation
 
 on:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   persisted-generation-ab:
-    if: github.event.pull_request.head.ref == 'eval/contextual-title-heading-persisted-generation'
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'eval/contextual-title-heading-persisted-generation'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
