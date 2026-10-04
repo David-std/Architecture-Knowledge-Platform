@@ -36,7 +36,9 @@
     "answerableRecallNonRegression": true,
     "falseAcceptanceNonRegression": true,
     "strictAccuracyNonRegression": true,
-    "requireHeldoutPrecisionCoverageFrontierImprovement": true
+    "requireHeldoutPrecisionCoverageFrontierImprovement": true,
+    "candidateAnswerableRecallAtLeast": 0.5,
+    "candidateStrictAccuracyAtLeast": 0.7
   },
   "splits": {
     "development": [
