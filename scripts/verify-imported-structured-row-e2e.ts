@@ -186,13 +186,14 @@ try {
   const negativeFullMatchIds = await fullMatches(negativeQuery);
 
   const checks = {
-    importedDocumentResolved:\n      document.path === "40-structured/release-matrices.md",
+    importedDocumentResolved:
+      document.path === "40-structured/release-matrices.md",
     exactlyTwoStructuredRows: rows.length === 2,
     explicitCaptionsBound: Boolean(blue && green),
     canonicalBodiesIdentical:
       Boolean(blue && green) &&
       blue!.body === green!.body &&
-      blue!.body === "| API | Mira Chen | SlotA |",
+      blue!.body === "| API       | Mira Chen | SlotA |",
     sourceSpansExact,
     baselineOffSelectsFirstRow:
       Boolean(blue) &&
