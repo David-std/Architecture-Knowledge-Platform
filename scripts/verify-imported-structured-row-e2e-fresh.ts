@@ -223,7 +223,7 @@ try {
 
   const checks = {
     importedDocumentResolved:
-      document.path === "40-structured/release-matrices.md",
+      document.path === "41-structured/incident-matrices.md",
     exactlyTwoStructuredRows: rows.length === 2,
     explicitCaptionsBound: Boolean(silver && gold),
     canonicalBodiesIdentical:
