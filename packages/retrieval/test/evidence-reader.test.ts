@@ -173,6 +173,26 @@ describe("evidence reader replies", () => {
     },
   );
 
+  it("frames a requested answer slot as query representation, not evidence", () => {
+    const [, user] = evidenceReaderMessages({
+      query: "Who is the owner of the queue?",
+      scope: "Queue",
+      body: "The queue has one active consumer.",
+      requestedAnswerSlot: {
+        role: "RELATION_VALUE",
+        relationAnchor: "owner",
+        boundArgumentAnchors: ["queue"],
+        language: "EN",
+        derivation: "SURFACE_GRAMMAR",
+      },
+    });
+    expect(user?.content).toContain("<requested_answer_slot>");
+    expect(user?.content).toContain("role: RELATION_VALUE");
+    expect(user?.content).toContain("relation_anchor: owner");
+    expect(user?.content).toContain("query representation only");
+    expect(user?.content).toContain("exact visible answer span");
+  });
+
   it("frames the passage as data and asks for a verbatim quote", () => {
     const [system, user] = evidenceReaderMessages({
       query: "Q?",
@@ -227,6 +247,49 @@ describe("reader evidence verifier", () => {
       scope: "Recalls > Quality",
       body: "Recall rules:\nClass: I; Deadline: 4 hours.\nClass: II; Deadline: 24 hours",
     });
+  });
+
+  it("passes a projected slot to the reader and fails closed when projection is unavailable", async () => {
+    const reader = readerReturning((value) => ({
+      answers: true,
+      quote: value.body,
+    }));
+    const verifier = new ReaderEvidenceVerifier({
+      reader,
+      requestedAnswerSlotProjector: {
+        id: "fixture-slot-v1",
+        project: (query) =>
+          query.startsWith("Who")
+            ? {
+                role: "RELATION_VALUE",
+                relationAnchor: "owner",
+                boundArgumentAnchors: ["queue"],
+                language: "EN",
+                derivation: "SURFACE_GRAMMAR",
+              }
+            : null,
+      },
+    });
+
+    await expect(
+      verifier.verify(input("The owner is Mina.", "Who is the owner of the queue?")),
+    ).resolves.toMatchObject({
+      decision: "SUPPORTS",
+      reason: "READER_QUOTED_ANSWER",
+    });
+    expect(reader.calls[0]?.requestedAnswerSlot).toMatchObject({
+      role: "RELATION_VALUE",
+      relationAnchor: "owner",
+      boundArgumentAnchors: ["queue"],
+    });
+
+    await expect(
+      verifier.verify(input("The queue is healthy.", "Why is the queue healthy?")),
+    ).resolves.toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "REQUESTED_ANSWER_SLOT_UNAVAILABLE",
+    });
+    expect(reader.calls).toHaveLength(1);
   });
 
   it("rejects an invented quote and a negative judgment", async () => {
