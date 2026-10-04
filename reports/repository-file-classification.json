@@ -37,6 +37,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".github/workflows/contextual-title-heading-persisted-generation.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".github/workflows/document-intelligence-benchmark.yml",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -4023,6 +4028,11 @@
     },
     {
       "path": "scripts/contextual-embedding-input-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/contextual-persisted-generation-benchmark.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
