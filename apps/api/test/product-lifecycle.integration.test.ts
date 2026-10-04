@@ -1587,7 +1587,14 @@ describe("product lifecycle E2E", () => {
       const indexRow = index.rows[0]!;
       expect(indexRow.status).toBe("CONSISTENT");
       expect(indexRow.warnings).toEqual([]);
-      expect(indexRow.corpus_revision).toBe(documentRow.current_revision);
+      const vaultRevision = await db.pool.query<{ current_revision: string }>(
+        "select current_revision from vaults where id=$1",
+        [vaultId],
+      );
+      expect(vaultRevision.rows).toHaveLength(1);
+      expect(indexRow.corpus_revision).toBe(
+        `composite:${vaultRevision.rows[0]?.current_revision}+managed:${documentRow.current_revision}`,
+      );
       expect(indexRow.lexical_revision).toBe(indexRow.corpus_revision);
       expect(indexRow.vector_revision).toBe(indexRow.corpus_revision);
       expect(indexRow.graph_revision).toBe(indexRow.corpus_revision);
