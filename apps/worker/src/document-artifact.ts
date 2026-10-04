@@ -239,17 +239,35 @@ export function parseCanonicalExtractionResponse(
 }
 
 function artifactItems(artifact: DocumentArtifact): DocumentArtifact["blocks"] {
+  const specialized = [
+    ...artifact.headings,
+    ...artifact.paragraphs,
+    ...artifact.lists,
+    ...artifact.tables,
+    ...artifact.figures,
+    ...artifact.equations,
+    ...artifact.code,
+  ];
+  const specializedById = new Map(
+    specialized
+      .filter((item) => item.id)
+      .map((item) => [String(item.id), item] as const),
+  );
+  const blockIds = new Set(
+    artifact.blocks
+      .map((item) => item.id)
+      .filter((id): id is string => typeof id === "string"),
+  );
   const candidates = artifact.blocks.length
-    ? artifact.blocks
-    : [
-        ...artifact.headings,
-        ...artifact.paragraphs,
-        ...artifact.lists,
-        ...artifact.tables,
-        ...artifact.figures,
-        ...artifact.equations,
-        ...artifact.code,
-      ];
+    ? [
+        ...artifact.blocks.map((item) =>
+          item.id ? (specializedById.get(String(item.id)) ?? item) : item,
+        ),
+        ...specialized.filter(
+          (item) => item.id && !blockIds.has(String(item.id)),
+        ),
+      ]
+    : specialized;
   const byId = new Map(
     candidates
       .filter((item) => item.id)
