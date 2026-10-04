@@ -122,12 +122,12 @@
       "reason": "runtime, build or operational code"
     },
     {
-      "path": "apps/api/src/idempotency.ts",
+      "path": "apps/api/src/governed-proposition-shadow.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
     {
-      "path": "apps/api/src/governed-proposition-shadow.ts",
+      "path": "apps/api/src/idempotency.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -367,17 +367,17 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/api/test/governed-proposition-shadow.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/api/test/graph-retrieval.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
     {
       "path": "apps/api/test/health.test.ts",
-      "category": "PRODUCT_TEST",
-      "reason": "executable product test"
-    },
-    {
-      "path": "apps/api/test/governed-proposition-shadow.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
