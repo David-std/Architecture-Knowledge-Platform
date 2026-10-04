@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { execFile as execFileCallback } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { Postgres } from "../packages/postgres/src/index.js";
@@ -621,6 +621,24 @@ async function gitHead(): Promise<string> {
   return value;
 }
 
+async function candidateHeadSha(): Promise<string> {
+  const explicit = process.env.AKP_TABLE_CAPTION_CANDIDATE_SHA?.trim();
+  if (explicit) return explicit;
+
+  const eventPath = process.env.GITHUB_EVENT_PATH?.trim();
+  if (eventPath) {
+    const event = JSON.parse(await readFile(eventPath, "utf8")) as {
+      pull_request?: { head?: { sha?: unknown } };
+    };
+    const value = event.pull_request?.head?.sha;
+    if (typeof value === "string" && /^[0-9a-f]{40}$/u.test(value)) {
+      return value;
+    }
+  }
+
+  return gitHead();
+}
+
 function mean(values: readonly number[]): number | null {
   return values.length === 0
     ? null
@@ -944,7 +962,7 @@ async function main(): Promise<void> {
         baselineSha:
           process.env.AKP_TABLE_CAPTION_BASELINE_SHA?.trim() ||
           "c96b9e9d07dfa9f19c334344d5d1563851c79a7e",
-        candidateSha: await gitHead(),
+        candidateSha: await candidateHeadSha(),
         corpusHash: sha256(
           JSON.stringify({ documents: DOCUMENTS, questions: QUESTIONS }),
         ),
