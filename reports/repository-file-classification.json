@@ -2352,6 +2352,11 @@
       "reason": "corpus-agnostic product evaluation"
     },
     {
+      "path": "evals/generic/requested-answer-slot/manifest.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
       "path": "evals/generic/resilience-failure-matrix.json",
       "category": "PRODUCT_EVAL",
       "reason": "corpus-agnostic product evaluation"
@@ -3602,6 +3607,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/requested-answer-slot.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/rerank.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3783,6 +3793,11 @@
     },
     {
       "path": "packages/retrieval/test/reasoning-planner.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/requested-answer-slot.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -4148,6 +4163,11 @@
     },
     {
       "path": "scripts/release-assurance-workflows.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/requested-answer-slot-projection-experiment.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
