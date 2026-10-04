@@ -67,6 +67,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".github/workflows/r2-r7-fresh-source-e2e.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".github/workflows/recovery.yml",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -2482,6 +2487,11 @@
       "reason": "versioned registered product evaluation"
     },
     {
+      "path": "evals/registered/r2-r7-fresh-source-e2e.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
       "path": "evals/registered/README.md",
       "category": "PRODUCT_EVAL",
       "reason": "versioned registered product evaluation"
@@ -4385,6 +4395,11 @@
       "path": "test/fixtures/document-intelligence/table-workbook.json",
       "category": "FIXTURE_GENERIC",
       "reason": "portable test or evaluation fixture"
+    },
+    {
+      "path": "test/fixtures/r2-r7-fresh-source/fidelity-probe.md",
+      "category": "PRODUCT_TEST",
+      "reason": "maintained deterministic test fixture"
     },
     {
       "path": "test/fixtures/synthetic-basic/10-sources/nimbus-source.md",
