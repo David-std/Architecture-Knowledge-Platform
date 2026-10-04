@@ -1,0 +1,311 @@
+{
+  "schemaVersion": "akp.requested-slot-source-bound-reader.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-04",
+  "baselineSha": "6d463f237c0ff18a2a99d3bbf3cb0138610cc59d",
+  "model": {
+    "id": "onnx-community/Qwen2.5-0.5B-Instruct",
+    "revision": "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0",
+    "dtype": "q4",
+    "temperature": 0,
+    "maxOutputTokens": 256
+  },
+  "protocol": {
+    "developmentFamilies": [
+      "SUBJECT_DIRECT_DEV",
+      "OBJECT_AUXILIARY_DEV",
+      "WRONG_SUBJECT_DEV",
+      "TOPICAL_MISSING_SLOT_DEV"
+    ],
+    "heldoutFamilies": [
+      "RELATION_VALUE_HELDOUT",
+      "LOCATION_HELDOUT",
+      "WRONG_RELATION_HELDOUT",
+      "REVERSED_RELATION_HELDOUT",
+      "SIBLING_TABLE_ROW_HELDOUT",
+      "EXPLICIT_NEGATION_HELDOUT",
+      "UNSUPPORTED_HELDOUT"
+    ],
+    "familyDisjoint": true,
+    "noTuningAfterHeldout": true,
+    "singleIndependentVariable": "Pass the frozen RequestedAnswerSlot projection to the same source-bound evidence reader. Model, passage, prompt instructions, decoding, quote mapping and admission remain otherwise unchanged."
+  },
+  "promotionRule": {
+    "exactSpanPrecision": 1,
+    "unsupportedFalseAcceptanceRate": 0,
+    "answerableRecallNonRegression": true,
+    "falseAcceptanceNonRegression": true,
+    "strictAccuracyNonRegression": true,
+    "requireHeldoutPrecisionCoverageFrontierImprovement": true
+  },
+  "splits": {
+    "development": [
+      {
+        "id": "dev-en-subject-reviewer",
+        "family": "SUBJECT_DIRECT_DEV",
+        "language": "EN",
+        "query": "Who reviews release exceptions before deployment?",
+        "candidates": [
+          {
+            "label": "release-reviewer",
+            "title": "Release exception review",
+            "passage": "The release manager reviews release exceptions before deployment. Automation records the final disposition.",
+            "gold": true,
+            "expectedAnswerIncludes": [
+              "release manager"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "dev-en-object-published-artifact",
+        "family": "OBJECT_AUXILIARY_DEV",
+        "language": "EN",
+        "query": "What artifact does gateway publish to the registry?",
+        "candidates": [
+          {
+            "label": "gateway-publish",
+            "title": "Registry publication",
+            "passage": "Gateway publishes the signed manifest to the registry after validation.",
+            "gold": true,
+            "expectedAnswerIncludes": [
+              "signed manifest"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "dev-es-object-published-artifact",
+        "family": "OBJECT_AUXILIARY_DEV",
+        "language": "ES",
+        "query": "Qué artefacto debe gateway publicar al registro?",
+        "candidates": [
+          {
+            "label": "gateway-publicacion",
+            "title": "Publicación en registro",
+            "passage": "Gateway debe publicar el manifiesto firmado al registro después de la validación.",
+            "gold": true,
+            "expectedAnswerIncludes": [
+              "manifiesto firmado"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "dev-en-wrong-subject-same-vocabulary",
+        "family": "WRONG_SUBJECT_DEV",
+        "language": "EN",
+        "query": "Who reviews Falcon changes before deployment?",
+        "candidates": [
+          {
+            "label": "wrong-subject-review",
+            "title": "Deployment review",
+            "passage": "Mina reviews Lynx changes before deployment. Falcon changes are recorded automatically.",
+            "gold": false
+          }
+        ]
+      },
+      {
+        "id": "dev-en-owner-topical-value-absent",
+        "family": "TOPICAL_MISSING_SLOT_DEV",
+        "language": "EN",
+        "query": "Who is the human owner of the ingestion queue?",
+        "candidates": [
+          {
+            "label": "queue-topology-without-owner",
+            "title": "Ingestion queue topology",
+            "passage": "The ingestion queue is produced by Gateway and consumed by Worker. Alerts are sent to the on-call channel.",
+            "gold": false
+          }
+        ]
+      }
+    ],
+    "heldout": [
+      {
+        "id": "hold-en-custodian-relation-value",
+        "family": "RELATION_VALUE_HELDOUT",
+        "language": "EN",
+        "query": "Who is the designated custodian of the audit ledger?",
+        "candidates": [
+          {
+            "label": "ledger-custodian",
+            "title": "Audit ledger governance",
+            "passage": "Priya Raman is the designated custodian of the audit ledger. The ledger is replicated nightly.",
+            "gold": true,
+            "expectedAnswerIncludes": [
+              "Priya Raman"
+            ]
+          },
+          {
+            "label": "ledger-topical",
+            "title": "Audit ledger replication",
+            "passage": "The audit ledger is replicated nightly and checked for checksum drift.",
+            "gold": false
+          }
+        ]
+      },
+      {
+        "id": "hold-es-owner-relation-value",
+        "family": "RELATION_VALUE_HELDOUT",
+        "language": "ES",
+        "query": "Quién es la persona responsable de la cola crítica?",
+        "candidates": [
+          {
+            "label": "cola-responsable",
+            "title": "Responsabilidad de cola",
+            "passage": "Lucía Torres es la persona responsable de la cola crítica. El equipo de guardia recibe las alertas.",
+            "gold": true,
+            "expectedAnswerIncludes": [
+              "Lucía Torres"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "hold-en-location-persist",
+        "family": "LOCATION_HELDOUT",
+        "language": "EN",
+        "query": "Where does collector persist telemetry?",
+        "candidates": [
+          {
+            "label": "collector-location",
+            "title": "Telemetry persistence",
+            "passage": "Collector persists telemetry in the cold archive after validation.",
+            "gold": true,
+            "expectedAnswerIncludes": [
+              "cold archive"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "hold-es-location-publish",
+        "family": "LOCATION_HELDOUT",
+        "language": "ES",
+        "query": "Dónde publica servicio eventos?",
+        "candidates": [
+          {
+            "label": "eventos-location",
+            "title": "Publicación de eventos",
+            "passage": "El servicio publica eventos en el archivo regional después de validar el lote.",
+            "gold": true,
+            "expectedAnswerIncludes": [
+              "archivo regional"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "hold-en-wrong-relation-same-subject",
+        "family": "WRONG_RELATION_HELDOUT",
+        "language": "EN",
+        "query": "Who is the human owner of the ingestion queue?",
+        "candidates": [
+          {
+            "label": "queue-monitor-not-owner",
+            "title": "Ingestion queue operations",
+            "passage": "Priya Raman monitors the ingestion queue during business hours and receives latency alerts.",
+            "gold": false
+          }
+        ]
+      },
+      {
+        "id": "hold-en-reversed-relation",
+        "family": "REVERSED_RELATION_HELDOUT",
+        "language": "EN",
+        "query": "Who supervises the operator?",
+        "candidates": [
+          {
+            "label": "reverse-supervision",
+            "title": "Operations supervision",
+            "passage": "The operator supervises Mina during the migration drill.",
+            "gold": false
+          }
+        ]
+      },
+      {
+        "id": "hold-en-sibling-table-row",
+        "family": "SIBLING_TABLE_ROW_HELDOUT",
+        "language": "EN",
+        "query": "Who is the owner of the invoice queue?",
+        "candidates": [
+          {
+            "label": "queue-owners-table",
+            "title": "Queue ownership",
+            "passage": "| Queue | Owner |\n| --- | --- |\n| Payment | Alice |\n| Invoice | Bob |",
+            "unitType": "TABLE",
+            "gold": true,
+            "expectedAnswerIncludes": [
+              "Bob"
+            ],
+            "expectedAnswerExcludes": [
+              "Alice"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "hold-en-explicit-negation-owner",
+        "family": "EXPLICIT_NEGATION_HELDOUT",
+        "language": "EN",
+        "query": "Who is the owner of the export service?",
+        "candidates": [
+          {
+            "label": "export-owner-with-negation",
+            "title": "Export service ownership",
+            "passage": "Mina is not the owner of the export service. Jules is the owner of the export service.",
+            "gold": true,
+            "expectedAnswerIncludes": [
+              "Jules"
+            ],
+            "expectedAnswerExcludes": [
+              "Mina"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "hold-es-topical-owner-absent",
+        "family": "WRONG_RELATION_HELDOUT",
+        "language": "ES",
+        "query": "Quién es el custodio del registro financiero?",
+        "candidates": [
+          {
+            "label": "registro-auditor-no-custodio",
+            "title": "Registro financiero",
+            "passage": "Marcos audita el registro financiero cada viernes y reporta diferencias al equipo.",
+            "gold": false
+          }
+        ]
+      },
+      {
+        "id": "hold-en-unsupported-why",
+        "family": "UNSUPPORTED_HELDOUT",
+        "language": "EN",
+        "query": "Why does gateway retry?",
+        "candidates": [
+          {
+            "label": "retry-topical",
+            "title": "Gateway retries",
+            "passage": "Gateway retries after transient failures. The design rationale is not recorded in this source.",
+            "gold": false
+          }
+        ]
+      },
+      {
+        "id": "hold-es-unsupported-when",
+        "family": "UNSUPPORTED_HELDOUT",
+        "language": "ES",
+        "query": "Cuándo inicia despliegue?",
+        "candidates": [
+          {
+            "label": "deploy-without-time",
+            "title": "Despliegue",
+            "passage": "El despliegue inicia después de la aprobación, pero esta fuente no registra una fecha ni una hora.",
+            "gold": false
+          }
+        ]
+      }
+    ]
+  }
+}
