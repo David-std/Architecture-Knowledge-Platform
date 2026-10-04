@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -76,7 +76,7 @@ async function waitFor<T>(
   throw new Error(`Timed out waiting for ${label}: ${JSON.stringify(last)}`);
 }
 
-async function runWorkerDrain(): Promise<void> {
+async function runWorkerDrain(vectorEnabled = false): Promise<void> {
   const root = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../../..",
@@ -104,7 +104,7 @@ async function runWorkerDrain(): Promise<void> {
       AKP_RAW_SECRET_KEY: process.env.AKP_RAW_SECRET_KEY ?? "change-me",
       AKP_EXTRACTOR_TOKEN:
         process.env.AKP_EXTRACTOR_TOKEN ?? "local-extractor-development-token",
-      AKP_VECTOR_ENABLED: "false",
+      AKP_VECTOR_ENABLED: vectorEnabled ? "true" : "false",
     },
   });
   if (result.stderr.trim()) {
