@@ -1,0 +1,101 @@
+name: requested-answer-followup-shadow
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  requested-answer-followup-shadow:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'experiment/requested-answer-followup-shadow'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AKP_REQUESTED_ANSWER_FOLLOWUP_REPORT: reports/ci/requested-answer-followup-shadow.json
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate shadow experiment source
+        run: |
+          pnpm exec prettier --check \
+            packages/retrieval/src/requested-answer-followup.ts \
+            packages/retrieval/test/requested-answer-followup.test.ts \
+            evals/generic/requested-answer-followup/manifest.json \
+            scripts/requested-answer-followup-shadow-experiment.ts \
+            .github/workflows/requested-answer-followup-shadow.yml
+          pnpm check
+      - name: Run focused requested-answer tests
+        run: |
+          pnpm --filter @akp/retrieval exec vitest run \
+            test/requested-answer-slot.test.ts \
+            test/requested-answer-followup.test.ts
+      - name: Execute frozen shadow orchestration experiment
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          pnpm exec tsx scripts/requested-answer-followup-shadow-experiment.ts \
+            2>&1 | tee reports/ci/requested-answer-followup-shadow.log
+      - name: Validate shadow experiment evidence
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(
+            readFileSync(
+              "reports/ci/requested-answer-followup-shadow.json",
+              "utf8",
+            ),
+          );
+          if (
+            !["PROMOTE_TO_SHADOW_ORCHESTRATOR", "REJECT"].includes(
+              report.outcome,
+            )
+          ) {
+            throw new Error("Shadow follow-up experiment has no governed outcome.");
+          }
+          if (
+            report.productionBehaviorChanged !== false ||
+            report.productionAdmissionChanged !== false ||
+            report.retrievalQualityMeasured !== false
+          ) {
+            throw new Error("Shadow follow-up experiment crossed its claim boundary.");
+          }
+          if (
+            report.metrics?.maxFollowUpAttempts > 1 ||
+            report.metrics?.unsupportedQueryFollowUpRate !== 0 ||
+            report.metrics?.originalQueryReassessmentRate !== 1
+          ) {
+            throw new Error("Bounded follow-up invariants failed.");
+          }
+          console.log(
+            JSON.stringify(
+              {
+                outcome: report.outcome,
+                metrics: report.metrics,
+                gates: report.gates,
+                manifestHash: report.manifestHash,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Upload requested-answer follow-up shadow evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: requested-answer-followup-shadow-${{ github.run_id }}
+          path: |
+            reports/ci/requested-answer-followup-shadow.json
+            reports/ci/requested-answer-followup-shadow.log
+          if-no-files-found: warn
+          retention-days: 14
