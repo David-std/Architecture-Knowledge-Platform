@@ -277,8 +277,7 @@ async function main(): Promise<void> {
   const heldout = summarize(observations, "heldout");
   const allCasesPass =
     development.strictAccuracy === 1 && heldout.strictAccuracy === 1;
-  const outcome =
-    audit.familyDisjoint && allCasesPass ? "PROMOTE" : "REJECT";
+  const outcome = audit.familyDisjoint && allCasesPass ? "PROMOTE" : "REJECT";
   const candidateSha = await candidateHeadSha();
   const config = {
     matcher: "ExactStructuredPropositionMatcher",
@@ -332,7 +331,7 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   process.stderr.write(
-    (error instanceof Error ? error.stack ?? error.message : String(error)) +
+    (error instanceof Error ? (error.stack ?? error.message) : String(error)) +
       "\n",
   );
   process.exitCode = 1;
