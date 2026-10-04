@@ -12,12 +12,7 @@
         "expected": {
           "role": "SUBJECT",
           "relationAnchor": "emits",
-          "boundArgumentAnchors": [
-            "audit",
-            "events",
-            "to",
-            "archive"
-          ]
+          "boundArgumentAnchors": ["audit", "events", "to", "archive"]
         }
       },
       {
@@ -28,12 +23,7 @@
         "expected": {
           "role": "SUBJECT",
           "relationAnchor": "reviews",
-          "boundArgumentAnchors": [
-            "release",
-            "exceptions",
-            "before",
-            "deployment"
-          ]
+          "boundArgumentAnchors": ["release", "exceptions", "before", "deployment"]
         }
       },
       {
@@ -44,11 +34,7 @@
         "expected": {
           "role": "OBJECT",
           "relationAnchor": "publish",
-          "boundArgumentAnchors": [
-            "gateway",
-            "to",
-            "registry"
-          ]
+          "boundArgumentAnchors": ["gateway", "to", "registry"]
         }
       },
       {
@@ -59,10 +45,7 @@
         "expected": {
           "role": "OBJECT",
           "relationAnchor": "generate",
-          "boundArgumentAnchors": [
-            "scheduler",
-            "nightly"
-          ]
+          "boundArgumentAnchors": ["scheduler", "nightly"]
         }
       },
       {
@@ -73,10 +56,7 @@
         "expected": {
           "role": "SUBJECT",
           "relationAnchor": "consume",
-          "boundArgumentAnchors": [
-            "mensajes",
-            "entrada"
-          ]
+          "boundArgumentAnchors": ["mensajes", "entrada"]
         }
       },
       {
@@ -87,11 +67,7 @@
         "expected": {
           "role": "SUBJECT",
           "relationAnchor": "aprueba",
-          "boundArgumentAnchors": [
-            "cambios",
-            "antes",
-            "produccion"
-          ]
+          "boundArgumentAnchors": ["cambios", "antes", "produccion"]
         }
       },
       {
@@ -102,11 +78,7 @@
         "expected": {
           "role": "OBJECT",
           "relationAnchor": "publicar",
-          "boundArgumentAnchors": [
-            "gateway",
-            "al",
-            "registro"
-          ]
+          "boundArgumentAnchors": ["gateway", "al", "registro"]
         }
       },
       {
@@ -117,10 +89,7 @@
         "expected": {
           "role": "OBJECT",
           "relationAnchor": "generar",
-          "boundArgumentAnchors": [
-            "scheduler",
-            "diariamente"
-          ]
+          "boundArgumentAnchors": ["scheduler", "diariamente"]
         }
       }
     ],
@@ -133,10 +102,7 @@
         "expected": {
           "role": "RELATION_VALUE",
           "relationAnchor": "custodian",
-          "boundArgumentAnchors": [
-            "audit",
-            "ledger"
-          ]
+          "boundArgumentAnchors": ["audit", "ledger"]
         }
       },
       {
@@ -147,10 +113,7 @@
         "expected": {
           "role": "RELATION_VALUE",
           "relationAnchor": "approver",
-          "boundArgumentAnchors": [
-            "deployment",
-            "exceptions"
-          ]
+          "boundArgumentAnchors": ["deployment", "exceptions"]
         }
       },
       {
@@ -161,10 +124,7 @@
         "expected": {
           "role": "RELATION_VALUE",
           "relationAnchor": "custodio",
-          "boundArgumentAnchors": [
-            "registro",
-            "financiero"
-          ]
+          "boundArgumentAnchors": ["registro", "financiero"]
         }
       },
       {
@@ -175,10 +135,7 @@
         "expected": {
           "role": "RELATION_VALUE",
           "relationAnchor": "responsable",
-          "boundArgumentAnchors": [
-            "cola",
-            "critica"
-          ]
+          "boundArgumentAnchors": ["cola", "critica"]
         }
       },
       {
@@ -189,10 +146,7 @@
         "expected": {
           "role": "LOCATION",
           "relationAnchor": "persist",
-          "boundArgumentAnchors": [
-            "collector",
-            "telemetry"
-          ]
+          "boundArgumentAnchors": ["collector", "telemetry"]
         }
       },
       {
@@ -203,11 +157,7 @@
         "expected": {
           "role": "LOCATION",
           "relationAnchor": "store",
-          "boundArgumentAnchors": [
-            "gateway",
-            "audit",
-            "copies"
-          ]
+          "boundArgumentAnchors": ["gateway", "audit", "copies"]
         }
       },
       {
@@ -218,10 +168,7 @@
         "expected": {
           "role": "LOCATION",
           "relationAnchor": "almacena",
-          "boundArgumentAnchors": [
-            "agente",
-            "metricas"
-          ]
+          "boundArgumentAnchors": ["agente", "metricas"]
         }
       },
       {
@@ -232,10 +179,7 @@
         "expected": {
           "role": "LOCATION",
           "relationAnchor": "publica",
-          "boundArgumentAnchors": [
-            "servicio",
-            "eventos"
-          ]
+          "boundArgumentAnchors": ["servicio", "eventos"]
         }
       },
       {
@@ -269,15 +213,8 @@
     ]
   },
   "protocol": {
-    "developmentFamilies": [
-      "SUBJECT_DIRECT",
-      "OBJECT_AUXILIARY"
-    ],
-    "heldoutFamilies": [
-      "COPULAR_RELATION",
-      "LOCATION",
-      "UNSUPPORTED"
-    ],
+    "developmentFamilies": ["SUBJECT_DIRECT", "OBJECT_AUXILIARY"],
+    "heldoutFamilies": ["COPULAR_RELATION", "LOCATION", "UNSUPPORTED"],
     "familyDisjoint": true,
     "noTuningAfterHeldout": true
   },
