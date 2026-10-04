@@ -247,7 +247,7 @@ def _parse_text_units(
                 source_ref,
                 kind="table",
                 line_start=table_start + line_offset,
-                line_end=table_start + len(table_lines) + 1 + line_offset,
+                line_end=table_start + len(table_lines) + line_offset,
                 page=page,
                 slide=slide,
                 heading_path=heading_stack,
