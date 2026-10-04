@@ -4157,6 +4157,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/table-caption-production-parity-experiment.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/telemetry-command.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
