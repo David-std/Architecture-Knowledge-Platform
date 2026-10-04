@@ -5,14 +5,10 @@ import {
 } from "./requested-answer-slot.js";
 
 export type RequestedAnswerCoverageStatus =
-  | "COVERED"
-  | "MISSING"
-  | "UNSUPPORTED_QUERY";
+  "COVERED" | "MISSING" | "UNSUPPORTED_QUERY";
 
 export type RequestedAnswerFollowUpOutcome =
-  | "SUPPORTED_INITIAL"
-  | "SUPPORTED_FOLLOW_UP"
-  | "INSUFFICIENT_KNOWLEDGE";
+  "SUPPORTED_INITIAL" | "SUPPORTED_FOLLOW_UP" | "INSUFFICIENT_KNOWLEDGE";
 
 export interface RequestedAnswerCoverageAssessment {
   readonly status: RequestedAnswerCoverageStatus;
@@ -81,7 +77,10 @@ function safeAnchor(value: string): string | null {
 export function buildRequestedAnswerFollowUpQuery(
   projection: RequestedAnswerSlotProjection,
 ): string | null {
-  const source = [projection.relationAnchor, ...projection.boundArgumentAnchors];
+  const source = [
+    projection.relationAnchor,
+    ...projection.boundArgumentAnchors,
+  ];
   if (source.length < 2 || source.length > MAX_ANCHORS) return null;
 
   const anchors: string[] = [];
