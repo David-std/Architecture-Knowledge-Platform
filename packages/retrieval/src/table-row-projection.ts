@@ -24,6 +24,8 @@ export interface TableCellProjection {
 export interface TableRowProjection {
   readonly kind: "TABLE_ROW";
   readonly derivation: "DETERMINISTIC_PARSED";
+  /** Canonical parsed unit key used to persist this projection without locator heuristics. */
+  readonly unitKey: string;
   /** Stable within one exact source-body revision. */
   readonly tableId: string;
   readonly tableIndex: number;
@@ -181,6 +183,7 @@ export function projectTableRows(
       {
         kind: "TABLE_ROW",
         derivation: "DETERMINISTIC_PARSED",
+        unitKey: row.unitKey,
         tableId: `${row.locator.sourceBodyHash}:table:${tableIndex}`,
         tableIndex,
         rowIndex,
@@ -197,4 +200,20 @@ export function projectTableRows(
       },
     ];
   });
+}
+
+/**
+ * Materializes the deterministic TABLE_ROW lexical projection by canonical
+ * parsed unit key. Non-table units intentionally have no structured context.
+ */
+export function tableRowLexicalContextByUnitKey(
+  title: string,
+  sourceBody: string,
+): ReadonlyMap<string, string> {
+  return new Map(
+    projectTableRows(title, sourceBody).map((projection) => [
+      projection.unitKey,
+      projection.lexicalText,
+    ]),
+  );
 }

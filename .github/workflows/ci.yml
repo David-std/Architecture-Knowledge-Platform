@@ -71,6 +71,20 @@ jobs:
       - run: pnpm auth:provision
       - name: Run pnpm check
         run: pnpm check
+      - name: Verify structured row lexical context wiring on an isolated database
+        env:
+          DATABASE_URL: postgres://akp:akp@localhost:55432/akp_structured_row_test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup_structured_row_database() {
+            docker compose exec -T postgres dropdb -U akp --if-exists akp_structured_row_test >/dev/null 2>&1 || true
+          }
+          trap cleanup_structured_row_database EXIT
+          cleanup_structured_row_database
+          docker compose exec -T postgres createdb -U akp akp_structured_row_test
+          pnpm db:migrate
+          pnpm --filter @akp/api exec vitest run             --config vitest.integration.config.ts             test/lexical-ranking.integration.test.ts             --no-file-parallelism
       - name: Run PostgreSQL persistence integration on an isolated database
         env:
           DATABASE_URL: postgres://akp:akp@localhost:55432/akp_postgres_test

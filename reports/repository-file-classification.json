@@ -2007,6 +2007,11 @@
       "reason": "append-only database migration"
     },
     {
+      "path": "db/migrations/090_structured_table_row_lexical_context.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
       "path": "dependency-cruiser.cjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parseKnowledgeUnits } from "../src/chunking.js";
 import { projectTableRows } from "../src/table-row-projection.js";
 
 describe("table row projection", () => {
@@ -13,8 +14,12 @@ describe("table row projection", () => {
     ].join("\n");
 
     const projections = projectTableRows("Reliability report", source);
+    const parsedRow = parseKnowledgeUnits("Reliability report", source).find(
+      (unit) => unit.unitType === "TABLE_ROW",
+    );
 
     expect(projections).toHaveLength(1);
+    expect(projections[0]?.unitKey).toBe(parsedRow?.unitKey);
     expect(projections[0]).toMatchObject({
       kind: "TABLE_ROW",
       derivation: "DETERMINISTIC_PARSED",
