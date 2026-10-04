@@ -598,6 +598,135 @@ describe("production lexical ranking", () => {
   );
 });
 
+describe("structured TABLE_ROW lexical context", () => {
+  it.skipIf(!databaseUrl)(
+    "keeps canonical row bodies unchanged while opt-in context selects the matching row",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = lexicalFixture();
+      const db = new Postgres(databaseUrl);
+      const secondRowId = randomUUID();
+      try {
+        await seedLexical(db, fixture);
+        const documentId = fixture.documents.bodyTerms;
+        const firstRowId = fixture.units.bodyTerms;
+        const rowBody = "| API | Mira Chen | SlotA |";
+        const documentBody = [
+          "Blue release matrix",
+          "Green release matrix",
+          "Component API Owner Mira Chen Slot SlotA",
+        ].join("\n");
+        const rowHash = createHash("sha256").update(rowBody).digest("hex");
+        const documentHash = createHash("sha256")
+          .update(documentBody)
+          .digest("hex");
+        await db.pool.query(
+          `update knowledge_documents
+              set title='Release matrices',body_cache=$2,content_hash=$3
+            where id=$1`,
+          [documentId, documentBody, documentHash],
+        );
+        await db.pool.query(
+          `update knowledge_units
+              set unit_type='TABLE_ROW',heading_path=$2,body=$3,content_hash=$4,
+                  structural_order=1,lexical_context=$5
+            where id=$1`,
+          [
+            firstRowId,
+            ["Release matrices", "Table columns: Component | Owner | Slot"],
+            rowBody,
+            rowHash,
+            [
+              "Release matrices",
+              "Blue release matrix",
+              "Component = API",
+              "Owner = Mira Chen",
+              "Slot = SlotA",
+            ].join("\n"),
+          ],
+        );
+        await db.pool.query(
+          `insert into knowledge_units(
+             id,document_id,space_id,vault_id,unit_key,unit_type,heading_path,body,
+             content_hash,corpus_revision,lifecycle,trust_tier,source_ids,
+             token_estimate,parent_unit_id,document_revision,permissions,locator,
+             structural_order,container_only,embedding_eligible,lexical_context
+           ) values($1,$2,$3,$4,'structured-row-two','TABLE_ROW',$5,$6,$7,$8,
+                    'ACTIVE','HUMAN_REVIEWED','{}',8,null,$8,'{}'::jsonb,
+                    '{}'::jsonb,2,false,true,$9)`,
+          [
+            secondRowId,
+            documentId,
+            fixture.spaceId,
+            fixture.vaultId,
+            ["Release matrices", "Table columns: Component | Owner | Slot"],
+            rowBody,
+            rowHash,
+            fixture.corpusRevision,
+            [
+              "Release matrices",
+              "Green release matrix",
+              "Component = API",
+              "Owner = Mira Chen",
+              "Slot = SlotA",
+            ].join("\n"),
+          ],
+        );
+
+        const query =
+          "Green release matrix Component API Owner Mira Chen Slot SlotA";
+        const request = { ...searchRequest(fixture), query, limit: 5 };
+        const sharedOptions = {
+          channels: ["lexical"] as const,
+          vaultIds: [fixture.vaultId],
+          deterministicRerank: false,
+        };
+
+        const baseline = await queryKnowledge(db, request, sharedOptions);
+        expect(baseline[0]?.documentId).toBe(documentId);
+        expect(baseline[0]?.unitId).toBe(firstRowId);
+
+        const candidate = await queryKnowledge(db, request, {
+          ...sharedOptions,
+          experimentalStructuredRowLexicalContext: true,
+        });
+        expect(candidate[0]?.documentId).toBe(documentId);
+        expect(candidate[0]?.unitId).toBe(secondRowId);
+        expect(candidate[0]?.reasons).toContain(
+          "lexical:structured-context-terms",
+        );
+
+        const stored = await db.pool.query<{
+          id: string;
+          body: string;
+          lexical_context: string;
+          augmented_match: boolean;
+        }>(
+          `select id,body,lexical_context,
+                  lexical_augmented_search_vector @@ plainto_tsquery('simple',$3)
+                    augmented_match
+             from knowledge_units
+            where id=any($1::uuid[])
+            order by structural_order`,
+          [[firstRowId, secondRowId], documentId, query],
+        );
+        expect(stored.rows.map((row) => row.body)).toEqual([rowBody, rowBody]);
+        expect(stored.rows[0]?.lexical_context).toContain(
+          "Blue release matrix",
+        );
+        expect(stored.rows[1]?.lexical_context).toContain(
+          "Green release matrix",
+        );
+        expect(stored.rows[0]?.augmented_match).toBe(false);
+        expect(stored.rows[1]?.augmented_match).toBe(true);
+      } finally {
+        await cleanupLexical(db, fixture);
+        await db.close();
+      }
+    },
+  );
+});
+
 describe("atomic lexical selection and indexed lexemes", () => {
   it.skipIf(!databaseUrl)(
     "keeps a matching leaf when its container ranks higher",
