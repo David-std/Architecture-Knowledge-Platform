@@ -5,15 +5,8 @@
   "baselineSha": "d36231af1c69705d92f21e2bc95bf5c8c93b71cf",
   "protocol": {
     "singleIndependentVariable": "Allow zero-or-one retrieval-only follow-up derived exclusively from the existing RequestedAnswerSlot projection when the initial governed answerability assessment is unsupported. Admission remains unchanged and is re-run against the original query.",
-    "developmentFamilies": [
-      "SUBJECT_DIRECT",
-      "OBJECT_AUXILIARY"
-    ],
-    "heldoutFamilies": [
-      "COPULAR_RELATION",
-      "LOCATION",
-      "UNSUPPORTED"
-    ],
+    "developmentFamilies": ["SUBJECT_DIRECT", "OBJECT_AUXILIARY"],
+    "heldoutFamilies": ["COPULAR_RELATION", "LOCATION", "UNSUPPORTED"],
     "familyDisjoint": true,
     "noTuningAfterHeldout": true,
     "productionBehaviorChanged": false,
