@@ -155,10 +155,7 @@ describe("temporal fact proposition projection", () => {
         supportSet: support({
           sourceEpisodeIds: ["99999999-9999-4999-8999-999999999999"],
         }),
-        evidence: [
-          evidence(EVIDENCE_A, "A"),
-          evidence(EVIDENCE_B, "B"),
-        ],
+        evidence: [evidence(EVIDENCE_A, "A"), evidence(EVIDENCE_B, "B")],
       }),
     ).toBeNull();
 
@@ -168,10 +165,7 @@ describe("temporal fact proposition projection", () => {
         supportSet: support({
           alternativeSupportGroups: [[`evidence:${EVIDENCE_A}`]],
         }),
-        evidence: [
-          evidence(EVIDENCE_A, "A"),
-          evidence(EVIDENCE_B, "B"),
-        ],
+        evidence: [evidence(EVIDENCE_A, "A"), evidence(EVIDENCE_B, "B")],
       }),
     ).toBeNull();
   });
