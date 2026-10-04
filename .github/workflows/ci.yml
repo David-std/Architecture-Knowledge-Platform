@@ -237,6 +237,10 @@ jobs:
           --vault-path test/fixtures/vault
           --space-id 00000000-0000-0000-0000-000000000003
           --read-only
+      - name: Verify imported structured row lexical E2E
+        env:
+          AKP_STRUCTURED_ROW_E2E_REPORT: reports/ci/imported-structured-row-e2e.json
+        run: pnpm exec tsx scripts/verify-imported-structured-row-e2e.ts
       - run: pnpm verify:runtime
       - name: Run operator doctor diagnostics
         shell: bash
