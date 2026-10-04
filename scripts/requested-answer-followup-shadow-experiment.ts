@@ -7,9 +7,7 @@ import {
 } from "../packages/retrieval/src/index.js";
 
 type ExpectedOutcome =
-  | "SUPPORTED_INITIAL"
-  | "SUPPORTED_FOLLOW_UP"
-  | "INSUFFICIENT_KNOWLEDGE";
+  "SUPPORTED_INITIAL" | "SUPPORTED_FOLLOW_UP" | "INSUFFICIENT_KNOWLEDGE";
 
 type Case = {
   id: string;
@@ -161,9 +159,7 @@ if (
   throw new Error("Requested-answer follow-up manifest contract drifted.");
 }
 
-const development = await Promise.all(
-  manifest.splits.development.map(observe),
-);
+const development = await Promise.all(manifest.splits.development.map(observe));
 const heldout = await Promise.all(manifest.splits.heldout.map(observe));
 const all = [...development, ...heldout];
 
@@ -208,10 +204,12 @@ const gates = {
     manifest.promotionRule.originalQueryReassessmentRate,
   relevanceCanGrantSupport:
     manifest.promotionRule.relevanceCanGrantSupport === false,
-  productionBehaviorChanged: manifest.protocol.productionBehaviorChanged === false,
+  productionBehaviorChanged:
+    manifest.protocol.productionBehaviorChanged === false,
   productionAdmissionChanged:
     manifest.protocol.productionAdmissionChanged === false,
-  retrievalQualityMeasured: manifest.protocol.retrievalQualityMeasured === false,
+  retrievalQualityMeasured:
+    manifest.protocol.retrievalQualityMeasured === false,
 };
 
 const outcome = Object.values(gates).every(Boolean)
