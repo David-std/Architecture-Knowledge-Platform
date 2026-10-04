@@ -1,0 +1,207 @@
+name: xquad-contextual-persisted-generation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  xquad-persisted-generation-ab:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'eval/xquad-contextual-persisted-generation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      AKP_MODEL_CACHE_DIR: /tmp/akp-model-cache
+      AKP_XQUAD_CONTEXTUAL_REPORT: reports/ci/xquad-contextual-persisted-generation.json
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate experiment source
+        run: |
+          pnpm exec prettier --check \
+            scripts/xquad-contextual-persisted-generation-benchmark.ts \
+            .github/workflows/xquad-contextual-persisted-generation.yml
+          pnpm check
+      - name: Capture canonical formatter output
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p reports/ci
+          pnpm exec prettier scripts/xquad-contextual-persisted-generation-benchmark.ts \
+            > reports/ci/xquad-contextual-persisted-generation-benchmark.formatted.ts
+      - run: pnpm build
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Warm pinned multilingual semantic model cache
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci "$AKP_MODEL_CACHE_DIR"
+          pnpm exec tsx scripts/preload-semantic-model.ts \
+            2>&1 | tee reports/ci/xquad-contextual-model-prefetch.log
+          echo "AKP_LOCAL_FILES_ONLY=1" >> "$GITHUB_ENV"
+      - name: Execute XQuAD persisted-generation A/B
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm exec tsx scripts/xquad-contextual-persisted-generation-benchmark.ts \
+            2>&1 | tee reports/ci/xquad-contextual-persisted-generation.log
+      - name: Validate XQuAD evidence
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(
+            readFileSync(
+              "reports/ci/xquad-contextual-persisted-generation.json",
+              "utf8",
+            ),
+          );
+          if (
+            ![
+              "EXTERNAL_SUPPORT",
+              "EXTERNAL_COUNTEREVIDENCE",
+              "INCONCLUSIVE",
+            ].includes(report.outcome)
+          ) {
+            throw new Error("XQuAD experiment did not produce a governed outcome.");
+          }
+          if (
+            report.productionDefaultsChanged !== false ||
+            report.retrievalOnly !== true ||
+            report.admissionMeasured !== false ||
+            report.corpusRedistributed !== false
+          ) {
+            throw new Error("XQuAD experiment crossed its retrieval-only boundary.");
+          }
+          if (
+            report.upstream?.repository !== "google-deepmind/xquad" ||
+            report.upstream?.commit !==
+              "7d30520c717524000f0d9d2f9c10a069acd9d285" ||
+            report.upstream?.license !== "CC BY-SA 4.0"
+          ) {
+            throw new Error("XQuAD source provenance is not pinned as expected.");
+          }
+          if (
+            report.dataset?.articlesPerLanguage !== 48 ||
+            report.dataset?.paragraphsPerLanguage !== 240 ||
+            report.dataset?.questionsPerLanguage !== 1190 ||
+            report.dataset?.allQuestionIdsAligned !== true ||
+            report.dataset?.allQuestionLocationsAligned !== true ||
+            report.dataset?.answerSpans?.en !== 1190 ||
+            report.dataset?.answerSpans?.es !== 1190 ||
+            report.dataset?.titlesSharedAcrossLanguages !== true ||
+            report.dataset?.headingMetadataInvented !== false ||
+            report.dataset?.unanswerableQuestionsPresent !== false
+          ) {
+            throw new Error("XQuAD dataset integrity contract failed.");
+          }
+          const generationIds = new Set();
+          for (const language of ["en", "es"]) {
+            const expectedUnits = report.dataset.paragraphsPerLanguage;
+            for (const armName of ["bodyOnly", "titleHeading"]) {
+              const arm = report.generations?.[language]?.[armName];
+              if (
+                arm?.persisted?.status !== "READY" ||
+                arm?.persisted?.complete !== true ||
+                arm?.persisted?.vectorRows !== expectedUnits ||
+                arm?.persisted?.matchingInputHashes !== expectedUnits ||
+                arm?.build?.embeddingsCreated !== expectedUnits ||
+                arm?.build?.embeddingsReused !== 0
+              ) {
+                throw new Error(
+                  `XQuAD ${language}/${armName} is not a complete fresh persisted generation.`,
+                );
+              }
+              generationIds.add(arm.generationId);
+            }
+            if (
+              report.generations[language].bodyOnly.persisted.inputStrategy ===
+              report.generations[language].titleHeading.persisted.inputStrategy
+            ) {
+              throw new Error(`XQuAD ${language} A/B did not vary input strategy.`);
+            }
+          }
+          if (generationIds.size !== 4) {
+            throw new Error("XQuAD A/B did not create four distinct generations.");
+          }
+          for (const direction of ["en-en", "es-es", "es-en", "en-es"]) {
+            const result = report.results?.[direction];
+            if (
+              !result ||
+              result.bodyOnly?.observations?.length !== 1190 ||
+              result.titleHeading?.observations?.length !== 1190 ||
+              result.pairedRanks?.improved +
+                  result.pairedRanks?.regressed +
+                  result.pairedRanks?.tied !==
+                1190
+            ) {
+              throw new Error(`XQuAD direction ${direction} is incomplete.`);
+            }
+          }
+          console.log(
+            JSON.stringify(
+              {
+                outcome: report.outcome,
+                upstream: report.upstream,
+                dataset: report.dataset,
+                results: Object.fromEntries(
+                  Object.entries(report.results).map(([direction, value]) => [
+                    direction,
+                    {
+                      bodyOnly: {
+                        recallAt1: value.bodyOnly.recallAt1,
+                        recallAt5: value.bodyOnly.recallAt5,
+                        recallAt10: value.bodyOnly.recallAt10,
+                        mrrAt10: value.bodyOnly.mrrAt10,
+                      },
+                      titleHeading: {
+                        recallAt1: value.titleHeading.recallAt1,
+                        recallAt5: value.titleHeading.recallAt5,
+                        recallAt10: value.titleHeading.recallAt10,
+                        mrrAt10: value.titleHeading.mrrAt10,
+                      },
+                      deltas: value.deltas,
+                      pairedRanks: value.pairedRanks,
+                    },
+                  ]),
+                ),
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Capture persisted generation rows
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p reports/ci
+          docker compose exec -T postgres psql -X -U akp -d akp \
+            -c "\copy (select provider,model,model_revision,dimensions,input_strategy,status,count(*) over () generation_rows from embedding_generations order by created_at) to stdout with csv header" \
+            > reports/ci/xquad-contextual-persisted-generations.csv 2>&1 || true
+      - name: Upload XQuAD persisted-generation evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: xquad-contextual-persisted-generation-${{ github.run_id }}
+          path: |
+            reports/ci/xquad-contextual-persisted-generation.json
+            reports/ci/xquad-contextual-persisted-generation.log
+            reports/ci/xquad-contextual-model-prefetch.log
+            reports/ci/xquad-contextual-persisted-generations.csv
+            reports/ci/xquad-contextual-persisted-generation-benchmark.formatted.ts
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
