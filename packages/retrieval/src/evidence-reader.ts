@@ -3,6 +3,7 @@ import type {
   QueryConditionedEvidenceVerifier,
   QueryConditionedEvidenceVerifierInput,
 } from "./answerability.js";
+import type { RequestedAnswerSlotProjection } from "./requested-answer-slot.js";
 import {
   contextualEvidenceText,
   locateEvidenceQuote,
@@ -16,6 +17,8 @@ export interface EvidenceReaderInput {
   readonly scope: string;
   /** Unit body as lines; table rows are restated with their headers. */
   readonly body: string;
+  /** Optional query-model projection. It is never evidence authority. */
+  readonly requestedAnswerSlot?: RequestedAnswerSlotProjection;
 }
 
 export interface EvidenceReaderJudgment {
@@ -46,6 +49,22 @@ export interface EvidenceReaderMessage {
  * follows the evidence judges of Onyx, PaperQA2 and Sufficient Context; see
  * docs/architecture/evidence-admission-research.md.
  */
+function requestedAnswerSlotPromptLines(
+  slot: RequestedAnswerSlotProjection | undefined,
+): string[] {
+  if (!slot) return [];
+  return [
+    "",
+    "<requested_answer_slot>",
+    `role: ${slot.role}`,
+    `relation_anchor: ${slot.relationAnchor}`,
+    `bound_argument_anchors: ${slot.boundArgumentAnchors.join(", ")}`,
+    `language: ${slot.language}`,
+    "</requested_answer_slot>",
+    "The requested-answer-slot block is query representation only. It does not establish that the relation or any answer is present in the passage. Use it only to preserve the requested role, relation direction and bound arguments. Evidence still requires an exact visible answer span from the passage.",
+  ];
+}
+
 export function evidenceReaderMessages(
   input: EvidenceReaderInput,
 ): EvidenceReaderMessage[] {
@@ -61,6 +80,7 @@ export function evidenceReaderMessages(
         `<passage source="${input.scope || "untitled"}">`,
         input.body,
         "</passage>",
+        ...requestedAnswerSlotPromptLines(input.requestedAnswerSlot),
         "",
         "Steps:",
         '1. "needed": the information requested (a value, date, name, condition, definition, reason, or whether a relation is true OR false), as one fully qualified fact, preserving the requested subject, event, object, row, date, unit of measurement and quantifiers. Do not assume the proposition in the question is true.',
@@ -336,9 +356,16 @@ export interface EvidenceShortlistScorer {
   dispose?(): Promise<void> | void;
 }
 
+export interface RequestedAnswerSlotProjector {
+  readonly id: string;
+  project(query: string): RequestedAnswerSlotProjection | null;
+}
+
 export interface ReaderEvidenceVerifierOptions {
   readonly reader: EvidenceReader;
   readonly shortlist?: EvidenceShortlistScorer;
+  /** Optional SHADOW query model. Missing/unsupported projections fail closed. */
+  readonly requestedAnswerSlotProjector?: RequestedAnswerSlotProjector;
   /** Candidates read per query, highest shortlist scores first. */
   readonly shortlistSize?: number;
   /** Shortlist score below which a candidate is never read. */
@@ -356,6 +383,9 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
   readonly id: string;
   private readonly reader: EvidenceReader;
   private readonly shortlist: EvidenceShortlistScorer | undefined;
+  private readonly requestedAnswerSlotProjector:
+    | RequestedAnswerSlotProjector
+    | undefined;
   private readonly shortlistSize: number;
   private readonly shortlistFloor: number;
   private readonly concurrency: number;
@@ -363,6 +393,7 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
   constructor(options: ReaderEvidenceVerifierOptions) {
     this.reader = options.reader;
     this.shortlist = options.shortlist;
+    this.requestedAnswerSlotProjector = options.requestedAnswerSlotProjector;
     this.shortlistSize = options.shortlistSize ?? 4;
     this.shortlistFloor = options.shortlistFloor ?? 0.001;
     this.concurrency = options.concurrency ?? 2;
@@ -379,9 +410,12 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
     if (!Number.isSafeInteger(this.concurrency) || this.concurrency < 1) {
       throw new Error("Reader concurrency must be a positive integer");
     }
-    this.id = this.shortlist
+    const baseId = this.shortlist
       ? `reader:${this.reader.id}+shortlist:${this.shortlist.id}`
       : `reader:${this.reader.id}`;
+    this.id = this.requestedAnswerSlotProjector
+      ? `${baseId}+requested-slot:${this.requestedAnswerSlotProjector.id}`
+      : baseId;
   }
 
   private async read(
@@ -394,6 +428,26 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
       passage: input.passage,
     });
     const scored = score === undefined ? {} : { score };
+    let requestedAnswerSlot: RequestedAnswerSlotProjection | undefined;
+    if (this.requestedAnswerSlotProjector) {
+      try {
+        requestedAnswerSlot =
+          this.requestedAnswerSlotProjector.project(input.query) ?? undefined;
+      } catch {
+        return {
+          decision: "INSUFFICIENT",
+          ...scored,
+          reason: "REQUESTED_ANSWER_SLOT_PROJECTION_ERROR",
+        };
+      }
+      if (!requestedAnswerSlot) {
+        return {
+          decision: "INSUFFICIENT",
+          ...scored,
+          reason: "REQUESTED_ANSWER_SLOT_UNAVAILABLE",
+        };
+      }
+    }
     if (!contextual.body) {
       return { decision: "INSUFFICIENT", ...scored, reason: "EMPTY_PASSAGE" };
     }
@@ -403,6 +457,7 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
         query: input.query,
         scope: contextual.scope,
         body: contextual.body,
+        ...(requestedAnswerSlot ? { requestedAnswerSlot } : {}),
       });
     } catch (error) {
       // One unreadable judgment leaves that candidate exploratory; it does
