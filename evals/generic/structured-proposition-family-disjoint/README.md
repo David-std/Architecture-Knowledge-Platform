@@ -9,12 +9,14 @@ and it does not enable the semantic reader.
 Development and heldout use disjoint abstract families.
 
 Development:
+
 - `DIRECT_EXACT`
 - `OBJECT_MISMATCH`
 - `OBJECT_OPTIONAL`
 - `EMPTY_REQUIRED_FIELD`
 
 Heldout:
+
 - `SUBJECT_BINDING`
 - `PREDICATE_BINDING`
 - `POLARITY_CONTRADICTION`
