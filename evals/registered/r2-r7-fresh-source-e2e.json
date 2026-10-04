@@ -1,0 +1,130 @@
+{
+  "schemaVersion": "akp.r2-r7-fresh-source-e2e.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-04",
+  "baselineSha": "a2d53f977ece55db445acff13c5826c357bfc755",
+  "claimBoundary": {
+    "passOutcome": "PUBLIC_FRESH_E2E_PROVEN",
+    "failOutcome": "PUBLIC_FRESH_E2E_FAILED",
+    "privateReplayStillRequired": true,
+    "statement": "This oracle proves the maintained public synthetic raw-source path for the frozen fixture only. It does not replace the historical private source-frame oracle or establish arbitrary-corpus ingestion/retrieval quality."
+  },
+  "source": {
+    "path": "test/fixtures/r2-r7-fresh-source/fidelity-probe.md",
+    "gitBlobSha": "60976a702589513d3802dc84d5c15c518bc3bd25",
+    "sha256": "37c8796f0ea78be77dec9f7ac99b478d5bbc66dae49f3227c49a9befebb55548",
+    "mediaType": "text/markdown",
+    "title": "Fresh Source Fidelity Probe",
+    "lineCount": 16,
+    "requiredRawText": [
+      "The Atlas relay publishes retention checkpoint ORCHID-7421 only after reviewer approval.",
+      "For the Lima staging cluster, the documented Atlas relay recovery target is 17 minutes and the owner is Platform Reliability.",
+      "| Atlas relay | Lima | 17 minutes |",
+      "| Boreal cache | Quito | 29 minutes |"
+    ],
+    "structuralOracle": {
+      "headings": [
+        {
+          "text": "Fresh Source Fidelity Probe",
+          "line": 1,
+          "level": 1
+        },
+        {
+          "text": "Recovery Window",
+          "line": 5,
+          "level": 2
+        },
+        {
+          "text": "Guardrail",
+          "line": 14,
+          "level": 2
+        }
+      ],
+      "table": {
+        "startLine": 9,
+        "endLine": 12,
+        "headers": ["Service", "Region", "Recovery target"],
+        "rows": [
+          ["Atlas relay", "Lima", "17 minutes"],
+          ["Boreal cache", "Quito", "29 minutes"]
+        ]
+      }
+    }
+  },
+  "publication": {
+    "compilerMode": "SOURCE_SUMMARY_FALLBACK",
+    "relativePath": "10-sources/ingested/source-37c8796f0ea78be7.md",
+    "persistedPathSuffix": "managed/10-sources/ingested/source-37c8796f0ea78be7.md",
+    "requiredFrontmatter": {
+      "type": "source-summary",
+      "knowledge_layer": "source",
+      "trust_tier": "machine-supported",
+      "source_sha256": "37c8796f0ea78be77dec9f7ac99b478d5bbc66dae49f3227c49a9befebb55548"
+    },
+    "requiredPublishedText": [
+      "ORCHID-7421",
+      "Atlas relay recovery target is 17 minutes",
+      "| Atlas relay | Lima | 17 minutes |",
+      "human review required"
+    ]
+  },
+  "unitOracle": [
+    {
+      "id": "atlas-recovery-paragraph",
+      "unitType": "PARAGRAPH",
+      "exactBody": "For the Lima staging cluster, the documented Atlas relay recovery target is 17 minutes and the owner is Platform Reliability.",
+      "embeddingEligible": true
+    },
+    {
+      "id": "atlas-table-row",
+      "unitType": "TABLE_ROW",
+      "exactBody": "| Atlas relay | Lima | 17 minutes |",
+      "table": 1,
+      "row": 1,
+      "embeddingEligible": true
+    },
+    {
+      "id": "atlas-recovery-cell",
+      "unitType": "TABLE_CELL",
+      "exactBody": "17 minutes",
+      "table": 1,
+      "row": 1,
+      "column": 3,
+      "embeddingEligible": false
+    }
+  ],
+  "retrievalCases": [
+    {
+      "id": "answerable-atlas-recovery",
+      "query": "What recovery target is documented for the Atlas relay in the Lima staging cluster?",
+      "expectNoAnswer": false,
+      "requiredEvidenceTerms": ["Atlas relay", "Lima", "17 minutes"],
+      "requireSupportedAdmission": true,
+      "requireContextPacket": true
+    },
+    {
+      "id": "no-answer-atlas-tls-serial",
+      "query": "What TLS certificate serial number is configured for the Atlas relay?",
+      "expectNoAnswer": true,
+      "requireSupportedAdmission": false,
+      "requireContextPacket": false
+    }
+  ],
+  "gates": {
+    "sourceHashExact": true,
+    "sourceArtifactHashExact": true,
+    "structuralArtifactOracleExact": true,
+    "evidenceBoundToArtifactLocator": true,
+    "reviewRequiredBeforePublication": true,
+    "publicationApprovedViaReviewApi": true,
+    "publishedProvenanceExact": true,
+    "atomicUnitOracleExact": true,
+    "allEmbeddingEligibleUnitsCovered": true,
+    "activeEmbeddingGenerationAtCurrentRevision": true,
+    "allServedIndexRevisionsEqualCurrentCorpus": true,
+    "answerableSearchSupportedWithGoldEvidence": true,
+    "answerableContextContainsGoldEvidenceAndCitation": true,
+    "noAnswerDoesNotAdmitEvidence": true,
+    "crossVaultLeakageCount": 0
+  }
+}

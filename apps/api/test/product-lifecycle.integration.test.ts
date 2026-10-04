@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -76,7 +76,7 @@ async function waitFor<T>(
   throw new Error(`Timed out waiting for ${label}: ${JSON.stringify(last)}`);
 }
 
-async function runWorkerDrain(): Promise<void> {
+async function runWorkerDrain(vectorEnabled = false): Promise<void> {
   const root = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../../..",
@@ -104,7 +104,7 @@ async function runWorkerDrain(): Promise<void> {
       AKP_RAW_SECRET_KEY: process.env.AKP_RAW_SECRET_KEY ?? "change-me",
       AKP_EXTRACTOR_TOKEN:
         process.env.AKP_EXTRACTOR_TOKEN ?? "local-extractor-development-token",
-      AKP_VECTOR_ENABLED: "false",
+      AKP_VECTOR_ENABLED: vectorEnabled ? "true" : "false",
     },
   });
   if (result.stderr.trim()) {
@@ -1224,4 +1224,624 @@ describe("product lifecycle E2E", () => {
       rollbackDeliveries.rows.every((row) => row.status === "SUCCEEDED"),
     ).toBe(true);
   }, 180_000);
+
+  const freshSourceIt =
+    process.env.AKP_RUN_R2_R7_FRESH_E2E === "1" ? it : it.skip;
+
+  freshSourceIt(
+    "proves the frozen R2/R7 fresh source oracle through artifact, units, vector, admission and ContextPacket",
+    async () => {
+      const repositoryRoot = path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "../../..",
+      );
+      const oraclePath = path.join(
+        repositoryRoot,
+        "evals",
+        "registered",
+        "r2-r7-fresh-source-e2e.json",
+      );
+      const oracle = JSON.parse(await readFile(oraclePath, "utf8")) as {
+        schemaVersion: string;
+        frozen: boolean;
+        baselineSha: string;
+        claimBoundary: {
+          passOutcome: string;
+          failOutcome: string;
+          privateReplayStillRequired: boolean;
+          statement: string;
+        };
+        source: {
+          path: string;
+          gitBlobSha: string;
+          sha256: string;
+          mediaType: string;
+          title: string;
+          lineCount: number;
+          requiredRawText: string[];
+          structuralOracle: {
+            headings: Array<{ text: string; line: number; level: number }>;
+            table: {
+              startLine: number;
+              endLine: number;
+              headers: string[];
+              rows: string[][];
+            };
+          };
+        };
+        publication: {
+          compilerMode: string;
+          relativePath: string;
+          persistedPathSuffix: string;
+          requiredFrontmatter: Record<string, string>;
+          requiredPublishedText: string[];
+        };
+        unitOracle: Array<{
+          id: string;
+          unitType: string;
+          exactBody: string;
+          table?: number;
+          row?: number;
+          column?: number;
+          embeddingEligible: boolean;
+        }>;
+        retrievalCases: Array<{
+          id: string;
+          query: string;
+          expectNoAnswer: boolean;
+          requiredEvidenceTerms?: string[];
+          requireSupportedAdmission: boolean;
+          requireContextPacket: boolean;
+        }>;
+        gates: Record<string, boolean | number>;
+      };
+      expect(oracle.schemaVersion).toBe("akp.r2-r7-fresh-source-e2e.v1");
+      expect(oracle.frozen).toBe(true);
+
+      const fixturePath = path.join(repositoryRoot, oracle.source.path);
+      const fixtureBytes = await readFile(fixturePath);
+      const fixtureText = fixtureBytes.toString("utf8");
+      expect(createHash("sha256").update(fixtureBytes).digest("hex")).toBe(
+        oracle.source.sha256,
+      );
+      const blob = await execFileAsync("git", ["hash-object", fixturePath], {
+        cwd: repositoryRoot,
+        windowsHide: true,
+      });
+      expect(blob.stdout.trim()).toBe(oracle.source.gitBlobSha);
+      expect(fixtureText.trimEnd().split(/\r?\n/u)).toHaveLength(
+        oracle.source.lineCount,
+      );
+      for (const expected of oracle.source.requiredRawText) {
+        expect(fixtureText).toContain(expected);
+      }
+
+      const sourcePath = path.join(sourceRoot, "r2-r7-fidelity-probe.md");
+      await writeFile(sourcePath, fixtureBytes);
+      const submitted = await app.inject({
+        method: "POST",
+        url: "/v1/ingest",
+        headers,
+        payload: {
+          spaceId: defaultSpace,
+          vaultId,
+          sourceUri: sourcePath,
+          expectedSha256: oracle.source.sha256,
+          title: oracle.source.title,
+          mediaType: oracle.source.mediaType,
+          documentIntelligence: {
+            complexity: "simple",
+            extractor: "deterministic-baseline",
+            ocr: false,
+          },
+          policy: "REVIEW_REQUIRED",
+        },
+      });
+      expect(submitted.statusCode, submitted.body).toBe(202);
+      const job = submitted.json() as { jobId: string; state: string };
+      expect(job.state).toBe("RECEIVED");
+      await seedEventConsumerForJob(job.jobId);
+      await runWorkerDrain(true);
+
+      const reviewId = await reviewIdForJob(job.jobId);
+      const jobBeforeApproval = await db.pool.query<{
+        state: string;
+        source_id: string;
+        compilation: Record<string, unknown>;
+      }>(
+        "select state,stage_outputs->>'sourceId' source_id,stage_outputs->'compilation' compilation from ingest_jobs where id=$1",
+        [job.jobId],
+      );
+      expect(jobBeforeApproval.rows[0]?.state).toBe("REVIEW_REQUIRED");
+      expect(jobBeforeApproval.rows[0]?.compilation).toMatchObject({
+        mode: oracle.publication.compilerMode,
+      });
+      const sourceId = jobBeforeApproval.rows[0]?.source_id;
+      expect(sourceId).toEqual(expect.any(String));
+
+      const source = await db.pool.query<{
+        id: string;
+        sha256: string;
+        object_key: string;
+      }>(
+        "select id,sha256,object_key from sources where vault_id=$1 and sha256=$2",
+        [vaultId, oracle.source.sha256],
+      );
+      expect(source.rows).toHaveLength(1);
+      expect(source.rows[0]).toMatchObject({
+        id: sourceId,
+        sha256: oracle.source.sha256,
+      });
+      sourceObjectKeys.push(...source.rows.map((row) => row.object_key));
+
+      const artifact = await db.pool.query<{
+        id: string;
+        source_hash: string;
+        extractor: string;
+        extractor_version: string;
+        document_artifact: {
+          source_hash?: string;
+          media_type?: string;
+          headings?: Array<{
+            text?: string;
+            locator?: Record<string, unknown>;
+            metadata?: { level?: number };
+          }>;
+          paragraphs?: Array<{
+            text?: string;
+            locator?: Record<string, unknown>;
+          }>;
+          tables?: Array<{
+            headers?: string[];
+            rows?: string[][];
+            locator?: Record<string, unknown>;
+          }>;
+          locators?: Array<Record<string, unknown>>;
+        };
+      }>(
+        "select id,source_hash,extractor,extractor_version,document_artifact from source_artifacts where source_id=$1 and kind='document-artifact'",
+        [sourceId],
+      );
+      expect(artifact.rows).toHaveLength(1);
+      const artifactRow = artifact.rows[0]!;
+      expect(artifactRow.source_hash).toBe(oracle.source.sha256);
+      expect(artifactRow.extractor).toBe("deterministic-text");
+      expect(artifactRow.document_artifact).toMatchObject({
+        source_hash: oracle.source.sha256,
+        media_type: oracle.source.mediaType,
+      });
+      const artifactValue = artifactRow.document_artifact;
+      for (const heading of oracle.source.structuralOracle.headings) {
+        expect(
+          artifactValue.headings?.some(
+            (candidate) =>
+              candidate.text === heading.text &&
+              candidate.metadata?.level === heading.level &&
+              candidate.locator?.start_line === heading.line &&
+              candidate.locator?.end_line === heading.line,
+          ),
+          JSON.stringify(artifactValue.headings),
+        ).toBe(true);
+      }
+      const expectedTable = oracle.source.structuralOracle.table;
+      expect(
+        artifactValue.tables?.some(
+          (table) =>
+            JSON.stringify(table.headers) ===
+              JSON.stringify(expectedTable.headers) &&
+            JSON.stringify(table.rows) === JSON.stringify(expectedTable.rows) &&
+            table.locator?.start_line === expectedTable.startLine &&
+            table.locator?.end_line === expectedTable.endLine,
+        ),
+        JSON.stringify(artifactValue.tables),
+      ).toBe(true);
+
+      const evidence = await db.pool.query<{
+        id: string;
+        artifact_id: string;
+        locator: Record<string, unknown>;
+        content_hash: string;
+        excerpt: string;
+      }>(
+        "select id,artifact_id,locator,content_hash,excerpt from evidence where source_id=$1 and artifact_id=$2",
+        [sourceId, artifactRow.id],
+      );
+      expect(evidence.rows).toHaveLength(1);
+      const evidenceRow = evidence.rows[0]!;
+      expect(evidenceRow.locator.source_hash).toBe(oracle.source.sha256);
+      expect(evidenceRow.excerpt).toBe(oracle.source.requiredRawText[0]);
+      expect(
+        createHash("sha256").update(evidenceRow.excerpt).digest("hex"),
+      ).toBe(evidenceRow.content_hash);
+      expect(
+        artifactValue.locators?.some(
+          (locator) =>
+            JSON.stringify(locator) === JSON.stringify(evidenceRow.locator),
+        ),
+        JSON.stringify({
+          locator: evidenceRow.locator,
+          locators: artifactValue.locators,
+        }),
+      ).toBe(true);
+
+      const pendingReview = await app.inject({
+        method: "GET",
+        url: "/v1/reviews/" + reviewId,
+        headers,
+      });
+      expect(pendingReview.statusCode, pendingReview.body).toBe(200);
+      const pending = pendingReview.json() as {
+        status: string;
+        impact_manifest?: {
+          proposedChanges?: Array<{ path?: string; content?: string }>;
+        };
+      };
+      expect(pending.status).toBe("PENDING");
+      const proposed = pending.impact_manifest?.proposedChanges?.[0];
+      expect(proposed?.path).toBe(oracle.publication.relativePath);
+      expect(proposed?.content).toContain(oracle.source.sha256);
+      for (const expected of oracle.publication.requiredPublishedText) {
+        expect(proposed?.content).toContain(expected);
+      }
+
+      const approved = await decide(
+        reviewId,
+        "APPROVE",
+        "Frozen R2/R7 public source fidelity oracle approved for publication",
+      );
+      expect(approved.statusCode, approved.body).toBe(200);
+      const approvedBody = approved.json() as {
+        status: string;
+        mergedCommit?: string;
+        indexing?: string;
+      };
+      expect(approvedBody).toMatchObject({
+        status: "APPROVED",
+        indexing: "PENDING",
+      });
+      expect(approvedBody.mergedCommit).toEqual(expect.any(String));
+      await runWorkerDrain(true);
+
+      const document = await db.pool.query<{
+        id: string;
+        path: string;
+        body_cache: string;
+        frontmatter: Record<string, unknown>;
+        current_revision: string;
+        lifecycle: string;
+      }>(
+        "select id,path,body_cache,frontmatter,current_revision,lifecycle from knowledge_documents where vault_id=$1 and frontmatter->>'source_sha256'=$2 and lifecycle in ('ACTIVE','DISPUTED')",
+        [vaultId, oracle.source.sha256],
+      );
+      expect(document.rows).toHaveLength(1);
+      const documentRow = document.rows[0]!;
+      expect(
+        documentRow.path.endsWith(oracle.publication.persistedPathSuffix),
+      ).toBe(true);
+      for (const [key, value] of Object.entries(
+        oracle.publication.requiredFrontmatter,
+      )) {
+        expect(String(documentRow.frontmatter[key])).toBe(value);
+      }
+      for (const expected of oracle.publication.requiredPublishedText) {
+        expect(documentRow.body_cache).toContain(expected);
+      }
+
+      const units = await db.pool.query<{
+        id: string;
+        unit_type: string;
+        body: string;
+        locator: Record<string, unknown>;
+        embedding_eligible: boolean;
+        container_only: boolean;
+        corpus_revision: string;
+      }>(
+        "select id,unit_type,body,locator,embedding_eligible,container_only,corpus_revision from knowledge_units where document_id=$1 and lifecycle in ('ACTIVE','DISPUTED') order by structural_order,id",
+        [documentRow.id],
+      );
+      expect(units.rows.length).toBeGreaterThan(0);
+      for (const expected of oracle.unitOracle) {
+        const match = units.rows.find(
+          (unit) =>
+            unit.unit_type === expected.unitType &&
+            unit.body === expected.exactBody &&
+            (expected.table === undefined ||
+              unit.locator.table === expected.table) &&
+            (expected.row === undefined || unit.locator.row === expected.row) &&
+            (expected.column === undefined ||
+              unit.locator.column === expected.column),
+        );
+        expect(
+          match,
+          JSON.stringify({ expected, units: units.rows }),
+        ).toBeDefined();
+        expect(match?.embedding_eligible).toBe(expected.embeddingEligible);
+        expect(match?.locator.sourceFrame).toBe("markdown-body-cache-raw-v1");
+        expect(match?.locator.sourceEncoding).toBe("utf-16-code-units");
+        expect(match?.locator.sourceTextProjection).toBe(
+          "visible-markdown-lf-trim-v1",
+        );
+        const start = Number(match?.locator.startChar);
+        const end = Number(match?.locator.endChar);
+        expect(
+          Number.isInteger(start) && Number.isInteger(end) && end > start,
+        ).toBe(true);
+        expect(documentRow.body_cache.slice(start, end).trim()).toBe(
+          expected.exactBody,
+        );
+      }
+
+      const index = await db.pool.query<{
+        status: string;
+        warnings: string[];
+        corpus_revision: string;
+        lexical_revision: string;
+        vector_revision: string;
+        graph_revision: string;
+        context_pack_revision: string;
+      }>(
+        "select status,warnings,corpus_revision,lexical_revision,vector_revision,graph_revision,context_pack_revision from vault_index_revisions where vault_id=$1",
+        [vaultId],
+      );
+      expect(index.rows).toHaveLength(1);
+      const indexRow = index.rows[0]!;
+      expect(indexRow.status).toBe("CONSISTENT");
+      expect(indexRow.warnings).toEqual([]);
+      const vaultRevision = await db.pool.query<{ current_revision: string }>(
+        "select current_revision from vaults where id=$1",
+        [vaultId],
+      );
+      expect(vaultRevision.rows).toHaveLength(1);
+      expect(indexRow.corpus_revision).toBe(
+        `composite:${vaultRevision.rows[0]?.current_revision}+managed:${documentRow.current_revision}`,
+      );
+      expect(indexRow.lexical_revision).toBe(indexRow.corpus_revision);
+      expect(indexRow.vector_revision).toBe(indexRow.corpus_revision);
+      expect(indexRow.graph_revision).toBe(indexRow.corpus_revision);
+      expect(indexRow.context_pack_revision).toBe(indexRow.corpus_revision);
+
+      const generation = await db.pool.query<{
+        id: string;
+        status: string;
+        corpus_revision: string;
+        provider: string;
+        model_revision: string;
+        dimensions: number;
+      }>(
+        "select id,status,corpus_revision,provider,model_revision,dimensions from embedding_generations where vault_id=$1 and status='ACTIVE' order by activated_at desc nulls last,created_at desc limit 1",
+        [vaultId],
+      );
+      expect(generation.rows).toHaveLength(1);
+      expect(generation.rows[0]?.corpus_revision).toBe(
+        indexRow.corpus_revision,
+      );
+
+      const embeddingParity = await db.pool.query<{
+        eligible_units: number;
+        embedded_units: number;
+      }>(
+        "select (select count(*)::int from knowledge_units where vault_id=$1 and corpus_revision=$2 and embedding_eligible and lifecycle in ('ACTIVE','DISPUTED')) eligible_units,(select count(distinct ue.unit_id)::int from unit_embeddings ue join knowledge_units u on u.id=ue.unit_id where ue.generation_id=$3 and u.vault_id=$1 and u.corpus_revision=$2 and u.embedding_eligible and u.lifecycle in ('ACTIVE','DISPUTED')) embedded_units",
+        [vaultId, indexRow.corpus_revision, generation.rows[0]?.id],
+      );
+      expect(embeddingParity.rows[0]?.eligible_units).toBeGreaterThan(0);
+      expect(embeddingParity.rows[0]?.embedded_units).toBe(
+        embeddingParity.rows[0]?.eligible_units,
+      );
+
+      const answerable = oracle.retrievalCases.find(
+        (entry) => !entry.expectNoAnswer,
+      )!;
+      const search = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers,
+        payload: {
+          query: answerable.query,
+          spaceId: defaultSpace,
+          vaultId,
+          vaultIds: [],
+          federated: false,
+          types: [],
+          minimumTrust: "MACHINE_SUPPORTED",
+          mode: "SOURCE_BACKED",
+          limit: 10,
+        },
+      });
+      expect(search.statusCode, search.body).toBe(200);
+      const searchBody = search.json() as {
+        hits: Array<{
+          vaultId: string;
+          unitId?: string;
+          excerpt: string;
+          citations: string[];
+          retrievalTrace?: {
+            contributions: Array<{ candidateRevision?: string | null }>;
+          };
+        }>;
+        scope: { vaultIds: string[] };
+      };
+      expect(searchBody.scope.vaultIds).toEqual([vaultId]);
+      const goldHit = searchBody.hits.find(
+        (hit) =>
+          hit.vaultId === vaultId &&
+          answerable.requiredEvidenceTerms?.every((term) =>
+            hit.excerpt.includes(term),
+          ),
+      );
+      expect(goldHit, JSON.stringify(searchBody)).toBeDefined();
+      expect(goldHit?.unitId).toEqual(expect.any(String));
+      expect(
+        goldHit?.citations.some(
+          (citation) =>
+            citation.includes(oracle.publication.persistedPathSuffix) &&
+            citation.includes(documentRow.current_revision),
+        ),
+        JSON.stringify(goldHit),
+      ).toBe(true);
+      expect(
+        goldHit?.retrievalTrace?.contributions.some(
+          (contribution) =>
+            contribution.candidateRevision === indexRow.corpus_revision,
+        ),
+        JSON.stringify(goldHit?.retrievalTrace),
+      ).toBe(true);
+
+      const context = await app.inject({
+        method: "POST",
+        url: "/v1/context",
+        headers,
+        payload: {
+          query: answerable.query,
+          spaceId: defaultSpace,
+          vaultId,
+          vaultIds: [],
+          federated: false,
+          types: [],
+          minimumTrust: "MACHINE_SUPPORTED",
+          mode: "SOURCE_BACKED",
+          limit: 10,
+        },
+      });
+      expect(context.statusCode, context.body).toBe(200);
+      const contextBody = context.json() as {
+        packetId: string;
+        vaultId: string;
+        status: string;
+        sections: Array<{
+          vaultId: string;
+          content: string;
+          sourceOrEvidenceIds?: string[];
+        }>;
+        citations: string[];
+      };
+      expect(contextBody).toMatchObject({
+        vaultId,
+        status: "SUPPORTED",
+      });
+      expect(
+        contextBody.sections.some(
+          (section) =>
+            section.vaultId === vaultId &&
+            answerable.requiredEvidenceTerms?.every((term) =>
+              section.content.includes(term),
+            ),
+        ),
+        JSON.stringify(contextBody),
+      ).toBe(true);
+      expect(
+        contextBody.citations.some(
+          (citation) =>
+            citation.includes(oracle.publication.persistedPathSuffix) &&
+            citation.includes(documentRow.current_revision),
+        ),
+        JSON.stringify(contextBody.citations),
+      ).toBe(true);
+
+      const noAnswer = oracle.retrievalCases.find(
+        (entry) => entry.expectNoAnswer,
+      )!;
+      const absent = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers,
+        payload: {
+          query: noAnswer.query,
+          spaceId: defaultSpace,
+          vaultId,
+          vaultIds: [],
+          federated: false,
+          types: [],
+          minimumTrust: "MACHINE_SUPPORTED",
+          mode: "SOURCE_BACKED",
+          limit: 10,
+        },
+      });
+      expect(absent.statusCode, absent.body).toBe(200);
+      const absentBody = absent.json() as {
+        hits: Array<{ vaultId: string }>;
+        scope: { vaultIds: string[] };
+      };
+      expect(absentBody.scope.vaultIds).toEqual([vaultId]);
+      expect(absentBody.hits).toHaveLength(0);
+
+      const leakageCount =
+        searchBody.hits.filter((hit) => hit.vaultId !== vaultId).length +
+        absentBody.hits.filter((hit) => hit.vaultId !== vaultId).length;
+      const gates = {
+        sourceHashExact: true,
+        sourceArtifactHashExact: true,
+        structuralArtifactOracleExact: true,
+        evidenceBoundToArtifactLocator: true,
+        reviewRequiredBeforePublication: true,
+        publicationApprovedViaReviewApi: true,
+        publishedProvenanceExact: true,
+        atomicUnitOracleExact: true,
+        allEmbeddingEligibleUnitsCovered:
+          embeddingParity.rows[0]?.eligible_units ===
+          embeddingParity.rows[0]?.embedded_units,
+        activeEmbeddingGenerationAtCurrentRevision:
+          generation.rows[0]?.corpus_revision === indexRow.corpus_revision,
+        allServedIndexRevisionsEqualCurrentCorpus:
+          indexRow.lexical_revision === indexRow.corpus_revision &&
+          indexRow.vector_revision === indexRow.corpus_revision &&
+          indexRow.graph_revision === indexRow.corpus_revision &&
+          indexRow.context_pack_revision === indexRow.corpus_revision,
+        answerableSearchSupportedWithGoldEvidence: Boolean(goldHit),
+        answerableContextContainsGoldEvidenceAndCitation:
+          contextBody.status === "SUPPORTED" &&
+          contextBody.citations.some((citation) =>
+            citation.includes(oracle.publication.persistedPathSuffix),
+          ),
+        noAnswerDoesNotAdmitEvidence: absentBody.hits.length === 0,
+        crossVaultLeakageCount: leakageCount,
+      };
+      expect(gates).toEqual(oracle.gates);
+
+      const report = {
+        schemaVersion: oracle.schemaVersion,
+        generatedAt: new Date().toISOString(),
+        commit: process.env.GITHUB_SHA ?? null,
+        baselineSha: oracle.baselineSha,
+        outcome: oracle.claimBoundary.passOutcome,
+        claimBoundary: oracle.claimBoundary,
+        source: {
+          sha256: oracle.source.sha256,
+          sourceId,
+          artifactId: artifactRow.id,
+          evidenceId: evidenceRow.id,
+        },
+        publication: {
+          reviewId,
+          revision: indexRow.corpus_revision,
+          documentId: documentRow.id,
+          path: documentRow.path,
+        },
+        units: {
+          active: units.rows.length,
+          oracleCases: oracle.unitOracle.length,
+          embeddingEligible: embeddingParity.rows[0]?.eligible_units,
+          embedded: embeddingParity.rows[0]?.embedded_units,
+        },
+        vector: generation.rows[0],
+        retrieval: {
+          answerableHits: searchBody.hits.length,
+          answerableGoldUnitId: goldHit?.unitId ?? null,
+          noAnswerHits: absentBody.hits.length,
+          contextPacketId: contextBody.packetId,
+        },
+        gates,
+      };
+      const reportPath = path.resolve(
+        process.env.AKP_R2_R7_FRESH_E2E_REPORT ??
+          "reports/ci/r2-r7-fresh-source-e2e.json",
+      );
+      await mkdir(path.dirname(reportPath), { recursive: true });
+      await writeFile(
+        reportPath,
+        JSON.stringify(report, null, 2) + "\n",
+        "utf8",
+      );
+    },
+    180_000,
+  );
 });
