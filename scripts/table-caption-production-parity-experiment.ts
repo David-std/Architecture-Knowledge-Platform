@@ -351,7 +351,11 @@ const DOCUMENTS: DocumentFixture[] = [
   },
 ];
 
-function rowKey(documentId: string, tableIndex: number, rowIndex: number): string {
+function rowKey(
+  documentId: string,
+  tableIndex: number,
+  rowIndex: number,
+): string {
   return documentId + ":table:" + tableIndex + ":row:" + rowIndex;
 }
 
@@ -360,42 +364,48 @@ const QUESTIONS: QuestionFixture[] = [
     id: "dev-cap-deploy-primary",
     split: "development",
     family: "CAPTION_DISAMBIGUATION",
-    query: "Primary deployment roster Service Search Lead Nora Lane Window Monday",
+    query:
+      "Primary deployment roster Service Search Lead Nora Lane Window Monday",
     goldRowKey: rowKey("dev-deploy", 11, 1),
   },
   {
     id: "dev-cap-deploy-secondary",
     split: "development",
     family: "CAPTION_DISAMBIGUATION",
-    query: "Secondary deployment roster Service Search Lead Nora Lane Window Monday",
+    query:
+      "Secondary deployment roster Service Search Lead Nora Lane Window Monday",
     goldRowKey: rowKey("dev-deploy", 12, 1),
   },
   {
     id: "dev-cap-access-privileged",
     split: "development",
     family: "CAPTION_DISAMBIGUATION",
-    query: "Privileged access roster System Vault Owner Maya Frost Review Monthly",
+    query:
+      "Privileged access roster System Vault Owner Maya Frost Review Monthly",
     goldRowKey: rowKey("dev-access", 21, 1),
   },
   {
     id: "dev-cap-access-standard",
     split: "development",
     family: "CAPTION_DISAMBIGUATION",
-    query: "Standard access roster System Vault Owner Maya Frost Review Monthly",
+    query:
+      "Standard access roster System Vault Owner Maya Frost Review Monthly",
     goldRowKey: rowKey("dev-access", 22, 1),
   },
   {
     id: "dev-cap-assets-active",
     split: "development",
     family: "CAPTION_DISAMBIGUATION",
-    query: "Active custody ledger Asset SensorK Custodian Ivan Cole Site DockOne",
+    query:
+      "Active custody ledger Asset SensorK Custodian Ivan Cole Site DockOne",
     goldRowKey: rowKey("dev-assets", 31, 1),
   },
   {
     id: "dev-cap-assets-reserve",
     split: "development",
     family: "CAPTION_DISAMBIGUATION",
-    query: "Reserve custody ledger Asset SensorK Custodian Ivan Cole Site DockOne",
+    query:
+      "Reserve custody ledger Asset SensorK Custodian Ivan Cole Site DockOne",
     goldRowKey: rowKey("dev-assets", 32, 1),
   },
   {
@@ -454,42 +464,48 @@ const QUESTIONS: QuestionFixture[] = [
     id: "hold-cap-transit-primary",
     split: "heldout",
     family: "CAPTION_DISAMBIGUATION",
-    query: "Turnos de ruta principal Ruta Andina Operador Ana Ruiz Horario Mañana",
+    query:
+      "Turnos de ruta principal Ruta Andina Operador Ana Ruiz Horario Mañana",
     goldRowKey: rowKey("hold-transit", 41, 1),
   },
   {
     id: "hold-cap-transit-secondary",
     split: "heldout",
     family: "CAPTION_DISAMBIGUATION",
-    query: "Turnos de ruta alterna Ruta Andina Operador Ana Ruiz Horario Mañana",
+    query:
+      "Turnos de ruta alterna Ruta Andina Operador Ana Ruiz Horario Mañana",
     goldRowKey: rowKey("hold-transit", 42, 1),
   },
   {
     id: "hold-cap-energy-day",
     split: "heldout",
     family: "CAPTION_DISAMBIGUATION",
-    query: "Day grid assignment Station SubstationA Engineer Claire Moss Window Dawn",
+    query:
+      "Day grid assignment Station SubstationA Engineer Claire Moss Window Dawn",
     goldRowKey: rowKey("hold-energy", 51, 1),
   },
   {
     id: "hold-cap-energy-night",
     split: "heldout",
     family: "CAPTION_DISAMBIGUATION",
-    query: "Night grid assignment Station SubstationA Engineer Claire Moss Window Dawn",
+    query:
+      "Night grid assignment Station SubstationA Engineer Claire Moss Window Dawn",
     goldRowKey: rowKey("hold-energy", 52, 1),
   },
   {
     id: "hold-cap-clinic-primary",
     split: "heldout",
     family: "CAPTION_DISAMBIGUATION",
-    query: "Directorio de guardia primaria Centro Surco Contacto Rosa Díaz Turno Temprano",
+    query:
+      "Directorio de guardia primaria Centro Surco Contacto Rosa Díaz Turno Temprano",
     goldRowKey: rowKey("hold-clinic", 61, 1),
   },
   {
     id: "hold-cap-clinic-secondary",
     split: "heldout",
     family: "CAPTION_DISAMBIGUATION",
-    query: "Directorio de guardia secundaria Centro Surco Contacto Rosa Díaz Turno Temprano",
+    query:
+      "Directorio de guardia secundaria Centro Surco Contacto Rosa Díaz Turno Temprano",
     goldRowKey: rowKey("hold-clinic", 62, 1),
   },
   {
@@ -648,9 +664,7 @@ function summarize(split: Split, observations: Observation[]): SplitSummary {
     negativeQuestions: negatives.length,
     recallAt1: recall(ranks, 1),
     recallAt3: recall(ranks, 3),
-    meanReciprocalRank: mean(
-      ranks.map((rank) => (rank > 0 ? 1 / rank : 0)),
-    ),
+    meanReciprocalRank: mean(ranks.map((rank) => (rank > 0 ? 1 / rank : 0))),
     falseFullRowMatchRate:
       negatives.length === 0
         ? null
@@ -781,11 +795,14 @@ async function main(): Promise<void> {
       }
     }
 
-    const changedRows = rows.filter((row) => row.captionContext.length > 0).length;
+    const changedRows = rows.filter(
+      (row) => row.captionContext.length > 0,
+    ).length;
 
     for (const row of rows) {
       for (const arm of ["raw-row", "explicit-caption-context"] as const) {
-        const context = arm === "explicit-caption-context" ? row.captionContext : "";
+        const context =
+          arm === "explicit-caption-context" ? row.captionContext : "";
         await client.query(
           [
             "insert into akp_caption_parity_rows(",
@@ -972,10 +989,8 @@ async function main(): Promise<void> {
         queryParser: "plainto_tsquery('simple')",
         documentEligibility:
           "document lexical match OR full unit lexical match",
-        documentScore:
-          "20*title + 2*document-body + best-unit-score",
-        unitScore:
-          "12*heading + 8*unit-metadata + body + lexical-context",
+        documentScore: "20*title + 2*document-body + best-unit-score",
+        unitScore: "12*heading + 8*unit-metadata + body + lexical-context",
         bestUnitPerDocument:
           "lateral best unit by partial weighted score without requiring full unit match",
         negativeSemantics:
