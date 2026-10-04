@@ -23,7 +23,12 @@
         "expected": {
           "role": "SUBJECT",
           "relationAnchor": "reviews",
-          "boundArgumentAnchors": ["release", "exceptions", "before", "deployment"]
+          "boundArgumentAnchors": [
+            "release",
+            "exceptions",
+            "before",
+            "deployment"
+          ]
         }
       },
       {
