@@ -703,12 +703,12 @@ describe("structured TABLE_ROW lexical context", () => {
           augmented_match: boolean;
         }>(
           `select id,body,lexical_context,
-                  lexical_augmented_search_vector @@ plainto_tsquery('simple',$3)
+                  lexical_augmented_search_vector @@ plainto_tsquery('simple',$2)
                     augmented_match
              from knowledge_units
             where id=any($1::uuid[])
             order by structural_order`,
-          [[firstRowId, secondRowId], documentId, query],
+          [[firstRowId, secondRowId], query],
         );
         expect(stored.rows.map((row) => row.body)).toEqual([rowBody, rowBody]);
         expect(stored.rows[0]?.lexical_context).toContain(
