@@ -1,0 +1,84 @@
+{
+  "schemaVersion": "akp.reader-v4-1p5b-passage-veto-dev.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-05",
+  "baselineSha": "5e131a84d58481a8a9908d1eeca2b7694d259b42",
+  "inputs": [
+    {
+      "path": "evals/generic/evidence-admission/manifest.json",
+      "gitBlobSha": "215d1e3fa7b708e0b47934e8305663c6e93b61d8"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/hospital-pharmacy.json",
+      "gitBlobSha": "d5a960123eb1ac7f376676bce764e19d4317af94"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/biblioteca-municipal.json",
+      "gitBlobSha": "aab2153d266ac03a9ec3a92301b04559c5385674"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/warehouse-logistics.json",
+      "gitBlobSha": "a00e7ff279b88aa40947f4c0e169ab79979ca57a"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/seguridad-alimentaria.json",
+      "gitBlobSha": "806fc6fda7997ae4309971394815acd8d6557e3c"
+    }
+  ],
+  "reader": {
+    "promptVersion": "evidence-reader-v4",
+    "model": "onnx-community/Qwen2.5-1.5B-Instruct",
+    "revision": "9f9c976052bfb08a20793f0c3013563dc095c966",
+    "dtype": "q4",
+    "temperature": 0,
+    "maxOutputTokens": 256,
+    "shortlist": false,
+    "authority": "source-bound-veto-only"
+  },
+  "protocol": {
+    "phase": "DEVELOPMENT_FEASIBILITY_ONLY",
+    "evaluatedSplit": "development",
+    "heldoutEvaluated": false,
+    "singleIndependentVariable": "Replace PASSAGE_TEXT_SUPPORT and PASSAGE_CUE_SUPPORT authority with the existing evidence-reader-v4 exact-span verdict from a pinned Qwen2.5-1.5B-Instruct q4 reader, applied only to candidates already supported by those legacy reasons. Preserve any non-PASSAGE baseline authority. Reader output can only retain or remove baseline support and can never create support.",
+    "baseline": "Current assessRetrievalAnswerability.",
+    "candidateComposition": "PRESERVED_NON_PASSAGE_AUTHORITY_OR_1P5B_READER_REVALIDATED_PASSAGE_SUPPORT",
+    "retiredAuthority": [
+      "PASSAGE_TEXT_SUPPORT",
+      "PASSAGE_CUE_SUPPORT"
+    ],
+    "readerCanCreateSupport": false,
+    "readerReceivesOnlyRetiredBaselineCandidates": true,
+    "providerDefaultsChanged": false,
+    "runtimeChanged": false,
+    "productionAdmissionChanged": false,
+    "noTuningAgainstPriorHeldouts": true
+  },
+  "developmentGate": {
+    "answerableRecallNonRegression": true,
+    "admittedPrecisionNonRegression": true,
+    "falseAcceptanceNonIncrease": true,
+    "wrongAdmissionQuestionsNonIncrease": true,
+    "strictAccuracyNonRegression": true,
+    "candidateAdmissionsSubsetOfBaseline": true,
+    "baselineGoldPreserved": true,
+    "allSemanticSupportsSourceBound": true,
+    "requireMeasuredPrecisionAdvantage": true,
+    "outcomes": [
+      "PROCEED_TO_FRESH_HOLDOUT",
+      "REJECT_DEVELOPMENT_FRONTIER",
+      "INVALID_EXPERIMENT"
+    ]
+  },
+  "distinctionFromPriorExperiments": [
+    "#105 used Qwen2.5-0.5B over a BGE shortlist across all candidates and could create new semantic support; this candidate uses a stronger pinned 1.5B reader only to veto/revalidate already-supported PASSAGE_* candidates.",
+    "#90/#101 used the 0.5B reader with requested-slot/fallback policies; this candidate changes reader capacity and never creates support.",
+    "#106 used extractive QA→NLI and failed on span-proposal coverage; this candidate uses the reader-v4 direct semantic span contract with no extractive-QA dependency.",
+    "#100 removed PASSAGE_* authority without semantic replacement."
+  ],
+  "nextStepBoundary": [
+    "PROCEED_TO_FRESH_HOLDOUT does not change runtime/default/product behavior.",
+    "Only a development pass authorizes a brand-new family-disjoint frozen holdout.",
+    "Prior inspected holdouts are not reused for tuning or promotion.",
+    "A development reject closes this exact 1.5B subset-only composition without prompt/model-threshold retuning against observed failures."
+  ]
+}
