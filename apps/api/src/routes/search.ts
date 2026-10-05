@@ -569,6 +569,20 @@ export function partitionSearchHitsByAnswerability(
   };
 }
 
+export const EVIDENCE_VERIFIER_DEGRADED_WARNING =
+  "EVIDENCE_VERIFIER_DEGRADED:VERIFIER_ERROR";
+
+export function evidenceVerifierDegradationWarnings(
+  answerability: Pick<RetrievalAnswerabilityAssessment, "candidateSignals">,
+): string[] {
+  return answerability.candidateSignals.some(
+    (signal) =>
+      signal.queryConditionedEvidence?.decision === "VERIFIER_ERROR",
+  )
+    ? [EVIDENCE_VERIFIER_DEGRADED_WARNING]
+    : [];
+}
+
 function recordAnswerabilityDiagnostics(
   answerability: RetrievalAnswerabilityAssessment,
   surface: "search" | "context",
@@ -4021,6 +4035,9 @@ export function registerSearchRoutes(
         answerability.supportedCandidateKeys,
       );
       recordAnswerabilityDiagnostics(answerability, "search");
+      retrievalWarnings.push(
+        ...evidenceVerifierDegradationWarnings(answerability),
+      );
       if (!answerability.supported && answerabilityPool.length > 0) {
         retrievalWarnings.push(
           `ANSWERABILITY_GATE_REJECTED:${answerability.reason}`,
@@ -5012,6 +5029,9 @@ export function registerSearchRoutes(
             answerabilityContext,
           );
       recordAnswerabilityDiagnostics(answerability, "context");
+      retrievalWarnings.push(
+        ...evidenceVerifierDegradationWarnings(answerability),
+      );
       const supportedCandidateKeys = new Set(
         answerability.supportedCandidateKeys,
       );
