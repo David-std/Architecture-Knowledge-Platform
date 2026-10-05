@@ -113,7 +113,8 @@ function noIncrease(candidate: number | null, baseline: number | null) {
 const protocolRaw = await readFile(protocolPath, "utf8");
 const protocol = JSON.parse(protocolRaw) as ExperimentManifest;
 if (
-  protocol.schemaVersion !== "akp.evidence-admission-layered-replacement-dev.v1" ||
+  protocol.schemaVersion !==
+    "akp.evidence-admission-layered-replacement-dev.v1" ||
   protocol.frozen !== true ||
   protocol.protocol.phase !== "DEVELOPMENT_FEASIBILITY_ONLY" ||
   protocol.protocol.evaluatedSplit !== "development" ||
@@ -351,7 +352,9 @@ const allSemanticSupportsSourceBound = semanticSupports.every(
 
 const preservedNonPassageAdmissionsRemain = candidateResults.every((row) => {
   const keys = preservedKeysByQuery.get(row.query) ?? [];
-  return keys.every((key) => row.admitted.includes(key.split(":").at(-1) ?? key));
+  return keys.every((key) =>
+    row.admitted.includes(key.split(":").at(-1) ?? key),
+  );
 });
 
 const legacyPassageAuthorityNotReused = true;
