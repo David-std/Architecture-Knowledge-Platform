@@ -101,6 +101,43 @@ describe("hierarchical chunking", () => {
     );
   });
 
+  it("keeps the product budget at 1024 while allowing historical-budget replay", () => {
+    expect(MAX_EMBEDDING_UNIT_CHARACTERS).toBe(1024);
+
+    const codeBody = [
+      "const values = [",
+      ..."x".repeat(2600).match(/.{1,80}/gu)!,
+      "];",
+    ].join("\n");
+    const source = `# Code\n\`\`\`ts\n${codeBody}\n\`\`\``;
+
+    const current = parseKnowledgeUnits("Code", source);
+    const historical = parseKnowledgeUnits("Code", source, {
+      maxEmbeddingUnitCharacters: 1200,
+    });
+
+    const currentFragments = current.filter(
+      (unit) => unit.locator.fragment !== undefined,
+    );
+    const historicalFragments = historical.filter(
+      (unit) => unit.locator.fragment !== undefined,
+    );
+
+    expect(currentFragments.length).toBeGreaterThan(1);
+    expect(historicalFragments.length).toBeGreaterThan(1);
+    expect(
+      currentFragments.every(
+        (unit) => unit.body.length <= MAX_EMBEDDING_UNIT_CHARACTERS,
+      ),
+    ).toBe(true);
+    expect(historicalFragments.every((unit) => unit.body.length <= 1200)).toBe(
+      true,
+    );
+    expect(currentFragments.at(-1)?.locator.endChar).toBe(
+      historicalFragments.at(-1)?.locator.endChar,
+    );
+  });
+
   it("suppresses a redundant one-block section while preserving its heading path", () => {
     const units = parseKnowledgeUnits(
       "Document",

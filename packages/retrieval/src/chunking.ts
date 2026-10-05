@@ -5,7 +5,7 @@ import { gfmTable } from "micromark-extension-gfm-table";
 import { markdownTableEvidence } from "./markdown-table-evidence.js";
 import { markdownVisibleSource } from "./markdown-visible-source.js";
 
-export const MAX_EMBEDDING_UNIT_CHARACTERS = 1_200;
+export const MAX_EMBEDDING_UNIT_CHARACTERS = 1_024;
 
 const MARKDOWN_SOURCE_FRAME = "markdown-body-cache-raw-v1" as const;
 const MARKDOWN_SOURCE_ENCODING = "utf-16-code-units" as const;
@@ -584,9 +584,18 @@ function hasIndependentText(body: string): boolean {
  * structural children. Containers are retained for parent rehydration but are
  * deliberately ineligible for vector embedding.
  */
+export interface ParseKnowledgeUnitsOptions {
+  /**
+   * Evaluation seam for reproducing historical chunk budgets with the same
+   * parser. Product callers should normally use the default exported budget.
+   */
+  maxEmbeddingUnitCharacters?: number;
+}
+
 export function parseKnowledgeUnits(
   title: string,
   body: string,
+  options: ParseKnowledgeUnitsOptions = {},
 ): ParsedKnowledgeUnit[] {
   const sourceFrame = markdownSourceFrame(body);
   const normalized = sourceFrame.normalizedBody;
@@ -727,7 +736,11 @@ export function parseKnowledgeUnits(
       const embeddingFragments =
         baseEmbeddingEligible &&
         ["PARAGRAPH", "LIST", "CODE"].includes(block.structuralType)
-          ? splitEmbeddingBody(block.body)
+          ? splitEmbeddingBody(
+              block.body,
+              options.maxEmbeddingUnitCharacters ??
+                MAX_EMBEDDING_UNIT_CHARACTERS,
+            )
           : [];
       const splitForEmbedding = embeddingFragments.length > 1;
       const unitKey = `${sectionKey}-${unitType.toLowerCase()}-${String(block.startLine).padStart(6, "0")}-${contentHash.slice(0, 10)}`;

@@ -107,6 +107,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".github/workflows/unit-strategy-token-window-remediation.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".github/workflows/unit-strategy-token-window.yml",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -2502,6 +2507,11 @@
       "reason": "versioned registered product evaluation"
     },
     {
+      "path": "evals/registered/unit-strategy-token-window-remediation.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "versioned registered product evaluation"
+    },
+    {
       "path": "evals/registered/unit-strategy-token-window.json",
       "category": "PRODUCT_EVAL",
       "reason": "versioned registered product evaluation"
@@ -3498,6 +3508,11 @@
     },
     {
       "path": "packages/retrieval/scripts/unit-strategy-token-window-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/scripts/unit-strategy-token-window-remediation.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
