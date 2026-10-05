@@ -42,6 +42,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".github/workflows/deterministic-structural-authority-shadow.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".github/workflows/document-intelligence-benchmark.yml",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -2302,6 +2307,11 @@
       "reason": "corpus-agnostic product evaluation"
     },
     {
+      "path": "evals/generic/deterministic-structural-authority/manifest.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
       "path": "evals/generic/evidence-admission/domains/aircraft-maintenance.json",
       "category": "PRODUCT_EVAL",
       "reason": "corpus-agnostic product evaluation"
@@ -4118,6 +4128,11 @@
     },
     {
       "path": "scripts/deterministic-evidence-admission-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/deterministic-structural-authority-shadow-experiment.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
