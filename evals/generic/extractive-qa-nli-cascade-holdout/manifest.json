@@ -18,19 +18,19 @@
   "inputs": [
     {
       "path": "evals/generic/extractive-qa-nli-cascade-holdout/domains/observatory-operations.json",
-      "gitBlobSha": "364383b3206545d6b3c861d394574b0fb81f14cd"
+      "gitBlobSha": "cc951322d2a4e3e90fec35405722431a5cc97d76"
     },
     {
       "path": "evals/generic/extractive-qa-nli-cascade-holdout/domains/archivo-conservacion.json",
-      "gitBlobSha": "cc24fb1cf277f7c38ea5f2d94b047d7f4611f3fc"
+      "gitBlobSha": "76446d97e9bc6d92b1ba6109eb47defd558a94e3"
     },
     {
       "path": "evals/generic/extractive-qa-nli-cascade-holdout/domains/coastal-rescue.json",
-      "gitBlobSha": "a2c4ade759236ce998ad0de3d4d9afce2d0ba922"
+      "gitBlobSha": "65bc1ced920ec44187ef4bd802255bd4adf1a214"
     },
     {
       "path": "evals/generic/extractive-qa-nli-cascade-holdout/domains/vivero-fitosanitario.json",
-      "gitBlobSha": "6ccdf3d92ab903b74b5fed0b4fa9daa187abd1f3"
+      "gitBlobSha": "6f0ebf123b0d8e53723c14f1bd87ef61c8421a16"
     }
   ],
   "developmentFamilySources": [
@@ -63,11 +63,7 @@
     "revision": "0a71e92a985b6e1ad1828cf67ce9c459639c1dca",
     "modelFileName": "model",
     "dtype": "fp32",
-    "labelOrder": [
-      "entailment",
-      "neutral",
-      "contradiction"
-    ],
+    "labelOrder": ["entailment", "neutral", "contradiction"],
     "authority": "fixed-development-boundary-only"
   },
   "protocol": {
@@ -111,10 +107,7 @@
       "SOURCE_IDENTIFIER"
     ],
     "requireExactFamilyDisjointFromDevelopment": true,
-    "languages": [
-      "en",
-      "es"
-    ],
+    "languages": ["en", "es"],
     "crossLingualCasesPresent": true
   },
   "holdoutGate": {
