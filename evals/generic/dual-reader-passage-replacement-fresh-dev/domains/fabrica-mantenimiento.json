@@ -1,0 +1,148 @@
+{
+  "id": "fabrica-mantenimiento",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES industrial-maintenance admission domain.",
+  "units": [
+    {
+      "id": "fm-loto",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Bloqueo y etiquetado (LOTO)",
+      "headingPath": [
+        "Seguridad",
+        "LOTO"
+      ],
+      "text": "El bloqueo y etiquetado aísla las fuentes de energía de una máquina antes de intervenirla. Cada técnico coloca su propio candado y verifica ausencia de energía antes de iniciar el trabajo."
+    },
+    {
+      "id": "fm-vibracion",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Alarma de vibración",
+      "headingPath": [
+        "Monitoreo",
+        "Vibración"
+      ],
+      "text": "Si la vibración del rodamiento supera 7,1 mm/s durante diez minutos, el sistema genera una alarma de prioridad alta. El supervisor de mantenimiento decide si se reduce carga o se detiene el equipo."
+    },
+    {
+      "id": "fm-aceite",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Muestreo de aceite",
+      "headingPath": [
+        "Lubricación",
+        "Análisis de aceite"
+      ],
+      "text": "El técnico de lubricación toma la muestra de aceite con la máquina a temperatura de operación y antes de añadir lubricante nuevo. La muestra se etiqueta con equipo, punto y fecha."
+    },
+    {
+      "id": "fm-repuesto",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Retiro de repuestos críticos",
+      "headingPath": [
+        "Almacén técnico",
+        "Repuestos críticos"
+      ],
+      "text": "Un repuesto crítico solo se entrega contra una orden de trabajo activa. El almacenero registra el número de orden y la cantidad retirada antes de entregar la pieza."
+    },
+    {
+      "id": "fm-prueba",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Prueba después de mantenimiento",
+      "headingPath": [
+        "Cierre de trabajo",
+        "Prueba funcional"
+      ],
+      "text": "Después de una intervención que afecte una protección, el equipo no vuelve a producción hasta completar una prueba funcional. El resultado queda registrado en la orden de trabajo."
+    },
+    {
+      "id": "fm-termografia",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Ruta de termografía",
+      "headingPath": [
+        "Inspección predictiva",
+        "Termografía"
+      ],
+      "text": "La ruta de termografía de los tableros eléctricos se realiza una vez por trimestre con carga normal. El analista compara las imágenes con la ruta anterior y abre un aviso si detecta un punto caliente nuevo."
+    }
+  ],
+  "questions": [
+    {
+      "id": "fm-q1",
+      "family": "loto-finalidad",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Para qué sirve el bloqueo y etiquetado antes de intervenir una máquina?",
+      "gold": [
+        "fm-loto"
+      ],
+      "challenges": [
+        "PARAPHRASE"
+      ]
+    },
+    {
+      "id": "fm-q2",
+      "family": "vibracion-decision",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién decide si se reduce la carga tras una alarma de vibración?",
+      "gold": [
+        "fm-vibracion"
+      ],
+      "challenges": []
+    },
+    {
+      "id": "fm-q3",
+      "family": "aceite-momento",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Cuándo debe tomarse la muestra de aceite?",
+      "gold": [
+        "fm-aceite"
+      ],
+      "challenges": [
+        "PARAPHRASE"
+      ]
+    },
+    {
+      "id": "fm-q4",
+      "family": "termografia-frecuencia",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Con qué frecuencia se hace la ruta de termografía de los tableros?",
+      "gold": [
+        "fm-termografia"
+      ],
+      "challenges": []
+    },
+    {
+      "id": "fm-q5",
+      "family": "repuesto-proveedor",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué proveedor fabrica los repuestos críticos del almacén?",
+      "gold": [],
+      "challenges": [
+        "MISSING_SLOT",
+        "SAME_VOCABULARY"
+      ]
+    },
+    {
+      "id": "fm-q6",
+      "family": "prueba-temperatura",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿A qué temperatura se realiza la prueba funcional después del mantenimiento?",
+      "gold": [],
+      "challenges": [
+        "WRONG_SUBJECT",
+        "SAME_VOCABULARY"
+      ]
+    }
+  ]
+}
