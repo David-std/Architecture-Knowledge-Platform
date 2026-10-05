@@ -9,10 +9,7 @@
       "documentType": "rule",
       "unitType": "RULE",
       "title": "Cloro residual en red",
-      "headingPath": [
-        "Calidad del agua",
-        "Cloro residual"
-      ],
+      "headingPath": ["Calidad del agua", "Cloro residual"],
       "text": "El operador mide el cloro residual libre en varios puntos de la red cada cuatro horas. Si una lectura cae por debajo de 0,2 mg/L, se repite la medición y se avisa al responsable de turno."
     },
     {
@@ -20,10 +17,7 @@
       "documentType": "concept",
       "unitType": "PARAGRAPH",
       "title": "Turbidez",
-      "headingPath": [
-        "Calidad del agua",
-        "Turbidez"
-      ],
+      "headingPath": ["Calidad del agua", "Turbidez"],
       "text": "La turbidez indica cuánta materia suspendida dispersa la luz en el agua. Se expresa en unidades nefelométricas de turbidez y se controla a la salida del tratamiento."
     },
     {
@@ -31,10 +25,7 @@
       "documentType": "claim",
       "unitType": "PARAGRAPH",
       "title": "Avisos de fugas en vía pública",
-      "headingPath": [
-        "Incidencias",
-        "Fugas"
-      ],
+      "headingPath": ["Incidencias", "Fugas"],
       "text": "Los avisos de fugas en la vía pública los recibe el centro de control. Un despachador registra la dirección y envía una brigada de redes para aislar y reparar la avería."
     },
     {
@@ -42,10 +33,7 @@
       "documentType": "rule",
       "unitType": "RULE",
       "title": "Aviso preventivo de hervido",
-      "headingPath": [
-        "Emergencias",
-        "Hervido"
-      ],
+      "headingPath": ["Emergencias", "Hervido"],
       "text": "Cuando existe riesgo microbiológico confirmado, la empresa publica un aviso preventivo de hervido. Los usuarios deben hervir el agua destinada a beber o cocinar hasta que una comunicación posterior levante el aviso."
     },
     {
@@ -53,10 +41,7 @@
       "documentType": "rule",
       "unitType": "RULE",
       "title": "Maniobra de válvulas",
-      "headingPath": [
-        "Operación de red",
-        "Válvulas"
-      ],
+      "headingPath": ["Operación de red", "Válvulas"],
       "text": "Antes de cerrar una válvula principal, el operador comprueba qué sectores quedarán sin servicio y notifica al centro de control. La maniobra se ejecuta lentamente para evitar golpes de ariete."
     },
     {
@@ -64,10 +49,7 @@
       "documentType": "claim",
       "unitType": "PARAGRAPH",
       "title": "Lectura de contador inaccesible",
-      "headingPath": [
-        "Medición",
-        "Contadores"
-      ],
+      "headingPath": ["Medición", "Contadores"],
       "text": "Si el contador no es accesible durante la ruta, el lector registra la incidencia y no estima un consumo en ese momento. Facturación aplica después el procedimiento de estimación previsto por contrato."
     }
   ],
@@ -78,12 +60,8 @@
       "intent": "DEFINITION",
       "language": "es",
       "query": "¿Qué indica la turbidez del agua?",
-      "gold": [
-        "wu-turbidez"
-      ],
-      "challenges": [
-        "PARAPHRASE"
-      ]
+      "gold": ["wu-turbidez"],
+      "challenges": ["PARAPHRASE"]
     },
     {
       "id": "wu-q2",
@@ -91,12 +69,8 @@
       "intent": "ENTITY",
       "language": "es",
       "query": "¿Quién recibe los avisos de fugas en la calle?",
-      "gold": [
-        "wu-fuga"
-      ],
-      "challenges": [
-        "PARAPHRASE"
-      ]
+      "gold": ["wu-fuga"],
+      "challenges": ["PARAPHRASE"]
     },
     {
       "id": "wu-q3",
@@ -104,9 +78,7 @@
       "intent": "QUANTITY",
       "language": "es",
       "query": "¿Cada cuánto se mide el cloro residual libre en la red?",
-      "gold": [
-        "wu-cloro"
-      ],
+      "gold": ["wu-cloro"],
       "challenges": []
     },
     {
@@ -115,12 +87,8 @@
       "intent": "CONDITION",
       "language": "es",
       "query": "¿Hasta cuándo deben hervir el agua los usuarios durante un aviso preventivo?",
-      "gold": [
-        "wu-hervir"
-      ],
-      "challenges": [
-        "PARAPHRASE"
-      ]
+      "gold": ["wu-hervir"],
+      "challenges": ["PARAPHRASE"]
     },
     {
       "id": "wu-q5",
@@ -129,10 +97,7 @@
       "language": "es",
       "query": "¿Qué marca fabrica las válvulas principales de la red?",
       "gold": [],
-      "challenges": [
-        "MISSING_SLOT",
-        "SAME_VOCABULARY"
-      ]
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
     },
     {
       "id": "wu-q6",
@@ -141,10 +106,7 @@
       "language": "es",
       "query": "¿A qué temperatura se conserva un contador inaccesible?",
       "gold": [],
-      "challenges": [
-        "WRONG_SUBJECT",
-        "SAME_VOCABULARY"
-      ]
+      "challenges": ["WRONG_SUBJECT", "SAME_VOCABULARY"]
     }
   ]
 }
