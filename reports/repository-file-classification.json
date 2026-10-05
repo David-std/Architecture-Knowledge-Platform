@@ -77,6 +77,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".github/workflows/optional-semantic-layer-rollback.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".github/workflows/r2-r7-fresh-source-e2e.yml",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -448,6 +453,11 @@
     },
     {
       "path": "apps/api/test/operator.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/optional-semantic-layer-rollback.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -2382,6 +2392,11 @@
       "reason": "corpus-agnostic product evaluation"
     },
     {
+      "path": "evals/generic/optional-semantic-layer-rollback/manifest.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
       "path": "evals/generic/paraphrases/basic.jsonl",
       "category": "PRODUCT_EVAL",
       "reason": "corpus-agnostic product evaluation"
@@ -4203,6 +4218,11 @@
     },
     {
       "path": "scripts/migrate.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/optional-semantic-layer-rollback-evidence.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
