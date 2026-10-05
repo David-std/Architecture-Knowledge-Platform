@@ -9,7 +9,7 @@ import {
   rerankSearchHitsSafely,
   type QueryConditionedEvidenceVerifier,
   type SearchHitReranker,
-} from "@akp/retrieval";
+} from "../packages/retrieval/src/index.js";
 import {
   EVIDENCE_VERIFIER_DEGRADED_WARNING,
   evidenceVerifierDegradationWarnings,
