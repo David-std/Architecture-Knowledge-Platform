@@ -1,0 +1,103 @@
+name: deterministic-structural-authority-shadow
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deterministic-structural-authority-shadow:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'experiment/deterministic-structural-authority-shadow'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AKP_DETERMINISTIC_STRUCTURAL_AUTHORITY_REPORT: reports/ci/deterministic-structural-authority-shadow.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate experiment source
+        run: |
+          pnpm exec prettier --check \
+            evals/generic/deterministic-structural-authority/manifest.json \
+            scripts/deterministic-structural-authority-shadow-experiment.ts \
+            .github/workflows/deterministic-structural-authority-shadow.yml
+          pnpm check
+      - name: Execute frozen structural-authority ablation
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          pnpm exec tsx scripts/deterministic-structural-authority-shadow-experiment.ts \
+            2>&1 | tee reports/ci/deterministic-structural-authority-shadow.log
+      - name: Validate governed outcome
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(
+            readFileSync(
+              "reports/ci/deterministic-structural-authority-shadow.json",
+              "utf8",
+            ),
+          );
+          const allowed = new Set([
+            "PROMOTE_TO_RUNTIME_CANDIDATE",
+            "REJECT_NO_MEASURED_ADVANTAGE",
+            "REJECT_REGRESSION",
+          ]);
+          if (!allowed.has(report.outcome)) {
+            throw new Error(
+              "Structural-authority experiment is invalid: " +
+                String(report.outcome),
+            );
+          }
+          if (
+            report.runtimeChanged !== false ||
+            report.productionDefaultsChanged !== false ||
+            report.gates?.candidateAdmissionsSubsetOfBaseline !== true
+          ) {
+            throw new Error("Structural-authority shadow crossed its claim boundary.");
+          }
+          console.log(
+            JSON.stringify(
+              {
+                outcome: report.outcome,
+                baseline: {
+                  development: report.baseline?.development,
+                  heldout: report.baseline?.heldout,
+                },
+                candidate: {
+                  development: report.candidate?.development,
+                  heldout: report.candidate?.heldout,
+                },
+                falseAcceptancesRemoved: report.falseAcceptancesRemoved,
+                wrongAdmissionsRemoved: report.wrongAdmissionsRemoved,
+                candidateCausedFalseAbstentions:
+                  report.candidateCausedFalseAbstentions,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Upload structural-authority evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: deterministic-structural-authority-shadow-${{ github.run_id }}
+          path: |
+            reports/ci/deterministic-structural-authority-shadow.json
+            reports/ci/deterministic-structural-authority-shadow.log
+          if-no-files-found: warn
+          retention-days: 14
