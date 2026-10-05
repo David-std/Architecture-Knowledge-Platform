@@ -30,10 +30,7 @@
       "fabrica-mantenimiento"
     ],
     "questions": 24,
-    "languages": [
-      "en",
-      "es"
-    ],
+    "languages": ["en", "es"],
     "authoredBeforeExecution": true,
     "reusedPriorHeldout": false
   },
@@ -62,10 +59,7 @@
     "singleIndependentVariable": "Replace legacy PASSAGE_TEXT_SUPPORT and PASSAGE_CUE_SUPPORT authority with source-bound semantic support from a fixed two-reader coverage union: Qwen2.5-1.5B first, Qwen2.5-0.5B fallback on still-unresolved retired baseline candidates. Preserve non-PASSAGE authority. Neither reader may create support outside baseline-retired candidates.",
     "baseline": "Current assessRetrievalAnswerability on the frozen fresh-development pack.",
     "candidateComposition": "PRESERVED_NON_PASSAGE_AUTHORITY_OR_SOURCE_BOUND_1P5B_OR_0P5B_SUPPORT",
-    "retiredAuthority": [
-      "PASSAGE_TEXT_SUPPORT",
-      "PASSAGE_CUE_SUPPORT"
-    ],
+    "retiredAuthority": ["PASSAGE_TEXT_SUPPORT", "PASSAGE_CUE_SUPPORT"],
     "primaryFirst": true,
     "fallbackOnlyForPrimaryUnsupported": true,
     "readerCanCreateSupport": false,
