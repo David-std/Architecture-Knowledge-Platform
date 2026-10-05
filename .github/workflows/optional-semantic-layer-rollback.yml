@@ -1,0 +1,91 @@
+name: optional-semantic-layer-rollback
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  optional-semantic-layer-rollback:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'resilience/optional-semantic-layer-rollback'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AKP_OPTIONAL_SEMANTIC_ROLLBACK_REPORT: reports/ci/optional-semantic-layer-rollback.json
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate rollback source
+        run: |
+          pnpm exec prettier --check \
+            evals/generic/optional-semantic-layer-rollback/manifest.json \
+            evals/generic/resilience-failure-matrix.json \
+            apps/api/src/routes/search.ts \
+            apps/api/test/optional-semantic-layer-rollback.test.ts \
+            scripts/optional-semantic-layer-rollback-evidence.ts \
+            .github/workflows/optional-semantic-layer-rollback.yml
+          pnpm check
+      - name: Run focused rollback tests
+        run: |
+          pnpm --filter @akp/api exec vitest run \
+            test/optional-semantic-layer-rollback.test.ts
+          pnpm --filter @akp/retrieval exec vitest run \
+            test/rerank.test.ts
+      - name: Emit governed rollback evidence
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          pnpm exec tsx scripts/optional-semantic-layer-rollback-evidence.ts \
+            2>&1 | tee reports/ci/optional-semantic-layer-rollback.log
+      - name: Validate rollback outcome
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(
+            readFileSync(
+              "reports/ci/optional-semantic-layer-rollback.json",
+              "utf8",
+            ),
+          );
+          if (report.outcome !== "PROMOTE_RESILIENCE_OBSERVABILITY") {
+            throw new Error("Optional semantic rollback contract failed.");
+          }
+          if (
+            report.providerDefaultsChanged !== false ||
+            report.runtimeSemanticChange !== false ||
+            !Object.values(report.gates ?? {}).every(Boolean)
+          ) {
+            throw new Error("Optional semantic rollback invariants failed.");
+          }
+          console.log(
+            JSON.stringify(
+              {
+                outcome: report.outcome,
+                gates: report.gates,
+                observations: report.observations,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Upload rollback evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: optional-semantic-layer-rollback-${{ github.run_id }}
+          path: |
+            reports/ci/optional-semantic-layer-rollback.json
+            reports/ci/optional-semantic-layer-rollback.log
+          if-no-files-found: warn
+          retention-days: 14
