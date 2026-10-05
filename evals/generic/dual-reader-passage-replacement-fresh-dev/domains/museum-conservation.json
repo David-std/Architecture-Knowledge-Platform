@@ -9,10 +9,7 @@
       "documentType": "rule",
       "unitType": "RULE",
       "title": "Relative humidity for paper collections",
-      "headingPath": [
-        "Environment",
-        "Paper"
-      ],
+      "headingPath": ["Environment", "Paper"],
       "text": "Paper collections are kept between 45% and 55% relative humidity. A sustained reading outside that band triggers an environmental review rather than an immediate change to the HVAC set point."
     },
     {
@@ -20,10 +17,7 @@
       "documentType": "rule",
       "unitType": "RULE",
       "title": "Light-sensitive textiles",
-      "headingPath": [
-        "Display",
-        "Light exposure"
-      ],
+      "headingPath": ["Display", "Light exposure"],
       "text": "Light-sensitive textiles are displayed at no more than 50 lux. Exposure hours are logged so conservators can limit cumulative light damage over the life of the object."
     },
     {
@@ -31,10 +25,7 @@
       "documentType": "claim",
       "unitType": "PARAGRAPH",
       "title": "Incoming object quarantine",
-      "headingPath": [
-        "Integrated pest management",
-        "Quarantine"
-      ],
+      "headingPath": ["Integrated pest management", "Quarantine"],
       "text": "Newly acquired organic objects spend two weeks in the quarantine room before entering collection storage. A collections technician inspects traps and the object packaging before release."
     },
     {
@@ -42,10 +33,7 @@
       "documentType": "rule",
       "unitType": "RULE",
       "title": "Freezing for insect treatment",
-      "headingPath": [
-        "Integrated pest management",
-        "Freezing"
-      ],
+      "headingPath": ["Integrated pest management", "Freezing"],
       "text": "Objects approved for freezing are sealed in a moisture barrier before treatment. Fragile composite objects and materials known to be damaged by low temperature are excluded from this method."
     },
     {
@@ -53,10 +41,7 @@
       "documentType": "claim",
       "unitType": "PARAGRAPH",
       "title": "Condition report for outgoing loans",
-      "headingPath": [
-        "Loans",
-        "Condition reports"
-      ],
+      "headingPath": ["Loans", "Condition reports"],
       "text": "The object conservator signs the outgoing condition report after inspecting the object under normal and raking light. The registrar attaches the signed report to the loan record."
     },
     {
@@ -64,10 +49,7 @@
       "documentType": "concept",
       "unitType": "PARAGRAPH",
       "title": "Dry surface cleaning",
-      "headingPath": [
-        "Treatment",
-        "Dry cleaning"
-      ],
+      "headingPath": ["Treatment", "Dry cleaning"],
       "text": "Dry surface cleaning removes loose dust and particulate soil without introducing water or solvents. Conservators use soft brushes and a screened low-suction vacuum where the surface is stable."
     }
   ],
@@ -78,12 +60,8 @@
       "intent": "DEFINITION",
       "language": "en",
       "query": "What is dry surface cleaning meant to remove?",
-      "gold": [
-        "mc-dust"
-      ],
-      "challenges": [
-        "PARAPHRASE"
-      ]
+      "gold": ["mc-dust"],
+      "challenges": ["PARAPHRASE"]
     },
     {
       "id": "mc-q2",
@@ -91,12 +69,8 @@
       "intent": "RATIONALE",
       "language": "en",
       "query": "Why are display hours tracked for light-sensitive textiles?",
-      "gold": [
-        "mc-light"
-      ],
-      "challenges": [
-        "PARAPHRASE"
-      ]
+      "gold": ["mc-light"],
+      "challenges": ["PARAPHRASE"]
     },
     {
       "id": "mc-q3",
@@ -104,9 +78,7 @@
       "intent": "ENTITY",
       "language": "en",
       "query": "Who signs the outgoing condition report?",
-      "gold": [
-        "mc-loan"
-      ],
+      "gold": ["mc-loan"],
       "challenges": []
     },
     {
@@ -115,12 +87,8 @@
       "intent": "QUANTITY",
       "language": "en",
       "query": "How long do newly acquired organic objects stay in quarantine?",
-      "gold": [
-        "mc-quarantine"
-      ],
-      "challenges": [
-        "PARAPHRASE"
-      ]
+      "gold": ["mc-quarantine"],
+      "challenges": ["PARAPHRASE"]
     },
     {
       "id": "mc-q5",
@@ -129,10 +97,7 @@
       "language": "en",
       "query": "Which vendor supplies the freezer used for insect treatment?",
       "gold": [],
-      "challenges": [
-        "MISSING_SLOT",
-        "SAME_VOCABULARY"
-      ]
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
     },
     {
       "id": "mc-q6",
@@ -141,10 +106,7 @@
       "language": "en",
       "query": "How many lux of relative humidity are allowed for paper collections?",
       "gold": [],
-      "challenges": [
-        "WRONG_SUBJECT",
-        "SAME_VOCABULARY"
-      ]
+      "challenges": ["WRONG_SUBJECT", "SAME_VOCABULARY"]
     }
   ]
 }
