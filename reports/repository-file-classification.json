@@ -52,6 +52,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".github/workflows/evidence-admission-layered-replacement-dev.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".github/workflows/evidence-source-selection.yml",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -2317,6 +2322,11 @@
       "reason": "corpus-agnostic product evaluation"
     },
     {
+      "path": "evals/generic/evidence-admission-layered-replacement-dev/manifest.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
       "path": "evals/generic/evidence-admission/domains/aircraft-maintenance.json",
       "category": "PRODUCT_EVAL",
       "reason": "corpus-agnostic product evaluation"
@@ -4173,6 +4183,11 @@
     },
     {
       "path": "scripts/evidence-admission-generalization-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/evidence-admission-layered-replacement-dev-experiment.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
