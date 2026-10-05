@@ -160,6 +160,30 @@ fidelity, query recall or source-span precision. Source-to-document fidelity
 must be checked separately: an indexed revision cannot prove that every input
 file or every distinct source body survived ingestion.
 
+## Evidence admission boundaries and insufficiency
+
+Evidence admission is intentionally separate from relevance ranking. The target architecture has three bounded responsibilities:
+
+1. `StructuralEvidenceGuard` owns hard invariants that a semantic model must not override: authorization, truth/lifecycle state, visible-source span integrity, hidden-comment exclusion, selected table-cell scope, explicitly requested year/number/unit constraints, exact identifier identity, and rejection of question-only or otherwise non-assertive source text.
+2. `StructuredPropositionMatcher` owns typed claim/rule/decision matching when a canonical proposition projection exists.
+3. `SemanticEvidenceReader` owns ordinary prose and ambiguous semantic support. `ANSWERS` and `CONTRADICTS` require an exact visible source span (or the selected table cells); malformed output, timeout or an unmappable quote fails closed.
+
+These boundaries do not make a relevance score evidence authority. The cross-encoder and other rerankers may order or shortlist candidates, but only admission can return a unit as supported evidence.
+
+The current integrated deterministic path still retains legacy prose authority through `PASSAGE_TEXT_SUPPORT` and `PASSAGE_CUE_SUPPORT`. Their removal has **not** earned promotion: structural-only removal collapses ordinary-prose recall, and the tested source-bound semantic replacements have not yet preserved the required precision/coverage frontier. Keep those legacy reasons until a separately frozen replacement experiment passes development and a fresh family-disjoint holdout. Do not add query- or corpus-specific cue dictionaries to work around an experiment failure.
+
+The source-bound reader contract is available only when explicitly configured. Optional semantic verifier/reranker providers remain disabled by default and must fail safely; a provider error cannot silently enable a different authority path.
+
+### Bounded missing-slot follow-up
+
+AKP also contains a reusable **shadow-only** requested-answer follow-up primitive. It is not a production retrieval-quality default or route behavior.
+
+When the governed answerability result is unsupported, the helper may perform at most one retrieval-only follow-up if the original query has a safe bounded `RequestedAnswerSlot` projection. The follow-up query is built only from the projected relation anchor and bound argument anchors. The slot projection itself never grants support.
+
+After that retrieval, AKP reassesses the returned candidates against the **original user query**, through the normal authorization/truth/admission path. There is no recursive second follow-up. Unsupported why/how/when or free-form prose queries that cannot be projected safely do not trigger this helper. If the bounded second pass still lacks support, the orchestration result is `INSUFFICIENT_KNOWLEDGE`.
+
+The frozen shadow contract achieved perfect contract accuracy, but the later normal-pipeline public experiment produced no correct recoveries and was rejected for no measured advantage. Therefore the helper remains a safe orchestration primitive only: it is not wired as a production route-level recovery policy and must not be presented as a demonstrated retrieval-quality improvement.
+
 ## Contextual evidence verifier
 
 Admission decides whether a retrieved unit answers the query, so it can be returned as `SUPPORTED` evidence rather than an exploratory candidate. The current deterministic path still contains semantic cue logic as well as structural guards. The supplied-candidate pack in `evals/generic/evidence-admission` measures admission precision and coverage separately from retrieval; it has source/domain-disjoint splits with overlapping question families. Its results cannot establish a reader default for unseen families.
