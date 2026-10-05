@@ -402,8 +402,12 @@ if (
   protocol.developmentCalibration.holdoutAuthoredInThisWorker !== false ||
   protocol.qa.model !== LOCAL_MULTILINGUAL_QA_EVIDENCE_MODEL ||
   protocol.qa.revision !== LOCAL_MULTILINGUAL_QA_EVIDENCE_REVISION ||
+  protocol.qa.maxAnswerTokens !== 15 ||
   protocol.nli.model !== LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.model ||
-  protocol.nli.revision !== LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.revision
+  protocol.nli.revision !== LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.revision ||
+  protocol.nli.modelFileName !==
+    LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.modelFileName ||
+  protocol.nli.dtype !== LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR.dtype
 ) {
   throw new Error("EXTRACTIVE_QA_NLI_CASCADE_DEV_PROTOCOL_DRIFT");
 }
@@ -423,9 +427,10 @@ if (cases.some((entry) => entry.domain.split !== "development")) {
   throw new Error("EXTRACTIVE_QA_NLI_CASCADE_DEV_HELDOUT_LOADED");
 }
 
+const cacheDir = process.env.AKP_MODEL_CACHE_DIR?.trim() || undefined;
 const qa = new LocalMultilingualQaEvidenceVerifier({
   minimumSupportScore: protocol.qa.proposalFloor,
-  cacheDir: process.env.AKP_MODEL_CACHE_DIR,
+  ...(cacheDir === undefined ? {} : { cacheDir }),
   localFilesOnly: process.env.AKP_LOCAL_FILES_ONLY === "1",
 });
 const nli = await defaultLocalMultilingualNliRuntimeFactory({
@@ -433,7 +438,7 @@ const nli = await defaultLocalMultilingualNliRuntimeFactory({
   revision: protocol.nli.revision,
   modelFileName: protocol.nli.modelFileName,
   dtype: protocol.nli.dtype,
-  cacheDir: process.env.AKP_MODEL_CACHE_DIR,
+  ...(cacheDir === undefined ? {} : { cacheDir }),
   localFilesOnly: process.env.AKP_LOCAL_FILES_ONLY === "1",
 });
 
