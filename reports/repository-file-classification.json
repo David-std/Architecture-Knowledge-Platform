@@ -62,6 +62,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".github/workflows/extractive-qa-nli-cascade-holdout.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".github/workflows/federation-two-node.yml",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -2362,6 +2367,31 @@
       "reason": "corpus-agnostic product evaluation"
     },
     {
+      "path": "evals/generic/extractive-qa-nli-cascade-holdout/domains/archivo-conservacion.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/extractive-qa-nli-cascade-holdout/domains/coastal-rescue.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/extractive-qa-nli-cascade-holdout/domains/observatory-operations.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/extractive-qa-nli-cascade-holdout/domains/vivero-fitosanitario.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/extractive-qa-nli-cascade-holdout/manifest.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
       "path": "evals/generic/global-synthesis/basic.jsonl",
       "category": "PRODUCT_EVAL",
       "reason": "corpus-agnostic product evaluation"
@@ -4188,6 +4218,11 @@
     },
     {
       "path": "scripts/extractive-qa-nli-cascade-dev-experiment.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/extractive-qa-nli-cascade-holdout-experiment.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
