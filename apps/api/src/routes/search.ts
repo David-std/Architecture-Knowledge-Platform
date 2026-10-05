@@ -576,8 +576,7 @@ export function evidenceVerifierDegradationWarnings(
   answerability: Pick<RetrievalAnswerabilityAssessment, "candidateSignals">,
 ): string[] {
   return answerability.candidateSignals.some(
-    (signal) =>
-      signal.queryConditionedEvidence?.decision === "VERIFIER_ERROR",
+    (signal) => signal.queryConditionedEvidence?.decision === "VERIFIER_ERROR",
   )
     ? [EVIDENCE_VERIFIER_DEGRADED_WARNING]
     : [];
