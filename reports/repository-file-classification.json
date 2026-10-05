@@ -2494,7 +2494,7 @@
     {
       "path": "evals/registered/fresh-source-exact-citation-transit.json",
       "category": "PRODUCT_EVAL",
-      "reason": "corpus-agnostic product evaluation"
+      "reason": "versioned registered product evaluation"
     },
     {
       "path": "evals/registered/public-product-corpus-cases.jsonl",
