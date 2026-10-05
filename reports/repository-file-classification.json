@@ -2509,7 +2509,7 @@
     {
       "path": "evals/registered/unit-strategy-token-window-remediation.json",
       "category": "PRODUCT_EVAL",
-      "reason": "corpus-agnostic product evaluation"
+      "reason": "versioned registered product evaluation"
     },
     {
       "path": "evals/registered/unit-strategy-token-window.json",
