@@ -183,15 +183,11 @@ const changes = baselineResults.flatMap((row) => {
 });
 
 const candidateCreatedAdmissions = changes.filter((row) =>
-  row.candidateAdmitted.some(
-    (unit) => !row.baselineAdmitted.includes(unit),
-  ),
+  row.candidateAdmitted.some((unit) => !row.baselineAdmitted.includes(unit)),
 );
 const candidateCausedFalseAbstentions = changes.filter(
   (row) =>
-    row.answerable &&
-    row.baselineGoldAdmitted &&
-    !row.candidateGoldAdmitted,
+    row.answerable && row.baselineGoldAdmitted && !row.candidateGoldAdmitted,
 );
 const falseAcceptancesRemoved = changes.filter(
   (row) =>
@@ -201,8 +197,7 @@ const falseAcceptancesRemoved = changes.filter(
 );
 const wrongAdmissionsRemoved = changes.filter(
   (row) =>
-    row.candidateWrongAdmissions.length <
-    row.baselineWrongAdmissions.length,
+    row.candidateWrongAdmissions.length < row.baselineWrongAdmissions.length,
 );
 
 const alignment = (
