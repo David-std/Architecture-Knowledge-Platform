@@ -96,9 +96,9 @@ describe("optional semantic-layer degradation and rollback", () => {
     expect(enforced.supported).toBe(false);
     expect(enforced.reason).toBe("SUPPORT_NOT_DEMONSTRATED");
     expect(enforced.supportedCandidateKeys).toEqual([]);
-    expect(
-      enforced.candidateSignals[0]?.passageSupport.reason,
-    ).toBe("QUERY_CONDITIONED_VERIFIER_ERROR");
+    expect(enforced.candidateSignals[0]?.passageSupport.reason).toBe(
+      "QUERY_CONDITIONED_VERIFIER_ERROR",
+    );
     expect(evidenceVerifierDegradationWarnings(enforced)).toEqual([
       EVIDENCE_VERIFIER_DEGRADED_WARNING,
     ]);
