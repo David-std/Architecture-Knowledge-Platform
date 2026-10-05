@@ -1,0 +1,110 @@
+{
+  "schemaVersion": "akp.deterministic-structural-authority-shadow.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-05",
+  "baselineSha": "625f59a3749270f6fb8c14da21c4da0497f89301",
+  "inputs": [
+    {
+      "path": "evals/generic/evidence-admission/manifest.json",
+      "gitBlobSha": "215d1e3fa7b708e0b47934e8305663c6e93b61d8"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/hospital-pharmacy.json",
+      "gitBlobSha": "d5a960123eb1ac7f376676bce764e19d4317af94"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/biblioteca-municipal.json",
+      "gitBlobSha": "aab2153d266ac03a9ec3a92301b04559c5385674"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/warehouse-logistics.json",
+      "gitBlobSha": "a00e7ff279b88aa40947f4c0e169ab79979ca57a"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/seguridad-alimentaria.json",
+      "gitBlobSha": "806fc6fda7997ae4309971394815acd8d6557e3c"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/incident-response.json",
+      "gitBlobSha": "dc30775e43de978a860b51b56c93aef965e75d2e"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/transporte-publico.json",
+      "gitBlobSha": "b1a122a0891e123b6d38a6beaddcc2c06031b715"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/aircraft-maintenance.json",
+      "gitBlobSha": "a1dd3341fb160c2aa7d097124989a15ddf29ec53"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/nomina-y-licencias.json",
+      "gitBlobSha": "33d5e84fe45b1138768bc9983c5d354f490228bf"
+    }
+  ],
+  "protocol": {
+    "singleIndependentVariable": "In shadow only, PASSAGE_TEXT_SUPPORT and PASSAGE_CUE_SUPPORT cease to grant deterministic evidence authority. Existing exact identifier and explicitly structured deterministic support reasons remain eligible. Candidate can remove support only and cannot add support.",
+    "baselineAuthority": [
+      "DIRECT_CHANNEL_SUPPORT",
+      "PASSAGE_TEXT_SUPPORT",
+      "PASSAGE_CUE_SUPPORT",
+      "CLAIM_RELATION_SUPPORT",
+      "CONCEPT_DEFINITION_SUPPORT"
+    ],
+    "candidateAuthority": [
+      "DIRECT_CHANNEL_SUPPORT",
+      "CLAIM_RELATION_SUPPORT",
+      "CONCEPT_DEFINITION_SUPPORT"
+    ],
+    "removedAuthority": [
+      "PASSAGE_TEXT_SUPPORT",
+      "PASSAGE_CUE_SUPPORT"
+    ],
+    "queryConditionedVerifierExcluded": true,
+    "graphTopologyNeverAuthority": true,
+    "runtimeChanged": false,
+    "productionDefaultsChanged": false,
+    "noNewHeuristics": true,
+    "noTuningAfterHeldout": true,
+    "partitions": {
+      "development": "existing evidence-admission development domains",
+      "heldout": "existing evidence-admission heldout domains",
+      "alignmentAuditIndependent": "frozen existing independent partition; previously inspected and used only as regression evidence, not a blind holdout"
+    }
+  },
+  "decisionRule": {
+    "invariants": {
+      "candidateAdmissionsSubsetOfBaseline": true,
+      "candidateCanCreateSupport": false,
+      "runtimeChanged": false,
+      "productionDefaultsChanged": false
+    },
+    "nonRegression": [
+      "development.answerableRecall",
+      "heldout.answerableRecall",
+      "development.admittedPrecision",
+      "heldout.admittedPrecision",
+      "development.strictAccuracy",
+      "heldout.strictAccuracy"
+    ],
+    "falseAcceptanceMustNotIncrease": [
+      "development.falseAcceptanceRate",
+      "heldout.falseAcceptanceRate"
+    ],
+    "promotionRequiresOneOf": [
+      "remove at least one baseline false acceptance",
+      "remove at least one baseline wrong admission"
+    ],
+    "outcomes": [
+      "PROMOTE_TO_RUNTIME_CANDIDATE",
+      "REJECT_NO_MEASURED_ADVANTAGE",
+      "REJECT_REGRESSION",
+      "INVALID_EXPERIMENT"
+    ]
+  },
+  "claimBoundary": [
+    "This is supplied-candidate evidence-admission measurement, not retrieval quality.",
+    "PROMOTE_TO_RUNTIME_CANDIDATE would permit a separate runtime-change worker only; it does not itself change production admission.",
+    "The heldout and alignment-audit questions already existed and have been inspected; no result may be described as a blind external holdout.",
+    "A REJECT must not be retuned against individual heldout failures."
+  ]
+}
