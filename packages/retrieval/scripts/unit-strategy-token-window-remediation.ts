@@ -64,7 +64,7 @@ type Manifest = {
     noRetuningAfterExecution: boolean;
     claimBoundary: string;
   };
-}
+};
 
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
 const fixturePath = path.join(
@@ -94,8 +94,7 @@ const raw = await readFile(fixturePath, "utf8");
 const manifest = JSON.parse(raw) as Manifest;
 
 if (
-  manifest.schemaVersion !==
-    "akp.unit-strategy-token-window-remediation.v1" ||
+  manifest.schemaVersion !== "akp.unit-strategy-token-window-remediation.v1" ||
   manifest.frozen !== true ||
   manifest.singleIndependentVariable !== "MAX_EMBEDDING_UNIT_CHARACTERS" ||
   manifest.decisionRule.noRetuningAfterExecution !== true ||
@@ -160,13 +159,9 @@ try {
       (unit) => unit.embeddingEligible,
     );
     for (const unit of baselineEligible) {
-      const prefixed =
-        `${MULTILINGUAL_E5_SMALL_PASSAGE_PREFIX}${unit.body}`;
+      const prefixed = `${MULTILINGUAL_E5_SMALL_PASSAGE_PREFIX}${unit.body}`;
       const tokens = tokenizer.encode(prefixed).length;
-      baselineMaxObservedTokens = Math.max(
-        baselineMaxObservedTokens,
-        tokens,
-      );
+      baselineMaxObservedTokens = Math.max(baselineMaxObservedTokens, tokens);
       if (tokens > manifest.baselineEvidence.modelMaxTokens) {
         baselineTokenWindowViolationCount += 1;
       }
