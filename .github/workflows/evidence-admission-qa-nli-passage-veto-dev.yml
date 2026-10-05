@@ -1,0 +1,105 @@
+name: evidence-admission-qa-nli-passage-veto-dev
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evidence-admission-qa-nli-passage-veto-dev:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'experiment/qa-nli-passage-authority-veto-dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      AKP_MODEL_CACHE_DIR: /tmp/akp-model-cache
+      AKP_QA_NLI_PASSAGE_VETO_DEV_REPORT: reports/ci/qa-nli-passage-authority-veto-dev.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate frozen development worker
+        run: |
+          pnpm exec prettier --check \
+            evals/generic/qa-nli-passage-authority-veto-dev/manifest.json \
+            scripts/evidence-admission-qa-nli-passage-veto-dev-experiment.ts \
+            .github/workflows/evidence-admission-qa-nli-passage-veto-dev.yml
+          pnpm check
+      - name: Execute frozen QA-NLI passage veto development gate
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci "$AKP_MODEL_CACHE_DIR"
+          pnpm exec tsx scripts/evidence-admission-qa-nli-passage-veto-dev-experiment.ts \
+            2>&1 | tee reports/ci/qa-nli-passage-authority-veto-dev.log
+      - name: Validate governed development outcome
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(
+            readFileSync(
+              "reports/ci/qa-nli-passage-authority-veto-dev.json",
+              "utf8",
+            ),
+          );
+          if (
+            !["PROCEED_TO_FRESH_HOLDOUT", "REJECT_DEVELOPMENT_FRONTIER"].includes(
+              report.outcome,
+            )
+          ) {
+            throw new Error("QA-NLI passage veto development outcome is invalid.");
+          }
+          if (
+            report.heldoutEvaluated !== false ||
+            report.candidateCanCreateSupport !== false ||
+            report.runtimeChanged !== false ||
+            report.productionAdmissionChanged !== false
+          ) {
+            throw new Error("QA-NLI passage veto crossed its claim boundary.");
+          }
+          if (
+            report.invariants?.allQaSpansSourceBound !== true ||
+            report.invariants?.allSemanticCandidatesFromRetiredAuthority !== true ||
+            report.invariants?.everyRetiredKeyWasBaselineSupported !== true ||
+            report.invariants?.candidateAdmissionsSubsetOfBaseline !== true ||
+            report.invariants?.qaUsedAsAuthority !== false ||
+            report.invariants?.manualRelationHypothesesUsed !== false ||
+            report.invariants?.generativeReaderUsed !== false
+          ) {
+            throw new Error("QA-NLI passage veto invariants failed.");
+          }
+          console.log(
+            JSON.stringify(
+              {
+                outcome: report.outcome,
+                baseline: report.baseline,
+                selectedBoundary: report.selectedBoundary,
+                candidate: report.candidate,
+                gates: report.gates,
+                counts: report.counts,
+                protocolHash: report.protocolHash,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Upload QA-NLI passage veto evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidence-admission-qa-nli-passage-veto-dev-${{ github.run_id }}
+          path: |
+            reports/ci/qa-nli-passage-authority-veto-dev.json
+            reports/ci/qa-nli-passage-authority-veto-dev.log
+          if-no-files-found: warn
+          retention-days: 14
