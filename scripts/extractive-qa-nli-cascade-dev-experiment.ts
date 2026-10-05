@@ -448,13 +448,8 @@ try {
   for (const entry of cases) {
     const query = entry.question.query;
     const baseline = assessRetrievalAnswerability(entry.hits, query);
-    const baselineUnits = unitsForKeys(
-      entry,
-      baseline.supportedCandidateKeys,
-    );
-    const slot = baseline.supported
-      ? null
-      : projectRequestedAnswerSlot(query);
+    const baselineUnits = unitsForKeys(entry, baseline.supportedCandidateKeys);
+    const slot = baseline.supported ? null : projectRequestedAnswerSlot(query);
     const semanticCandidates: SemanticCandidate[] = [];
 
     if (!baseline.supported && slot) {
@@ -533,10 +528,7 @@ try {
 }
 const measurementLatencyMs = performance.now() - started;
 
-const baselineSummary = summarize(
-  measurements,
-  (row) => row.baselineUnits,
-);
+const baselineSummary = summarize(measurements, (row) => row.baselineUnits);
 const observedEntailment = measurements.flatMap((row) =>
   row.semanticCandidates
     .filter((candidate) => candidate.entailmentTopClass)
@@ -548,24 +540,13 @@ const observedMargins = measurements.flatMap((row) =>
     .map((candidate) => Number(Math.max(0, candidate.margin).toFixed(9))),
 );
 const entailmentThresholds = [
-  ...new Set([
-    0.5,
-    0.6,
-    0.7,
-    0.8,
-    0.9,
-    0.95,
-    0.99,
-    ...observedEntailment,
-  ]),
+  ...new Set([0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 0.99, ...observedEntailment]),
 ].sort((a, b) => b - a);
 const marginThresholds = [
   ...new Set([0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, ...observedMargins]),
 ].sort((a, b) => b - a);
 
-let selected:
-  | ReturnType<typeof boundaryMetrics>
-  | null = null;
+let selected: ReturnType<typeof boundaryMetrics> | null = null;
 let evaluatedBoundaries = 0;
 for (const entailmentThreshold of entailmentThresholds) {
   for (const minimumMargin of marginThresholds) {
@@ -639,8 +620,9 @@ const report = {
   gates: selected?.gates ?? null,
   counts: {
     developmentCases: measurements.length,
-    baselineSupportedQueries: measurements.filter((row) => row.baseline.supported)
-      .length,
+    baselineSupportedQueries: measurements.filter(
+      (row) => row.baseline.supported,
+    ).length,
     safeSlotAbstentions: measurements.filter(
       (row) => !row.baseline.supported && row.slot !== null,
     ).length,
@@ -651,8 +633,9 @@ const report = {
     nliTopEntailmentProposals: measurements.reduce(
       (sum, row) =>
         sum +
-        row.semanticCandidates.filter((candidate) => candidate.entailmentTopClass)
-          .length,
+        row.semanticCandidates.filter(
+          (candidate) => candidate.entailmentTopClass,
+        ).length,
       0,
     ),
     correctGoldRescues: selected?.correctGoldRescues.length ?? 0,
