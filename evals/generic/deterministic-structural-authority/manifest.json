@@ -55,10 +55,7 @@
       "CLAIM_RELATION_SUPPORT",
       "CONCEPT_DEFINITION_SUPPORT"
     ],
-    "removedAuthority": [
-      "PASSAGE_TEXT_SUPPORT",
-      "PASSAGE_CUE_SUPPORT"
-    ],
+    "removedAuthority": ["PASSAGE_TEXT_SUPPORT", "PASSAGE_CUE_SUPPORT"],
     "queryConditionedVerifierExcluded": true,
     "graphTopologyNeverAuthority": true,
     "runtimeChanged": false,
