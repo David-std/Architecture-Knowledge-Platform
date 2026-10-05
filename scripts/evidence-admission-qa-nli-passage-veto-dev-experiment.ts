@@ -347,7 +347,8 @@ function boundaryMetrics(
       candidateSummary.strictAccuracy,
       baselineSummary.strictAccuracy,
     ),
-    candidateAdmissionsSubsetOfBaseline: candidateCreatedAdmissions.length === 0,
+    candidateAdmissionsSubsetOfBaseline:
+      candidateCreatedAdmissions.length === 0,
     baselineGoldPreserved: baselineRegressions.length === 0,
     measuredPrecisionAdvantage:
       removedFalseAcceptances.length > 0 || removedWrongAdmissions.length > 0,
@@ -464,7 +465,8 @@ try {
 
       retiredCandidateKeys.push(candidateKey);
       const hit = entry.hits.find(
-        (candidate) => retrievalAnswerabilityCandidateKey(candidate) === candidateKey,
+        (candidate) =>
+          retrievalAnswerabilityCandidateKey(candidate) === candidateKey,
       );
       if (!hit) {
         throw new Error("QA_NLI_PASSAGE_VETO_HIT_MISSING:" + candidateKey);
@@ -636,8 +638,9 @@ const report = {
   gates: selected?.gates ?? null,
   counts: {
     developmentCases: cases.length,
-    baselineSupportedQueries: measurements.filter((row) => row.baseline.supported)
-      .length,
+    baselineSupportedQueries: measurements.filter(
+      (row) => row.baseline.supported,
+    ).length,
     baselineSupportedCandidates: measurements.reduce(
       (sum, row) => sum + row.baseline.supportedCandidateKeys.length,
       0,
@@ -658,8 +661,9 @@ const report = {
     nliTopEntailmentProposals: measurements.reduce(
       (sum, row) =>
         sum +
-        row.semanticCandidates.filter((candidate) => candidate.entailmentTopClass)
-          .length,
+        row.semanticCandidates.filter(
+          (candidate) => candidate.entailmentTopClass,
+        ).length,
       0,
     ),
     evaluatedDevelopmentBoundaries: evaluatedBoundaries,
