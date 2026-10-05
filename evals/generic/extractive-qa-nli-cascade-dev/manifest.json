@@ -1,0 +1,104 @@
+{
+  "schemaVersion": "akp.extractive-qa-nli-cascade-dev.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-05",
+  "baselineSha": "625f59a3749270f6fb8c14da21c4da0497f89301",
+  "inputs": [
+    {
+      "path": "evals/generic/evidence-admission/manifest.json",
+      "gitBlobSha": "215d1e3fa7b708e0b47934e8305663c6e93b61d8"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/hospital-pharmacy.json",
+      "gitBlobSha": "d5a960123eb1ac7f376676bce764e19d4317af94"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/biblioteca-municipal.json",
+      "gitBlobSha": "aab2153d266ac03a9ec3a92301b04559c5385674"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/warehouse-logistics.json",
+      "gitBlobSha": "a00e7ff279b88aa40947f4c0e169ab79979ca57a"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/seguridad-alimentaria.json",
+      "gitBlobSha": "806fc6fda7997ae4309971394815acd8d6557e3c"
+    }
+  ],
+  "qa": {
+    "model": "onnx-community/xlm-roberta-base-squad2-distilled-ONNX",
+    "revision": "484112fae76dde6ad01b640192d559cbc2d488e1",
+    "proposalFloor": 1e-9,
+    "maxAnswerTokens": 15,
+    "authority": false
+  },
+  "nli": {
+    "model": "MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli",
+    "revision": "0a71e92a985b6e1ad1828cf67ce9c459639c1dca",
+    "modelFileName": "model",
+    "dtype": "fp32",
+    "labelOrder": [
+      "entailment",
+      "neutral",
+      "contradiction"
+    ],
+    "authority": "development-calibrated-cascade-only"
+  },
+  "protocol": {
+    "phase": "DEVELOPMENT_FEASIBILITY_ONLY",
+    "evaluatedSplit": "development",
+    "heldoutEvaluated": false,
+    "singleIndependentVariable": "When current deterministic admission abstains and RequestedAnswerSlot projects safely, allow an extractive QA model to propose one exact visible answer span, then require a separately pinned multilingual NLI classifier to entail a generic question-plus-answer hypothesis from the source sentence containing that span. QA score/decision and slot projection are not evidence authority. Existing deterministic supports remain unchanged.",
+    "baseline": "Current assessRetrievalAnswerability.",
+    "candidateComposition": "BASELINE_OR_EXTRACTIVE_QA_THEN_GENERIC_QA_NLI",
+    "slotUsedAsInvocationGateOnly": true,
+    "qaUsedAsSpanProposalOnly": true,
+    "qaDecisionUsedAsAuthority": false,
+    "nliUsesManualRelationHypotheses": false,
+    "nliHypothesisTemplates": {
+      "EN": "The answer to the question \"<QUESTION>\" is \"<ANSWER>\".",
+      "ES": "La respuesta a la pregunta \"<QUESTION>\" es \"<ANSWER>\"."
+    },
+    "sourcePremise": "Shortest source sentence containing the exact QA-proposed span.",
+    "baselineSupportsPreserved": true,
+    "providerDefaultsChanged": false,
+    "runtimeChanged": false,
+    "productionAdmissionChanged": false,
+    "noTuningAgainstPriorHeldouts": true
+  },
+  "developmentCalibration": {
+    "entailmentThresholdCandidates": "observed entailment scores plus fixed grid 0.50..0.99",
+    "marginThresholdCandidates": "observed entailment-minus-max(neutral,contradiction) plus fixed grid 0.00..0.50",
+    "thresholdSelection": "Among boundaries satisfying every safety gate, select highest entailment threshold then highest margin; development only.",
+    "holdoutAuthoredInThisWorker": false
+  },
+  "developmentGate": {
+    "answerableRecallNonRegression": true,
+    "admittedPrecisionNonRegression": true,
+    "falseAcceptanceNonIncrease": true,
+    "wrongAdmissionQuestionsNonIncrease": true,
+    "strictAccuracyNonRegression": true,
+    "baselineSupportedCasesPreserved": true,
+    "newSupportsRequireExactQaSourceSpan": true,
+    "newSupportsRequireNliEntailmentTopClass": true,
+    "readerOrGenerativeLlmUsed": false,
+    "requireAtLeastOneCorrectGoldRescue": true,
+    "outcomes": [
+      "PROCEED_TO_FRESH_HOLDOUT",
+      "REJECT_DEVELOPMENT_FRONTIER",
+      "INVALID_EXPERIMENT"
+    ]
+  },
+  "distinctionFromPriorRejects": [
+    "#68 used manually generated positive/negative relation hypotheses plus role/direction guards; this cascade uses a QA-proposed exact source span and one generic Q+A hypothesis.",
+    "#69/#70 used extractive QA as support authority; here QA is span proposal only.",
+    "#71 used QA as a veto/intersection on deterministic support; this candidate only operates after deterministic abstention.",
+    "#90/#101 used the generative ReaderEvidenceVerifier; this candidate uses no generative reader or prompt."
+  ],
+  "nextStepBoundary": [
+    "PROCEED_TO_FRESH_HOLDOUT does not change runtime/default/product behavior.",
+    "Only a development pass authorizes a new family-disjoint frozen holdout in a separate worker.",
+    "Existing #68/#70/#71/#88/#90/#95/#100/#101 inspected data are not reused for tuning or promotion.",
+    "A development reject closes this cascade without holdout authoring."
+  ]
+}
