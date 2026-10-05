@@ -125,11 +125,7 @@ const reranker: SearchHitReranker = {
     );
   },
 };
-const rerankFallback = rerankSearchHitsSafely(
-  query,
-  [baselineHit],
-  reranker,
-);
+const rerankFallback = rerankSearchHitsSafely(query, [baselineHit], reranker);
 
 const baselineShape = {
   supported: baseline.supported,
@@ -164,8 +160,7 @@ const gates = {
     enforced.supportedCandidateKeys.length === 0 &&
     enforced.candidateSignals.some(
       (signal) =>
-        signal.passageSupport.reason ===
-        "QUERY_CONDITIONED_VERIFIER_ERROR",
+        signal.passageSupport.reason === "QUERY_CONDITIONED_VERIFIER_ERROR",
     ),
   enforceWarningStable:
     JSON.stringify(evidenceVerifierDegradationWarnings(enforced)) ===
