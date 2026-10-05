@@ -8,10 +8,7 @@
       "documentType": "rule",
       "unitType": "RULE",
       "title": "Salida de cuarentena",
-      "headingPath": [
-        "Cuarentena",
-        "Salida de cuarentena"
-      ],
+      "headingPath": ["Cuarentena", "Salida de cuarentena"],
       "text": "La botánica de guardia autoriza la salida de cuarentena cuando dos inspecciones consecutivas no detectan plagas. La autorización se registra antes de mover la planta."
     },
     {
@@ -19,10 +16,7 @@
       "documentType": "procedure",
       "unitType": "PARAGRAPH",
       "title": "Conservación de muestras foliares",
-      "headingPath": [
-        "Laboratorio",
-        "Conservación de muestras foliares"
-      ],
+      "headingPath": ["Laboratorio", "Conservación de muestras foliares"],
       "text": "Las muestras foliares se guardan en la cámara Verde 4 hasta que termina el análisis. Cada bolsa lleva el código del lote de origen."
     },
     {
@@ -30,10 +24,7 @@
       "documentType": "rule",
       "unitType": "PARAGRAPH",
       "title": "Retención de registros de riego",
-      "headingPath": [
-        "Riego",
-        "Retención de registros de riego"
-      ],
+      "headingPath": ["Riego", "Retención de registros de riego"],
       "text": "Los registros automáticos de riego se conservan durante 180 días. Después se sustituyen por un resumen mensual firmado."
     },
     {
@@ -41,10 +32,7 @@
       "documentType": "procedure",
       "unitType": "PARAGRAPH",
       "title": "Destrucción de material infectado",
-      "headingPath": [
-        "Bioseguridad",
-        "Destrucción de material infectado"
-      ],
+      "headingPath": ["Bioseguridad", "Destrucción de material infectado"],
       "text": "El jefe fitosanitario aprueba la destrucción de material infectado antes de trasladarlo al contenedor sellado."
     },
     {
@@ -52,10 +40,7 @@
       "documentType": "claim",
       "unitType": "PARAGRAPH",
       "title": "Sensor de humedad",
-      "headingPath": [
-        "Riego",
-        "Sensor de humedad"
-      ],
+      "headingPath": ["Riego", "Sensor de humedad"],
       "text": "El controlador de riego toma la humedad de la sonda H12. La sonda H11 se mantiene únicamente como respaldo manual."
     }
   ],
@@ -66,12 +51,8 @@
       "intent": "ENTITY",
       "language": "es",
       "query": "¿Quién autoriza que una planta salga de cuarentena?",
-      "gold": [
-        "vf-salida-cuarentena"
-      ],
-      "challenges": [
-        "PARAPHRASE"
-      ]
+      "gold": ["vf-salida-cuarentena"],
+      "challenges": ["PARAPHRASE"]
     },
     {
       "id": "vf-q02",
@@ -79,13 +60,8 @@
       "intent": "ENTITY",
       "language": "en",
       "query": "Where are leaf samples kept until the analysis is finished?",
-      "gold": [
-        "vf-muestras"
-      ],
-      "challenges": [
-        "CROSS_LINGUAL",
-        "PARAPHRASE"
-      ]
+      "gold": ["vf-muestras"],
+      "challenges": ["CROSS_LINGUAL", "PARAPHRASE"]
     },
     {
       "id": "vf-q03",
@@ -93,12 +69,8 @@
       "intent": "QUANTITY",
       "language": "es",
       "query": "¿Cuál es el periodo de conservación de los registros automáticos de riego?",
-      "gold": [
-        "vf-riego-retencion"
-      ],
-      "challenges": [
-        "PARAPHRASE"
-      ]
+      "gold": ["vf-riego-retencion"],
+      "challenges": ["PARAPHRASE"]
     },
     {
       "id": "vf-q04",
@@ -106,9 +78,7 @@
       "intent": "ENTITY",
       "language": "es",
       "query": "¿Quién aprueba la destrucción de material infectado?",
-      "gold": [
-        "vf-destruccion"
-      ],
+      "gold": ["vf-destruccion"],
       "challenges": []
     },
     {
@@ -118,10 +88,7 @@
       "language": "es",
       "query": "¿Cuál es el teléfono del jefe fitosanitario?",
       "gold": [],
-      "challenges": [
-        "MISSING_SLOT",
-        "SAME_VOCABULARY"
-      ]
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
     },
     {
       "id": "vf-q06",
@@ -130,10 +97,7 @@
       "language": "es",
       "query": "¿Quién es el propietario de la sonda H12?",
       "gold": [],
-      "challenges": [
-        "MISSING_SLOT",
-        "SAME_VOCABULARY"
-      ]
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
     }
   ]
 }
