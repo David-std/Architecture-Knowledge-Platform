@@ -1,0 +1,82 @@
+{
+  "schemaVersion": "akp.evidence-admission-layered-replacement-dev.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-05",
+  "baselineSha": "5e131a84d58481a8a9908d1eeca2b7694d259b42",
+  "inputs": [
+    {
+      "path": "evals/generic/evidence-admission/manifest.json",
+      "gitBlobSha": "215d1e3fa7b708e0b47934e8305663c6e93b61d8"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/hospital-pharmacy.json",
+      "gitBlobSha": "d5a960123eb1ac7f376676bce764e19d4317af94"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/biblioteca-municipal.json",
+      "gitBlobSha": "aab2153d266ac03a9ec3a92301b04559c5385674"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/warehouse-logistics.json",
+      "gitBlobSha": "a00e7ff279b88aa40947f4c0e169ab79979ca57a"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/seguridad-alimentaria.json",
+      "gitBlobSha": "806fc6fda7997ae4309971394815acd8d6557e3c"
+    }
+  ],
+  "readerModel": {
+    "id": "onnx-community/Qwen2.5-0.5B-Instruct",
+    "revision": "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0",
+    "dtype": "q4",
+    "temperature": 0,
+    "maxOutputTokens": 256
+  },
+  "shortlistModel": {
+    "id": "onnx-community/bge-reranker-v2-m3-ONNX",
+    "revision": "6f5ff65298512715a1e669753bc754d2bc8f367b",
+    "dtype": "int8",
+    "maxTokens": 512
+  },
+  "protocol": {
+    "phase": "DEVELOPMENT_FEASIBILITY_ONLY",
+    "evaluatedSplit": "development",
+    "heldoutEvaluated": false,
+    "singleIndependentVariable": "Replace legacy PASSAGE_TEXT_SUPPORT and PASSAGE_CUE_SUPPORT evidence authority with the existing exact-source-span reader, shortlisted by the pinned multilingual BGE v2-m3 cross-encoder. Preserve all baseline admissions whose deterministic reason is outside those two legacy passage-semantic families. The reader may evaluate non-preserved candidates, but relevance alone never grants support.",
+    "baseline": "Current assessRetrievalAnswerability.",
+    "candidateComposition": "PRESERVED_NON_PASSAGE_AUTHORITY_OR_BGE_SHORTLISTED_SOURCE_BOUND_READER",
+    "removedAuthority": [
+      "PASSAGE_TEXT_SUPPORT",
+      "PASSAGE_CUE_SUPPORT"
+    ],
+    "readerMode": "ENFORCE",
+    "readerShortlistSize": 4,
+    "readerConcurrency": 2,
+    "productionDefaultsChanged": false,
+    "runtimeChanged": false,
+    "productionAdmissionChanged": false,
+    "noTuningAgainstPriorHeldouts": true
+  },
+  "developmentGate": {
+    "answerableRecallNonRegression": true,
+    "admittedPrecisionNonRegression": true,
+    "falseAcceptanceNonIncrease": true,
+    "wrongAdmissionQuestionsNonIncrease": true,
+    "strictAccuracyNonRegression": true,
+    "preservedNonPassageAdmissionsRemain": true,
+    "newSemanticSupportsMustBeSourceBound": true,
+    "legacyPassageAuthorityNotReused": true,
+    "requireMeasuredCoverage": true,
+    "outcomes": [
+      "PROCEED_TO_FRESH_HOLDOUT",
+      "REJECT_DEVELOPMENT_FRONTIER",
+      "INVALID_EXPERIMENT"
+    ]
+  },
+  "nextStepBoundary": [
+    "PROCEED_TO_FRESH_HOLDOUT does not change runtime or production defaults.",
+    "Only after a development pass may a new family-disjoint holdout be authored and frozen before execution.",
+    "Existing #68/#70/#71/#72/#88/#90/#100/#101/#103 heldouts are not reused for tuning or promotion.",
+    "A development reject closes this exact composition without threshold, prompt or shortlist retuning against the observed development failures."
+  ]
+}
