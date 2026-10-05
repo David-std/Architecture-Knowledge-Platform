@@ -187,10 +187,12 @@ function validateDomain(domain: PackDomain, expectedId: string) {
   }
   const qids = new Set<string>();
   for (const question of domain.questions) {
-    if (qids.has(question.id)) throw new Error("FRESH_DEV_DUPLICATE_QUESTION:" + question.id);
+    if (qids.has(question.id))
+      throw new Error("FRESH_DEV_DUPLICATE_QUESTION:" + question.id);
     qids.add(question.id);
     for (const label of [...question.gold, ...(question.acceptable ?? [])]) {
-      if (!ids.has(label)) throw new Error("FRESH_DEV_UNKNOWN_LABEL:" + question.id + ":" + label);
+      if (!ids.has(label))
+        throw new Error("FRESH_DEV_UNKNOWN_LABEL:" + question.id + ":" + label);
     }
   }
 }
@@ -239,7 +241,8 @@ function noIncrease(candidate: number | null, baseline: number | null) {
 const protocolRaw = await readFile(protocolPath, "utf8");
 const protocol = JSON.parse(protocolRaw) as ExperimentManifest;
 if (
-  protocol.schemaVersion !== "akp.dual-reader-passage-replacement-fresh-dev.v1" ||
+  protocol.schemaVersion !==
+    "akp.dual-reader-passage-replacement-fresh-dev.v1" ||
   protocol.frozen !== true ||
   protocol.protocol.phase !== "FRESH_DEVELOPMENT_FEASIBILITY_ONLY" ||
   protocol.dataset.split !== "development" ||
@@ -284,8 +287,12 @@ if (
   throw new Error("DUAL_READER_FRESH_DEV_DATASET_COUNT_DRIFT");
 }
 
-const primarySpec = protocol.readers.find((reader) => reader.role === "primary")!;
-const fallbackSpec = protocol.readers.find((reader) => reader.role === "fallback")!;
+const primarySpec = protocol.readers.find(
+  (reader) => reader.role === "primary",
+)!;
+const fallbackSpec = protocol.readers.find(
+  (reader) => reader.role === "fallback",
+)!;
 const primaryBaseUrl = process.env.AKP_DUAL_READER_PRIMARY_BASE_URL?.trim();
 const fallbackBaseUrl = process.env.AKP_DUAL_READER_FALLBACK_BASE_URL?.trim();
 if (!primaryBaseUrl || !fallbackBaseUrl) {
@@ -293,10 +300,12 @@ if (!primaryBaseUrl || !fallbackBaseUrl) {
 }
 if (
   process.env.AKP_DUAL_READER_PRIMARY_MODEL?.trim() !== primarySpec.model ||
-  process.env.AKP_DUAL_READER_PRIMARY_REVISION?.trim() !== primarySpec.revision ||
+  process.env.AKP_DUAL_READER_PRIMARY_REVISION?.trim() !==
+    primarySpec.revision ||
   process.env.AKP_DUAL_READER_PRIMARY_DTYPE?.trim() !== primarySpec.dtype ||
   process.env.AKP_DUAL_READER_FALLBACK_MODEL?.trim() !== fallbackSpec.model ||
-  process.env.AKP_DUAL_READER_FALLBACK_REVISION?.trim() !== fallbackSpec.revision ||
+  process.env.AKP_DUAL_READER_FALLBACK_REVISION?.trim() !==
+    fallbackSpec.revision ||
   process.env.AKP_DUAL_READER_FALLBACK_DTYPE?.trim() !== fallbackSpec.dtype
 ) {
   throw new Error("DUAL_READER_PROVIDER_IDENTITY_DRIFT");
@@ -348,10 +357,13 @@ let fallbackInputs = 0;
 function recordSupports(
   query: string,
   stage: "primary" | "fallback",
-  assessment: Awaited<ReturnType<typeof assessRetrievalAnswerabilityWithVerifier>>,
+  assessment: Awaited<
+    ReturnType<typeof assessRetrievalAnswerabilityWithVerifier>
+  >,
 ) {
   for (const signal of assessment.candidateSignals) {
-    if (!assessment.supportedCandidateKeys.includes(signal.candidateKey)) continue;
+    if (!assessment.supportedCandidateKeys.includes(signal.candidateKey))
+      continue;
     const trace = signal.queryConditionedEvidence;
     traces.push({
       query,
@@ -390,8 +402,10 @@ try {
 
       for (const key of baselineAssessment.supportedCandidateKeys) {
         const signal = signalByKey.get(key);
-        if (!signal) throw new Error("DUAL_READER_BASELINE_SIGNAL_MISSING:" + key);
-        if (retiredAuthority.has(signal.passageSupport.reason)) retiredKeys.add(key);
+        if (!signal)
+          throw new Error("DUAL_READER_BASELINE_SIGNAL_MISSING:" + key);
+        if (retiredAuthority.has(signal.passageSupport.reason))
+          retiredKeys.add(key);
         else preservedKeys.push(key);
       }
 
@@ -451,21 +465,23 @@ const changes = candidateResults.flatMap((row) => {
   const before = baselineById.get(row.id);
   if (!before) throw new Error("DUAL_READER_BASELINE_RESULT_MISSING:" + row.id);
   if (before.admitted.join("\n") === row.admitted.join("\n")) return [];
-  return [{
-    id: row.id,
-    domain: row.domain,
-    intent: row.intent,
-    language: row.language,
-    challenges: row.challenges,
-    query: row.query,
-    answerable: row.answerable,
-    baselineAdmitted: before.admitted,
-    candidateAdmitted: row.admitted,
-    baselineGoldAdmitted: before.goldAdmitted,
-    candidateGoldAdmitted: row.goldAdmitted,
-    baselineWrongAdmissions: before.wrongAdmissions,
-    candidateWrongAdmissions: row.wrongAdmissions,
-  }];
+  return [
+    {
+      id: row.id,
+      domain: row.domain,
+      intent: row.intent,
+      language: row.language,
+      challenges: row.challenges,
+      query: row.query,
+      answerable: row.answerable,
+      baselineAdmitted: before.admitted,
+      candidateAdmitted: row.admitted,
+      baselineGoldAdmitted: before.goldAdmitted,
+      candidateGoldAdmitted: row.goldAdmitted,
+      baselineWrongAdmissions: before.wrongAdmissions,
+      candidateWrongAdmissions: row.wrongAdmissions,
+    },
+  ];
 });
 
 const removedFalseAcceptances = changes.filter(
@@ -507,7 +523,8 @@ const gates = {
     baseline.falseAcceptanceRate,
   ),
   wrongAdmissionQuestionsNonIncrease:
-    candidate.questionsWithWrongAdmission <= baseline.questionsWithWrongAdmission,
+    candidate.questionsWithWrongAdmission <=
+    baseline.questionsWithWrongAdmission,
   strictAccuracyNonRegression: noRegression(
     candidate.strictAccuracy,
     baseline.strictAccuracy,
@@ -570,7 +587,8 @@ const report = {
     fallbackInputs,
     sourceBoundSemanticSupports: traces.length,
     primarySupports: traces.filter((trace) => trace.stage === "primary").length,
-    fallbackSupports: traces.filter((trace) => trace.stage === "fallback").length,
+    fallbackSupports: traces.filter((trace) => trace.stage === "fallback")
+      .length,
     removedFalseAcceptances: removedFalseAcceptances.length,
     removedWrongAdmissions: removedWrongAdmissions.length,
     baselineRegressions: baselineRegressions.length,
