@@ -111,8 +111,7 @@ function noIncrease(candidate: number | null, baseline: number | null) {
 const protocolRaw = await readFile(protocolPath, "utf8");
 const protocol = JSON.parse(protocolRaw) as ExperimentManifest;
 if (
-  protocol.schemaVersion !==
-    "akp.semantic-reader-abstention-fallback-dev.v1" ||
+  protocol.schemaVersion !== "akp.semantic-reader-abstention-fallback-dev.v1" ||
   protocol.frozen !== true ||
   protocol.protocol.phase !== "DEVELOPMENT_FEASIBILITY_ONLY" ||
   protocol.protocol.evaluatedSplit !== "development" ||
@@ -294,8 +293,7 @@ const newWrongAdmissions = changes.filter(
     row.candidateWrongAdmissions.length > row.baselineWrongAdmissions.length,
 );
 const baselineRegressions = changes.filter(
-  (row) =>
-    row.baselineGoldAdmitted && !row.candidateGoldAdmitted,
+  (row) => row.baselineGoldAdmitted && !row.candidateGoldAdmitted,
 );
 const semanticSupports = semanticAttempts.flatMap((row) => row.supports);
 const allSemanticSupportsSourceBound = semanticSupports.every(
@@ -319,16 +317,16 @@ const gates = {
     baseline.falseAcceptanceRate,
   ),
   wrongAdmissionQuestionsNonIncrease:
-    candidate.questionsWithWrongAdmission <= baseline.questionsWithWrongAdmission,
+    candidate.questionsWithWrongAdmission <=
+    baseline.questionsWithWrongAdmission,
   strictAccuracyNonRegression: noRegression(
     candidate.strictAccuracy,
     baseline.strictAccuracy,
   ),
   allSemanticSupportsSourceBound,
-  readerInvokedOnlyAfterBaselineAbstention:
-    semanticAttempts.every(
-      (attempt) => !preservedBaselineQueries.has(attempt.query),
-    ),
+  readerInvokedOnlyAfterBaselineAbstention: semanticAttempts.every(
+    (attempt) => !preservedBaselineQueries.has(attempt.query),
+  ),
   readerInvokedOnlyWithSafeSlotProjection: semanticAttempts.every(
     (attempt) => attempt.slot !== null,
   ),
