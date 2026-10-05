@@ -1,0 +1,108 @@
+name: extractive-qa-nli-cascade-holdout
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  extractive-qa-nli-cascade-holdout:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'experiment/extractive-qa-nli-cascade-fresh-holdout'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AKP_MODEL_CACHE_DIR: /tmp/akp-model-cache
+      AKP_EXTRACTIVE_QA_NLI_CASCADE_HOLDOUT_REPORT: reports/ci/extractive-qa-nli-cascade-holdout.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate frozen holdout source
+        run: |
+          pnpm exec prettier --check \
+            evals/generic/extractive-qa-nli-cascade-holdout/manifest.json \
+            evals/generic/extractive-qa-nli-cascade-holdout/domains/observatory-operations.json \
+            evals/generic/extractive-qa-nli-cascade-holdout/domains/archivo-conservacion.json \
+            evals/generic/extractive-qa-nli-cascade-holdout/domains/coastal-rescue.json \
+            evals/generic/extractive-qa-nli-cascade-holdout/domains/vivero-fitosanitario.json \
+            scripts/extractive-qa-nli-cascade-holdout-experiment.ts \
+            .github/workflows/extractive-qa-nli-cascade-holdout.yml
+          pnpm check
+      - name: Execute frozen fresh family-disjoint holdout
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci "$AKP_MODEL_CACHE_DIR"
+          pnpm exec tsx scripts/extractive-qa-nli-cascade-holdout-experiment.ts \
+            2>&1 | tee reports/ci/extractive-qa-nli-cascade-holdout.log
+      - name: Validate governed holdout outcome
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(
+            readFileSync(
+              "reports/ci/extractive-qa-nli-cascade-holdout.json",
+              "utf8",
+            ),
+          );
+          const allowed = new Set([
+            "PROMOTE_TO_SHADOW_INTEGRATION",
+            "REJECT_NO_HOLDOUT_ADVANTAGE",
+            "REJECT_HOLDOUT_REGRESSION",
+          ]);
+          if (!allowed.has(report.outcome)) {
+            throw new Error("Invalid holdout outcome: " + String(report.outcome));
+          }
+          if (
+            report.priorHeldoutsLoaded !== false ||
+            report.developmentLoadedForScoring !== false ||
+            report.familyDisjoint !== true ||
+            report.invariants?.familyDisjointFromDevelopment !== true ||
+            report.invariants?.allQaSpansSourceBound !== true ||
+            report.invariants?.qaInvokedOnlyAfterBaselineAbstention !== true ||
+            report.invariants?.qaInvokedOnlyWithSafeSlot !== true ||
+            report.invariants?.fixedDevelopmentBoundaryUsed !== true ||
+            report.invariants?.manualRelationHypothesesUsed !== false ||
+            report.invariants?.qaUsedAsAuthority !== false ||
+            report.invariants?.generativeReaderUsed !== false ||
+            report.invariants?.runtimeChanged !== false ||
+            report.invariants?.productionAdmissionChanged !== false
+          ) {
+            throw new Error("Fresh holdout claim boundary or invariants failed.");
+          }
+          console.log(
+            JSON.stringify(
+              {
+                outcome: report.outcome,
+                fixedBoundary: report.fixedBoundary,
+                baseline: report.baseline,
+                candidate: report.candidate,
+                gates: report.gates,
+                counts: report.counts,
+                familyOverlap: report.familyOverlap,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Upload fresh holdout evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: extractive-qa-nli-cascade-holdout-${{ github.run_id }}
+          path: |
+            reports/ci/extractive-qa-nli-cascade-holdout.json
+            reports/ci/extractive-qa-nli-cascade-holdout.log
+          if-no-files-found: warn
+          retention-days: 14
