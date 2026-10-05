@@ -1,0 +1,149 @@
+{
+  "schemaVersion": "akp.extractive-qa-nli-cascade-fresh-holdout.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-05",
+  "baselineSha": "5b3c64733e521064f99e5dd3669298324f2e00d9",
+  "developmentEvidence": {
+    "pr": 102,
+    "headSha": "8194a21d4a8bd7514854fab0c35981d67c48b99e",
+    "runId": 37268401243,
+    "artifactId": 11327800203,
+    "artifactSha256": "43d9393a97580e7e8f391eb9c3152b73aaddabb951c3e8dbb3c2a9307e282024",
+    "outcome": "PROCEED_TO_FRESH_HOLDOUT",
+    "fixedBoundary": {
+      "entailmentThreshold": 0.962513483,
+      "minimumMargin": 0.927496071
+    }
+  },
+  "inputs": [
+    {
+      "path": "evals/generic/extractive-qa-nli-cascade-holdout/domains/observatory-operations.json",
+      "gitBlobSha": "364383b3206545d6b3c861d394574b0fb81f14cd"
+    },
+    {
+      "path": "evals/generic/extractive-qa-nli-cascade-holdout/domains/archivo-conservacion.json",
+      "gitBlobSha": "cc24fb1cf277f7c38ea5f2d94b047d7f4611f3fc"
+    },
+    {
+      "path": "evals/generic/extractive-qa-nli-cascade-holdout/domains/coastal-rescue.json",
+      "gitBlobSha": "a2c4ade759236ce998ad0de3d4d9afce2d0ba922"
+    },
+    {
+      "path": "evals/generic/extractive-qa-nli-cascade-holdout/domains/vivero-fitosanitario.json",
+      "gitBlobSha": "6ccdf3d92ab903b74b5fed0b4fa9daa187abd1f3"
+    }
+  ],
+  "developmentFamilySources": [
+    {
+      "path": "evals/generic/evidence-admission/domains/hospital-pharmacy.json",
+      "gitBlobSha": "d5a960123eb1ac7f376676bce764e19d4317af94"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/biblioteca-municipal.json",
+      "gitBlobSha": "aab2153d266ac03a9ec3a92301b04559c5385674"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/warehouse-logistics.json",
+      "gitBlobSha": "a00e7ff279b88aa40947f4c0e169ab79979ca57a"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/seguridad-alimentaria.json",
+      "gitBlobSha": "806fc6fda7997ae4309971394815acd8d6557e3c"
+    }
+  ],
+  "qa": {
+    "model": "onnx-community/xlm-roberta-base-squad2-distilled-ONNX",
+    "revision": "484112fae76dde6ad01b640192d559cbc2d488e1",
+    "proposalFloor": 1e-9,
+    "maxAnswerTokens": 15,
+    "authority": false
+  },
+  "nli": {
+    "model": "MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli",
+    "revision": "0a71e92a985b6e1ad1828cf67ce9c459639c1dca",
+    "modelFileName": "model",
+    "dtype": "fp32",
+    "labelOrder": [
+      "entailment",
+      "neutral",
+      "contradiction"
+    ],
+    "authority": "fixed-development-boundary-only"
+  },
+  "protocol": {
+    "phase": "FRESH_FAMILY_DISJOINT_HOLDOUT",
+    "developmentLoadedForScoring": false,
+    "priorHeldoutsLoaded": false,
+    "noHoldoutCalibration": true,
+    "candidateComposition": "BASELINE_OR_EXTRACTIVE_QA_THEN_GENERIC_QA_NLI",
+    "slotUsedAsInvocationGateOnly": true,
+    "qaUsedAsSpanProposalOnly": true,
+    "qaDecisionUsedAsAuthority": false,
+    "nliUsesManualRelationHypotheses": false,
+    "nliHypothesisTemplates": {
+      "EN": "The answer to the question \"<QUESTION>\" is \"<ANSWER>\".",
+      "ES": "La respuesta a la pregunta \"<QUESTION>\" es \"<ANSWER>\"."
+    },
+    "sourcePremise": "Shortest source sentence containing the exact QA-proposed span.",
+    "baselineSupportsPreserved": true,
+    "providerDefaultsChanged": false,
+    "runtimeChanged": false,
+    "productionAdmissionChanged": false,
+    "noTuningAfterFirstObservation": true
+  },
+  "holdoutDesign": {
+    "domainIds": [
+      "observatory-operations",
+      "archivo-conservacion",
+      "coastal-rescue",
+      "vivero-fitosanitario"
+    ],
+    "expectedQuestions": 24,
+    "expectedAnswerable": 16,
+    "expectedUnanswerable": 8,
+    "holdoutFamilies": [
+      "ARTIFACT_DESTINATION",
+      "MISSING_CONTACT",
+      "MISSING_OWNER",
+      "POST_EVENT_AUTHORITY",
+      "RECORDING_ACTOR",
+      "RETENTION_VALUE",
+      "SOURCE_IDENTIFIER"
+    ],
+    "requireExactFamilyDisjointFromDevelopment": true,
+    "languages": [
+      "en",
+      "es"
+    ],
+    "crossLingualCasesPresent": true
+  },
+  "holdoutGate": {
+    "answerableRecallNonRegression": true,
+    "admittedPrecisionNonRegression": true,
+    "falseAcceptanceNonIncrease": true,
+    "wrongAdmissionQuestionsNonIncrease": true,
+    "strictAccuracyNonRegression": true,
+    "baselineSupportedCasesPreserved": true,
+    "newSupportsRequireExactQaSourceSpan": true,
+    "newSupportsRequireNliEntailmentTopClass": true,
+    "newFalseAcceptancesZero": true,
+    "newWrongAdmissionsZero": true,
+    "requireAtLeastOneCorrectGoldRescueForPromotion": true,
+    "fixedBoundaryRequired": true,
+    "outcomes": [
+      "PROMOTE_TO_SHADOW_INTEGRATION",
+      "REJECT_NO_HOLDOUT_ADVANTAGE",
+      "REJECT_HOLDOUT_REGRESSION",
+      "INVALID_EXPERIMENT"
+    ]
+  },
+  "claimBoundary": [
+    "This worker evaluates only the new fresh holdout and does not recalibrate the development boundary.",
+    "No prior inspected heldout partition is loaded for scoring or threshold selection.",
+    "RequestedAnswerSlot gates invocation only and never grants support.",
+    "QA proposes an exact visible source span only; QA score/decision is not admission authority.",
+    "NLI uses the fixed development boundary and one generic Q+A hypothesis.",
+    "A PROMOTE result authorizes only a later shadow integration proposal; it changes no runtime/default.",
+    "Any measured REJECT is terminal for this frozen holdout version and must not be tuned in place."
+  ]
+}
