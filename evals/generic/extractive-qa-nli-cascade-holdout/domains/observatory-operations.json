@@ -1,0 +1,139 @@
+{
+  "id": "observatory-operations",
+  "split": "heldout",
+  "language": "en",
+  "units": [
+    {
+      "id": "obs-dome-reopen",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Dome reopening",
+      "headingPath": [
+        "Night operations",
+        "Dome reopening"
+      ],
+      "text": "After a high-wind alarm, the dome remains closed until the night supervisor authorizes reopening. The authorization is recorded in the observing log before motors are enabled."
+    },
+    {
+      "id": "obs-detector-archive",
+      "documentType": "procedure",
+      "unitType": "PARAGRAPH",
+      "title": "Detector frame preservation",
+      "headingPath": [
+        "Data handling",
+        "Detector frame preservation"
+      ],
+      "text": "Immediately after acquisition, raw detector frames are copied to the Glacier vault. A checksum is verified before the local acquisition copy may be removed."
+    },
+    {
+      "id": "obs-lamp-retention",
+      "documentType": "rule",
+      "unitType": "PARAGRAPH",
+      "title": "Calibration lamp records",
+      "headingPath": [
+        "Calibration",
+        "Calibration lamp records"
+      ],
+      "text": "Calibration lamp logs are retained for 45 days. Older lamp logs are deleted automatically after the nightly integrity check."
+    },
+    {
+      "id": "obs-weather-source",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Weather telemetry source",
+      "headingPath": [
+        "Site telemetry",
+        "Weather telemetry source"
+      ],
+      "text": "The live weather telemetry used by the scheduler comes from mast W3. A separate roof sensor is used only for maintenance diagnostics."
+    },
+    {
+      "id": "obs-focus-review",
+      "documentType": "procedure",
+      "unitType": "PARAGRAPH",
+      "title": "Focus review",
+      "headingPath": [
+        "Night operations",
+        "Focus review"
+      ],
+      "text": "The instrument scientist reviews focus drift at the start of each observing block and records anomalies in the instrument journal."
+    }
+  ],
+  "questions": [
+    {
+      "id": "obs-q01",
+      "family": "POST_EVENT_AUTHORITY",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who authorizes reopening the dome after a high-wind alarm?",
+      "gold": [
+        "obs-dome-reopen"
+      ],
+      "challenges": [
+        "PARAPHRASE"
+      ]
+    },
+    {
+      "id": "obs-q02",
+      "family": "ARTIFACT_DESTINATION",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Where are raw detector frames copied right after acquisition?",
+      "gold": [
+        "obs-detector-archive"
+      ],
+      "challenges": []
+    },
+    {
+      "id": "obs-q03",
+      "family": "RETENTION_VALUE",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What is the retention period for calibration lamp logs?",
+      "gold": [
+        "obs-lamp-retention"
+      ],
+      "challenges": [
+        "PARAPHRASE"
+      ]
+    },
+    {
+      "id": "obs-q04",
+      "family": "SOURCE_IDENTIFIER",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué mástil proporciona la telemetría meteorológica que usa el planificador?",
+      "gold": [
+        "obs-weather-source"
+      ],
+      "challenges": [
+        "CROSS_LINGUAL",
+        "PARAPHRASE"
+      ]
+    },
+    {
+      "id": "obs-q05",
+      "family": "MISSING_CONTACT",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "What is the night supervisor's phone number?",
+      "gold": [],
+      "challenges": [
+        "MISSING_SLOT",
+        "SAME_VOCABULARY"
+      ]
+    },
+    {
+      "id": "obs-q06",
+      "family": "MISSING_OWNER",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who owns the Glacier vault?",
+      "gold": [],
+      "challenges": [
+        "MISSING_SLOT",
+        "SAME_VOCABULARY"
+      ]
+    }
+  ]
+}
