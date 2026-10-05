@@ -580,12 +580,9 @@ for (const entailmentThreshold of entailmentThresholds) {
 const allSemanticSupportsSourceBound = measurements
   .flatMap((row) => row.semanticCandidates)
   .every((candidate) => candidate.sourceBound);
-const qaInvokedOnlyAfterBaselineAbstention = measurements.every(
-  (row) =>
-    row.baseline.supported ||
-    row.slot === null ||
-    row.semanticCandidates.length >= 0,
-);
+const qaInvokedOnlyAfterBaselineAbstention = measurements
+  .filter((row) => row.semanticCandidates.length > 0)
+  .every((row) => !row.baseline.supported);
 const qaInvokedOnlyWithSafeSlot = measurements
   .filter((row) => row.semanticCandidates.length > 0)
   .every((row) => row.slot !== null);
