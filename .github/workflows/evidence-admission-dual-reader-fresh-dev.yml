@@ -1,0 +1,161 @@
+name: evidence-admission-dual-reader-fresh-dev
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evidence-admission-dual-reader-fresh-dev:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'experiment/dual-reader-passage-replacement-fresh-dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AKP_DUAL_READER_PRIMARY_BASE_URL: http://127.0.0.1:18083/chat/completions
+      AKP_DUAL_READER_PRIMARY_MODEL: onnx-community/Qwen2.5-1.5B-Instruct
+      AKP_DUAL_READER_PRIMARY_REVISION: 9f9c976052bfb08a20793f0c3013563dc095c966
+      AKP_DUAL_READER_PRIMARY_DTYPE: q4
+      AKP_DUAL_READER_FALLBACK_BASE_URL: http://127.0.0.1:18082/chat/completions
+      AKP_DUAL_READER_FALLBACK_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
+      AKP_DUAL_READER_FALLBACK_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
+      AKP_DUAL_READER_FALLBACK_DTYPE: q4
+      AKP_DUAL_READER_FRESH_DEV_REPORT: reports/ci/dual-reader-passage-replacement-fresh-dev.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate frozen fresh-development worker
+        run: |
+          pnpm exec prettier --check \
+            evals/generic/dual-reader-passage-replacement-fresh-dev/manifest.json \
+            evals/generic/dual-reader-passage-replacement-fresh-dev/domains/*.json \
+            scripts/evidence-admission-dual-reader-fresh-dev-experiment.ts \
+            .github/workflows/evidence-admission-dual-reader-fresh-dev.yml
+          pnpm check
+      - name: Build provider workspace dependency
+        run: pnpm --filter @akp/contracts build
+      - name: Prepare experiment evidence
+        run: mkdir -p reports/ci
+      - name: Start pinned dual local reader providers
+        shell: bash
+        run: |
+          AKP_LOCAL_AGENT_MODEL=onnx-community/Qwen2.5-1.5B-Instruct \
+          AKP_LOCAL_AGENT_MODEL_REVISION=9f9c976052bfb08a20793f0c3013563dc095c966 \
+          AKP_LOCAL_AGENT_DTYPE=q4 \
+          AKP_LOCAL_AGENT_PORT=18083 \
+          pnpm --filter @akp/retrieval exec tsx scripts/local-agent-provider.ts \
+            > reports/ci/dual-reader-primary-provider.log 2>&1 &
+          echo $! > /tmp/dual-reader-primary.pid
+
+          AKP_LOCAL_AGENT_MODEL=onnx-community/Qwen2.5-0.5B-Instruct \
+          AKP_LOCAL_AGENT_MODEL_REVISION=cc5cc01a65cc3ff17bdb73a7de33d879f62599b0 \
+          AKP_LOCAL_AGENT_DTYPE=q4 \
+          AKP_LOCAL_AGENT_PORT=18082 \
+          pnpm --filter @akp/retrieval exec tsx scripts/local-agent-provider.ts \
+            > reports/ci/dual-reader-fallback-provider.log 2>&1 &
+          echo $! > /tmp/dual-reader-fallback.pid
+
+          for attempt in $(seq 1 120); do
+            primary=0
+            fallback=0
+            curl --fail --silent http://127.0.0.1:18083/health \
+              > reports/ci/dual-reader-primary-health.json && primary=1 || true
+            curl --fail --silent http://127.0.0.1:18082/health \
+              > reports/ci/dual-reader-fallback-health.json && fallback=1 || true
+            if [ "$primary" -eq 1 ] && [ "$fallback" -eq 1 ]; then
+              cat reports/ci/dual-reader-primary-health.json
+              cat reports/ci/dual-reader-fallback-health.json
+              exit 0
+            fi
+            sleep 5
+          done
+          cat reports/ci/dual-reader-primary-provider.log >&2 || true
+          cat reports/ci/dual-reader-fallback-provider.log >&2 || true
+          exit 1
+      - name: Execute frozen dual-reader fresh-development gate
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm exec tsx scripts/evidence-admission-dual-reader-fresh-dev-experiment.ts \
+            2>&1 | tee reports/ci/dual-reader-passage-replacement-fresh-dev.log
+      - name: Validate governed fresh-development outcome
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(
+            readFileSync(
+              "reports/ci/dual-reader-passage-replacement-fresh-dev.json",
+              "utf8",
+            ),
+          );
+          if (
+            ![
+              "PROCEED_TO_FRESH_HOLDOUT",
+              "REJECT_FRESH_DEVELOPMENT_FRONTIER",
+            ].includes(report.outcome)
+          ) {
+            throw new Error("Dual-reader fresh-development outcome is invalid.");
+          }
+          if (
+            report.heldoutEvaluated !== false ||
+            report.candidateCanCreateSupport !== false ||
+            report.runtimeChanged !== false ||
+            report.productionAdmissionChanged !== false
+          ) {
+            throw new Error("Dual-reader worker crossed its claim boundary.");
+          }
+          if (
+            report.gates?.candidateAdmissionsSubsetOfBaseline !== true ||
+            report.gates?.allSemanticSupportsSourceBound !== true
+          ) {
+            throw new Error("Dual-reader source-bound invariants failed.");
+          }
+          console.log(
+            JSON.stringify(
+              {
+                outcome: report.outcome,
+                baseline: report.baseline,
+                candidate: report.candidate,
+                gates: report.gates,
+                counts: report.counts,
+                protocolHash: report.protocolHash,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Upload dual-reader fresh-development evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidence-admission-dual-reader-fresh-dev-${{ github.run_id }}
+          path: |
+            reports/ci/dual-reader-passage-replacement-fresh-dev.json
+            reports/ci/dual-reader-passage-replacement-fresh-dev.log
+            reports/ci/dual-reader-primary-health.json
+            reports/ci/dual-reader-fallback-health.json
+            reports/ci/dual-reader-primary-provider.log
+            reports/ci/dual-reader-fallback-provider.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Stop dual local reader providers
+        if: always()
+        shell: bash
+        run: |
+          for pidfile in /tmp/dual-reader-primary.pid /tmp/dual-reader-fallback.pid; do
+            if [ -f "$pidfile" ]; then
+              kill "$(cat "$pidfile")" 2>/dev/null || true
+            fi
+          done
