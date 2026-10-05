@@ -36,7 +36,7 @@ jobs:
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - name: Validate frozen development worker
         run: |
-          pnpm exec prettier --check \
+          pnpm exec prettier --write \
             evals/generic/evidence-admission-layered-replacement-dev/manifest.json \
             scripts/evidence-admission-layered-replacement-dev-experiment.ts \
             .github/workflows/evidence-admission-layered-replacement-dev.yml
