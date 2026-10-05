@@ -1,0 +1,134 @@
+name: evidence-admission-layered-replacement-dev
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evidence-admission-layered-replacement-dev:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'experiment/layered-reader-bge-replacement-dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AKP_LOCAL_AGENT_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
+      AKP_LOCAL_AGENT_MODEL_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
+      AKP_LOCAL_AGENT_DTYPE: q4
+      AKP_LOCAL_AGENT_PORT: "18082"
+      AKP_LAYERED_REPLACEMENT_READER_BASE_URL: http://127.0.0.1:18082/chat/completions
+      AKP_LAYERED_REPLACEMENT_READER_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
+      AKP_LAYERED_REPLACEMENT_READER_MODEL_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
+      AKP_LAYERED_REPLACEMENT_READER_DTYPE: q4
+      AKP_LAYERED_REPLACEMENT_DEV_REPORT: reports/ci/evidence-admission-layered-replacement-dev.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate frozen development worker
+        run: |
+          pnpm exec prettier --check \
+            evals/generic/evidence-admission-layered-replacement-dev/manifest.json \
+            scripts/evidence-admission-layered-replacement-dev-experiment.ts \
+            .github/workflows/evidence-admission-layered-replacement-dev.yml
+          pnpm check
+      - name: Build provider workspace dependency
+        run: pnpm --filter @akp/contracts build
+      - name: Prepare experiment evidence
+        run: mkdir -p reports/ci
+      - name: Start pinned local reader provider
+        shell: bash
+        run: |
+          pnpm --filter @akp/retrieval exec tsx scripts/local-agent-provider.ts \
+            > reports/ci/evidence-admission-layered-replacement-provider.log 2>&1 &
+          echo $! > /tmp/evidence-admission-layered-replacement-provider.pid
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:18082/health \
+              > reports/ci/evidence-admission-layered-replacement-provider-health.json; then
+              cat reports/ci/evidence-admission-layered-replacement-provider-health.json
+              exit 0
+            fi
+            sleep 5
+          done
+          cat reports/ci/evidence-admission-layered-replacement-provider.log >&2
+          exit 1
+      - name: Execute frozen layered replacement development gate
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm exec tsx scripts/evidence-admission-layered-replacement-dev-experiment.ts \
+            2>&1 | tee reports/ci/evidence-admission-layered-replacement-dev.log
+      - name: Validate governed development outcome
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(
+            readFileSync(
+              "reports/ci/evidence-admission-layered-replacement-dev.json",
+              "utf8",
+            ),
+          );
+          const health = JSON.parse(
+            readFileSync(
+              "reports/ci/evidence-admission-layered-replacement-provider-health.json",
+              "utf8",
+            ),
+          );
+          if (
+            !["PROCEED_TO_FRESH_HOLDOUT", "REJECT_DEVELOPMENT_FRONTIER"].includes(
+              report.outcome,
+            )
+          ) throw new Error("Layered replacement development outcome is invalid.");
+          if (
+            report.heldoutEvaluated !== false ||
+            report.runtimeChanged !== false ||
+            report.productionAdmissionChanged !== false
+          ) throw new Error("Layered replacement crossed its claim boundary.");
+          if (
+            report.gates?.allSemanticSupportsSourceBound !== true ||
+            report.gates?.legacyPassageAuthorityNotReused !== true
+          ) throw new Error("Layered replacement evidence invariants failed.");
+          if (
+            health.model !== "onnx-community/Qwen2.5-0.5B-Instruct" ||
+            health.revision !==
+              "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0" ||
+            health.dtype !== "q4"
+          ) throw new Error("Pinned local reader provider identity drifted.");
+          console.log(JSON.stringify({
+            outcome: report.outcome,
+            baseline: report.baseline,
+            candidate: report.candidate,
+            counts: report.counts,
+            gates: report.gates,
+            protocolHash: report.protocolHash,
+          }, null, 2));
+          NODE
+      - name: Upload layered replacement evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidence-admission-layered-replacement-dev-${{ github.run_id }}
+          path: |
+            reports/ci/evidence-admission-layered-replacement-dev.json
+            reports/ci/evidence-admission-layered-replacement-dev.log
+            reports/ci/evidence-admission-layered-replacement-provider-health.json
+            reports/ci/evidence-admission-layered-replacement-provider.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Stop local reader provider
+        if: always()
+        shell: bash
+        run: |
+          if [ -f /tmp/evidence-admission-layered-replacement-provider.pid ]; then
+            kill "$(cat /tmp/evidence-admission-layered-replacement-provider.pid)" 2>/dev/null || true
+          fi
