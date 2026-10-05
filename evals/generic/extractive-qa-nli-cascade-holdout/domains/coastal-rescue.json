@@ -1,0 +1,136 @@
+{
+  "id": "coastal-rescue",
+  "split": "heldout",
+  "language": "en",
+  "units": [
+    {
+      "id": "cr-craft-release",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Rescue craft release",
+      "headingPath": [
+        "Launch control",
+        "Rescue craft release"
+      ],
+      "text": "The harbor master releases the rescue craft after the pre-launch safety check is complete. No other watch officer may authorize departure."
+    },
+    {
+      "id": "cr-beacon-log",
+      "documentType": "procedure",
+      "unitType": "PARAGRAPH",
+      "title": "Distress beacon logging",
+      "headingPath": [
+        "Radio watch",
+        "Distress beacon logging"
+      ],
+      "text": "The coast radio operator records distress beacon alerts in the Mariner log. Each entry includes the received time and beacon identifier."
+    },
+    {
+      "id": "cr-audio-archive",
+      "documentType": "rule",
+      "unitType": "PARAGRAPH",
+      "title": "Mission audio archive",
+      "headingPath": [
+        "Mission records",
+        "Mission audio archive"
+      ],
+      "text": "Mission audio is archived in the Echo locker for 90 days. After that period the recordings are purged unless an investigation hold exists."
+    },
+    {
+      "id": "cr-fuel-transfer",
+      "documentType": "procedure",
+      "unitType": "PARAGRAPH",
+      "title": "Emergency fuel transfer",
+      "headingPath": [
+        "Engineering",
+        "Emergency fuel transfer"
+      ],
+      "text": "The duty engineer approves an emergency fuel transfer before hoses are connected. The deck lead then records the transferred volume."
+    },
+    {
+      "id": "cr-weather",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Launch weather feed",
+      "headingPath": [
+        "Launch control",
+        "Launch weather feed"
+      ],
+      "text": "Launch control reads wind and visibility from buoy C7, while tide predictions come from the harbor gauge."
+    }
+  ],
+  "questions": [
+    {
+      "id": "cr-q01",
+      "family": "POST_EVENT_AUTHORITY",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who is allowed to release the rescue craft after the safety check?",
+      "gold": [
+        "cr-craft-release"
+      ],
+      "challenges": [
+        "PARAPHRASE"
+      ]
+    },
+    {
+      "id": "cr-q02",
+      "family": "RECORDING_ACTOR",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién registra las alertas de balizas de socorro en el registro Mariner?",
+      "gold": [
+        "cr-beacon-log"
+      ],
+      "challenges": [
+        "CROSS_LINGUAL"
+      ]
+    },
+    {
+      "id": "cr-q03",
+      "family": "ARTIFACT_DESTINATION",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Where is mission audio archived?",
+      "gold": [
+        "cr-audio-archive"
+      ],
+      "challenges": []
+    },
+    {
+      "id": "cr-q04",
+      "family": "POST_EVENT_AUTHORITY",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who approves an emergency fuel transfer before the hoses are connected?",
+      "gold": [
+        "cr-fuel-transfer"
+      ],
+      "challenges": []
+    },
+    {
+      "id": "cr-q05",
+      "family": "MISSING_CONTACT",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "What is the harbor master's radio call sign?",
+      "gold": [],
+      "challenges": [
+        "MISSING_SLOT",
+        "SAME_VOCABULARY"
+      ]
+    },
+    {
+      "id": "cr-q06",
+      "family": "MISSING_OWNER",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who owns buoy C7?",
+      "gold": [],
+      "challenges": [
+        "MISSING_SLOT",
+        "SAME_VOCABULARY"
+      ]
+    }
+  ]
+}
