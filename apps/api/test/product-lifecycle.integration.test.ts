@@ -1894,7 +1894,9 @@ describe("product lifecycle E2E", () => {
         expect(answerable.id).toBe(
           citationTransitProtocol.upstream.answerableCaseId,
         );
-        expect(noAnswer.id).toBe(citationTransitProtocol.upstream.noAnswerCaseId);
+        expect(noAnswer.id).toBe(
+          citationTransitProtocol.upstream.noAnswerCaseId,
+        );
         const goldSections = contextBody.sections.filter(
           (section) =>
             section.vaultId === vaultId &&
@@ -1932,7 +1934,8 @@ describe("product lifecycle E2E", () => {
           Object.entries(citationTransitProtocol.gates).map(
             ([name, expected]) => [
               name,
-              citationMetrics[name as keyof typeof citationMetrics] === expected,
+              citationMetrics[name as keyof typeof citationMetrics] ===
+                expected,
             ],
           ),
         );
@@ -1965,7 +1968,9 @@ describe("product lifecycle E2E", () => {
           metrics: citationMetrics,
           gates: citationGates,
         };
-        await mkdir(path.dirname(citationTransitReportPath), { recursive: true });
+        await mkdir(path.dirname(citationTransitReportPath), {
+          recursive: true,
+        });
         await writeFile(
           citationTransitReportPath,
           JSON.stringify(citationReport, null, 2) + "\n",
