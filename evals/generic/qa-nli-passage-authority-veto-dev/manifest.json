@@ -37,11 +37,7 @@
     "revision": "0a71e92a985b6e1ad1828cf67ce9c459639c1dca",
     "modelFileName": "model",
     "dtype": "fp32",
-    "labelOrder": [
-      "entailment",
-      "neutral",
-      "contradiction"
-    ],
+    "labelOrder": ["entailment", "neutral", "contradiction"],
     "authority": "development-calibrated-veto-only"
   },
   "protocol": {
@@ -51,10 +47,7 @@
     "singleIndependentVariable": "For baseline-supported candidates whose deterministic passage-support reason is PASSAGE_TEXT_SUPPORT or PASSAGE_CUE_SUPPORT, require an exact QA-proposed visible span and multilingual NLI entailment of a generic question-plus-answer hypothesis. Non-PASSAGE deterministic support is preserved. The candidate is a strict subset of baseline support and can never create support.",
     "baseline": "Current assessRetrievalAnswerability.",
     "candidateComposition": "PRESERVED_NON_PASSAGE_AUTHORITY_OR_QA_NLI_REVALIDATED_PASSAGE_SUPPORT",
-    "retiredAuthority": [
-      "PASSAGE_TEXT_SUPPORT",
-      "PASSAGE_CUE_SUPPORT"
-    ],
+    "retiredAuthority": ["PASSAGE_TEXT_SUPPORT", "PASSAGE_CUE_SUPPORT"],
     "qaUsedAsSpanProposalOnly": true,
     "qaDecisionUsedAsAuthority": false,
     "nliUsesManualRelationHypotheses": false,
