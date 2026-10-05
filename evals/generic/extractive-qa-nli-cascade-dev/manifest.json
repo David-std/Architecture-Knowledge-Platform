@@ -37,11 +37,7 @@
     "revision": "0a71e92a985b6e1ad1828cf67ce9c459639c1dca",
     "modelFileName": "model",
     "dtype": "fp32",
-    "labelOrder": [
-      "entailment",
-      "neutral",
-      "contradiction"
-    ],
+    "labelOrder": ["entailment", "neutral", "contradiction"],
     "authority": "development-calibrated-cascade-only"
   },
   "protocol": {
