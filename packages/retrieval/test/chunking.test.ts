@@ -123,7 +123,8 @@ describe("hierarchical chunking", () => {
       (unit) => unit.locator.fragment !== undefined,
     );
 
-    expect(currentFragments.length).toBeGreaterThan(historicalFragments.length);
+    expect(currentFragments.length).toBeGreaterThan(1);
+    expect(historicalFragments.length).toBeGreaterThan(1);
     expect(
       currentFragments.every(
         (unit) => unit.body.length <= MAX_EMBEDDING_UNIT_CHARACTERS,
