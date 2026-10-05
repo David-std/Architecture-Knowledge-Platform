@@ -1,0 +1,101 @@
+{
+  "schemaVersion": "akp.dual-reader-passage-replacement-fresh-dev.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-05",
+  "baselineSha": "10ade0d2c27aed31c7d5f9c2528a654d9c116d9b",
+  "inputs": [
+    {
+      "path": "evals/generic/dual-reader-passage-replacement-fresh-dev/domains/airport-ground-ops.json",
+      "gitBlobSha": "c780fe98a37ee4da5a58c3c0d82c30133c548939"
+    },
+    {
+      "path": "evals/generic/dual-reader-passage-replacement-fresh-dev/domains/water-utility.json",
+      "gitBlobSha": "1c20d740323c626461dad2884c7b17f0248a2ecd"
+    },
+    {
+      "path": "evals/generic/dual-reader-passage-replacement-fresh-dev/domains/museum-conservation.json",
+      "gitBlobSha": "95ac8db4ded31d196a7e022021e0a9f62faaf72a"
+    },
+    {
+      "path": "evals/generic/dual-reader-passage-replacement-fresh-dev/domains/fabrica-mantenimiento.json",
+      "gitBlobSha": "dc076747c01fc423cfdcfa6b6fe92b7f211c9de4"
+    }
+  ],
+  "dataset": {
+    "split": "development",
+    "domains": [
+      "airport-ground-ops",
+      "water-utility",
+      "museum-conservation",
+      "fabrica-mantenimiento"
+    ],
+    "questions": 24,
+    "languages": [
+      "en",
+      "es"
+    ],
+    "authoredBeforeExecution": true,
+    "reusedPriorHeldout": false
+  },
+  "readers": [
+    {
+      "role": "primary",
+      "model": "onnx-community/Qwen2.5-1.5B-Instruct",
+      "revision": "9f9c976052bfb08a20793f0c3013563dc095c966",
+      "dtype": "q4",
+      "promptVersion": "evidence-reader-v4",
+      "temperature": 0,
+      "maxOutputTokens": 256
+    },
+    {
+      "role": "fallback",
+      "model": "onnx-community/Qwen2.5-0.5B-Instruct",
+      "revision": "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0",
+      "dtype": "q4",
+      "promptVersion": "evidence-reader-v4",
+      "temperature": 0,
+      "maxOutputTokens": 256
+    }
+  ],
+  "protocol": {
+    "phase": "FRESH_DEVELOPMENT_FEASIBILITY_ONLY",
+    "singleIndependentVariable": "Replace legacy PASSAGE_TEXT_SUPPORT and PASSAGE_CUE_SUPPORT authority with source-bound semantic support from a fixed two-reader coverage union: Qwen2.5-1.5B first, Qwen2.5-0.5B fallback on still-unresolved retired baseline candidates. Preserve non-PASSAGE authority. Neither reader may create support outside baseline-retired candidates.",
+    "baseline": "Current assessRetrievalAnswerability on the frozen fresh-development pack.",
+    "candidateComposition": "PRESERVED_NON_PASSAGE_AUTHORITY_OR_SOURCE_BOUND_1P5B_OR_0P5B_SUPPORT",
+    "retiredAuthority": [
+      "PASSAGE_TEXT_SUPPORT",
+      "PASSAGE_CUE_SUPPORT"
+    ],
+    "primaryFirst": true,
+    "fallbackOnlyForPrimaryUnsupported": true,
+    "readerCanCreateSupport": false,
+    "readerReceivesOnlyRetiredBaselineCandidates": true,
+    "noCrossEncoder": true,
+    "noThresholdSweep": true,
+    "noPromptChange": true,
+    "providerDefaultsChanged": false,
+    "runtimeChanged": false,
+    "productionAdmissionChanged": false
+  },
+  "developmentGate": {
+    "answerableRecallNonRegression": true,
+    "admittedPrecisionNonRegression": true,
+    "falseAcceptanceNonIncrease": true,
+    "wrongAdmissionQuestionsNonIncrease": true,
+    "strictAccuracyNonRegression": true,
+    "candidateAdmissionsSubsetOfBaseline": true,
+    "baselineGoldPreserved": true,
+    "allSemanticSupportsSourceBound": true,
+    "requireMeasuredPrecisionAdvantage": true,
+    "outcomes": [
+      "PROCEED_TO_FRESH_HOLDOUT",
+      "REJECT_FRESH_DEVELOPMENT_FRONTIER",
+      "INVALID_EXPERIMENT"
+    ]
+  },
+  "nextStepBoundary": [
+    "A pass authorizes only a separately authored and frozen family-disjoint holdout.",
+    "No prior inspected development or heldout pack is used for tuning this worker.",
+    "A reject terminates this exact dual-reader union without model, prompt, threshold or dataset retuning."
+  ]
+}
