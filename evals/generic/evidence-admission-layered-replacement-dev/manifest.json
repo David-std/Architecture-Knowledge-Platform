@@ -45,10 +45,7 @@
     "singleIndependentVariable": "Replace legacy PASSAGE_TEXT_SUPPORT and PASSAGE_CUE_SUPPORT evidence authority with the existing exact-source-span reader, shortlisted by the pinned multilingual BGE v2-m3 cross-encoder. Preserve all baseline admissions whose deterministic reason is outside those two legacy passage-semantic families. The reader may evaluate non-preserved candidates, but relevance alone never grants support.",
     "baseline": "Current assessRetrievalAnswerability.",
     "candidateComposition": "PRESERVED_NON_PASSAGE_AUTHORITY_OR_BGE_SHORTLISTED_SOURCE_BOUND_READER",
-    "removedAuthority": [
-      "PASSAGE_TEXT_SUPPORT",
-      "PASSAGE_CUE_SUPPORT"
-    ],
+    "removedAuthority": ["PASSAGE_TEXT_SUPPORT", "PASSAGE_CUE_SUPPORT"],
     "readerMode": "ENFORCE",
     "readerShortlistSize": 4,
     "readerConcurrency": 2,
