@@ -8,10 +8,7 @@
       "documentType": "procedure",
       "unitType": "PARAGRAPH",
       "title": "Autorización de traslado",
-      "headingPath": [
-        "Conservación",
-        "Autorización de traslado"
-      ],
+      "headingPath": ["Conservación", "Autorización de traslado"],
       "text": "La jefa de conservación aprueba el traslado de piezas restauradas antes de que salgan del taller. La aprobación queda anotada en el acta de movimiento."
     },
     {
@@ -19,10 +16,7 @@
       "documentType": "rule",
       "unitType": "PARAGRAPH",
       "title": "Destino de expedientes restaurados",
-      "headingPath": [
-        "Depósitos",
-        "Destino de expedientes restaurados"
-      ],
+      "headingPath": ["Depósitos", "Destino de expedientes restaurados"],
       "text": "Los expedientes restaurados se trasladan al depósito Norte 2. El depósito mantiene humedad controlada y acceso restringido."
     },
     {
@@ -30,10 +24,7 @@
       "documentType": "rule",
       "unitType": "RULE",
       "title": "Cuarentena por moho",
-      "headingPath": [
-        "Conservación preventiva",
-        "Cuarentena por moho"
-      ],
+      "headingPath": ["Conservación preventiva", "Cuarentena por moho"],
       "text": "El material con indicios de moho permanece en cuarentena durante 21 días antes de una nueva inspección. Durante ese periodo no puede volver a sala."
     },
     {
@@ -41,10 +32,7 @@
       "documentType": "procedure",
       "unitType": "PARAGRAPH",
       "title": "Copias maestras digitalizadas",
-      "headingPath": [
-        "Digitalización",
-        "Copias maestras digitalizadas"
-      ],
+      "headingPath": ["Digitalización", "Copias maestras digitalizadas"],
       "text": "Las copias maestras de digitalización se guardan en el repositorio Ámbar. Las copias de consulta se generan desde ese repositorio."
     },
     {
@@ -52,10 +40,7 @@
       "documentType": "claim",
       "unitType": "PARAGRAPH",
       "title": "Control de humedad",
-      "headingPath": [
-        "Depósitos",
-        "Control de humedad"
-      ],
+      "headingPath": ["Depósitos", "Control de humedad"],
       "text": "Los registradores de humedad se revisan cada mañana y cualquier desviación se documenta en el parte ambiental."
     }
   ],
@@ -66,9 +51,7 @@
       "intent": "ENTITY",
       "language": "es",
       "query": "¿Quién aprueba el traslado de las piezas restauradas antes de salir del taller?",
-      "gold": [
-        "ac-traslado"
-      ],
+      "gold": ["ac-traslado"],
       "challenges": []
     },
     {
@@ -77,13 +60,8 @@
       "intent": "ENTITY",
       "language": "en",
       "query": "Where are restored archive files moved after conservation work?",
-      "gold": [
-        "ac-deposito"
-      ],
-      "challenges": [
-        "CROSS_LINGUAL",
-        "PARAPHRASE"
-      ]
+      "gold": ["ac-deposito"],
+      "challenges": ["CROSS_LINGUAL", "PARAPHRASE"]
     },
     {
       "id": "ac-q03",
@@ -91,12 +69,8 @@
       "intent": "QUANTITY",
       "language": "es",
       "query": "¿Cuál es el periodo de cuarentena para material con indicios de moho?",
-      "gold": [
-        "ac-cuarentena"
-      ],
-      "challenges": [
-        "PARAPHRASE"
-      ]
+      "gold": ["ac-cuarentena"],
+      "challenges": ["PARAPHRASE"]
     },
     {
       "id": "ac-q04",
@@ -104,9 +78,7 @@
       "intent": "ENTITY",
       "language": "es",
       "query": "¿Dónde se guardan las copias maestras de digitalización?",
-      "gold": [
-        "ac-copia-maestra"
-      ],
+      "gold": ["ac-copia-maestra"],
       "challenges": []
     },
     {
@@ -116,10 +88,7 @@
       "language": "es",
       "query": "¿Cuál es el correo electrónico de la jefa de conservación?",
       "gold": [],
-      "challenges": [
-        "MISSING_SLOT",
-        "SAME_VOCABULARY"
-      ]
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
     },
     {
       "id": "ac-q06",
@@ -128,10 +97,7 @@
       "language": "es",
       "query": "¿Quién firma el parte ambiental diario?",
       "gold": [],
-      "challenges": [
-        "MISSING_SLOT",
-        "SAME_VOCABULARY"
-      ]
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
     }
   ]
 }
