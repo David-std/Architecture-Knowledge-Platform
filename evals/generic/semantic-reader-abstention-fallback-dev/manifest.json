@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "akp.semantic-reader-abstention-fallback-dev.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-05",
+  "baselineSha": "625f59a3749270f6fb8c14da21c4da0497f89301",
+  "inputs": [
+    {
+      "path": "evals/generic/evidence-admission/manifest.json",
+      "gitBlobSha": "215d1e3fa7b708e0b47934e8305663c6e93b61d8"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/hospital-pharmacy.json",
+      "gitBlobSha": "d5a960123eb1ac7f376676bce764e19d4317af94"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/biblioteca-municipal.json",
+      "gitBlobSha": "aab2153d266ac03a9ec3a92301b04559c5385674"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/warehouse-logistics.json",
+      "gitBlobSha": "a00e7ff279b88aa40947f4c0e169ab79979ca57a"
+    },
+    {
+      "path": "evals/generic/evidence-admission/domains/seguridad-alimentaria.json",
+      "gitBlobSha": "806fc6fda7997ae4309971394815acd8d6557e3c"
+    }
+  ],
+  "model": {
+    "id": "onnx-community/Qwen2.5-0.5B-Instruct",
+    "revision": "cc5cc01a65cc3ff17bdb73a7de33d879f62599b0",
+    "dtype": "q4",
+    "temperature": 0,
+    "maxOutputTokens": 256
+  },
+  "protocol": {
+    "phase": "DEVELOPMENT_FEASIBILITY_ONLY",
+    "evaluatedSplit": "development",
+    "heldoutEvaluated": false,
+    "singleIndependentVariable": "When current deterministic admission abstains, invoke the existing unmodified source-bound ReaderEvidenceVerifier only if projectRequestedAnswerSlot(query) returns a safe projection. The slot gates invocation only and is never supplied to the reader prompt. Existing deterministic supports remain unchanged.",
+    "baseline": "Current assessRetrievalAnswerability.",
+    "candidateComposition": "BASELINE_OR_GATED_SOURCE_BOUND_READER_FALLBACK",
+    "readerReceivesRequestedAnswerSlot": false,
+    "slotUsedAsEvidenceAuthority": false,
+    "readerMode": "ENFORCE",
+    "readerShortlistSize": 4,
+    "readerConcurrency": 2,
+    "providerDefaultsChanged": false,
+    "runtimeChanged": false,
+    "productionAdmissionChanged": false,
+    "noTuningAgainstPriorHeldouts": true
+  },
+  "developmentGate": {
+    "answerableRecallNonRegression": true,
+    "admittedPrecisionNonRegression": true,
+    "falseAcceptanceNonIncrease": true,
+    "wrongAdmissionQuestionsNonIncrease": true,
+    "strictAccuracyNonRegression": true,
+    "newSemanticSupportsMustBeSourceBound": true,
+    "readerInvokedOnlyAfterBaselineAbstention": true,
+    "readerInvokedOnlyWithSafeSlotProjection": true,
+    "requireAtLeastOneCorrectGoldRescue": true,
+    "outcomes": [
+      "PROCEED_TO_FRESH_HOLDOUT",
+      "REJECT_DEVELOPMENT_FRONTIER",
+      "INVALID_EXPERIMENT"
+    ]
+  },
+  "nextStepBoundary": [
+    "PROCEED_TO_FRESH_HOLDOUT does not change runtime or production defaults.",
+    "Only after a development pass may a new family-disjoint holdout be authored and frozen before execution.",
+    "Existing #68/#70/#71/#90 heldouts are not reused for tuning or promotion.",
+    "A development reject closes this line without holdout authoring."
+  ]
+}
