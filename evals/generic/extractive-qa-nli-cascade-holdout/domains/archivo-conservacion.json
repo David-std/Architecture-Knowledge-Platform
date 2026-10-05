@@ -1,0 +1,137 @@
+{
+  "id": "archivo-conservacion",
+  "split": "heldout",
+  "language": "es",
+  "units": [
+    {
+      "id": "ac-traslado",
+      "documentType": "procedure",
+      "unitType": "PARAGRAPH",
+      "title": "Autorización de traslado",
+      "headingPath": [
+        "Conservación",
+        "Autorización de traslado"
+      ],
+      "text": "La jefa de conservación aprueba el traslado de piezas restauradas antes de que salgan del taller. La aprobación queda anotada en el acta de movimiento."
+    },
+    {
+      "id": "ac-deposito",
+      "documentType": "rule",
+      "unitType": "PARAGRAPH",
+      "title": "Destino de expedientes restaurados",
+      "headingPath": [
+        "Depósitos",
+        "Destino de expedientes restaurados"
+      ],
+      "text": "Los expedientes restaurados se trasladan al depósito Norte 2. El depósito mantiene humedad controlada y acceso restringido."
+    },
+    {
+      "id": "ac-cuarentena",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Cuarentena por moho",
+      "headingPath": [
+        "Conservación preventiva",
+        "Cuarentena por moho"
+      ],
+      "text": "El material con indicios de moho permanece en cuarentena durante 21 días antes de una nueva inspección. Durante ese periodo no puede volver a sala."
+    },
+    {
+      "id": "ac-copia-maestra",
+      "documentType": "procedure",
+      "unitType": "PARAGRAPH",
+      "title": "Copias maestras digitalizadas",
+      "headingPath": [
+        "Digitalización",
+        "Copias maestras digitalizadas"
+      ],
+      "text": "Las copias maestras de digitalización se guardan en el repositorio Ámbar. Las copias de consulta se generan desde ese repositorio."
+    },
+    {
+      "id": "ac-humedad",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Control de humedad",
+      "headingPath": [
+        "Depósitos",
+        "Control de humedad"
+      ],
+      "text": "Los registradores de humedad se revisan cada mañana y cualquier desviación se documenta en el parte ambiental."
+    }
+  ],
+  "questions": [
+    {
+      "id": "ac-q01",
+      "family": "POST_EVENT_AUTHORITY",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién aprueba el traslado de las piezas restauradas antes de salir del taller?",
+      "gold": [
+        "ac-traslado"
+      ],
+      "challenges": []
+    },
+    {
+      "id": "ac-q02",
+      "family": "ARTIFACT_DESTINATION",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Where are restored archive files moved after conservation work?",
+      "gold": [
+        "ac-deposito"
+      ],
+      "challenges": [
+        "CROSS_LINGUAL",
+        "PARAPHRASE"
+      ]
+    },
+    {
+      "id": "ac-q03",
+      "family": "RETENTION_VALUE",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuál es el periodo de cuarentena para material con indicios de moho?",
+      "gold": [
+        "ac-cuarentena"
+      ],
+      "challenges": [
+        "PARAPHRASE"
+      ]
+    },
+    {
+      "id": "ac-q04",
+      "family": "ARTIFACT_DESTINATION",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Dónde se guardan las copias maestras de digitalización?",
+      "gold": [
+        "ac-copia-maestra"
+      ],
+      "challenges": []
+    },
+    {
+      "id": "ac-q05",
+      "family": "MISSING_CONTACT",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Cuál es el correo electrónico de la jefa de conservación?",
+      "gold": [],
+      "challenges": [
+        "MISSING_SLOT",
+        "SAME_VOCABULARY"
+      ]
+    },
+    {
+      "id": "ac-q06",
+      "family": "MISSING_OWNER",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién firma el parte ambiental diario?",
+      "gold": [],
+      "challenges": [
+        "MISSING_SLOT",
+        "SAME_VOCABULARY"
+      ]
+    }
+  ]
+}
