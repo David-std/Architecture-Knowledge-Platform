@@ -62,6 +62,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".github/workflows/fresh-source-exact-citation-transit.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".github/workflows/long-context-placement.yml",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -2483,6 +2488,11 @@
     },
     {
       "path": "evals/registered/contextual-chunk-benchmark.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "versioned registered product evaluation"
+    },
+    {
+      "path": "evals/registered/fresh-source-exact-citation-transit.json",
       "category": "PRODUCT_EVAL",
       "reason": "versioned registered product evaluation"
     },

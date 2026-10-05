@@ -1298,6 +1298,81 @@ describe("product lifecycle E2E", () => {
       expect(oracle.schemaVersion).toBe("akp.r2-r7-fresh-source-e2e.v1");
       expect(oracle.frozen).toBe(true);
 
+      const citationTransitReportPath =
+        process.env.AKP_FRESH_EXACT_CITATION_TRANSIT_REPORT?.trim() || null;
+      const citationTransitProtocol = citationTransitReportPath
+        ? (JSON.parse(
+            await readFile(
+              path.join(
+                repositoryRoot,
+                "evals",
+                "registered",
+                "fresh-source-exact-citation-transit.json",
+              ),
+              "utf8",
+            ),
+          ) as {
+            schemaVersion: string;
+            frozen: boolean;
+            baselineSha: string;
+            upstream: {
+              r2r7Oracle: { path: string; gitBlobSha: string };
+              sourceFixture: {
+                path: string;
+                gitBlobSha: string;
+                sha256: string;
+              };
+              answerableCaseId: string;
+              noAnswerCaseId: string;
+            };
+            measurement: {
+              evidenceCitationPrefix: string;
+              productionBehaviorChanged: boolean;
+              retrievalChanged: boolean;
+              admissionChanged: boolean;
+              contextPacketChanged: boolean;
+            };
+            gates: {
+              searchEvidenceLocatorPrecision: number;
+              searchExactLocatorRecall: number;
+              contextSectionEvidenceLocatorPrecision: number;
+              contextSectionExactLocatorRecall: number;
+              packetEvidenceLocatorPrecision: number;
+              packetExactLocatorRecall: number;
+              noAnswerEvidenceFalseAcceptance: number;
+              crossVaultLeakageCount: number;
+            };
+            outcomes: { pass: string; fail: string };
+            claimBoundary: string;
+          })
+        : null;
+      if (citationTransitProtocol) {
+        expect(citationTransitProtocol).toMatchObject({
+          schemaVersion: "akp.fresh-source-exact-citation-transit.v1",
+          frozen: true,
+          baselineSha: "851e28aea8cce15b6eafe25d13f83cab2e09f5d3",
+          measurement: {
+            productionBehaviorChanged: false,
+            retrievalChanged: false,
+            admissionChanged: false,
+            contextPacketChanged: false,
+          },
+        });
+        const oracleBlob = await execFileAsync(
+          "git",
+          ["hash-object", citationTransitProtocol.upstream.r2r7Oracle.path],
+          { cwd: repositoryRoot, windowsHide: true },
+        );
+        expect(oracleBlob.stdout.trim()).toBe(
+          citationTransitProtocol.upstream.r2r7Oracle.gitBlobSha,
+        );
+        expect(citationTransitProtocol.upstream.sourceFixture).toMatchObject({
+          path: oracle.source.path,
+          gitBlobSha: oracle.source.gitBlobSha,
+          sha256: oracle.source.sha256,
+        });
+      }
+
       const fixturePath = path.join(repositoryRoot, oracle.source.path);
       const fixtureBytes = await readFile(fixturePath);
       const fixtureText = fixtureBytes.toString("utf8");
@@ -1463,6 +1538,53 @@ describe("product lifecycle E2E", () => {
           locators: artifactValue.locators,
         }),
       ).toBe(true);
+
+      const canonicalJson = (value: unknown): string => {
+        const canonicalize = (entry: unknown): unknown => {
+          if (Array.isArray(entry)) return entry.map(canonicalize);
+          if (!entry || typeof entry !== "object") return entry;
+          return Object.fromEntries(
+            Object.entries(entry as Record<string, unknown>)
+              .sort(([left], [right]) => left.localeCompare(right))
+              .map(([key, nested]) => [key, canonicalize(nested)]),
+          );
+        };
+        return JSON.stringify(canonicalize(value));
+      };
+      const expectedEvidenceLocatorKey = canonicalJson(evidenceRow.locator);
+      const expectedEvidenceLocatorHash = createHash("sha256")
+        .update(expectedEvidenceLocatorKey)
+        .digest("hex");
+      const scoreEvidenceLocatorCitations = (values: readonly string[]) => {
+        const prefix =
+          citationTransitProtocol?.measurement.evidenceCitationPrefix ??
+          "evidence:";
+        const evidenceCitations = values.filter((value) =>
+          value.startsWith(prefix),
+        );
+        let exactMatches = 0;
+        let malformed = 0;
+        for (const citation of evidenceCitations) {
+          try {
+            const parsed = JSON.parse(citation.slice(prefix.length)) as unknown;
+            if (canonicalJson(parsed) === expectedEvidenceLocatorKey) {
+              exactMatches += 1;
+            }
+          } catch {
+            malformed += 1;
+          }
+        }
+        return {
+          total: evidenceCitations.length,
+          exactMatches,
+          malformed,
+          precision:
+            evidenceCitations.length === 0
+              ? 0
+              : exactMatches / evidenceCitations.length,
+          exactLocatorRecall: exactMatches > 0 ? 1 : 0,
+        };
+      };
 
       const pendingReview = await app.inject({
         method: "GET",
@@ -1758,7 +1880,7 @@ describe("product lifecycle E2E", () => {
       });
       expect(absent.statusCode, absent.body).toBe(200);
       const absentBody = absent.json() as {
-        hits: Array<{ vaultId: string }>;
+        hits: Array<{ vaultId: string; citations?: string[] }>;
         scope: { vaultIds: string[] };
       };
       expect(absentBody.scope.vaultIds).toEqual([vaultId]);
@@ -1767,6 +1889,99 @@ describe("product lifecycle E2E", () => {
       const leakageCount =
         searchBody.hits.filter((hit) => hit.vaultId !== vaultId).length +
         absentBody.hits.filter((hit) => hit.vaultId !== vaultId).length;
+
+      if (citationTransitProtocol && citationTransitReportPath) {
+        expect(answerable.id).toBe(
+          citationTransitProtocol.upstream.answerableCaseId,
+        );
+        expect(noAnswer.id).toBe(
+          citationTransitProtocol.upstream.noAnswerCaseId,
+        );
+        const goldSections = contextBody.sections.filter(
+          (section) =>
+            section.vaultId === vaultId &&
+            answerable.requiredEvidenceTerms?.every((term) =>
+              section.content.includes(term),
+            ),
+        );
+        const searchEvidence = scoreEvidenceLocatorCitations(
+          goldHit?.citations ?? [],
+        );
+        const sectionEvidence = scoreEvidenceLocatorCitations(
+          goldSections.flatMap((section) => section.sourceOrEvidenceIds ?? []),
+        );
+        const packetEvidence = scoreEvidenceLocatorCitations(
+          contextBody.citations,
+        );
+        const noAnswerEvidenceCitations = absentBody.hits.flatMap((hit) =>
+          (hit.citations ?? []).filter((citation) =>
+            citation.startsWith(
+              citationTransitProtocol.measurement.evidenceCitationPrefix,
+            ),
+          ),
+        );
+        const citationMetrics = {
+          searchEvidenceLocatorPrecision: searchEvidence.precision,
+          searchExactLocatorRecall: searchEvidence.exactLocatorRecall,
+          contextSectionEvidenceLocatorPrecision: sectionEvidence.precision,
+          contextSectionExactLocatorRecall: sectionEvidence.exactLocatorRecall,
+          packetEvidenceLocatorPrecision: packetEvidence.precision,
+          packetExactLocatorRecall: packetEvidence.exactLocatorRecall,
+          noAnswerEvidenceFalseAcceptance: noAnswerEvidenceCitations.length,
+          crossVaultLeakageCount: leakageCount,
+        };
+        const citationGates = Object.fromEntries(
+          Object.entries(citationTransitProtocol.gates).map(
+            ([name, expected]) => [
+              name,
+              citationMetrics[name as keyof typeof citationMetrics] ===
+                expected,
+            ],
+          ),
+        );
+        const citationPass = Object.values(citationGates).every(Boolean);
+        const citationReport = {
+          schemaVersion: citationTransitProtocol.schemaVersion,
+          generatedAt: new Date().toISOString(),
+          commit: process.env.GITHUB_SHA ?? null,
+          baselineSha: citationTransitProtocol.baselineSha,
+          outcome: citationPass
+            ? citationTransitProtocol.outcomes.pass
+            : citationTransitProtocol.outcomes.fail,
+          claimBoundary: citationTransitProtocol.claimBoundary,
+          productionBehaviorChanged: false,
+          retrievalChanged: false,
+          admissionChanged: false,
+          contextPacketChanged: false,
+          gold: {
+            sourceSha256: oracle.source.sha256,
+            evidenceLocatorSha256: expectedEvidenceLocatorHash,
+            evidenceExcerptSha256: evidenceRow.content_hash,
+          },
+          observations: {
+            search: searchEvidence,
+            contextSection: sectionEvidence,
+            packet: packetEvidence,
+            noAnswerEvidenceCitations: noAnswerEvidenceCitations.length,
+            crossVaultLeakageCount: leakageCount,
+          },
+          metrics: citationMetrics,
+          gates: citationGates,
+        };
+        await mkdir(path.dirname(citationTransitReportPath), {
+          recursive: true,
+        });
+        await writeFile(
+          citationTransitReportPath,
+          JSON.stringify(citationReport, null, 2) + "\n",
+          "utf8",
+        );
+        expect(
+          citationReport.outcome,
+          JSON.stringify(citationReport, null, 2),
+        ).toBe(citationTransitProtocol.outcomes.pass);
+      }
+
       const gates = {
         sourceHashExact: true,
         sourceArtifactHashExact: true,
