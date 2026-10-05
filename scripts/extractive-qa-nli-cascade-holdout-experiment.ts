@@ -263,9 +263,7 @@ function validateDomain(domain: PackDomain): void {
     questionIds.add(question.id);
     for (const label of [...question.gold, ...(question.acceptable ?? [])]) {
       if (!unitIds.has(label)) {
-        throw new Error(
-          "HOLDOUT_UNKNOWN_LABEL:" + question.id + ":" + label,
-        );
+        throw new Error("HOLDOUT_UNKNOWN_LABEL:" + question.id + ":" + label);
       }
     }
     if (question.gold.some((label) => question.acceptable?.includes(label))) {
@@ -319,7 +317,9 @@ async function developmentFamilies(
     }
     const raw = await readFile(absolute, "utf8");
     sourceHashes[input.path] = sha256(raw);
-    const domain = JSON.parse(raw) as { questions?: Array<{ family?: string }> };
+    const domain = JSON.parse(raw) as {
+      questions?: Array<{ family?: string }>;
+    };
     for (const question of domain.questions ?? []) {
       if (question.family) families.add(question.family);
     }
@@ -341,10 +341,7 @@ function noIncrease(candidate: number | null, baseline: number | null) {
   return candidate !== null && candidate <= baseline;
 }
 
-function unitsForKeys(
-  entry: HoldoutCase,
-  keys: readonly string[],
-): string[] {
+function unitsForKeys(entry: HoldoutCase, keys: readonly string[]): string[] {
   return [
     ...new Set(
       keys.map((key) => {
@@ -458,8 +455,7 @@ const protocolRaw = await readFile(protocolPath, "utf8");
 const protocol = JSON.parse(protocolRaw) as ExperimentManifest;
 
 if (
-  protocol.schemaVersion !==
-    "akp.extractive-qa-nli-cascade-fresh-holdout.v1" ||
+  protocol.schemaVersion !== "akp.extractive-qa-nli-cascade-fresh-holdout.v1" ||
   protocol.frozen !== true ||
   protocol.protocol.phase !== "FRESH_FAMILY_DISJOINT_HOLDOUT" ||
   protocol.protocol.developmentLoadedForScoring !== false ||
@@ -493,12 +489,12 @@ if (
 assertAncestor(protocol.baselineSha);
 
 const { domains, cases, sourceHashes } = await loadHoldout(protocol.inputs);
-const development = await developmentFamilies(protocol.developmentFamilySources);
+const development = await developmentFamilies(
+  protocol.developmentFamilySources,
+);
 Object.assign(sourceHashes, development.sourceHashes);
 
-const holdoutFamilies = new Set(
-  cases.map((entry) => entry.question.family),
-);
+const holdoutFamilies = new Set(cases.map((entry) => entry.question.family));
 const familyOverlap = [...holdoutFamilies]
   .filter((family) => development.families.has(family))
   .sort();
