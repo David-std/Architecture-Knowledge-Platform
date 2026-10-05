@@ -8,10 +8,7 @@
       "documentType": "rule",
       "unitType": "RULE",
       "title": "Rescue craft release",
-      "headingPath": [
-        "Launch control",
-        "Rescue craft release"
-      ],
+      "headingPath": ["Launch control", "Rescue craft release"],
       "text": "The harbor master releases the rescue craft after the pre-launch safety check is complete. No other watch officer may authorize departure."
     },
     {
@@ -19,10 +16,7 @@
       "documentType": "procedure",
       "unitType": "PARAGRAPH",
       "title": "Distress beacon logging",
-      "headingPath": [
-        "Radio watch",
-        "Distress beacon logging"
-      ],
+      "headingPath": ["Radio watch", "Distress beacon logging"],
       "text": "The coast radio operator records distress beacon alerts in the Mariner log. Each entry includes the received time and beacon identifier."
     },
     {
@@ -30,10 +24,7 @@
       "documentType": "rule",
       "unitType": "PARAGRAPH",
       "title": "Mission audio archive",
-      "headingPath": [
-        "Mission records",
-        "Mission audio archive"
-      ],
+      "headingPath": ["Mission records", "Mission audio archive"],
       "text": "Mission audio is archived in the Echo locker for 90 days. After that period the recordings are purged unless an investigation hold exists."
     },
     {
@@ -41,10 +32,7 @@
       "documentType": "procedure",
       "unitType": "PARAGRAPH",
       "title": "Emergency fuel transfer",
-      "headingPath": [
-        "Engineering",
-        "Emergency fuel transfer"
-      ],
+      "headingPath": ["Engineering", "Emergency fuel transfer"],
       "text": "The duty engineer approves an emergency fuel transfer before hoses are connected. The deck lead then records the transferred volume."
     },
     {
@@ -52,10 +40,7 @@
       "documentType": "claim",
       "unitType": "PARAGRAPH",
       "title": "Launch weather feed",
-      "headingPath": [
-        "Launch control",
-        "Launch weather feed"
-      ],
+      "headingPath": ["Launch control", "Launch weather feed"],
       "text": "Launch control reads wind and visibility from buoy C7, while tide predictions come from the harbor gauge."
     }
   ],
@@ -66,12 +51,8 @@
       "intent": "ENTITY",
       "language": "en",
       "query": "Who is allowed to release the rescue craft after the safety check?",
-      "gold": [
-        "cr-craft-release"
-      ],
-      "challenges": [
-        "PARAPHRASE"
-      ]
+      "gold": ["cr-craft-release"],
+      "challenges": ["PARAPHRASE"]
     },
     {
       "id": "cr-q02",
@@ -79,12 +60,8 @@
       "intent": "ENTITY",
       "language": "es",
       "query": "¿Quién registra las alertas de balizas de socorro en el registro Mariner?",
-      "gold": [
-        "cr-beacon-log"
-      ],
-      "challenges": [
-        "CROSS_LINGUAL"
-      ]
+      "gold": ["cr-beacon-log"],
+      "challenges": ["CROSS_LINGUAL"]
     },
     {
       "id": "cr-q03",
@@ -92,9 +69,7 @@
       "intent": "ENTITY",
       "language": "en",
       "query": "Where is mission audio archived?",
-      "gold": [
-        "cr-audio-archive"
-      ],
+      "gold": ["cr-audio-archive"],
       "challenges": []
     },
     {
@@ -103,9 +78,7 @@
       "intent": "ENTITY",
       "language": "en",
       "query": "Who approves an emergency fuel transfer before the hoses are connected?",
-      "gold": [
-        "cr-fuel-transfer"
-      ],
+      "gold": ["cr-fuel-transfer"],
       "challenges": []
     },
     {
@@ -115,10 +88,7 @@
       "language": "en",
       "query": "What is the harbor master's radio call sign?",
       "gold": [],
-      "challenges": [
-        "MISSING_SLOT",
-        "SAME_VOCABULARY"
-      ]
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
     },
     {
       "id": "cr-q06",
@@ -127,10 +97,7 @@
       "language": "en",
       "query": "Who owns buoy C7?",
       "gold": [],
-      "challenges": [
-        "MISSING_SLOT",
-        "SAME_VOCABULARY"
-      ]
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
     }
   ]
 }
