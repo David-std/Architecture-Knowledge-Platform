@@ -329,7 +329,8 @@ const gates = {
     candidate.strictAccuracy,
     baseline.strictAccuracy,
   ),
-  candidateAdmissionsSubsetOfBaseline: candidateCreatedAdmissions.length === 0,
+  candidateAdmissionsSubsetOfBaseline:
+    candidateCreatedAdmissions.length === 0,
   baselineGoldPreserved: baselineRegressions.length === 0,
   allSemanticSupportsSourceBound,
   measuredPrecisionAdvantage,
