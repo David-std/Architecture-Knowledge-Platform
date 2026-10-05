@@ -1,0 +1,150 @@
+{
+  "id": "airport-ground-ops",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh EN airport ground-operations admission domain.",
+  "units": [
+    {
+      "id": "ago-gpu",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Ground power unit (GPU)",
+      "headingPath": [
+        "Ramp equipment",
+        "Ground power unit"
+      ],
+      "text": "A ground power unit supplies electrical power to an aircraft while its engines are shut down at the stand. The unit is disconnected before pushback begins."
+    },
+    {
+      "id": "ago-fod",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Foreign object debris walk",
+      "headingPath": [
+        "Ramp safety",
+        "FOD walk"
+      ],
+      "text": "The ramp team performs a foreign object debris walk before the first departure of each shift. Any loose metal, plastic or stones are removed before equipment enters the stand."
+    },
+    {
+      "id": "ago-chocks",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Wheel chocks",
+      "headingPath": [
+        "Ramp safety",
+        "Wheel chocks"
+      ],
+      "text": "Wheel chocks are placed only after the aircraft has stopped and the anti-collision beacon is off. The headset operator confirms chocks in place before ground staff approach the doors."
+    },
+    {
+      "id": "ago-pushback",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Pushback clearance",
+      "headingPath": [
+        "Departure",
+        "Pushback clearance"
+      ],
+      "text": "The flight deck requests pushback clearance from apron control. The tug driver begins movement only after the headset operator repeats the clearance and confirms the towbar area is clear."
+    },
+    {
+      "id": "ago-deice",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "De-icing holdover check",
+      "headingPath": [
+        "Winter operations",
+        "De-icing"
+      ],
+      "text": "After anti-icing fluid is applied, the dispatcher records the treatment start time and checks the published holdover table. If the holdover time expires before take-off, the aircraft must be treated again."
+    },
+    {
+      "id": "ago-bags",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Late baggage reconciliation",
+      "headingPath": [
+        "Baggage",
+        "Late bags"
+      ],
+      "text": "A bag that arrives after loading has closed is not placed on the aircraft automatically. The baggage coordinator verifies the passenger status and instructs the loading team whether the bag may travel."
+    }
+  ],
+  "questions": [
+    {
+      "id": "ago-q1",
+      "family": "gpu-purpose",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What does a ground power unit provide to an aircraft at the stand?",
+      "gold": [
+        "ago-gpu"
+      ],
+      "challenges": [
+        "PARAPHRASE"
+      ]
+    },
+    {
+      "id": "ago-q2",
+      "family": "deice-expiry-reason",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "What must happen if the anti-icing holdover time expires before take-off?",
+      "gold": [
+        "ago-deice"
+      ],
+      "challenges": [
+        "PARAPHRASE"
+      ]
+    },
+    {
+      "id": "ago-q3",
+      "family": "pushback-requester",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who asks apron control for pushback clearance?",
+      "gold": [
+        "ago-pushback"
+      ],
+      "challenges": []
+    },
+    {
+      "id": "ago-q4",
+      "family": "fod-timing",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "When is the ramp FOD walk performed?",
+      "gold": [
+        "ago-fod"
+      ],
+      "challenges": [
+        "PARAPHRASE"
+      ]
+    },
+    {
+      "id": "ago-q5",
+      "family": "chocks-company",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which company manufactures the wheel chocks used at the stand?",
+      "gold": [],
+      "challenges": [
+        "MISSING_SLOT",
+        "SAME_VOCABULARY"
+      ]
+    },
+    {
+      "id": "ago-q6",
+      "family": "bags-temperature",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "At what temperature are late passenger bags stored before loading?",
+      "gold": [],
+      "challenges": [
+        "WRONG_SUBJECT",
+        "SAME_VOCABULARY"
+      ]
+    }
+  ]
+}
