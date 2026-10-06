@@ -1,0 +1,88 @@
+{
+  "schemaVersion": "akp.open-reader-authority-fresh-dev.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-05",
+  "baselineSha": "10ade0d2c27aed31c7d5f9c2528a654d9c116d9b",
+  "dataFreezeCommit": "19c3d0c177ee78771d5c55eae0e3ae067f546274",
+  "inputs": [
+    {
+      "path": "evals/generic/open-reader-authority-fresh-dev/domains/aforo-rio.json",
+      "gitBlobSha": "0679edfee1aaad2843bf9254f8c9afb60dccf85f"
+    },
+    {
+      "path": "evals/generic/open-reader-authority-fresh-dev/domains/apicultura-colmena.json",
+      "gitBlobSha": "24cdc3fd26b3cf4c5aa32d165385fed5d2c6b453"
+    },
+    {
+      "path": "evals/generic/open-reader-authority-fresh-dev/domains/coffee-roasting.json",
+      "gitBlobSha": "2d03c466fddf630cb881d169dd4f826376999157"
+    },
+    {
+      "path": "evals/generic/open-reader-authority-fresh-dev/domains/theater-rigging.json",
+      "gitBlobSha": "e9207c49128cc48969210be7ef0275022ff389ca"
+    }
+  ],
+  "dataset": {
+    "split": "development",
+    "domains": [
+      "aforo-rio",
+      "apicultura-colmena",
+      "coffee-roasting",
+      "theater-rigging"
+    ],
+    "questions": 24,
+    "answerable": 16,
+    "unanswerable": 8,
+    "languages": ["en", "es"],
+    "authoredBeforeExecution": true,
+    "reusedPriorDevelopment": false,
+    "reusedPriorHeldout": false
+  },
+  "reader": {
+    "model": "onnx-community/Qwen2.5-1.5B-Instruct",
+    "revision": "9f9c976052bfb08a20793f0c3013563dc095c966",
+    "dtype": "q4",
+    "promptVersion": "evidence-reader-v4",
+    "temperature": 0,
+    "maxOutputTokens": 256
+  },
+  "protocol": {
+    "phase": "FRESH_DEVELOPMENT_FEASIBILITY_ONLY",
+    "singleIndependentVariable": "Retire PASSAGE_TEXT_SUPPORT / PASSAGE_CUE_SUPPORT as evidence authority and allow the unchanged Qwen2.5-1.5B evidence-reader-v4 to establish exact source-bound semantic support over every authorized candidate not already preserved by structural/general deterministic authority.",
+    "baseline": "Current assessRetrievalAnswerability on the frozen fresh-development pack.",
+    "candidateComposition": "PRESERVED_NON_PASSAGE_AUTHORITY_OR_OPEN_SOURCE_BOUND_1P5B_READER",
+    "retiredAuthority": ["PASSAGE_TEXT_SUPPORT", "PASSAGE_CUE_SUPPORT"],
+    "preserveNonPassageBaselineAuthority": true,
+    "readerMayCreateSourceBoundSupport": true,
+    "readerReceivesAllUnpreservedAuthorizedCandidates": true,
+    "readerSupportRequiresExactVisibleSpan": true,
+    "noCrossEncoder": true,
+    "noThresholdSweep": true,
+    "noPromptChange": true,
+    "noModelChangeFromReader107": true,
+    "providerDefaultsChanged": false,
+    "runtimeChanged": false,
+    "productionAdmissionChanged": false
+  },
+  "developmentGate": {
+    "answerableRecallNonRegression": true,
+    "admittedPrecisionNonRegression": true,
+    "falseAcceptanceNonIncrease": true,
+    "wrongAdmissionQuestionsNonIncrease": true,
+    "strictAccuracyNonRegression": true,
+    "baselineGoldPreserved": true,
+    "allSemanticSupportsSourceBound": true,
+    "requireMeasuredQualityAdvantage": true,
+    "outcomes": [
+      "PROCEED_TO_FRESH_HOLDOUT",
+      "REJECT_FRESH_DEVELOPMENT_FRONTIER",
+      "INVALID_EXPERIMENT"
+    ]
+  },
+  "nextStepBoundary": [
+    "A pass authorizes only a separately authored and frozen family-disjoint holdout.",
+    "No prior inspected development or heldout pack is used for tuning this worker.",
+    "A reject terminates this exact open-reader composition without model, prompt, threshold or dataset retuning.",
+    "No runtime/default/admission change is authorized by development evidence alone."
+  ]
+}
