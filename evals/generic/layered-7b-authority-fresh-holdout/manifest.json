@@ -84,7 +84,7 @@
   "reader": {
     "provider": "ollama-openai-compatible",
     "model": "qwen2.5:7b-instruct",
-    "deploymentDigest": "845dbda0ea48ed749caafd9e6037047aa19acfcfd82e7047ca97d631a0b697e",
+    "deploymentDigest": "845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e",
     "quantization": "Q4_K_M",
     "promptVersion": "evidence-reader-v4",
     "temperature": 0,
