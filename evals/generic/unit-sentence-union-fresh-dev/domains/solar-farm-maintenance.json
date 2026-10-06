@@ -1,0 +1,112 @@
+{
+  "id": "solar-farm-maintenance",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES solar-farm maintenance domain.",
+  "units": [
+    {
+      "id": "sf-string",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "String fotovoltaico",
+      "headingPath": ["Topología", "String fotovoltaico"],
+      "text": "Conjunto de módulos solares conectados en serie que comparten la misma corriente y entregan una tensión combinada a una entrada del inversor."
+    },
+    {
+      "id": "sf-termografia",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Inspección termográfica",
+      "headingPath": ["Mantenimiento predictivo", "Termografía"],
+      "text": "La inspección termográfica se realiza con irradiancia estable y la planta produciendo. El técnico de diagnóstico compara módulos vecinos para identificar puntos calientes anómalos."
+    },
+    {
+      "id": "sf-limpieza",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Limpieza de módulos",
+      "headingPath": ["Mantenimiento preventivo", "Limpieza"],
+      "text": "No se limpian módulos durante las horas de mayor irradiancia. El contraste térmico entre agua y vidrio caliente puede someter el módulo a estrés innecesario."
+    },
+    {
+      "id": "sf-aislamiento",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Aislamiento de un inversor",
+      "headingPath": ["Seguridad eléctrica", "Aislamiento"],
+      "text": "Antes de abrir un inversor, el electricista abre el seccionador de corriente continua, abre el interruptor de alterna, aplica bloqueo y etiquetado y verifica ausencia de tensión."
+    },
+    {
+      "id": "sf-seguidor",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Seguidor en modo seguro",
+      "headingPath": ["Seguidores", "Modo seguro"],
+      "text": "Si el anemómetro detecta viento por encima del umbral de protección, el controlador lleva los seguidores a posición de resguardo para reducir la carga mecánica sobre la estructura."
+    },
+    {
+      "id": "sf-kpi",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Producción diaria",
+      "headingPath": ["Operación", "Producción"],
+      "text": "| Día | Energía | Disponibilidad |\\n|---|---|---|\\n| Lunes | 42 MWh | 99.1% |\\n| Martes | 39 MWh | 97.8% |"
+    }
+  ],
+  "questions": [
+    {
+      "id": "sf-q1",
+      "family": "string-definition",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué es un string fotovoltaico?",
+      "gold": ["sf-string"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "sf-q2",
+      "family": "termografia-quien",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién compara los módulos vecinos durante la inspección termográfica?",
+      "gold": ["sf-termografia"],
+      "challenges": []
+    },
+    {
+      "id": "sf-q3",
+      "family": "limpieza-rationale",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué no se limpian los módulos durante las horas de mayor irradiancia?",
+      "gold": ["sf-limpieza"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "sf-q4",
+      "family": "seguidor-wind",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Cuándo pasan los seguidores a una posición de resguardo?",
+      "gold": ["sf-seguidor"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "sf-q5",
+      "family": "inversor-marca",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué marca fabrica el inversor que se aísla para mantenimiento?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "sf-q6",
+      "family": "kpi-temperatura",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué temperatura tuvo la planta el martes según la tabla de producción?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    }
+  ]
+}

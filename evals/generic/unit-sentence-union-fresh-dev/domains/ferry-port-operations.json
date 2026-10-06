@@ -1,0 +1,112 @@
+{
+  "id": "ferry-port-operations",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh ferry terminal operations domain.",
+  "units": [
+    {
+      "id": "fp-linkspan",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Linkspan",
+      "headingPath": ["Terminal equipment", "Linkspan"],
+      "text": "An adjustable bridge that connects the shore ramp to a ferry so vehicles can drive between the terminal and the vessel despite changes in tide level."
+    },
+    {
+      "id": "fp-dangerous",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Dangerous-goods check",
+      "headingPath": ["Boarding", "Dangerous goods"],
+      "text": "Vehicles carrying declared dangerous goods are held in the marked inspection bay until a terminal safety officer verifies the declaration and loading position."
+    },
+    {
+      "id": "fp-last-call",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Final passenger call",
+      "headingPath": ["Departure", "Final passenger call"],
+      "text": "The gate agent makes the final passenger announcement ten minutes before the gangway closes. Missing passengers are removed from the boarded manifest before sailing."
+    },
+    {
+      "id": "fp-wind",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Vehicle boarding stops in severe crosswind",
+      "headingPath": ["Weather", "Crosswind"],
+      "text": "Vehicle boarding stops when the crosswind alarm remains above the terminal limit. The exposed linkspan can move laterally, so continuing vehicle traffic would be unsafe."
+    },
+    {
+      "id": "fp-mobility",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Assisted boarding",
+      "headingPath": ["Accessibility", "Assisted boarding"],
+      "text": "Passengers who request mobility assistance report to the service desk. A passenger assistant escorts them through the accessible route and onto the vessel before general foot-passenger boarding."
+    },
+    {
+      "id": "fp-tide",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Tide board",
+      "headingPath": ["Marine conditions", "Tide board"],
+      "text": "| Time | Predicted height |\\n|---|---|\\n| 06:00 | 1.2 m |\\n| 12:00 | 3.8 m |\\n| 18:00 | 1.5 m |"
+    }
+  ],
+  "questions": [
+    {
+      "id": "fp-q1",
+      "family": "linkspan-definition",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is a linkspan at a ferry terminal?",
+      "gold": ["fp-linkspan"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "fp-q2",
+      "family": "mobility-escort",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who escorts a passenger that requested mobility assistance onto the vessel?",
+      "gold": ["fp-mobility"],
+      "challenges": []
+    },
+    {
+      "id": "fp-q3",
+      "family": "wind-rationale",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why is vehicle boarding stopped during a severe crosswind alarm?",
+      "gold": ["fp-wind"],
+      "challenges": ["PARAPHRASE", "TITLE_CONTEXT"]
+    },
+    {
+      "id": "fp-q4",
+      "family": "dangerous-release",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "When may a dangerous-goods vehicle leave the inspection bay for boarding?",
+      "gold": ["fp-dangerous"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "fp-q5",
+      "family": "linkspan-vendor",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which company manufactured the terminal linkspan?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "fp-q6",
+      "family": "tide-temperature",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What temperature is recorded on the tide board at 12:00?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "id": "archive-preservation",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh archive preservation domain.",
+  "units": [
+    {
+      "id": "ap-finding-aid",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Finding aid",
+      "headingPath": ["Description", "Finding aid"],
+      "text": "A structured description of an archival collection that explains its scope, arrangement and contents so researchers can identify relevant boxes or folders before requesting material."
+    },
+    {
+      "id": "ap-mould",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Suspected mould",
+      "headingPath": ["Conservation", "Mould"],
+      "text": "A box with suspected active mould is isolated from the reading room and normal storage. A conservator examines it before any material is returned to the collection area."
+    },
+    {
+      "id": "ap-digitization",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Digitization capture",
+      "headingPath": ["Digitization", "Capture"],
+      "text": "The imaging technician captures a colour target and scale at the start of each digitization batch, then checks focus and exposure before continuing with the documents."
+    },
+    {
+      "id": "ap-gloves",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Clean hands for paper records",
+      "headingPath": ["Handling", "Paper records"],
+      "text": "Clean, dry hands are preferred for ordinary paper documents. Cotton gloves reduce fingertip sensitivity and can catch fragile edges, so they are reserved for materials that specifically require them."
+    },
+    {
+      "id": "ap-cold",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Cold storage acclimatization",
+      "headingPath": ["Storage", "Cold storage"],
+      "text": "Photographic material removed from cold storage remains sealed while it warms to room temperature. Opening the package too early can allow condensation to form on the object."
+    },
+    {
+      "id": "ap-requests",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Reading-room requests",
+      "headingPath": ["Access", "Requests"],
+      "text": "| Month | Requests | Reproductions |\\n|---|---|---|\\n| April | 318 | 74 |\\n| May | 341 | 81 |"
+    }
+  ],
+  "questions": [
+    {
+      "id": "ap-q1",
+      "family": "finding-aid-definition",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is a finding aid in an archive?",
+      "gold": ["ap-finding-aid"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "ap-q2",
+      "family": "digitization-operator",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who captures the colour target at the beginning of a digitization batch?",
+      "gold": ["ap-digitization"],
+      "challenges": []
+    },
+    {
+      "id": "ap-q3",
+      "family": "gloves-rationale",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why are cotton gloves not normally preferred for ordinary paper records?",
+      "gold": ["ap-gloves"],
+      "challenges": ["PARAPHRASE", "TITLE_CONTEXT"]
+    },
+    {
+      "id": "ap-q4",
+      "family": "cold-opening",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "When may a cold-stored photographic package be opened safely?",
+      "gold": ["ap-cold"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ap-q5",
+      "family": "mould-lab",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which external laboratory tests boxes with suspected mould?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "ap-q6",
+      "family": "requests-humidity",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What was the relative humidity for May in the reading-room request table?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    }
+  ]
+}

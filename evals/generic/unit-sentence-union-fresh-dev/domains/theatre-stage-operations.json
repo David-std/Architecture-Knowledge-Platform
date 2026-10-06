@@ -1,0 +1,112 @@
+{
+  "id": "theatre-stage-operations",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES theatre stage-operations domain.",
+  "units": [
+    {
+      "id": "ts-cue",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Cue escénico",
+      "headingPath": ["Regiduría", "Cue"],
+      "text": "Señal previamente acordada que indica el momento exacto en que debe comenzar una acción técnica o artística, como un cambio de luz, sonido, maquinaria o entrada en escena."
+    },
+    {
+      "id": "ts-fly",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Zona de varas",
+      "headingPath": ["Maquinaria", "Varas"],
+      "text": "Nadie permanece bajo una carga suspendida mientras una vara está en movimiento. El maquinista detiene la maniobra si una persona entra en la zona de exclusión."
+    },
+    {
+      "id": "ts-showcaller",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Llamada de cues",
+      "headingPath": ["Regiduría", "Llamada de cues"],
+      "text": "Durante la función, la regidora principal da las llamadas de luz, sonido y maquinaria por intercom. Cada operador confirma la llamada antes de ejecutar su cue."
+    },
+    {
+      "id": "ts-blackout",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Ensayo de blackout",
+      "headingPath": ["Seguridad", "Blackout"],
+      "text": "Los desplazamientos en oscuridad se ensayan con marcas táctiles y rutas despejadas. La visibilidad reducida aumenta el riesgo de tropiezos, por lo que no se improvisan recorridos durante un blackout."
+    },
+    {
+      "id": "ts-prop",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Entrega de utilería peligrosa",
+      "headingPath": ["Utilería", "Objetos peligrosos"],
+      "text": "Antes de una escena, la responsable de utilería entrega el objeto peligroso directamente al intérprete designado y registra la devolución al terminar la escena."
+    },
+    {
+      "id": "ts-cues-table",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Resumen de cues",
+      "headingPath": ["Regiduría", "Resumen"],
+      "text": "| Cue | Departamento | Momento |\\n|---|---|---|\\n| LX12 | Luces | Fin de escena 1 |\\n| SFX7 | Sonido | Entrada del actor |"
+    }
+  ],
+  "questions": [
+    {
+      "id": "ts-q1",
+      "family": "cue-definition",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué es un cue escénico?",
+      "gold": ["ts-cue"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "ts-q2",
+      "family": "showcaller-entity",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién da las llamadas de luz, sonido y maquinaria durante la función?",
+      "gold": ["ts-showcaller"],
+      "challenges": []
+    },
+    {
+      "id": "ts-q3",
+      "family": "blackout-rationale",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué no se improvisan recorridos durante un blackout?",
+      "gold": ["ts-blackout"],
+      "challenges": ["PARAPHRASE", "TITLE_CONTEXT"]
+    },
+    {
+      "id": "ts-q4",
+      "family": "fly-stop",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Cuándo detiene el maquinista el movimiento de una vara?",
+      "gold": ["ts-fly"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ts-q5",
+      "family": "prop-provider",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué empresa suministra la utilería peligrosa del teatro?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "ts-q6",
+      "family": "cue-voltage",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué voltaje usa el cue LX12 según la tabla de cues?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    }
+  ]
+}
