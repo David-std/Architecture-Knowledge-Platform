@@ -1,0 +1,112 @@
+{
+  "id": "cold-storage",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh cold-storage operations development domain.",
+  "units": [
+    {
+      "id": "cs-blast",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Blast freezer",
+      "headingPath": ["Freezing", "Blast freezer"],
+      "text": "A blast freezer rapidly removes heat from packaged food by circulating very cold air at high velocity so the product reaches its target core temperature quickly."
+    },
+    {
+      "id": "cs-door",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Opening the evaporator room",
+      "headingPath": ["Safety", "Evaporator room"],
+      "text": "Before the evaporator-room door is opened after an ammonia alarm, the area monitor must show a safe reading and the shift supervisor must confirm that the ventilation purge is complete."
+    },
+    {
+      "id": "cs-operator",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Defrost scheduling",
+      "headingPath": ["Refrigeration", "Defrost"],
+      "text": "The refrigeration operator schedules evaporator defrost cycles and records each completed cycle in the plant log."
+    },
+    {
+      "id": "cs-moisture",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Door moisture control",
+      "headingPath": ["Loading dock", "Moisture"],
+      "text": "Dock doors are kept closed between vehicle movements because warm humid air can create frost on floors and evaporator surfaces."
+    },
+    {
+      "id": "cs-probe",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Checking a product probe",
+      "headingPath": ["Quality", "Temperature probe"],
+      "text": "The technician places the probe in the reference bath, waits for the reading to stabilize and records any calibration offset."
+    },
+    {
+      "id": "cs-table",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Room temperatures",
+      "headingPath": ["Monitoring", "Rooms"],
+      "text": "| Room | Setpoint | Alarm |\n|---|---|---|\n| A | -20 °C | -17 °C |\n| B | -24 °C | -20 °C |"
+    }
+  ],
+  "questions": [
+    {
+      "id": "cs-q1",
+      "family": "blast-freezer-definition",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is a blast freezer?",
+      "gold": ["cs-blast"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "cs-q2",
+      "family": "defrost-scheduler",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who schedules evaporator defrost cycles?",
+      "gold": ["cs-operator"],
+      "challenges": []
+    },
+    {
+      "id": "cs-q3",
+      "family": "door-moisture-reason",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why are dock doors kept closed between vehicle movements?",
+      "gold": ["cs-moisture"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "cs-q4",
+      "family": "ammonia-door-prereq",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "What must be confirmed before the evaporator-room door is opened after an ammonia alarm?",
+      "gold": ["cs-door"],
+      "challenges": ["PARAPHRASE", "TEMPORAL_RELATION"]
+    },
+    {
+      "id": "cs-q5",
+      "family": "probe-vendor-unknown",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which vendor supplied the product temperature probes?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "cs-q6",
+      "family": "room-table-humidity",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What humidity is listed for Room B in the room-temperature table?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    }
+  ]
+}

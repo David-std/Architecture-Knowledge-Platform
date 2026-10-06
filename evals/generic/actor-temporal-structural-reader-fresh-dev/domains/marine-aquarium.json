@@ -1,0 +1,112 @@
+{
+  "id": "marine-aquarium",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES marine-aquarium operations development domain.",
+  "units": [
+    {
+      "id": "ma-skimmer",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Espumador de proteínas",
+      "headingPath": ["Filtración", "Espumador"],
+      "text": "Equipo que elimina compuestos orgánicos disueltos del agua marina al adherirlos a microburbujas y concentrarlos en una espuma que se retira del sistema."
+    },
+    {
+      "id": "ma-dive",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Entrada de buzo al tanque",
+      "headingPath": ["Operación", "Buceo"],
+      "text": "Antes de que un buzo entre en el tanque principal, las bombas de recirculación designadas deben detenerse y la responsable de seguridad debe confirmar el bloqueo de los equipos móviles."
+    },
+    {
+      "id": "ma-biologa",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Ración de peces",
+      "headingPath": ["Nutrición", "Raciones"],
+      "text": "La bióloga acuática calcula la ración diaria de los peces según biomasa, especie y consumo observado."
+    },
+    {
+      "id": "ma-oxigeno",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Oxígeno nocturno",
+      "headingPath": ["Calidad de agua", "Oxígeno"],
+      "text": "El oxígeno disuelto se vigila especialmente durante la noche porque la respiración continúa mientras la fotosíntesis disminuye."
+    },
+    {
+      "id": "ma-salinidad",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Verificación de salinidad",
+      "headingPath": ["Calidad de agua", "Salinidad"],
+      "text": "El técnico enjuaga el refractómetro con agua de muestra, coloca unas gotas en el prisma y compara la lectura con el rango operativo."
+    },
+    {
+      "id": "ma-table",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Parámetros del tanque",
+      "headingPath": ["Monitoreo", "Tanque principal"],
+      "text": "| Parámetro | Mañana | Noche |\n|---|---|---|\n| Salinidad | 35 ppt | 35 ppt |\n| Oxígeno | 7.1 mg/L | 6.4 mg/L |"
+    }
+  ],
+  "questions": [
+    {
+      "id": "ma-q1",
+      "family": "skimmer-definition",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué es un espumador de proteínas en un acuario marino?",
+      "gold": ["ma-skimmer"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "ma-q2",
+      "family": "fish-ration-owner",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién calcula la ración diaria de los peces?",
+      "gold": ["ma-biologa"],
+      "challenges": []
+    },
+    {
+      "id": "ma-q3",
+      "family": "night-oxygen-reason",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se vigila especialmente el oxígeno disuelto durante la noche?",
+      "gold": ["ma-oxigeno"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ma-q4",
+      "family": "diver-entry-prereq",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué debe confirmarse antes de que un buzo entre en el tanque principal?",
+      "gold": ["ma-dive"],
+      "challenges": ["PARAPHRASE", "TEMPORAL_RELATION"]
+    },
+    {
+      "id": "ma-q5",
+      "family": "refractometer-brand-unknown",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué fabricante produce el refractómetro usado para verificar salinidad?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "ma-q6",
+      "family": "tank-table-temperature",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué temperatura aparece de noche en la tabla de parámetros del tanque?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    }
+  ]
+}

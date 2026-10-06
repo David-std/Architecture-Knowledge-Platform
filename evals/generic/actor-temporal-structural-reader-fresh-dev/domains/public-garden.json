@@ -1,0 +1,112 @@
+{
+  "id": "public-garden",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES public-garden operations development domain.",
+  "units": [
+    {
+      "id": "pg-acolchado",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Acolchado orgánico",
+      "headingPath": ["Suelo", "Acolchado"],
+      "text": "Capa de material vegetal colocada sobre el suelo para reducir evaporación, moderar cambios de temperatura y limitar el crecimiento de malezas."
+    },
+    {
+      "id": "pg-poda",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Reapertura tras poda en altura",
+      "headingPath": ["Seguridad", "Poda"],
+      "text": "Después de una poda en altura, el sendero se reabre sólo cuando se han retirado ramas y herramientas y la encargada confirma que no queda material suspendido sobre el paso."
+    },
+    {
+      "id": "pg-horticultor",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Programación de riego",
+      "headingPath": ["Riego", "Programación"],
+      "text": "El horticultor responsable programa los ciclos de riego según la estación, la humedad del suelo y las necesidades de cada zona."
+    },
+    {
+      "id": "pg-compost",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Uso de compost maduro",
+      "headingPath": ["Suelo", "Compost"],
+      "text": "Se utiliza compost maduro porque un material todavía activo puede consumir oxígeno y afectar raíces jóvenes."
+    },
+    {
+      "id": "pg-estaca",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Revisión de tutores",
+      "headingPath": ["Arbolado", "Tutores"],
+      "text": "La cuadrilla comprueba la tensión de las cintas, revisa rozaduras en la corteza y reajusta los tutores que se han desplazado."
+    },
+    {
+      "id": "pg-table",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Riego semanal",
+      "headingPath": ["Riego", "Registro"],
+      "text": "| Zona | Minutos | Días |\n|---|---|---|\n| Norte | 18 | L-X-V |\n| Sur | 14 | M-J-S |"
+    }
+  ],
+  "questions": [
+    {
+      "id": "pg-q1",
+      "family": "mulch-definition",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué es el acolchado orgánico en jardinería?",
+      "gold": ["pg-acolchado"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "pg-q2",
+      "family": "irrigation-scheduler",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién programa los ciclos de riego del jardín?",
+      "gold": ["pg-horticultor"],
+      "challenges": []
+    },
+    {
+      "id": "pg-q3",
+      "family": "mature-compost-reason",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se utiliza compost maduro cerca de raíces jóvenes?",
+      "gold": ["pg-compost"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "pg-q4",
+      "family": "path-reopen-prereq",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué debe confirmarse antes de reabrir el sendero tras una poda en altura?",
+      "gold": ["pg-poda"],
+      "challenges": ["PARAPHRASE", "TEMPORAL_RELATION"]
+    },
+    {
+      "id": "pg-q5",
+      "family": "stake-vendor-unknown",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué empresa fabrica los tutores usados en el jardín?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "pg-q6",
+      "family": "irrigation-table-pressure",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué presión se registra para la zona Sur en la tabla de riego semanal?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    }
+  ]
+}

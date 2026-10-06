@@ -1,0 +1,112 @@
+{
+  "id": "printing-press",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh printing-press operations development domain.",
+  "units": [
+    {
+      "id": "pp-register",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Print registration",
+      "headingPath": ["Press", "Registration"],
+      "text": "Registration is the alignment of separate colour impressions so that each ink layer lands in the intended position on the sheet or web."
+    },
+    {
+      "id": "pp-guard",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Guard reopening",
+      "headingPath": ["Safety", "Guarding"],
+      "text": "After a jam is cleared, the press guard may be reopened only after the drive is stopped, stored energy is released and the operator verifies that tools have been removed."
+    },
+    {
+      "id": "pp-foreman",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Ink approval",
+      "headingPath": ["Colour", "Ink"],
+      "text": "The press foreman approves the production ink mix after comparing the drawdown with the signed colour standard."
+    },
+    {
+      "id": "pp-static",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Static control",
+      "headingPath": ["Web handling", "Static"],
+      "text": "Static charge is controlled because excessive charge can attract paper dust and interfere with sheet separation."
+    },
+    {
+      "id": "pp-blanket",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Blanket inspection",
+      "headingPath": ["Maintenance", "Blanket"],
+      "text": "The operator stops the press, illuminates the blanket surface and checks for glazing, cuts and embedded debris before cleaning."
+    },
+    {
+      "id": "pp-table",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Press run summary",
+      "headingPath": ["Production", "Summary"],
+      "text": "| Job | Sheets | Waste |\n|---|---|---|\n| P41 | 12,000 | 2.1% |\n| P42 | 8,500 | 1.8% |"
+    }
+  ],
+  "questions": [
+    {
+      "id": "pp-q1",
+      "family": "registration-definition",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is print registration?",
+      "gold": ["pp-register"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "pp-q2",
+      "family": "ink-approver",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who approves the production ink mix?",
+      "gold": ["pp-foreman"],
+      "challenges": []
+    },
+    {
+      "id": "pp-q3",
+      "family": "static-control-reason",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why is static charge controlled on the press?",
+      "gold": ["pp-static"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "pp-q4",
+      "family": "guard-reopen-prereq",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "What must the operator verify before reopening the press guard after a jam?",
+      "gold": ["pp-guard"],
+      "challenges": ["PARAPHRASE", "TEMPORAL_RELATION"]
+    },
+    {
+      "id": "pp-q5",
+      "family": "blanket-maker-unknown",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which manufacturer supplies the press blankets?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "pp-q6",
+      "family": "run-summary-speed",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What press speed is recorded for job P42 in the run summary?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    }
+  ]
+}
