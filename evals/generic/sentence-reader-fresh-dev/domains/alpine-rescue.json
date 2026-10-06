@@ -1,0 +1,112 @@
+{
+  "id": "alpine-rescue",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh EN alpine rescue admission domain.",
+  "units": [
+    {
+      "id": "ar-beacon",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Avalanche beacon check",
+      "headingPath": ["Departure", "Equipment"],
+      "text": "Each team member performs a transmit-and-search beacon check before leaving the trailhead so a failed transceiver is discovered before exposure to avalanche terrain. The result is confirmed verbally by the team lead."
+    },
+    {
+      "id": "ar-weather",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Weather reassessment",
+      "headingPath": ["Route", "Conditions"],
+      "text": "When cloud base drops and visibility obscures the planned ridge, the leader reassesses the route instead of continuing automatically. The team may descend or select a lower alternative."
+    },
+    {
+      "id": "ar-hypothermia",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Cold casualty handling",
+      "headingPath": ["Medical", "Hypothermia"],
+      "text": "A cold casualty is insulated from wind and ground contact before nonessential clothing changes because unnecessary exposure can accelerate heat loss. Wet layers are handled under shelter when possible."
+    },
+    {
+      "id": "ar-anchor",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Rope anchor inspection",
+      "headingPath": ["Technical rescue", "Anchors"],
+      "text": "Before loading a rescue anchor, a second rescuer independently checks the attachment points and locking connectors. The haul team waits for that cross-check before tensioning the system."
+    },
+    {
+      "id": "ar-radio",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Radio discipline",
+      "headingPath": ["Communications", "Radio"],
+      "text": "Critical radio messages are repeated back by the receiving station to confirm that coordinates and instructions were understood. Routine status traffic does not require a full read-back."
+    },
+    {
+      "id": "ar-helicopter",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Rotor approach",
+      "headingPath": ["Aircraft", "Landing zone"],
+      "text": "Rescuers approach a helicopter only after the flight crew signals that it is safe to do so. Loose equipment is secured before anyone enters the rotor area."
+    }
+  ],
+  "questions": [
+    {
+      "id": "ar-q1",
+      "family": "beacon-check-reason",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why does the rescue team test avalanche beacons before leaving the trailhead?",
+      "gold": ["ar-beacon"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ar-q2",
+      "family": "low-visibility-action",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "What should the leader do when clouds hide the planned ridge?",
+      "gold": ["ar-weather"],
+      "challenges": ["CONDITION", "PARAPHRASE"]
+    },
+    {
+      "id": "ar-q3",
+      "family": "anchor-cross-check",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "What happens before the haul team puts tension on a rescue anchor?",
+      "gold": ["ar-anchor"],
+      "challenges": ["PROCEDURE", "PARAPHRASE"]
+    },
+    {
+      "id": "ar-q4",
+      "family": "radio-readback",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why are critical radio messages repeated back?",
+      "gold": ["ar-radio"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ar-q5",
+      "family": "helicopter-distance",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How many meters from the helicopter must rescuers wait before approaching?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "ar-q6",
+      "family": "hypothermia-drug",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which medication is administered first to every hypothermia casualty?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "SAME_VOCABULARY"]
+    }
+  ]
+}

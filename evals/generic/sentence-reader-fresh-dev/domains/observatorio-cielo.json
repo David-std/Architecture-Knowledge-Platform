@@ -1,0 +1,112 @@
+{
+  "id": "observatorio-cielo",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES observatory operations admission domain.",
+  "units": [
+    {
+      "id": "oc-aclimatacion",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Aclimatación del telescopio",
+      "headingPath": ["Preparación", "Temperatura"],
+      "text": "El telescopio se deja alcanzar una temperatura cercana a la del exterior antes de observaciones exigentes porque grandes diferencias térmicas generan corrientes de aire que degradan la imagen. La tapa se retira cuando el equipo ya está en una zona segura."
+    },
+    {
+      "id": "oc-rocio",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Prevención de rocío",
+      "headingPath": ["Óptica", "Humedad"],
+      "text": "Si la humedad aumenta y empieza a formarse rocío, se activa el calentador de la lente para mantener la superficie óptica ligeramente por encima del punto de condensación. El cable se fija para que no interfiera con el movimiento de la montura."
+    },
+    {
+      "id": "oc-enfoque",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Enfoque tras cambio térmico",
+      "headingPath": ["Observación", "Enfoque"],
+      "text": "Después de un cambio apreciable de temperatura se comprueba nuevamente el enfoque porque la contracción o expansión mecánica puede desplazar el punto focal. La comprobación se hace con una estrella brillante."
+    },
+    {
+      "id": "oc-flat",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Imágenes flat",
+      "headingPath": ["Calibración", "Flat"],
+      "text": "Las imágenes flat registran variaciones de sensibilidad y sombreado del tren óptico para poder corregir esas diferencias durante el procesado. Deben obtenerse con una iluminación uniforme."
+    },
+    {
+      "id": "oc-viento",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Viento fuerte",
+      "headingPath": ["Seguridad", "Clima"],
+      "text": "Cuando el viento produce vibraciones visibles en la montura, se interrumpe la exposición y se evalúa si corresponde cerrar la cúpula. Continuar una integración larga en esas condiciones desperdicia datos."
+    },
+    {
+      "id": "oc-bateria",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Batería de campo",
+      "headingPath": ["Energía", "Batería"],
+      "text": "Antes de una sesión remota se verifica que la batería pueda alimentar montura, cámara y control durante la ventana prevista. Los conectores se revisan antes de apagar la iluminación de montaje."
+    }
+  ],
+  "questions": [
+    {
+      "id": "oc-q1",
+      "family": "aclimatacion-motivo",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se aclimata el telescopio antes de observaciones exigentes?",
+      "gold": ["oc-aclimatacion"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "oc-q2",
+      "family": "rocio-accion",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué se hace si comienza a aparecer rocío sobre la óptica?",
+      "gold": ["oc-rocio"],
+      "challenges": ["CONDITION", "PARAPHRASE"]
+    },
+    {
+      "id": "oc-q3",
+      "family": "reenfoque-temperatura",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se revisa el enfoque después de un cambio de temperatura?",
+      "gold": ["oc-enfoque"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "oc-q4",
+      "family": "flat-finalidad",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Para qué sirven las imágenes flat en la calibración?",
+      "gold": ["oc-flat"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "oc-q5",
+      "family": "viento-umbral",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿A partir de qué velocidad exacta del viento debe cerrarse la cúpula?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "oc-q6",
+      "family": "bateria-marca",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué marca de batería debe usarse en todas las sesiones remotas?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}

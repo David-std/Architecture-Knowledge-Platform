@@ -1,0 +1,112 @@
+{
+  "id": "aquarium-water-quality",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh EN aquarium operations admission domain.",
+  "units": [
+    {
+      "id": "aq-cycle",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Biological filtration",
+      "headingPath": ["Water quality", "Biofilter"],
+      "text": "The biological filter converts toxic ammonia first to nitrite and then to nitrate through nitrifying bacteria. Flow through the filter is checked during every morning inspection."
+    },
+    {
+      "id": "aq-quarantine",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "New animal quarantine",
+      "headingPath": ["Animal health", "Quarantine"],
+      "text": "New fish are kept in a separate quarantine system before joining established displays because isolation reduces the chance of introducing infectious disease. Quarantine tanks use dedicated nets and siphons."
+    },
+    {
+      "id": "aq-feeding",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Feeding observation",
+      "headingPath": ["Husbandry", "Feeding"],
+      "text": "Keepers remain at the exhibit during feeding so they can observe appetite and unusual behavior. Uneaten food is removed after the observation period."
+    },
+    {
+      "id": "aq-temperature",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Temperature response",
+      "headingPath": ["Water quality", "Temperature"],
+      "text": "If a display temperature rises unexpectedly, the keeper first confirms the reading with a second calibrated thermometer before changing life-support settings. The incident is recorded in the daily log."
+    },
+    {
+      "id": "aq-light",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Lighting schedule",
+      "headingPath": ["Exhibits", "Lighting"],
+      "text": "Display lighting follows a timed day-night schedule to avoid abrupt changes for animals. Decorative lights are switched off during veterinary examinations."
+    },
+    {
+      "id": "aq-salinity",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Salinity checks",
+      "headingPath": ["Water quality", "Salinity"],
+      "text": "Marine-system salinity is measured with a calibrated refractometer before large water changes. The result is written beside the replacement-water batch record."
+    }
+  ],
+  "questions": [
+    {
+      "id": "aq-q1",
+      "family": "biofilter-purpose",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why is biological filtration important for ammonia in the aquarium?",
+      "gold": ["aq-cycle"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "aq-q2",
+      "family": "quarantine-reason",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why are newly arrived fish isolated before they enter established displays?",
+      "gold": ["aq-quarantine"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "aq-q3",
+      "family": "temperature-first-step",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "What should a keeper do first when a display temperature suddenly rises?",
+      "gold": ["aq-temperature"],
+      "challenges": ["PROCEDURE", "PARAPHRASE"]
+    },
+    {
+      "id": "aq-q4",
+      "family": "feeding-observation",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why does a keeper stay at the exhibit while animals are being fed?",
+      "gold": ["aq-feeding"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "aq-q5",
+      "family": "quarantine-duration",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How many days must every new fish remain in quarantine?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "aq-q6",
+      "family": "salinity-brand",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which refractometer brand is required for marine salinity checks?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}

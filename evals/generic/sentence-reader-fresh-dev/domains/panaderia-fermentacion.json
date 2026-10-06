@@ -1,0 +1,112 @@
+{
+  "id": "panaderia-fermentacion",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES bakery fermentation admission domain.",
+  "units": [
+    {
+      "id": "pf-autolisis",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Autólisis de la masa",
+      "headingPath": ["Masa", "Mezcla"],
+      "text": "La autólisis deja reposar harina y agua antes del amasado principal para que la harina se hidrate y el gluten empiece a desarrollarse con menos trabajo mecánico. La sal y la levadura se incorporan después según la fórmula."
+    },
+    {
+      "id": "pf-pliegues",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Pliegues durante fermentación",
+      "headingPath": ["Fermentación", "Pliegues"],
+      "text": "Los pliegues refuerzan la estructura de una masa húmeda durante la fermentación en bloque sin desgasificarla de forma agresiva. El panadero manipula la masa con movimientos breves y suaves."
+    },
+    {
+      "id": "pf-frio",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Fermentación en frío",
+      "headingPath": ["Fermentación", "Frío"],
+      "text": "La fermentación en frío ralentiza la actividad de la levadura y permite extender el desarrollo de sabor durante más tiempo. La masa se cubre para evitar que la superficie se reseque."
+    },
+    {
+      "id": "pf-vapor",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Vapor al inicio del horneado",
+      "headingPath": ["Horneado", "Vapor"],
+      "text": "El vapor durante la fase inicial del horneado mantiene flexible la superficie de la masa y favorece la expansión antes de que se forme una corteza firme. Después se evacua la humedad para terminar el secado de la corteza."
+    },
+    {
+      "id": "pf-enfriado",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Enfriado del pan",
+      "headingPath": ["Salida del horno", "Enfriado"],
+      "text": "El pan recién horneado se deja enfriar sobre rejillas para que el vapor interno pueda salir y la miga termine de estabilizarse. Cortarlo inmediatamente puede comprimir una miga todavía húmeda."
+    },
+    {
+      "id": "pf-masa-madre",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Refresco de masa madre",
+      "headingPath": ["Prefermentos", "Masa madre"],
+      "text": "Una masa madre activa se refresca con harina y agua para aportar alimento nuevo a la comunidad microbiana. El recipiente se mantiene limpio entre refrescos."
+    }
+  ],
+  "questions": [
+    {
+      "id": "pf-q1",
+      "family": "autolisis-motivo",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Para qué se deja reposar harina y agua durante la autólisis?",
+      "gold": ["pf-autolisis"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "pf-q2",
+      "family": "pliegues-funcion",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Qué finalidad tienen los pliegues en una masa húmeda durante la fermentación en bloque?",
+      "gold": ["pf-pliegues"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "pf-q3",
+      "family": "frio-efecto",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se usa fermentación en frío?",
+      "gold": ["pf-frio"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "pf-q4",
+      "family": "vapor-inicio",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se añade vapor al comienzo del horneado?",
+      "gold": ["pf-vapor"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "pf-q5",
+      "family": "autolisis-minutos",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántos minutos exactos debe durar siempre la autólisis?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "pf-q6",
+      "family": "masa-madre-harina",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué marca de harina debe utilizarse para refrescar la masa madre?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}
