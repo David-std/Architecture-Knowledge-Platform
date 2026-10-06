@@ -1,0 +1,138 @@
+{
+  "schemaVersion": "akp.structural-intent-reader-fresh-dev.v1",
+  "frozen": true,
+  "baselineSha": "10ade0d2c27aed31c7d5f9c2528a654d9c116d9b",
+  "dataFreezeCommit": "889cc1d337eee047bf902ecfd94cfaa17b00a1b2",
+  "inputs": [
+    {
+      "path": "evals/generic/structural-intent-reader-fresh-dev/domains/cold-chain-pharmacy.json",
+      "gitBlobSha": "bf9cf82fabf94e2be781854cfa8e14b4eb9b8cdc"
+    },
+    {
+      "path": "evals/generic/structural-intent-reader-fresh-dev/domains/laboratorio-calibracion.json",
+      "gitBlobSha": "0daee2dc93922a57add2ef01a831d2c9136f3074"
+    },
+    {
+      "path": "evals/generic/structural-intent-reader-fresh-dev/domains/mantenimiento-ascensores.json",
+      "gitBlobSha": "b8f3e184f3439c456fb5918ae54ab8ec0440c42f"
+    },
+    {
+      "path": "evals/generic/structural-intent-reader-fresh-dev/domains/warehouse-robotics.json",
+      "gitBlobSha": "2fdc192e60317b0e3e1f683509c470ab1f090b2f"
+    }
+  ],
+  "dataset": {
+    "split": "development",
+    "domains": [
+      "cold-chain-pharmacy",
+      "laboratorio-calibracion",
+      "mantenimiento-ascensores",
+      "warehouse-robotics"
+    ],
+    "questions": 24,
+    "answerable": 16,
+    "unanswerable": 8,
+    "languages": ["en", "es"],
+    "authoredBeforeExecution": true,
+    "reusedPriorDevelopment": false,
+    "reusedPriorHeldout": false
+  },
+  "reader": {
+    "model": "onnx-community/Qwen2.5-1.5B-Instruct",
+    "revision": "9f9c976052bfb08a20793f0c3013563dc095c966",
+    "dtype": "q4",
+    "promptVersion": "evidence-reader-v4",
+    "temperature": 0,
+    "maxOutputTokens": 256
+  },
+  "structuralGate": {
+    "unitTypes": [
+      "RULE",
+      "PRECONDITION",
+      "WORKFLOW_STEP",
+      "TABLE_ROW",
+      "TABLE_CELL",
+      "EVIDENCE",
+      "CODE_EVIDENCE"
+    ],
+    "intentCompatibility": {
+      "EXACT_LOOKUP": [
+        "RULE",
+        "PRECONDITION",
+        "TABLE_ROW",
+        "TABLE_CELL",
+        "EVIDENCE",
+        "CODE_EVIDENCE"
+      ],
+      "CONCEPTUAL": [
+        "RULE",
+        "PRECONDITION",
+        "WORKFLOW_STEP",
+        "TABLE_ROW",
+        "TABLE_CELL",
+        "EVIDENCE"
+      ],
+      "COMPARISON": ["RULE", "TABLE_ROW", "TABLE_CELL", "EVIDENCE"],
+      "WORKFLOW_EXECUTION": [
+        "RULE",
+        "PRECONDITION",
+        "WORKFLOW_STEP",
+        "EVIDENCE"
+      ],
+      "SOURCE_VERIFICATION": [
+        "RULE",
+        "PRECONDITION",
+        "WORKFLOW_STEP",
+        "TABLE_ROW",
+        "TABLE_CELL",
+        "EVIDENCE",
+        "CODE_EVIDENCE"
+      ],
+      "PROJECT_CODE": ["RULE", "EVIDENCE", "CODE_EVIDENCE"],
+      "GLOBAL_SYNTHESIS": ["RULE", "TABLE_ROW", "TABLE_CELL", "EVIDENCE"],
+      "IMPACT_ANALYSIS": [
+        "RULE",
+        "PRECONDITION",
+        "WORKFLOW_STEP",
+        "EVIDENCE",
+        "CODE_EVIDENCE"
+      ],
+      "NO_RETRIEVAL_REQUIRED": []
+    }
+  },
+  "protocol": {
+    "phase": "FRESH_DEVELOPMENT_FEASIBILITY_ONLY",
+    "retiredAuthority": ["PASSAGE_TEXT_SUPPORT", "PASSAGE_CUE_SUPPORT"],
+    "preserveNonPassageBaselineAuthority": true,
+    "readerMayCreateSourceBoundSupport": true,
+    "readerReceivesOnlyStructurallyEligibleCandidates": true,
+    "readerSupportRequiresExactVisibleSpan": true,
+    "noCrossEncoder": true,
+    "noThresholdSweep": true,
+    "noPromptChange": true,
+    "noModelChangeFromReader107": true,
+    "providerDefaultsChanged": false,
+    "runtimeChanged": false,
+    "productionAdmissionChanged": false
+  },
+  "developmentGate": {
+    "outcomes": [
+      "PROCEED_TO_FRESH_HOLDOUT",
+      "REJECT_FRESH_DEVELOPMENT_FRONTIER",
+      "INVALID_EXPERIMENT"
+    ],
+    "requirements": [
+      "answerableRecallNonRegression",
+      "admittedPrecisionNonRegression",
+      "falseAcceptanceNonIncrease",
+      "wrongAdmissionQuestionsNonIncrease",
+      "strictAccuracyNonRegression",
+      "baselineGoldPreserved",
+      "noNewFalseAcceptances",
+      "noNewWrongAdmissions",
+      "allSemanticSupportsSourceBound",
+      "allSemanticSupportsStructurallyEligible",
+      "measuredQualityAdvantage"
+    ]
+  }
+}

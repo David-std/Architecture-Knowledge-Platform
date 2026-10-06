@@ -52,6 +52,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".github/workflows/evidence-admission-structural-intent-reader-fresh-dev.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".github/workflows/evidence-source-selection.yml",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -2467,6 +2472,31 @@
       "reason": "corpus-agnostic product evaluation"
     },
     {
+      "path": "evals/generic/structural-intent-reader-fresh-dev/domains/cold-chain-pharmacy.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/structural-intent-reader-fresh-dev/domains/laboratorio-calibracion.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/structural-intent-reader-fresh-dev/domains/mantenimiento-ascensores.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/structural-intent-reader-fresh-dev/domains/warehouse-robotics.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/structural-intent-reader-fresh-dev/manifest.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
       "path": "evals/generic/structured-proposition-family-disjoint/manifest.json",
       "category": "PRODUCT_EVAL",
       "reason": "corpus-agnostic product evaluation"
@@ -4183,6 +4213,11 @@
     },
     {
       "path": "scripts/evidence-admission-recordings.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/evidence-admission-structural-intent-reader-fresh-dev-experiment.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
