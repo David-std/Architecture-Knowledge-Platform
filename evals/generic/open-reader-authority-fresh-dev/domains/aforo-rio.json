@@ -1,0 +1,112 @@
+{
+  "id": "aforo-rio",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES river gauging admission domain.",
+  "units": [
+    {
+      "id": "ar-regla",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Regla limnimétrica",
+      "headingPath": ["Nivel", "Lectura"],
+      "text": "La regla limnimétrica permite leer visualmente el nivel del agua respecto de una referencia fija y facilita comparar observaciones entre visitas. La lectura se anota junto con la hora."
+    },
+    {
+      "id": "ar-molinete",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Medición de velocidad",
+      "headingPath": ["Caudal", "Velocidad"],
+      "text": "El molinete se orienta contra la corriente para medir la velocidad local del agua en una vertical seleccionada. Se espera a que la lectura se estabilice antes de registrarla."
+    },
+    {
+      "id": "ar-seccion",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Sección de aforo",
+      "headingPath": ["Caudal", "Sección"],
+      "text": "La sección de aforo se divide en varias verticales para representar cómo cambian profundidad y velocidad a lo ancho del cauce. El caudal total se obtiene combinando los aportes de esas subsecciones."
+    },
+    {
+      "id": "ar-crecida",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Aforo durante crecida",
+      "headingPath": ["Seguridad", "Crecida"],
+      "text": "Si la corriente supera las condiciones seguras para ingresar al cauce, el equipo no realiza el vadeo y utiliza un método de medición desde una posición protegida. La seguridad del personal tiene prioridad sobre completar la lectura manual."
+    },
+    {
+      "id": "ar-puente",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Medición desde puente",
+      "headingPath": ["Métodos", "Puente"],
+      "text": "Desde un puente se puede bajar el sensor hasta posiciones definidas de la sección sin que el operador entre al agua. El punto de suspensión debe permanecer libre de obstáculos."
+    },
+    {
+      "id": "ar-control",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Control de estación",
+      "headingPath": ["Estación", "Control"],
+      "text": "Cambios en el lecho o acumulación de sedimentos pueden alterar la relación entre nivel y caudal, por lo que se revisa periódicamente el control hidráulico de la estación. Las observaciones se documentan después de eventos importantes."
+    }
+  ],
+  "questions": [
+    {
+      "id": "arv-q1",
+      "family": "regla-finalidad",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Para qué sirve una regla limnimétrica en una estación de aforo?",
+      "gold": ["ar-regla"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "arv-q2",
+      "family": "seccion-verticales",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se divide la sección de aforo en varias verticales?",
+      "gold": ["ar-seccion"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "arv-q3",
+      "family": "crecida-seguridad",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué hace el equipo si no es seguro entrar al cauce durante una crecida?",
+      "gold": ["ar-crecida"],
+      "challenges": ["CONDITION", "PARAPHRASE"]
+    },
+    {
+      "id": "arv-q4",
+      "family": "control-revision",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se revisa el control hidráulico de la estación después de cambios del lecho?",
+      "gold": ["ar-control"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "arv-q5",
+      "family": "verticales-numero",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántas verticales exactas debe tener toda sección de aforo?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "arv-q6",
+      "family": "molinete-marca",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué marca de molinete es obligatoria para medir velocidad?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}
