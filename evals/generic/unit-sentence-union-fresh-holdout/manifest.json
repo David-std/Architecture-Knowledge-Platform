@@ -1,0 +1,99 @@
+{
+  "schemaVersion": "akp.unit-sentence-union-fresh-holdout.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-06",
+  "baselineSha": "1aa151cf9b00927eff750ac7f5b3db3667b699f2",
+  "developmentPassCommit": "1bcb1c0a1f71febe02b532fe1aec0244cf08dfae",
+  "developmentRunId": 37431294569,
+  "developmentArtifactId": 11396784203,
+  "developmentArtifactDigest": "sha256:610beb5d15863c180e3edbd57ea27c6d6c9882dcb4ed17938529acbf639f4ced",
+  "dataFreezeCommit": "22a4f4015b485178bed4e76b1e3d08a9fe904ab4",
+  "inputs": [
+    {
+      "path": "evals/generic/unit-sentence-union-fresh-holdout/domains/broadcast-studio.json",
+      "gitBlobSha": "6fbb175c99856e638b5123f09f908c097759bd5a"
+    },
+    {
+      "path": "evals/generic/unit-sentence-union-fresh-holdout/domains/ceramic-kiln-production.json",
+      "gitBlobSha": "bed690e5736fc22659da29586db0b80d97112de6"
+    },
+    {
+      "path": "evals/generic/unit-sentence-union-fresh-holdout/domains/mountain-cableway.json",
+      "gitBlobSha": "a3ef40e46fcf2303e9b5b93c4f0dd925ec8f2d68"
+    },
+    {
+      "path": "evals/generic/unit-sentence-union-fresh-holdout/domains/wastewater-treatment.json",
+      "gitBlobSha": "c9c1babf7926c191aaf2a8d1061cc6224d165289"
+    }
+  ],
+  "dataset": {
+    "split": "heldout",
+    "domains": [
+      "broadcast-studio",
+      "ceramic-kiln-production",
+      "mountain-cableway",
+      "wastewater-treatment"
+    ],
+    "questions": 24,
+    "answerable": 16,
+    "unanswerable": 8,
+    "languages": ["en", "es"],
+    "familyDisjointFromDevelopment": true,
+    "authoredAfterDevelopmentPass": true,
+    "authoredBeforeHoldoutExecution": true,
+    "reusedPriorDevelopment": false,
+    "reusedPriorHeldout": false
+  },
+  "reader": {
+    "model": "onnx-community/Qwen2.5-1.5B-Instruct",
+    "revision": "9f9c976052bfb08a20793f0c3013563dc095c966",
+    "dtype": "q4",
+    "promptVersion": "evidence-reader-v4",
+    "temperature": 0,
+    "maxOutputTokens": 256
+  },
+  "segmentation": {
+    "kind": "INTL_SENTENCE_EXACT_SOURCE_OFFSETS",
+    "allVisibleSentences": true,
+    "preservesOriginalCandidateIdentity": true,
+    "sentenceCanCreateCandidate": false
+  },
+  "protocol": {
+    "phase": "FRESH_HOLDOUT_CONFIRMATION_ONLY",
+    "retiredAuthority": ["PASSAGE_TEXT_SUPPORT", "PASSAGE_CUE_SUPPORT"],
+    "unitReaderFirst": true,
+    "sentenceFallbackOnlyAfterUnitAbstains": true,
+    "readerCanCreateSupport": false,
+    "readerReceivesOnlyRetiredBaselineCandidates": true,
+    "allVisibleSentencesEvaluated": true,
+    "sentenceSpansRemappedToOriginalPassage": true,
+    "noCrossEncoder": true,
+    "noThresholdSweep": true,
+    "noPromptChange": true,
+    "noModelChangeFromDevelopment": true,
+    "providerDefaultsChanged": false,
+    "runtimeChanged": false,
+    "productionAdmissionChanged": false
+  },
+  "holdoutGate": {
+    "answerableRecallNonRegression": true,
+    "admittedPrecisionNonRegression": true,
+    "falseAcceptanceNonIncrease": true,
+    "wrongAdmissionQuestionsNonIncrease": true,
+    "strictAccuracyNonRegression": true,
+    "candidateAdmissionsSubsetOfBaseline": true,
+    "baselineGoldPreserved": true,
+    "allSemanticSupportsSourceBound": true,
+    "requireMeasuredPrecisionAdvantage": true,
+    "outcomes": [
+      "PROMOTE_R5_REPLACEMENT",
+      "REJECT_FRESH_HOLDOUT",
+      "INVALID_EXPERIMENT"
+    ]
+  },
+  "nextStepBoundary": [
+    "PROMOTE_R5_REPLACEMENT authorizes implementation of this exact composition only; production code still requires tests and full same-SHA release gates.",
+    "REJECT_FRESH_HOLDOUT terminates this exact unit-level plus sentence-fallback union without retuning the heldout pack/model/prompt/threshold/segmentation.",
+    "No prior holdout pack is reused by this worker."
+  ]
+}

@@ -1,0 +1,148 @@
+name: evidence-admission-unit-sentence-union-fresh-holdout
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evidence-admission-unit-sentence-union-fresh-holdout:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'experiment/unit-sentence-union-fresh-dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AKP_LOCAL_AGENT_MODEL: onnx-community/Qwen2.5-1.5B-Instruct
+      AKP_LOCAL_AGENT_MODEL_REVISION: 9f9c976052bfb08a20793f0c3013563dc095c966
+      AKP_LOCAL_AGENT_DTYPE: q4
+      AKP_LOCAL_AGENT_PORT: "18083"
+      AKP_UNIT_SENTENCE_UNION_BASE_URL: http://127.0.0.1:18083/chat/completions
+      AKP_UNIT_SENTENCE_UNION_MODEL: onnx-community/Qwen2.5-1.5B-Instruct
+      AKP_UNIT_SENTENCE_UNION_MODEL_REVISION: 9f9c976052bfb08a20793f0c3013563dc095c966
+      AKP_UNIT_SENTENCE_UNION_DTYPE: q4
+      AKP_UNIT_SENTENCE_UNION_FRESH_HOLDOUT_REPORT: reports/ci/unit-sentence-union-fresh-holdout.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate frozen unit-sentence union worker
+        run: |
+          pnpm exec prettier --check \
+            evals/generic/unit-sentence-union-fresh-holdout/domains/*.json \
+            evals/generic/unit-sentence-union-fresh-holdout/manifest.json \
+            scripts/evidence-admission-unit-sentence-union-fresh-holdout-experiment.ts \
+            .github/workflows/evidence-admission-unit-sentence-union-fresh-holdout.yml
+          pnpm check
+      - name: Build provider workspace dependency
+        run: pnpm --filter @akp/contracts build
+      - name: Prepare experiment evidence
+        run: mkdir -p reports/ci
+      - name: Start pinned 1.5B local reader provider
+        shell: bash
+        run: |
+          pnpm --filter @akp/retrieval exec tsx scripts/local-agent-provider.ts \
+            > reports/ci/unit-sentence-union-provider.log 2>&1 &
+          echo $! > /tmp/unit-sentence-union-provider.pid
+          for attempt in $(seq 1 180); do
+            if curl --fail --silent http://127.0.0.1:18083/health \
+              > reports/ci/unit-sentence-union-provider-health.json; then
+              cat reports/ci/unit-sentence-union-provider-health.json
+              exit 0
+            fi
+            sleep 5
+          done
+          cat reports/ci/unit-sentence-union-provider.log >&2
+          exit 1
+      - name: Execute frozen unit-sentence union holdout gate
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm exec tsx scripts/evidence-admission-unit-sentence-union-fresh-holdout-experiment.ts \
+            2>&1 | tee reports/ci/unit-sentence-union-fresh-holdout.log
+      - name: Validate governed holdout outcome
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(
+            readFileSync("reports/ci/unit-sentence-union-fresh-holdout.json", "utf8"),
+          );
+          const health = JSON.parse(
+            readFileSync("reports/ci/unit-sentence-union-provider-health.json", "utf8"),
+          );
+          if (
+            ![
+              "PROMOTE_R5_REPLACEMENT",
+              "REJECT_FRESH_HOLDOUT",
+            ].includes(report.outcome)
+          ) {
+            throw new Error("Unit-sentence union holdout outcome is invalid.");
+          }
+          if (
+            report.heldoutEvaluated !== true ||
+            report.candidateCanCreateSupport !== false ||
+            report.runtimeChanged !== false ||
+            report.productionAdmissionChanged !== false ||
+            report.dataFreezeCommit !==
+              "22a4f4015b485178bed4e76b1e3d08a9fe904ab4"
+          ) {
+            throw new Error("Unit-sentence union holdout worker crossed its claim boundary.");
+          }
+          if (
+            report.gates?.candidateAdmissionsSubsetOfBaseline !== true ||
+            report.gates?.allSemanticSupportsSourceBound !== true
+          ) {
+            throw new Error("Unit-sentence union holdout source-bound invariants failed.");
+          }
+          if (
+            health.model !== "onnx-community/Qwen2.5-1.5B-Instruct" ||
+            health.revision !==
+              "9f9c976052bfb08a20793f0c3013563dc095c966" ||
+            health.dtype !== "q4"
+          ) {
+            throw new Error("Pinned 1.5B local reader identity drifted.");
+          }
+          console.log(
+            JSON.stringify(
+              {
+                outcome: report.outcome,
+                baseline: report.baseline,
+                candidate: report.candidate,
+                gates: report.gates,
+                counts: report.counts,
+                protocolHash: report.protocolHash,
+                dataFreezeCommit: report.dataFreezeCommit,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Upload unit-sentence union evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidence-admission-unit-sentence-union-fresh-holdout-${{ github.run_id }}
+          path: |
+            reports/ci/unit-sentence-union-fresh-holdout.json
+            reports/ci/unit-sentence-union-fresh-holdout.log
+            reports/ci/unit-sentence-union-provider-health.json
+            reports/ci/unit-sentence-union-provider.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Stop 1.5B local reader provider
+        if: always()
+        shell: bash
+        run: |
+          if [ -f /tmp/unit-sentence-union-provider.pid ]; then
+            kill "$(cat /tmp/unit-sentence-union-provider.pid)" 2>/dev/null || true
+          fi

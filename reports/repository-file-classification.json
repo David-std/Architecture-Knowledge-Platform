@@ -57,6 +57,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".github/workflows/evidence-admission-unit-sentence-union-fresh-holdout.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".github/workflows/evidence-source-selection.yml",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -2512,6 +2517,31 @@
       "reason": "corpus-agnostic product evaluation"
     },
     {
+      "path": "evals/generic/unit-sentence-union-fresh-holdout/domains/broadcast-studio.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/unit-sentence-union-fresh-holdout/domains/ceramic-kiln-production.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/unit-sentence-union-fresh-holdout/domains/mountain-cableway.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/unit-sentence-union-fresh-holdout/domains/wastewater-treatment.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/unit-sentence-union-fresh-holdout/manifest.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
       "path": "evals/registered/agent-ab-public-product-tasks.json",
       "category": "PRODUCT_EVAL",
       "reason": "versioned registered product evaluation"
@@ -4218,6 +4248,11 @@
     },
     {
       "path": "scripts/evidence-admission-unit-sentence-union-fresh-dev-experiment.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/evidence-admission-unit-sentence-union-fresh-holdout-experiment.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
