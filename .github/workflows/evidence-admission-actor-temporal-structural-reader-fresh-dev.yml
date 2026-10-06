@@ -79,6 +79,9 @@ jobs:
           const health = JSON.parse(
             readFileSync("reports/ci/actor-temporal-structural-reader-provider-health.json", "utf8"),
           );
+          const manifest = JSON.parse(
+            readFileSync("evals/generic/actor-temporal-structural-reader-fresh-dev/manifest.json", "utf8"),
+          );
           if (
             ![
               "PROCEED_TO_FRESH_HOLDOUT",
@@ -92,8 +95,7 @@ jobs:
             report.candidateCanCreateSupport !== false ||
             report.runtimeChanged !== false ||
             report.productionAdmissionChanged !== false ||
-            report.dataFreezeCommit !==
-              "138a40e609fb6ff48f465a2a3e2483798acaef19"
+            report.dataFreezeCommit !== manifest.dataFreezeCommit
           ) {
             throw new Error("Actor-temporal structural reader worker crossed its claim boundary.");
           }
