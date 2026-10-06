@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "akp.unit-sentence-union-fresh-dev.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-06",
+  "baselineSha": "1aa151cf9b00927eff750ac7f5b3db3667b699f2",
+  "dataFreezeCommit": "4851d29676d3b814b1d9ea26fe648eb2764af4e0",
+  "inputs": [
+    {
+      "path": "evals/generic/unit-sentence-union-fresh-dev/domains/archive-preservation.json",
+      "gitBlobSha": "aff8527186862988fed2057ef1278dd50c046923"
+    },
+    {
+      "path": "evals/generic/unit-sentence-union-fresh-dev/domains/ferry-port-operations.json",
+      "gitBlobSha": "1f4dda8df50c2e65a1021a8093b795cd725d1554"
+    },
+    {
+      "path": "evals/generic/unit-sentence-union-fresh-dev/domains/solar-farm-maintenance.json",
+      "gitBlobSha": "810a0090c573392b392396927ae98dd9b1678398"
+    },
+    {
+      "path": "evals/generic/unit-sentence-union-fresh-dev/domains/theatre-stage-operations.json",
+      "gitBlobSha": "e0cf5d264beda580e0a0417e94e78ead32251634"
+    }
+  ],
+  "dataset": {
+    "split": "development",
+    "domains": [
+      "archive-preservation",
+      "ferry-port-operations",
+      "solar-farm-maintenance",
+      "theatre-stage-operations"
+    ],
+    "questions": 24,
+    "answerable": 16,
+    "unanswerable": 8,
+    "languages": ["en", "es"],
+    "authoredBeforeExecution": true,
+    "reusedPriorDevelopment": false,
+    "reusedPriorHeldout": false
+  },
+  "reader": {
+    "model": "onnx-community/Qwen2.5-1.5B-Instruct",
+    "revision": "9f9c976052bfb08a20793f0c3013563dc095c966",
+    "dtype": "q4",
+    "promptVersion": "evidence-reader-v4",
+    "temperature": 0,
+    "maxOutputTokens": 256
+  },
+  "segmentation": {
+    "kind": "INTL_SENTENCE_EXACT_SOURCE_OFFSETS",
+    "allVisibleSentences": true,
+    "preservesOriginalCandidateIdentity": true,
+    "sentenceCanCreateCandidate": false
+  },
+  "protocol": {
+    "phase": "FRESH_DEVELOPMENT_FEASIBILITY_ONLY",
+    "retiredAuthority": ["PASSAGE_TEXT_SUPPORT", "PASSAGE_CUE_SUPPORT"],
+    "unitReaderFirst": true,
+    "sentenceFallbackOnlyAfterUnitAbstains": true,
+    "readerCanCreateSupport": false,
+    "readerReceivesOnlyRetiredBaselineCandidates": true,
+    "allVisibleSentencesEvaluated": true,
+    "sentenceSpansRemappedToOriginalPassage": true,
+    "noCrossEncoder": true,
+    "noThresholdSweep": true,
+    "noPromptChange": true,
+    "noModelChangeFromReader107": true,
+    "providerDefaultsChanged": false,
+    "runtimeChanged": false,
+    "productionAdmissionChanged": false
+  },
+  "developmentGate": {
+    "answerableRecallNonRegression": true,
+    "admittedPrecisionNonRegression": true,
+    "falseAcceptanceNonIncrease": true,
+    "wrongAdmissionQuestionsNonIncrease": true,
+    "strictAccuracyNonRegression": true,
+    "candidateAdmissionsSubsetOfBaseline": true,
+    "baselineGoldPreserved": true,
+    "allSemanticSupportsSourceBound": true,
+    "requireMeasuredPrecisionAdvantage": true,
+    "outcomes": [
+      "PROCEED_TO_FRESH_HOLDOUT",
+      "REJECT_FRESH_DEVELOPMENT_FRONTIER",
+      "INVALID_EXPERIMENT"
+    ]
+  },
+  "nextStepBoundary": [
+    "A pass authorizes only a separately authored and frozen family-disjoint holdout.",
+    "A reject terminates this exact unit-level plus sentence-fallback union without model, prompt, threshold, segmentation or dataset retuning.",
+    "No prior inspected development or heldout pack is loaded by this worker."
+  ]
+}

@@ -52,6 +52,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".github/workflows/evidence-admission-unit-sentence-union-fresh-dev.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".github/workflows/evidence-source-selection.yml",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -2482,6 +2487,31 @@
       "reason": "corpus-agnostic product evaluation"
     },
     {
+      "path": "evals/generic/unit-sentence-union-fresh-dev/domains/archive-preservation.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/unit-sentence-union-fresh-dev/domains/ferry-port-operations.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/unit-sentence-union-fresh-dev/domains/solar-farm-maintenance.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/unit-sentence-union-fresh-dev/domains/theatre-stage-operations.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/unit-sentence-union-fresh-dev/manifest.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
       "path": "evals/registered/agent-ab-public-product-tasks.json",
       "category": "PRODUCT_EVAL",
       "reason": "versioned registered product evaluation"
@@ -4183,6 +4213,11 @@
     },
     {
       "path": "scripts/evidence-admission-recordings.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/evidence-admission-unit-sentence-union-fresh-dev-experiment.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
