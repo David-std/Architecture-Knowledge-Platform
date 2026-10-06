@@ -1,0 +1,112 @@
+{
+  "id": "rail-platform-ops",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh EN railway platform operations admission domain.",
+  "units": [
+    {
+      "id": "rp-dispatch",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Train dispatch signal",
+      "headingPath": ["Departure", "Dispatch"],
+      "text": "The platform dispatcher gives the ready-to-start signal only after doors are confirmed closed and the platform edge is clear. The driver does not depart on passenger movement alone."
+    },
+    {
+      "id": "rp-gap",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Platform gap filler",
+      "headingPath": ["Accessibility", "Gap"],
+      "text": "A portable gap filler bridges the horizontal or vertical gap between the train doorway and the platform for passengers who need level boarding assistance. Staff remove it before the train departs."
+    },
+    {
+      "id": "rp-crowd",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Crowd hold point",
+      "headingPath": ["Crowd management", "Hold point"],
+      "text": "When the platform reaches the local crowd threshold, staff hold arriving passengers behind the marked access point until enough space becomes available near the train."
+    },
+    {
+      "id": "rp-object",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Object on track",
+      "headingPath": ["Incidents", "Track object"],
+      "text": "If an item falls onto the track, platform staff stop passengers from reaching for it and contact the control room. Retrieval begins only after the track is protected under the local operating procedure."
+    },
+    {
+      "id": "rp-ramp",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Boarding ramp request",
+      "headingPath": ["Accessibility", "Ramp"],
+      "text": "A passenger who requests boarding assistance is met by station staff at the agreed boarding point. The staff member positions the ramp and confirms that the wheels or mobility aid are clear before removal."
+    },
+    {
+      "id": "rp-announcement",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Service alteration announcement",
+      "headingPath": ["Information", "Alterations"],
+      "text": "During a platform change, announcements identify the new platform and the affected service. Staff repeat the change when crowd noise makes the first announcement difficult to hear."
+    }
+  ],
+  "questions": [
+    {
+      "id": "rp-q1",
+      "family": "dispatch-condition",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "When may the platform dispatcher give the ready-to-start signal?",
+      "gold": ["rp-dispatch"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "rp-q2",
+      "family": "gap-purpose",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why is a portable gap filler used during boarding?",
+      "gold": ["rp-gap"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "rp-q3",
+      "family": "track-object-action",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "What should platform staff do when an object falls onto the track?",
+      "gold": ["rp-object"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "rp-q4",
+      "family": "ramp-operator",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who positions the boarding ramp for a passenger needing assistance?",
+      "gold": ["rp-ramp"],
+      "challenges": []
+    },
+    {
+      "id": "rp-q5",
+      "family": "crowd-threshold-number",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "Exactly how many passengers define the crowd threshold on every platform?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "rp-q6",
+      "family": "announcement-vendor",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which company supplies the public-address system used for platform changes?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}

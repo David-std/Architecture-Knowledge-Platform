@@ -1,0 +1,112 @@
+{
+  "id": "vivero-forestal",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES forestry nursery admission domain.",
+  "units": [
+    {
+      "id": "vf-repique",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Repique de plántulas",
+      "headingPath": ["Propagación", "Repique"],
+      "text": "El repique traslada una plántula desde el almácigo a un recipiente donde puede continuar desarrollando raíces con más espacio. La operación se hace cuando la planta puede manipularse sin dañar el tallo."
+    },
+    {
+      "id": "vf-sombra",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Retiro de sombra",
+      "headingPath": ["Aclimatación", "Sombra"],
+      "text": "La malla de sombra se retira de manera gradual durante la fase de endurecimiento. Una retirada brusca puede aumentar el estrés por radiación y desecación."
+    },
+    {
+      "id": "vf-riego",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Riego temprano",
+      "headingPath": ["Riego", "Horario"],
+      "text": "El encargado de riego inicia el primer ciclo temprano cuando el sustrato necesita agua. Antes de repetir un ciclo, revisa la humedad y evita mantener los recipientes saturados."
+    },
+    {
+      "id": "vf-raiz",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Raíz deformada",
+      "headingPath": ["Calidad", "Raíces"],
+      "text": "Una plántula con raíz principal fuertemente enrollada se separa del lote destinado a plantación. No se corrige doblando la raíz dentro del mismo recipiente."
+    },
+    {
+      "id": "vf-despacho",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Preparación para despacho",
+      "headingPath": ["Despacho", "Preparación"],
+      "text": "Antes del despacho, el personal agrupa las plantas por lote y verifica la etiqueta de procedencia. Las bandejas se humedecen si es necesario para evitar que el cepellón llegue seco al destino."
+    },
+    {
+      "id": "vf-sustrato",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Sustrato aireado",
+      "headingPath": ["Producción", "Sustrato"],
+      "text": "Un sustrato aireado mantiene poros que permiten intercambio de oxígeno alrededor de las raíces y favorece el drenaje del exceso de agua."
+    }
+  ],
+  "questions": [
+    {
+      "id": "vf-q1",
+      "family": "repique-finalidad",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Para qué se repica una plántula desde el almácigo a un recipiente?",
+      "gold": ["vf-repique"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "vf-q2",
+      "family": "sombra-gradual",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se retira gradualmente la malla de sombra durante el endurecimiento?",
+      "gold": ["vf-sombra"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "vf-q3",
+      "family": "riego-responsable",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién inicia el primer ciclo de riego cuando el sustrato lo necesita?",
+      "gold": ["vf-riego"],
+      "challenges": []
+    },
+    {
+      "id": "vf-q4",
+      "family": "raiz-accion",
+      "intent": "PROCEDURE",
+      "language": "es",
+      "query": "¿Qué se hace con una plántula que tiene la raíz principal fuertemente enrollada?",
+      "gold": ["vf-raiz"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "vf-q5",
+      "family": "sustrato-proporcion",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué porcentaje exacto de poros debe tener todo sustrato aireado?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "vf-q6",
+      "family": "despacho-transportista",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué empresa transporta obligatoriamente las bandejas en cada despacho?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}

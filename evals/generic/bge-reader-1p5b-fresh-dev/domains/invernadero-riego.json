@@ -1,0 +1,112 @@
+{
+  "id": "invernadero-riego",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES greenhouse irrigation admission domain.",
+  "units": [
+    {
+      "id": "ir-goteo",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Riego por goteo",
+      "headingPath": ["Riego", "Goteo"],
+      "text": "El riego por goteo aplica agua cerca de la zona radicular mediante emisores de bajo caudal. Esto reduce el mojado innecesario de pasillos y permite dosificar el agua por sector."
+    },
+    {
+      "id": "ir-humedad",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Lectura de humedad",
+      "headingPath": ["Monitoreo", "Sustrato"],
+      "text": "La lectura de humedad del sustrato se realiza antes del primer ciclo de riego. Si el valor permanece por encima del objetivo, el operador retrasa ese ciclo y vuelve a medir más tarde."
+    },
+    {
+      "id": "ir-filtro",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Limpieza del filtro",
+      "headingPath": ["Mantenimiento", "Filtro"],
+      "text": "Cuando aumenta la diferencia de presión a través del filtro, se detiene el sector afectado y se limpia el elemento filtrante antes de restablecer el caudal normal."
+    },
+    {
+      "id": "ir-fertirriego",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Inyección de nutrientes",
+      "headingPath": ["Nutrición", "Fertirriego"],
+      "text": "El técnico prepara la solución nutritiva y comprueba su conductividad antes de inyectarla en la línea de riego. La mezcla no se corrige mientras ya está circulando por los goteros."
+    },
+    {
+      "id": "ir-drenaje",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Fracción de drenaje",
+      "headingPath": ["Control", "Drenaje"],
+      "text": "La fracción de drenaje compara el volumen que sale de las bolsas de cultivo con el volumen aplicado. Se usa como una señal para ajustar el manejo del riego, no como una medida directa del consumo de cada planta."
+    },
+    {
+      "id": "ir-fuga",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Línea con fuga",
+      "headingPath": ["Incidencias", "Fuga"],
+      "text": "Una fuga visible en una línea lateral se aísla cerrando la válvula del sector. La reparación se realiza antes de volver a presurizar esa línea."
+    }
+  ],
+  "questions": [
+    {
+      "id": "ir-q1",
+      "family": "goteo-finalidad",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se usa riego por goteo cerca de la zona radicular?",
+      "gold": ["ir-goteo"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ir-q2",
+      "family": "humedad-alta",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué hace el operador si la humedad del sustrato sigue por encima del objetivo?",
+      "gold": ["ir-humedad"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ir-q3",
+      "family": "nutriente-responsable",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién prepara la solución nutritiva antes del fertirriego?",
+      "gold": ["ir-fertirriego"],
+      "challenges": []
+    },
+    {
+      "id": "ir-q4",
+      "family": "filtro-presion",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Cuándo debe limpiarse el filtro de un sector de riego?",
+      "gold": ["ir-filtro"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ir-q5",
+      "family": "drenaje-porcentaje",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué porcentaje fijo de drenaje se exige para todos los cultivos?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "ir-q6",
+      "family": "fuga-marca",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué marca de tubería se usa obligatoriamente para reparar una fuga lateral?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}

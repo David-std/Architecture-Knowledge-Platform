@@ -1,0 +1,112 @@
+{
+  "id": "printing-press",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh EN commercial printing press admission domain.",
+  "units": [
+    {
+      "id": "pp-register",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Color register",
+      "headingPath": ["Print quality", "Register"],
+      "text": "Color register describes how accurately the different ink separations align on the sheet. Poor register produces visible color fringes or doubled edges around printed features."
+    },
+    {
+      "id": "pp-blanket",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Blanket cleaning",
+      "headingPath": ["Maintenance", "Blanket"],
+      "text": "The press blanket is cleaned after the machine is stopped and the safe maintenance mode is engaged. Operators do not reach into the printing unit while cylinders are moving."
+    },
+    {
+      "id": "pp-ink",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Ink adjustment",
+      "headingPath": ["Setup", "Ink"],
+      "text": "The press operator adjusts ink keys after comparing the control strip with the approved target. Large corrections are made gradually so one zone does not overshoot while neighboring zones remain stable."
+    },
+    {
+      "id": "pp-dryer",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Dryer fault",
+      "headingPath": ["Faults", "Dryer"],
+      "text": "If the dryer reports an over-temperature fault, the press is stopped and the exhaust path is checked before production resumes. The fault is not cleared simply by increasing web speed."
+    },
+    {
+      "id": "pp-proof",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Approved proof",
+      "headingPath": ["Quality", "Proof"],
+      "text": "An approved proof is the reference used to compare color, image placement, and major content before the production run is accepted. It does not replace mechanical safety checks."
+    },
+    {
+      "id": "pp-sheet",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Sheet jam",
+      "headingPath": ["Faults", "Jam"],
+      "text": "For a sheet jam, the feeder is stopped and stored energy is controlled before the operator removes trapped material. Production restarts only after the paper path is clear."
+    }
+  ],
+  "questions": [
+    {
+      "id": "pp-q1",
+      "family": "register-definition",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What does color register mean on a printing press?",
+      "gold": ["pp-register"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "pp-q2",
+      "family": "blanket-safety",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "Under what condition may an operator clean the press blanket?",
+      "gold": ["pp-blanket"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "pp-q3",
+      "family": "ink-adjuster",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who adjusts the ink keys after checking the control strip?",
+      "gold": ["pp-ink"],
+      "challenges": []
+    },
+    {
+      "id": "pp-q4",
+      "family": "dryer-response",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "What should happen after an over-temperature dryer fault?",
+      "gold": ["pp-dryer"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "pp-q5",
+      "family": "proof-temperature",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "At what temperature must every approved proof be stored?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "pp-q6",
+      "family": "jam-vendor",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which vendor certifies the procedure for clearing sheet jams?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}
