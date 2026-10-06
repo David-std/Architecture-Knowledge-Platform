@@ -1,0 +1,112 @@
+{
+  "id": "coffee-roasting",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh EN coffee-roasting admission domain.",
+  "units": [
+    {
+      "id": "cr-first-crack",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "First crack",
+      "headingPath": ["Roast development", "First crack"],
+      "text": "First crack marks a stage where internal pressure causes beans to audibly fracture as roasting reactions accelerate. The operator watches both sound and bean temperature rather than relying on sound alone."
+    },
+    {
+      "id": "cr-airflow",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Airflow adjustment",
+      "headingPath": ["Roaster control", "Airflow"],
+      "text": "Increasing airflow helps carry smoke and chaff away from the roasting chamber while changing heat transfer through the bean mass. Adjustments are made gradually to avoid abrupt profile changes."
+    },
+    {
+      "id": "cr-cooling",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Rapid cooling",
+      "headingPath": ["Post roast", "Cooling"],
+      "text": "Roasted coffee is cooled promptly after discharge to slow further thermal development outside the drum. The cooling tray agitator remains running while the batch temperature falls."
+    },
+    {
+      "id": "cr-charge",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Charge temperature",
+      "headingPath": ["Roast setup", "Charge"],
+      "text": "Charge temperature is selected before green coffee enters the drum because it influences the initial rate of heat transfer into the batch. It is recorded with the batch profile."
+    },
+    {
+      "id": "cr-chaff",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Chaff collector",
+      "headingPath": ["Maintenance", "Chaff"],
+      "text": "The chaff collector is emptied and inspected regularly because accumulated dry chaff can restrict airflow and increase fire risk. The roaster is cool before the collector is serviced."
+    },
+    {
+      "id": "cr-rest",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Post-roast rest",
+      "headingPath": ["Quality", "Resting"],
+      "text": "Freshly roasted coffee releases carbon dioxide for a period after roasting, so sealed packaging must account for continuing degassing. Flavor evaluation is scheduled consistently relative to roast date."
+    }
+  ],
+  "questions": [
+    {
+      "id": "cr-q1",
+      "family": "first-crack-meaning",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What does first crack indicate during coffee roasting?",
+      "gold": ["cr-first-crack"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "cr-q2",
+      "family": "airflow-purpose",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why might a roaster increase airflow during a batch?",
+      "gold": ["cr-airflow"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "cr-q3",
+      "family": "cooling-reason",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why is roasted coffee cooled promptly after discharge?",
+      "gold": ["cr-cooling"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "cr-q4",
+      "family": "chaff-maintenance-reason",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why must accumulated chaff be removed from the collector?",
+      "gold": ["cr-chaff"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "cr-q5",
+      "family": "first-crack-temperature",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "At exactly what temperature must first crack begin for every coffee?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "cr-q6",
+      "family": "charge-brand",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which thermometer brand is mandatory for setting charge temperature?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}

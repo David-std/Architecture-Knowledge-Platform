@@ -1,0 +1,112 @@
+{
+  "id": "theater-rigging",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh EN theater rigging admission domain.",
+  "units": [
+    {
+      "id": "tr-counterweight",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Counterweight balance",
+      "headingPath": ["Fly system", "Counterweights"],
+      "text": "A counterweight set is loaded to approximately balance the attached scenery so the operator can move the line with controlled effort. The loading rail is kept clear while weights are being changed."
+    },
+    {
+      "id": "tr-lockrail",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Lock rail check",
+      "headingPath": ["Fly system", "Operation"],
+      "text": "Before a line set is moved, the operator confirms that the stage area below is clear and announces the movement. The rope lock is released only after that warning."
+    },
+    {
+      "id": "tr-spot",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Followspot cooling",
+      "headingPath": ["Lighting", "Followspots"],
+      "text": "A followspot is allowed to cool before its lamp housing is opened because internal components remain hot after shutdown. Forced cooling with water is prohibited."
+    },
+    {
+      "id": "tr-cable",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Cable strain relief",
+      "headingPath": ["Lighting", "Cabling"],
+      "text": "Temporary lighting cables are secured with strain relief so connector weight and movement do not pull directly on electrical terminations. Cable paths are kept away from sharp scenery edges."
+    },
+    {
+      "id": "tr-platform",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Elevated work platform",
+      "headingPath": ["Work at height", "Platforms"],
+      "text": "An elevated work platform is inspected before use for guardrails, wheels, brakes, and visible damage. It is not moved while a person remains elevated."
+    },
+    {
+      "id": "tr-curtain",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Fire curtain path",
+      "headingPath": ["Stage safety", "Fire curtain"],
+      "text": "The fire-curtain travel path is kept free of scenery and stored equipment so the curtain can descend without obstruction. The path is checked before the house opens."
+    }
+  ],
+  "questions": [
+    {
+      "id": "tr-q1",
+      "family": "counterweight-purpose",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why is a counterweight set loaded to balance attached scenery?",
+      "gold": ["tr-counterweight"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "tr-q2",
+      "family": "line-move-before",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "What must happen before an operator moves a line set?",
+      "gold": ["tr-lockrail"],
+      "challenges": ["PROCEDURE", "PARAPHRASE"]
+    },
+    {
+      "id": "tr-q3",
+      "family": "followspot-cooling-reason",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why should a followspot cool before its lamp housing is opened?",
+      "gold": ["tr-spot"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "tr-q4",
+      "family": "strain-relief-purpose",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "What is the purpose of strain relief on temporary lighting cables?",
+      "gold": ["tr-cable"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "tr-q5",
+      "family": "platform-height",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What maximum platform height is allowed before guardrails are required?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "tr-q6",
+      "family": "fire-curtain-material",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which manufacturer supplies the theater's fire curtain?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}

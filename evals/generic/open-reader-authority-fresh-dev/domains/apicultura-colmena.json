@@ -1,0 +1,112 @@
+{
+  "id": "apicultura-colmena",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES beekeeping admission domain.",
+  "units": [
+    {
+      "id": "ac-humo",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Uso moderado de humo",
+      "headingPath": ["Inspección", "Ahumador"],
+      "text": "El humo se aplica en pequeñas cantidades antes de manipular los cuadros para reducir la respuesta defensiva y facilitar una inspección ordenada. Un exceso de humo puede alterar innecesariamente a la colonia."
+    },
+    {
+      "id": "ac-reina",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Señales de presencia de reina",
+      "headingPath": ["Inspección", "Reina"],
+      "text": "La presencia de huevos recientes y un patrón normal de cría puede indicar que la reina estuvo activa aunque no se la vea directamente. La búsqueda visual se limita para no prolongar la apertura."
+    },
+    {
+      "id": "ac-alimento",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Reservas de alimento",
+      "headingPath": ["Nutrición", "Reservas"],
+      "text": "Antes de periodos con poca floración se revisan las reservas de alimento para detectar colonias que podrían quedarse sin recursos. La suplementación se decide según la condición real de la colonia."
+    },
+    {
+      "id": "ac-enjambre",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Celdas reales",
+      "headingPath": ["Enjambrazón", "Indicadores"],
+      "text": "La aparición de varias celdas reales junto con congestión del nido puede señalar preparación para enjambrazón. El apicultor evalúa espacio disponible y estado de la colonia antes de intervenir."
+    },
+    {
+      "id": "ac-varroa",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Monitoreo de varroa",
+      "headingPath": ["Sanidad", "Varroa"],
+      "text": "El monitoreo periódico de varroa permite estimar la presión del ácaro antes de decidir un tratamiento. La decisión se basa en el resultado del muestreo y no sólo en la presencia ocasional de un ácaro visible."
+    },
+    {
+      "id": "ac-agua",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Fuente de agua",
+      "headingPath": ["Apiario", "Agua"],
+      "text": "Una fuente de agua cercana y estable reduce la necesidad de que las abejas busquen agua en lugares impredecibles. Se evita que el recipiente se convierta en un riesgo de ahogamiento."
+    }
+  ],
+  "questions": [
+    {
+      "id": "ac-q1",
+      "family": "humo-finalidad",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Para qué se usa una pequeña cantidad de humo antes de revisar los cuadros?",
+      "gold": ["ac-humo"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ac-q2",
+      "family": "reina-indicios",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué indicios pueden mostrar que la reina estuvo activa aunque no se vea?",
+      "gold": ["ac-reina"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ac-q3",
+      "family": "reservas-revision",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se revisan las reservas antes de una época con poca floración?",
+      "gold": ["ac-alimento"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ac-q4",
+      "family": "varroa-monitoreo",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se monitorea varroa antes de decidir un tratamiento?",
+      "gold": ["ac-varroa"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ac-q5",
+      "family": "humo-segundos",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántos segundos exactos debe aplicarse humo a cada colmena?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "ac-q6",
+      "family": "agua-volumen",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué volumen exacto de agua debe tener siempre el recipiente del apiario?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}
