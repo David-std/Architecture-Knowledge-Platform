@@ -1,0 +1,112 @@
+{
+  "id": "cold-chain-pharmacy",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh EN pharmaceutical cold-chain evidence-admission domain.",
+  "units": [
+    {
+      "id": "cc-excursion",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Temperature excursion response",
+      "headingPath": ["Cold storage", "Excursions"],
+      "text": "If vaccine storage temperature remains above 8 °C for more than 15 minutes, quarantine the affected trays and notify the responsible pharmacist before any dose is released."
+    },
+    {
+      "id": "cc-dispatch",
+      "documentType": "rule",
+      "unitType": "PRECONDITION",
+      "title": "Refrigerated dispatch precondition",
+      "headingPath": ["Dispatch", "Release checks"],
+      "text": "Before a refrigerated shipment may leave the pharmacy, staff must confirm that the data logger is active, the insulated shipper is sealed, and the destination contact is available."
+    },
+    {
+      "id": "cc-receive",
+      "documentType": "workflow",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Receiving a cold shipment",
+      "headingPath": ["Receiving", "Logger review"],
+      "text": "On receipt, the technician stops the data logger, records the minimum and maximum temperatures, and attaches the logger report to the receiving record."
+    },
+    {
+      "id": "cc-calibration",
+      "documentType": "evidence",
+      "unitType": "EVIDENCE",
+      "title": "Logger calibration evidence",
+      "headingPath": ["Equipment", "Calibration"],
+      "text": "The current calibration certificate records the logger serial number, calibration date, reference standard, and next calibration due date."
+    },
+    {
+      "id": "cc-definition",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Temperature excursion",
+      "headingPath": ["Cold storage"],
+      "text": "A temperature excursion is a departure from the validated storage temperature range for a medicine or vaccine."
+    },
+    {
+      "id": "cc-inventory",
+      "documentType": "claim",
+      "unitType": "LIST",
+      "title": "Cold-chain inventory fields",
+      "headingPath": ["Inventory"],
+      "text": "Inventory records include product name, lot number, expiry date, quantity, storage location, and shipment status."
+    }
+  ],
+  "questions": [
+    {
+      "id": "cc-q1",
+      "family": "excursion-response",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "What must staff do if vaccine storage stays above 8 °C for more than 15 minutes?",
+      "gold": ["cc-excursion"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "cc-q2",
+      "family": "dispatch-precondition",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "What must be confirmed before a refrigerated shipment can leave the pharmacy?",
+      "gold": ["cc-dispatch"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "cc-q3",
+      "family": "excursion-definition",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is a temperature excursion?",
+      "gold": ["cc-definition"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "cc-q4",
+      "family": "receiving-logger",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "What does the technician do with the data logger when a cold shipment is received?",
+      "gold": ["cc-receive"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "cc-q5",
+      "family": "logger-vendor",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which company manufactures the pharmacy data logger?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "cc-q6",
+      "family": "tray-humidity",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What humidity percentage is required for vaccine trays during storage?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "SAME_VOCABULARY"]
+    }
+  ]
+}

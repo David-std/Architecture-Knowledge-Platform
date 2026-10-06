@@ -1,0 +1,112 @@
+{
+  "id": "warehouse-robotics",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh EN warehouse-robotics evidence-admission domain.",
+  "units": [
+    {
+      "id": "wr-interlock",
+      "documentType": "evidence",
+      "unitType": "CODE_EVIDENCE",
+      "title": "SafetyInterlockService",
+      "headingPath": ["Control software", "SafetyInterlockService"],
+      "text": "SafetyInterlockService.rejectMotion(command) returns INTERLOCK_OPEN when either bumperLoopClosed or gateLoopClosed is false; no motion command is forwarded to the drive controller."
+    },
+    {
+      "id": "wr-departure",
+      "documentType": "rule",
+      "unitType": "PRECONDITION",
+      "title": "Charging-bay departure",
+      "headingPath": ["Robot operations", "Departure"],
+      "text": "Before a robot leaves a charging bay, its battery state of charge must be at least 35 %, the safety gate must be closed, and the route reservation must be active."
+    },
+    {
+      "id": "wr-estop",
+      "documentType": "workflow",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Emergency-stop recovery",
+      "headingPath": ["Recovery", "Emergency stop"],
+      "text": "After an emergency stop, the operator inspects the aisle, clears the stop condition, acknowledges the safety event, and then requests a controlled restart from the fleet console."
+    },
+    {
+      "id": "wr-geofence",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Geofence",
+      "headingPath": ["Navigation"],
+      "text": "A geofence is a virtual boundary that constrains where a mobile robot may travel or perform an action."
+    },
+    {
+      "id": "wr-state",
+      "documentType": "claim",
+      "unitType": "TABLE_ROW",
+      "title": "Robot state action matrix",
+      "headingPath": ["Operations", "State matrix"],
+      "text": "State: MANUAL_RECOVERY | Allowed action: low-speed jog | Remote autonomous mission: prohibited."
+    },
+    {
+      "id": "wr-log",
+      "documentType": "evidence",
+      "unitType": "EVIDENCE",
+      "title": "Safety event record",
+      "headingPath": ["Audit", "Safety events"],
+      "text": "A safety event record stores the robot identifier, event code, controller timestamp, operator acknowledgement, and restart authorization."
+    }
+  ],
+  "questions": [
+    {
+      "id": "wr-q1",
+      "family": "interlock-code",
+      "intent": "PROJECT_CODE",
+      "language": "en",
+      "query": "Where does SafetyInterlockService reject a motion command when a safety loop is open?",
+      "gold": ["wr-interlock"],
+      "challenges": ["CODE"]
+    },
+    {
+      "id": "wr-q2",
+      "family": "departure-precondition",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "What must be true before a robot can leave the charging bay?",
+      "gold": ["wr-departure"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "wr-q3",
+      "family": "estop-recovery",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "What steps does the operator take after an emergency stop?",
+      "gold": ["wr-estop"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "wr-q4",
+      "family": "geofence-definition",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is a geofence for a mobile robot?",
+      "gold": ["wr-geofence"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "wr-q5",
+      "family": "robot-vendor",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which vendor manufactures the warehouse robots?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "wr-q6",
+      "family": "manual-temperature",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "At what temperature is MANUAL_RECOVERY mode allowed?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "SAME_VOCABULARY"]
+    }
+  ]
+}

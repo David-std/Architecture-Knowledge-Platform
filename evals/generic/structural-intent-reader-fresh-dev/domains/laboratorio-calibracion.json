@@ -1,0 +1,112 @@
+{
+  "id": "laboratorio-calibracion",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES calibration-laboratory evidence-admission domain.",
+  "units": [
+    {
+      "id": "lc-vencido",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Equipo con calibración vencida",
+      "headingPath": ["Equipos", "Estado de calibración"],
+      "text": "Si la calibración de un instrumento está vencida, el instrumento se identifica como fuera de servicio y no puede utilizarse para emitir resultados hasta completar una calibración válida."
+    },
+    {
+      "id": "lc-recepcion",
+      "documentType": "workflow",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Recepción de patrones",
+      "headingPath": ["Patrones", "Recepción"],
+      "text": "Al recibir un patrón externo, el metrólogo revisa el embalaje, verifica el número de serie, registra la temperatura de recepción y archiva el certificado del proveedor."
+    },
+    {
+      "id": "lc-incertidumbre",
+      "documentType": "claim",
+      "unitType": "TABLE_ROW",
+      "title": "Criterio de incertidumbre",
+      "headingPath": ["Métodos", "Criterios"],
+      "text": "Magnitud: presión | Incertidumbre expandida máxima: 0,25 % del rango | Factor de cobertura: k=2."
+    },
+    {
+      "id": "lc-certificado",
+      "documentType": "evidence",
+      "unitType": "EVIDENCE",
+      "title": "Contenido del certificado",
+      "headingPath": ["Registros", "Certificados"],
+      "text": "El certificado de calibración incluye identificación del equipo, método aplicado, resultados, incertidumbre, condiciones ambientales y trazabilidad de los patrones utilizados."
+    },
+    {
+      "id": "lc-trazabilidad",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Trazabilidad metrológica",
+      "headingPath": ["Conceptos"],
+      "text": "La trazabilidad metrológica es la propiedad por la cual un resultado puede relacionarse con una referencia mediante una cadena documentada e ininterrumpida de calibraciones."
+    },
+    {
+      "id": "lc-condicion",
+      "documentType": "rule",
+      "unitType": "PRECONDITION",
+      "title": "Condición previa al ajuste",
+      "headingPath": ["Ajustes", "Autorización"],
+      "text": "Antes de ajustar un instrumento del cliente, el laboratorio debe obtener autorización documentada cuando el ajuste pueda modificar los resultados de calibración iniciales."
+    }
+  ],
+  "questions": [
+    {
+      "id": "lc-q1",
+      "family": "vencido-accion",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué debe hacerse con un instrumento cuya calibración está vencida?",
+      "gold": ["lc-vencido"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "lc-q2",
+      "family": "presion-incertidumbre",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuál es la incertidumbre expandida máxima para la magnitud presión?",
+      "gold": ["lc-incertidumbre"],
+      "challenges": ["TABLE"]
+    },
+    {
+      "id": "lc-q3",
+      "family": "trazabilidad-definicion",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué significa trazabilidad metrológica?",
+      "gold": ["lc-trazabilidad"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "lc-q4",
+      "family": "ajuste-autorizacion",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué se requiere antes de ajustar un instrumento si el ajuste puede modificar los resultados iniciales?",
+      "gold": ["lc-condicion"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "lc-q5",
+      "family": "certificado-color",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿De qué color es el certificado de calibración?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "lc-q6",
+      "family": "patron-velocidad",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿A qué velocidad se transporta un patrón externo al laboratorio?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "SAME_VOCABULARY"]
+    }
+  ]
+}

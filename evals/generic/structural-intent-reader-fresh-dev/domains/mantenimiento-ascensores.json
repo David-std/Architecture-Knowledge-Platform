@@ -1,0 +1,112 @@
+{
+  "id": "mantenimiento-ascensores",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES elevator-maintenance evidence-admission domain.",
+  "units": [
+    {
+      "id": "ma-velocidad",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Disparo por sobrevelocidad",
+      "headingPath": ["Seguridad", "Limitador"],
+      "text": "Si el limitador detecta una velocidad superior al 115 % de la nominal, el ascensor debe quedar fuera de servicio hasta completar la inspección del sistema de frenado."
+    },
+    {
+      "id": "ma-rescate",
+      "documentType": "rule",
+      "unitType": "PRECONDITION",
+      "title": "Condición previa para rescate",
+      "headingPath": ["Rescate", "Preparación"],
+      "text": "Antes de iniciar un rescate de pasajeros, el técnico debe cortar la alimentación principal y confirmar por comunicación que la cabina está inmovilizada."
+    },
+    {
+      "id": "ma-mensual",
+      "documentType": "workflow",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Inspección mensual de puertas",
+      "headingPath": ["Mantenimiento preventivo", "Puertas"],
+      "text": "En la inspección mensual, el técnico limpia las guías, comprueba el enclavamiento y registra cualquier desgaste anormal en la orden de mantenimiento."
+    },
+    {
+      "id": "ma-prueba",
+      "documentType": "evidence",
+      "unitType": "EVIDENCE",
+      "title": "Acta de prueba de freno",
+      "headingPath": ["Seguridad", "Evidencias"],
+      "text": "El acta de prueba identifica el ascensor, la carga de ensayo, la fecha, el resultado de frenado y la firma del técnico responsable."
+    },
+    {
+      "id": "ma-zona",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Zona de puertas",
+      "headingPath": ["Conceptos"],
+      "text": "La zona de puertas es el intervalo de posición alrededor del nivel de piso en el que el sistema permite operaciones controladas de apertura y cierre."
+    },
+    {
+      "id": "ma-plan",
+      "documentType": "claim",
+      "unitType": "TABLE_ROW",
+      "title": "Frecuencia de mantenimiento",
+      "headingPath": ["Plan preventivo", "Frecuencias"],
+      "text": "Elemento: operador de puertas | Frecuencia: mensual | Evidencia: orden de mantenimiento cerrada."
+    }
+  ],
+  "questions": [
+    {
+      "id": "ma-q1",
+      "family": "sobrevelocidad-accion",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué ocurre si el limitador detecta más del 115 % de la velocidad nominal?",
+      "gold": ["ma-velocidad"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ma-q2",
+      "family": "rescate-precondicion",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué debe hacer el técnico antes de iniciar un rescate de pasajeros?",
+      "gold": ["ma-rescate"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ma-q3",
+      "family": "zona-definicion",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué es la zona de puertas de un ascensor?",
+      "gold": ["ma-zona"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ma-q4",
+      "family": "frecuencia-puertas",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Con qué frecuencia se mantiene el operador de puertas?",
+      "gold": ["ma-plan"],
+      "challenges": ["TABLE"]
+    },
+    {
+      "id": "ma-q5",
+      "family": "marca-freno",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué marca fabrica el freno del ascensor?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "ma-q6",
+      "family": "carga-rescate",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántos kilogramos soporta la cabina durante un rescate?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "SAME_VOCABULARY"]
+    }
+  ]
+}
