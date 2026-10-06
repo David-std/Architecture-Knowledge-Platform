@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   evidence-admission-open-reader-authority-fresh-dev:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'experiment/open-reader-authority-fresh-dev'
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'experiment/open-reader-authority-current'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -93,7 +93,7 @@ jobs:
             report.runtimeChanged !== false ||
             report.productionAdmissionChanged !== false ||
             report.dataFreezeCommit !==
-              "19c3d0c177ee78771d5c55eae0e3ae067f546274"
+              "93c9ec56e9aeb4f310b7716f9e8faa93e30f1708"
           ) {
             throw new Error("Open-reader worker crossed its claim boundary.");
           }

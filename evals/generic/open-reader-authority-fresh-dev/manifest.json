@@ -2,8 +2,8 @@
   "schemaVersion": "akp.open-reader-authority-fresh-dev.v1",
   "frozen": true,
   "frozenAt": "2026-10-05",
-  "baselineSha": "10ade0d2c27aed31c7d5f9c2528a654d9c116d9b",
-  "dataFreezeCommit": "19c3d0c177ee78771d5c55eae0e3ae067f546274",
+  "baselineSha": "1aa151cf9b00927eff750ac7f5b3db3667b699f2",
+  "dataFreezeCommit": "93c9ec56e9aeb4f310b7716f9e8faa93e30f1708",
   "inputs": [
     {
       "path": "evals/generic/open-reader-authority-fresh-dev/domains/aforo-rio.json",
