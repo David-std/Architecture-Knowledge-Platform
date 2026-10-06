@@ -501,4 +501,87 @@ describe("R5 layered evidence admission boundaries", () => {
       reason: "STRUCTURAL_REQUIRED_FACT_MISSING",
     });
   });
+
+  it("batches only unresolved eligible candidates through semantic ranking", async () => {
+    const semantic = hit({
+      title: "Retry policy",
+      excerpt: "The retry budget is 3 attempts.",
+    });
+    const structured = hit({
+      title: "Review policy",
+      excerpt: "Human review is required before publication.",
+    });
+    const archived = hit({
+      lifecycle: "ARCHIVED",
+      title: "Archived note",
+      excerpt: "The retry budget is 9 attempts.",
+    });
+    const read = vi.fn(async () => ({
+      layer: "SEMANTIC_READER" as const,
+      verdict: { kind: "INSUFFICIENT" as const },
+      reason: "SINGLE_NOT_EXPECTED",
+      readerId: "batch-reader",
+    }));
+    const readBatch = vi.fn(async () => [
+      {
+        layer: "SEMANTIC_READER" as const,
+        verdict: {
+          kind: "ANSWERS" as const,
+          quote: { startOffset: 0, endOffset: semantic.excerpt.length },
+        },
+        reason: "BATCH_SUPPORT",
+        readerId: "batch-reader",
+      },
+    ]);
+    const semanticReader: SemanticEvidenceReader = {
+      id: "batch-reader",
+      read,
+      readBatch,
+    };
+    const pipeline = new LayeredEvidenceAdmissionPipeline({ semanticReader });
+
+    const decisions = await pipeline.evaluateBatch([
+      { query: "What is the retry budget?", hit: semantic },
+      {
+        query: "Is human review required before publication?",
+        hit: structured,
+        queryProposition: {
+          subject: "publication",
+          predicate: "requires_review",
+          object: "human",
+        },
+        candidateProposition: {
+          subject: "publication",
+          predicate: "requires_review",
+          object: "human",
+          quote: {
+            startOffset: 0,
+            endOffset: structured.excerpt.length,
+          },
+        },
+      },
+      { query: "What is the retry budget?", hit: archived },
+    ]);
+
+    expect(read).not.toHaveBeenCalled();
+    expect(readBatch).toHaveBeenCalledTimes(1);
+    expect(readBatch.mock.calls[0]?.[0]).toHaveLength(1);
+    expect(decisions).toMatchObject([
+      {
+        layer: "SEMANTIC_READER",
+        verdict: { kind: "ANSWERS" },
+        reason: "BATCH_SUPPORT",
+      },
+      {
+        layer: "STRUCTURED_PROPOSITION",
+        verdict: { kind: "ANSWERS" },
+        reason: "STRUCTURAL_SOURCE_SPAN_VALID",
+      },
+      {
+        layer: "STRUCTURAL_GUARD",
+        verdict: { kind: "INSUFFICIENT" },
+        reason: "STRUCTURAL_LIFECYCLE_NOT_ACTIVE",
+      },
+    ]);
+  });
 });

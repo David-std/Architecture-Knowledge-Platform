@@ -1,0 +1,112 @@
+{
+  "schemaVersion": "akp.layered-7b-authority-fresh-dev.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-06",
+  "baselineSha": "1aa151cf9b00927eff750ac7f5b3db3667b699f2",
+  "dataFreezeCommit": "c208e21f1a6810a4a2d3ade7d960bf5211382a01",
+  "inputs": [
+    {
+      "path": "evals/generic/layered-7b-authority-fresh-dev/domains/cadena-frio.json",
+      "gitBlobSha": "1dca17b19aa4cfba1dffe65fe9aaca38deff6774"
+    },
+    {
+      "path": "evals/generic/layered-7b-authority-fresh-dev/domains/conservacion-archivo.json",
+      "gitBlobSha": "a2090a4e23be6f84b258ad3ac8ec08de6846657b"
+    },
+    {
+      "path": "evals/generic/layered-7b-authority-fresh-dev/domains/greenhouse-control.json",
+      "gitBlobSha": "d2b0cfb67c23b9b1f1ac7b2afc39df6defc211cc"
+    },
+    {
+      "path": "evals/generic/layered-7b-authority-fresh-dev/domains/observatory-night.json",
+      "gitBlobSha": "792c85735b30c0451551a6ccee43b51c9dea6e2b"
+    }
+  ],
+  "dataset": {
+    "split": "development",
+    "domains": [
+      "cadena-frio",
+      "conservacion-archivo",
+      "greenhouse-control",
+      "observatory-night"
+    ],
+    "questions": 24,
+    "answerable": 16,
+    "unanswerable": 8,
+    "languages": ["en", "es"],
+    "authoredBeforeHarness": true,
+    "reusedPriorDevelopment": false,
+    "reusedPriorHeldout": false,
+    "familyDisjointHoldoutLoaded": false
+  },
+  "architecture": {
+    "legacyAuthorityRetiredInCandidate": [
+      "PASSAGE_TEXT_SUPPORT",
+      "PASSAGE_CUE_SUPPORT"
+    ],
+    "structuralGuard": "StructuralEvidenceGuard",
+    "structuredMatcher": "ExactStructuredPropositionMatcher",
+    "structuredMatcherIndependentEvidence": "benchmark:structured-proposition-family-disjoint",
+    "semanticReader": "QueryConditionedSemanticEvidenceReader",
+    "readerPromptVersion": "evidence-reader-v4",
+    "rerankerAuthority": false,
+    "readerSupportRequiresExactVisibleSpan": true,
+    "productionDefaultsChanged": false,
+    "runtimeAdmissionChanged": false
+  },
+  "reranker": {
+    "model": "onnx-community/bge-reranker-v2-m3-ONNX",
+    "revision": "6f5ff65298512715a1e669753bc754d2bc8f367b",
+    "shortlistSize": 4,
+    "shortlistFloor": 0.001,
+    "authority": "ORDER_ONLY"
+  },
+  "reader": {
+    "provider": "ollama-openai-compatible",
+    "model": "qwen2.5:7b-instruct",
+    "deploymentDigest": "845dbda0ea48ed749caafd9e6037047aa19acfcfd82e7047dca97d631a0b697e",
+    "quantization": "Q4_K_M",
+    "promptVersion": "evidence-reader-v4",
+    "temperature": 0,
+    "maxOutputTokens": 256,
+    "contextLength": 2048,
+    "requestTimeoutMs": 120000
+  },
+  "operatingPoint": {
+    "policy": "SAFETY_FIRST_ABSOLUTE_FRONTIER",
+    "answerableRecallMinimum": 0.75,
+    "admittedPrecisionMinimum": 0.85,
+    "falseAcceptanceRateMaximum": 0.125,
+    "wrongAdmissionQuestionsMaximum": 4,
+    "strictAccuracyMinimum": 0.7,
+    "p95QuestionLatencyMsMaximum": 30000,
+    "allSemanticSupportsSourceBound": true,
+    "structuredMatcherStrictAccuracyRequired": 1,
+    "baselineGoldPreservationRequired": false,
+    "paretoDominanceOverLegacyRequired": false,
+    "safetyImprovementAgainstLegacy": {
+      "admittedPrecisionMustIncrease": true,
+      "falseAcceptanceRateMustNotIncrease": true
+    }
+  },
+  "protocol": {
+    "phase": "FRESH_DEVELOPMENT_FEASIBILITY_ONLY",
+    "singleIndependentVariable": "Replace legacy prose authority with BGE-shortlisted Qwen2.5 7B reader-v4 behind StructuralEvidenceGuard while retaining already-proven exact structured proposition authority.",
+    "noThresholdSweep": true,
+    "noPromptChange": true,
+    "noModelChangeAfterExecution": true,
+    "noDatasetChangeAfterExecution": true,
+    "noCorpusSpecificAliases": true,
+    "noFastPaths": true,
+    "noLegacyCueAuthorityInCandidate": true,
+    "noHoldoutUntilDevelopmentPass": true,
+    "noProductionPromotionFromDevelopmentAlone": true
+  },
+  "developmentGate": {
+    "outcomes": [
+      "PROCEED_TO_FRESH_HOLDOUT",
+      "REJECT_FRESH_DEVELOPMENT_FRONTIER",
+      "INVALID_EXPERIMENT"
+    ]
+  }
+}
