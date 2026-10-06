@@ -1,0 +1,95 @@
+{
+  "schemaVersion": "akp.sentence-reader-fresh-dev.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-05",
+  "baselineSha": "10ade0d2c27aed31c7d5f9c2528a654d9c116d9b",
+  "dataFreezeCommit": "b394dc61a124134224acb5118db4ebe0db6709c1",
+  "inputs": [
+    {
+      "path": "evals/generic/sentence-reader-fresh-dev/domains/alpine-rescue.json",
+      "gitBlobSha": "68044558b48ff7366c2a107a65e5717bae18600b"
+    },
+    {
+      "path": "evals/generic/sentence-reader-fresh-dev/domains/aquarium-water-quality.json",
+      "gitBlobSha": "a48217c857a004394444b16e5261cafaa335ed3f"
+    },
+    {
+      "path": "evals/generic/sentence-reader-fresh-dev/domains/observatorio-cielo.json",
+      "gitBlobSha": "54473339257f41e1cdc2386b4a2e8b3503fbcb60"
+    },
+    {
+      "path": "evals/generic/sentence-reader-fresh-dev/domains/panaderia-fermentacion.json",
+      "gitBlobSha": "f49603d10642d40640ce511ccd255a7faa07cf6e"
+    }
+  ],
+  "dataset": {
+    "split": "development",
+    "domains": [
+      "alpine-rescue",
+      "aquarium-water-quality",
+      "observatorio-cielo",
+      "panaderia-fermentacion"
+    ],
+    "questions": 24,
+    "answerable": 16,
+    "unanswerable": 8,
+    "languages": ["en", "es"],
+    "authoredBeforeExecution": true,
+    "reusedPriorDevelopment": false,
+    "reusedPriorHeldout": false
+  },
+  "reader": {
+    "model": "onnx-community/Qwen2.5-1.5B-Instruct",
+    "revision": "9f9c976052bfb08a20793f0c3013563dc095c966",
+    "dtype": "q4",
+    "promptVersion": "evidence-reader-v4",
+    "temperature": 0,
+    "maxOutputTokens": 256
+  },
+  "segmentation": {
+    "kind": "INTL_SENTENCE_EXACT_SOURCE_OFFSETS",
+    "allVisibleSentences": true,
+    "preservesOriginalCandidateIdentity": true,
+    "sentenceCanCreateCandidate": false
+  },
+  "protocol": {
+    "phase": "FRESH_DEVELOPMENT_FEASIBILITY_ONLY",
+    "singleIndependentVariable": "Replace unit-level reader verification of legacy PASSAGE_TEXT_SUPPORT / PASSAGE_CUE_SUPPORT candidates with exact-source sentence decomposition before the unchanged Qwen2.5-1.5B evidence-reader-v4. A legacy candidate survives only if at least one visible sentence independently returns SUPPORTS and its verifier span remaps exactly into the original passage.",
+    "baseline": "Current assessRetrievalAnswerability on the frozen fresh-development pack.",
+    "candidateComposition": "PRESERVED_NON_PASSAGE_AUTHORITY_OR_SENTENCE_DECOMPOSED_SOURCE_BOUND_1P5B",
+    "retiredAuthority": ["PASSAGE_TEXT_SUPPORT", "PASSAGE_CUE_SUPPORT"],
+    "readerCanCreateSupport": false,
+    "readerReceivesOnlyRetiredBaselineCandidates": true,
+    "allVisibleSentencesEvaluated": true,
+    "sentenceSpansRemappedToOriginalPassage": true,
+    "noCrossEncoder": true,
+    "noThresholdSweep": true,
+    "noPromptChange": true,
+    "noModelChangeFromReader107": true,
+    "providerDefaultsChanged": false,
+    "runtimeChanged": false,
+    "productionAdmissionChanged": false
+  },
+  "developmentGate": {
+    "answerableRecallNonRegression": true,
+    "admittedPrecisionNonRegression": true,
+    "falseAcceptanceNonIncrease": true,
+    "wrongAdmissionQuestionsNonIncrease": true,
+    "strictAccuracyNonRegression": true,
+    "candidateAdmissionsSubsetOfBaseline": true,
+    "baselineGoldPreserved": true,
+    "allSemanticSupportsSourceBound": true,
+    "requireMeasuredPrecisionAdvantage": true,
+    "outcomes": [
+      "PROCEED_TO_FRESH_HOLDOUT",
+      "REJECT_FRESH_DEVELOPMENT_FRONTIER",
+      "INVALID_EXPERIMENT"
+    ]
+  },
+  "nextStepBoundary": [
+    "A pass authorizes only a separately authored and frozen family-disjoint holdout.",
+    "No prior inspected development or heldout pack is used for tuning this worker.",
+    "A reject terminates this exact sentence-decomposition composition without model, prompt, threshold, segmentation-rule or dataset retuning.",
+    "No runtime/default/admission change is authorized by development evidence alone."
+  ]
+}

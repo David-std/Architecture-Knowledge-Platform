@@ -1,0 +1,148 @@
+name: evidence-admission-sentence-reader-fresh-dev
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evidence-admission-sentence-reader-fresh-dev:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'experiment/sentence-decomposed-reader-fresh-dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AKP_LOCAL_AGENT_MODEL: onnx-community/Qwen2.5-1.5B-Instruct
+      AKP_LOCAL_AGENT_MODEL_REVISION: 9f9c976052bfb08a20793f0c3013563dc095c966
+      AKP_LOCAL_AGENT_DTYPE: q4
+      AKP_LOCAL_AGENT_PORT: "18083"
+      AKP_SENTENCE_READER_BASE_URL: http://127.0.0.1:18083/chat/completions
+      AKP_SENTENCE_READER_MODEL: onnx-community/Qwen2.5-1.5B-Instruct
+      AKP_SENTENCE_READER_MODEL_REVISION: 9f9c976052bfb08a20793f0c3013563dc095c966
+      AKP_SENTENCE_READER_DTYPE: q4
+      AKP_SENTENCE_READER_FRESH_DEV_REPORT: reports/ci/sentence-reader-fresh-dev.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate frozen sentence-reader worker
+        run: |
+          pnpm exec prettier --check \
+            evals/generic/sentence-reader-fresh-dev/domains/*.json \
+            evals/generic/sentence-reader-fresh-dev/manifest.json \
+            scripts/evidence-admission-sentence-reader-fresh-dev-experiment.ts \
+            .github/workflows/evidence-admission-sentence-reader-fresh-dev.yml
+          pnpm check
+      - name: Build provider workspace dependency
+        run: pnpm --filter @akp/contracts build
+      - name: Prepare experiment evidence
+        run: mkdir -p reports/ci
+      - name: Start pinned 1.5B local reader provider
+        shell: bash
+        run: |
+          pnpm --filter @akp/retrieval exec tsx scripts/local-agent-provider.ts \
+            > reports/ci/sentence-reader-provider.log 2>&1 &
+          echo $! > /tmp/sentence-reader-provider.pid
+          for attempt in $(seq 1 180); do
+            if curl --fail --silent http://127.0.0.1:18083/health \
+              > reports/ci/sentence-reader-provider-health.json; then
+              cat reports/ci/sentence-reader-provider-health.json
+              exit 0
+            fi
+            sleep 5
+          done
+          cat reports/ci/sentence-reader-provider.log >&2
+          exit 1
+      - name: Execute frozen sentence-decomposed reader development gate
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm exec tsx scripts/evidence-admission-sentence-reader-fresh-dev-experiment.ts \
+            2>&1 | tee reports/ci/sentence-reader-fresh-dev.log
+      - name: Validate governed development outcome
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(
+            readFileSync("reports/ci/sentence-reader-fresh-dev.json", "utf8"),
+          );
+          const health = JSON.parse(
+            readFileSync("reports/ci/sentence-reader-provider-health.json", "utf8"),
+          );
+          if (
+            ![
+              "PROCEED_TO_FRESH_HOLDOUT",
+              "REJECT_FRESH_DEVELOPMENT_FRONTIER",
+            ].includes(report.outcome)
+          ) {
+            throw new Error("Sentence-reader development outcome is invalid.");
+          }
+          if (
+            report.heldoutEvaluated !== false ||
+            report.candidateCanCreateSupport !== false ||
+            report.runtimeChanged !== false ||
+            report.productionAdmissionChanged !== false ||
+            report.dataFreezeCommit !==
+              "b394dc61a124134224acb5118db4ebe0db6709c1"
+          ) {
+            throw new Error("Sentence-reader worker crossed its claim boundary.");
+          }
+          if (
+            report.gates?.candidateAdmissionsSubsetOfBaseline !== true ||
+            report.gates?.allSemanticSupportsSourceBound !== true
+          ) {
+            throw new Error("Sentence-reader source-bound invariants failed.");
+          }
+          if (
+            health.model !== "onnx-community/Qwen2.5-1.5B-Instruct" ||
+            health.revision !==
+              "9f9c976052bfb08a20793f0c3013563dc095c966" ||
+            health.dtype !== "q4"
+          ) {
+            throw new Error("Pinned 1.5B local reader identity drifted.");
+          }
+          console.log(
+            JSON.stringify(
+              {
+                outcome: report.outcome,
+                baseline: report.baseline,
+                candidate: report.candidate,
+                gates: report.gates,
+                counts: report.counts,
+                protocolHash: report.protocolHash,
+                dataFreezeCommit: report.dataFreezeCommit,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Upload sentence-reader evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: evidence-admission-sentence-reader-fresh-dev-${{ github.run_id }}
+          path: |
+            reports/ci/sentence-reader-fresh-dev.json
+            reports/ci/sentence-reader-fresh-dev.log
+            reports/ci/sentence-reader-provider-health.json
+            reports/ci/sentence-reader-provider.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Stop 1.5B local reader provider
+        if: always()
+        shell: bash
+        run: |
+          if [ -f /tmp/sentence-reader-provider.pid ]; then
+            kill "$(cat /tmp/sentence-reader-provider.pid)" 2>/dev/null || true
+          fi
