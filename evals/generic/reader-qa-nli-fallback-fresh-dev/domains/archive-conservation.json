@@ -1,0 +1,112 @@
+{
+  "id": "archive-conservation",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh EN archive-conservation admission domain.",
+  "units": [
+    {
+      "id": "arc-box",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Acid-free boxes",
+      "headingPath": ["Paper storage", "Boxes"],
+      "text": "Acid-free archival boxes reduce direct exposure to acidic cardboard and airborne dust. They also support folders so papers are not crushed when shelves are partially filled."
+    },
+    {
+      "id": "arc-rh",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Relative humidity range",
+      "headingPath": ["Environmental control", "Relative humidity"],
+      "text": "The paper storage room is maintained between 45 and 55 percent relative humidity. Sustained readings outside that range trigger an environmental alert."
+    },
+    {
+      "id": "arc-photo",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Cold storage for photographs",
+      "headingPath": ["Photographs", "Cold storage"],
+      "text": "Color photographic film is kept in cold storage because lower temperature slows chemical deterioration of dyes and film layers. Materials are acclimatized before opening their sealed bags."
+    },
+    {
+      "id": "arc-mold",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Mold quarantine",
+      "headingPath": ["Incoming material", "Mold"],
+      "text": "An incoming box with visible mold is isolated from the clean collection area immediately. Conservation staff inspect it in the quarantine room before any item is rehoused."
+    },
+    {
+      "id": "arc-scan",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Digitization handling",
+      "headingPath": ["Digitization", "Handling"],
+      "text": "During scanning, bound volumes are supported in a cradle so the binding is not forced flat. The operator stops if opening resistance increases."
+    },
+    {
+      "id": "arc-accession",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Accession identifier",
+      "headingPath": ["Cataloging", "Accession"],
+      "text": "The accession identifier links a received group of materials to its acquisition record and remains stable even when individual folders are later rearranged."
+    }
+  ],
+  "questions": [
+    {
+      "id": "arc-q1",
+      "family": "acid-free-purpose",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why are acid-free archival boxes used for paper storage?",
+      "gold": ["arc-box"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "arc-q2",
+      "family": "humidity-range",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What relative-humidity range is maintained in the paper storage room?",
+      "gold": ["arc-rh"],
+      "challenges": ["NUMERIC"]
+    },
+    {
+      "id": "arc-q3",
+      "family": "mold-response",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "What happens when an incoming archive box shows visible mold?",
+      "gold": ["arc-mold"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "arc-q4",
+      "family": "photo-cold-reason",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why is color photographic film kept in cold storage?",
+      "gold": ["arc-photo"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "arc-q5",
+      "family": "box-supplier",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which supplier manufactures the archive's acid-free boxes?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "arc-q6",
+      "family": "scanner-resolution",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "At what DPI are bound volumes scanned?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}

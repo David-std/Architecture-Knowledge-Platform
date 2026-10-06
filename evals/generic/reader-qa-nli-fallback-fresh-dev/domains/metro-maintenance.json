@@ -1,0 +1,112 @@
+{
+  "id": "metro-maintenance",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES metro-maintenance admission domain.",
+  "units": [
+    {
+      "id": "met-flat",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Plano de rueda",
+      "headingPath": ["Ruedas", "Defectos"],
+      "text": "Si un plano de rueda medido supera 1.5 milímetros, el tren se retira del servicio comercial y se envía al taller para reperfilado antes de volver a operar."
+    },
+    {
+      "id": "met-brake",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Prueba de freno",
+      "headingPath": ["Frenos", "Prueba estática"],
+      "text": "Después de intervenir el circuito neumático, el técnico realiza una prueba estática de freno para confirmar que la presión se mantiene y que todos los coches aplican y liberan correctamente."
+    },
+    {
+      "id": "met-track",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Aislamiento de circuito de vía",
+      "headingPath": ["Señalización", "Circuito de vía"],
+      "text": "Antes de trabajar sobre un circuito de vía, el responsable de señalización confirma el aislamiento eléctrico y registra el bloqueo para impedir una liberación accidental durante la intervención."
+    },
+    {
+      "id": "met-panto",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Inspección del pantógrafo",
+      "headingPath": ["Captación", "Pantógrafo"],
+      "text": "La inspección diaria del pantógrafo comprueba desgaste irregular de la banda de contacto, fijaciones flojas y daños visibles antes de la salida del tren."
+    },
+    {
+      "id": "met-permit",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Permiso de trabajo",
+      "headingPath": ["Seguridad", "Permiso"],
+      "text": "El supervisor de mantenimiento emite el permiso de trabajo después de confirmar que las energías peligrosas están aisladas y que el área ha sido entregada al equipo."
+    },
+    {
+      "id": "met-return",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Retorno al servicio",
+      "headingPath": ["Liberación", "Retorno al servicio"],
+      "text": "El tren vuelve a servicio únicamente cuando las pruebas posteriores al mantenimiento están aprobadas y el supervisor cierra formalmente la orden de trabajo."
+    }
+  ],
+  "questions": [
+    {
+      "id": "met-q1",
+      "family": "wheel-flat-threshold",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué ocurre si un plano de rueda supera 1.5 milímetros?",
+      "gold": ["met-flat"],
+      "challenges": ["NUMERIC", "PARAPHRASE"]
+    },
+    {
+      "id": "met-q2",
+      "family": "brake-test-trigger",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Cuándo se realiza una prueba estática de freno?",
+      "gold": ["met-brake"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "met-q3",
+      "family": "permit-issuer",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién emite el permiso de trabajo de mantenimiento?",
+      "gold": ["met-permit"],
+      "challenges": []
+    },
+    {
+      "id": "met-q4",
+      "family": "track-isolation-reason",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se registra el bloqueo del circuito de vía antes de intervenir?",
+      "gold": ["met-track"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "met-q5",
+      "family": "pantograph-brand",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué empresa fabrica el pantógrafo inspeccionado diariamente?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "met-q6",
+      "family": "brake-fluid-temperature",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿A qué temperatura se almacena el fluido utilizado en la prueba de freno?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}

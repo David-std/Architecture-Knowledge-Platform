@@ -1,0 +1,112 @@
+{
+  "id": "satellite-ops",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh EN satellite-operations admission domain.",
+  "units": [
+    {
+      "id": "sat-eclipse",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Eclipse power",
+      "headingPath": ["Spacecraft power", "Eclipse operations"],
+      "text": "During orbital eclipse the spacecraft bus is powered by the battery because the solar arrays cannot generate usable power in darkness. Charging resumes after the vehicle returns to sunlight."
+    },
+    {
+      "id": "sat-safe",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Attitude safe mode",
+      "headingPath": ["Attitude control", "Safe mode"],
+      "text": "If the star tracker is unavailable for more than thirty seconds, the flight computer enters sun-pointing safe mode and suspends normal payload pointing until attitude knowledge is restored."
+    },
+    {
+      "id": "sat-downlink",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Downlink reservation",
+      "headingPath": ["Communications", "Ground pass"],
+      "text": "The mission operations team requests each downlink reservation from the ground-station scheduler. The spacecraft does not choose the station autonomously."
+    },
+    {
+      "id": "sat-wheel",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Reaction wheel desaturation",
+      "headingPath": ["Attitude control", "Momentum management"],
+      "text": "Reaction wheel desaturation is scheduled when stored wheel momentum exceeds the mission limit. Magnetorquers unload the accumulated momentum while payload slews are paused."
+    },
+    {
+      "id": "sat-thermal",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Battery heater threshold",
+      "headingPath": ["Thermal control", "Battery heater"],
+      "text": "The battery heater turns on when the measured battery temperature falls below minus 5 degrees Celsius and turns off again above 2 degrees Celsius."
+    },
+    {
+      "id": "sat-clock",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Clock correlation",
+      "headingPath": ["Timing", "Clock correlation"],
+      "text": "Ground software correlates spacecraft event time with the station reference clock after each contact so telemetry timestamps can be interpreted consistently."
+    }
+  ],
+  "questions": [
+    {
+      "id": "sat-q1",
+      "family": "eclipse-power-source",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why does the spacecraft rely on its battery during orbital eclipse?",
+      "gold": ["sat-eclipse"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "sat-q2",
+      "family": "tracker-loss-response",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "What happens after the star tracker has been unavailable for more than thirty seconds?",
+      "gold": ["sat-safe"],
+      "challenges": ["PARAPHRASE", "TEMPORAL_CONDITION"]
+    },
+    {
+      "id": "sat-q3",
+      "family": "downlink-requester",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who requests a downlink reservation from the ground-station scheduler?",
+      "gold": ["sat-downlink"],
+      "challenges": []
+    },
+    {
+      "id": "sat-q4",
+      "family": "heater-threshold",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "Below what battery temperature does the heater turn on?",
+      "gold": ["sat-thermal"],
+      "challenges": ["NUMERIC"]
+    },
+    {
+      "id": "sat-q5",
+      "family": "battery-manufacturer",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which company manufactures the spacecraft battery?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "sat-q6",
+      "family": "downlink-humidity",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "At what humidity are downlink recordings stored?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "SAME_VOCABULARY"]
+    }
+  ]
+}

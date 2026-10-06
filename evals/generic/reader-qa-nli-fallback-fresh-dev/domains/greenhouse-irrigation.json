@@ -1,0 +1,112 @@
+{
+  "id": "greenhouse-irrigation",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES greenhouse-irrigation admission domain.",
+  "units": [
+    {
+      "id": "ghi-moisture",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Riego por humedad",
+      "headingPath": ["Riego", "Humedad del sustrato"],
+      "text": "El controlador abre la válvula de riego cuando la humedad volumétrica del sustrato cae por debajo del 28 por ciento. La válvula se cierra cuando el sensor vuelve a registrar 34 por ciento."
+    },
+    {
+      "id": "ghi-ec",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Lavado por conductividad",
+      "headingPath": ["Nutrición", "Conductividad eléctrica"],
+      "text": "Si la conductividad eléctrica del drenaje supera 2.4 mS/cm durante dos lecturas consecutivas, el sistema ejecuta un lavado con agua sin fertilizante para reducir la acumulación de sales."
+    },
+    {
+      "id": "ghi-shade",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Pantalla de sombreo",
+      "headingPath": ["Clima", "Radiación"],
+      "text": "La pantalla de sombreo se despliega cuando la radiación solar exterior supera 700 W/m2 y la temperatura interior ya está por encima de 27 grados Celsius."
+    },
+    {
+      "id": "ghi-tensiometer",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Tensiómetro",
+      "headingPath": ["Sensores", "Tensiómetro"],
+      "text": "Un tensiómetro mide la tensión con la que el agua queda retenida en el sustrato y ayuda a estimar cuándo las raíces empiezan a tener dificultad para extraerla."
+    },
+    {
+      "id": "ghi-fans",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Ventiladores de polinización",
+      "headingPath": ["Cultivo", "Polinización"],
+      "text": "Los ventiladores de polinización funcionan en pulsos cortos al mediodía para mover suavemente las flores; no sustituyen la ventilación general del invernadero."
+    },
+    {
+      "id": "ghi-alarm",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Alarma de depósito",
+      "headingPath": ["Riego", "Depósito"],
+      "text": "Cuando el nivel del depósito baja del sensor mínimo, el controlador bloquea nuevas órdenes de riego y genera una alarma para evitar que la bomba trabaje en seco."
+    }
+  ],
+  "questions": [
+    {
+      "id": "ghi-q1",
+      "family": "moisture-open-threshold",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Por debajo de qué humedad del sustrato se abre la válvula de riego?",
+      "gold": ["ghi-moisture"],
+      "challenges": ["NUMERIC"]
+    },
+    {
+      "id": "ghi-q2",
+      "family": "ec-flush-condition",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Cuándo realiza el sistema un lavado sin fertilizante?",
+      "gold": ["ghi-ec"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ghi-q3",
+      "family": "tensiometer-definition",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué mide un tensiómetro en el sustrato?",
+      "gold": ["ghi-tensiometer"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ghi-q4",
+      "family": "tank-low-response",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué hace el controlador cuando el depósito cae por debajo del nivel mínimo?",
+      "gold": ["ghi-alarm"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ghi-q5",
+      "family": "pump-brand",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué marca fabrica la bomba del sistema de riego?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "ghi-q6",
+      "family": "shade-wind",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿A qué velocidad de viento se recoge la pantalla de sombreo?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}
