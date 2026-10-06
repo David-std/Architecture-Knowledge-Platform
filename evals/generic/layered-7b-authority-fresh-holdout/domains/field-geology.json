@@ -1,0 +1,112 @@
+{
+  "id": "field-geology",
+  "split": "heldout",
+  "language": "en",
+  "description": "Fresh EN field geology holdout domain with ES/EN questions.",
+  "units": [
+    {
+      "id": "fg-orientation",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Strike and dip",
+      "headingPath": ["Structure", "Orientation"],
+      "text": "Strike and dip measurements describe the orientation of a planar geological feature in the field and are recorded together with the observation location."
+    },
+    {
+      "id": "fg-label",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Sample label",
+      "headingPath": ["Sampling", "Identity"],
+      "text": "Each collected sample receives an identifier that links the specimen bag to its field note and recorded location before the team leaves the sampling point."
+    },
+    {
+      "id": "fg-face",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Loose rock face",
+      "headingPath": ["Safety", "Rock face"],
+      "text": "Before working beneath a fractured exposure, the team assesses loose material and chooses a safe position rather than beginning hammer work directly below unstable rock."
+    },
+    {
+      "id": "fg-fresh",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Fresh surface",
+      "headingPath": ["Description", "Weathering"],
+      "text": "A fresh broken surface can reveal minerals obscured by weathering, but one fresh surface does not demonstrate that the entire outcrop is unweathered."
+    },
+    {
+      "id": "fg-photo",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Field photograph",
+      "headingPath": ["Documentation", "Photograph"],
+      "text": "A field photograph includes scale and location context when practical so the image can be interpreted together with the written observation."
+    },
+    {
+      "id": "fg-contact",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Mapped contact",
+      "headingPath": ["Mapping", "Contact"],
+      "text": "A mapped contact records where two geological units meet and notes whether the boundary was directly observed or inferred between exposures."
+    }
+  ],
+  "questions": [
+    {
+      "id": "fg-q1",
+      "family": "crosslang-planar-orientation-description",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué describen las mediciones de rumbo y buzamiento en el campo?",
+      "gold": ["fg-orientation"],
+      "challenges": ["CROSS_LINGUAL", "DEFINITION"]
+    },
+    {
+      "id": "fg-q2",
+      "family": "sample-identity-before-departure",
+      "intent": "SEQUENCE",
+      "language": "en",
+      "query": "What identity step is completed before the team leaves a sampling point?",
+      "gold": ["fg-label"],
+      "challenges": ["TEMPORAL_ORDER"]
+    },
+    {
+      "id": "fg-q3",
+      "family": "crosslang-fractured-face-safety-first",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué hace el equipo antes de trabajar bajo un afloramiento fracturado?",
+      "gold": ["fg-face"],
+      "challenges": ["CROSS_LINGUAL", "SAFETY"]
+    },
+    {
+      "id": "fg-q4",
+      "family": "fresh-surface-does-not-generalize-outcrop",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Does one fresh broken surface prove that the entire outcrop is unweathered?",
+      "gold": ["fg-fresh"],
+      "challenges": ["NEGATION", "SCOPE"]
+    },
+    {
+      "id": "fg-q5",
+      "family": "unsupported-photo-replaces-sample-identity",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Can a field photograph replace the identifier that links a specimen bag to its field note?",
+      "gold": [],
+      "challenges": ["UNSUPPORTED_SUBSTITUTION", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "fg-q6",
+      "family": "unsupported-contact-confidence-percentage",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué porcentaje exacto de confianza debe asignarse a todo contacto inferido?",
+      "gold": [],
+      "challenges": ["UNSUPPORTED_SCORE"]
+    }
+  ]
+}

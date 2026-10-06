@@ -1,0 +1,112 @@
+{
+  "id": "fermentacion-artesanal",
+  "split": "heldout",
+  "language": "es",
+  "description": "Fresh ES fermentation holdout domain with EN/ES questions.",
+  "units": [
+    {
+      "id": "fa-temperatura",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Seguimiento de temperatura",
+      "headingPath": ["Proceso", "Temperatura"],
+      "text": "La temperatura del lote se registra en puntos definidos del proceso para relacionar cambios de actividad con las condiciones reales que experimentó la fermentación."
+    },
+    {
+      "id": "fa-aroma",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Evaluación de finalización",
+      "headingPath": ["Control", "Finalización"],
+      "text": "Un aroma normal no demuestra por sí solo que la fermentación haya terminado. La decisión se apoya en las mediciones y criterios definidos para el producto."
+    },
+    {
+      "id": "fa-muestra",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Muestra de referencia",
+      "headingPath": ["Trazabilidad", "Muestra"],
+      "text": "Se conserva una muestra de referencia identificada con el lote para permitir comparaciones posteriores si aparece una desviación durante almacenamiento o evaluación."
+    },
+    {
+      "id": "fa-limpieza",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Limpieza previa",
+      "headingPath": ["Preparación", "Higiene"],
+      "text": "El recipiente y los utensilios se limpian antes de preparar un nuevo lote, y la ejecución de la limpieza queda registrada antes de iniciar la carga."
+    },
+    {
+      "id": "fa-gas",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Liberación de gas",
+      "headingPath": ["Seguridad", "Gas"],
+      "text": "La fermentación puede liberar gas, por lo que el recipiente utiliza el mecanismo de venteo previsto y no se sella de una forma que impida la salida controlada."
+    },
+    {
+      "id": "fa-registro",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Registro de lote",
+      "headingPath": ["Trazabilidad", "Registro"],
+      "text": "El registro del lote vincula ingredientes, fecha de preparación, observaciones del proceso y resultados de control con un identificador común."
+    }
+  ],
+  "questions": [
+    {
+      "id": "fa-q1",
+      "family": "crosslang-process-temperature-traceability",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why is the batch temperature recorded at defined points during fermentation?",
+      "gold": ["fa-temperatura"],
+      "challenges": ["CROSS_LINGUAL", "RATIONALE"]
+    },
+    {
+      "id": "fa-q2",
+      "family": "crosslang-normal-aroma-insufficient-proof",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Does a normal aroma by itself prove that fermentation is complete?",
+      "gold": ["fa-aroma"],
+      "challenges": ["CROSS_LINGUAL", "NEGATION"]
+    },
+    {
+      "id": "fa-q3",
+      "family": "reference-sample-later-deviation-comparison",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Para qué se conserva una muestra de referencia identificada con el lote?",
+      "gold": ["fa-muestra"],
+      "challenges": ["PURPOSE"]
+    },
+    {
+      "id": "fa-q4",
+      "family": "cleaning-record-before-loading",
+      "intent": "SEQUENCE",
+      "language": "es",
+      "query": "¿Qué debe quedar registrado antes de iniciar la carga de un nuevo lote?",
+      "gold": ["fa-limpieza"],
+      "challenges": ["TEMPORAL_ORDER"]
+    },
+    {
+      "id": "fa-q5",
+      "family": "unsupported-cleaning-sterility-certification",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿El registro de limpieza certifica por sí mismo que no existe ningún microorganismo en el recipiente?",
+      "gold": [],
+      "challenges": ["UNSUPPORTED_GUARANTEE", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "fa-q6",
+      "family": "unsupported-personal-release-authority",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which named person is authorized to release every completed batch?",
+      "gold": [],
+      "challenges": ["UNSUPPORTED_AUTHORITY"]
+    }
+  ]
+}

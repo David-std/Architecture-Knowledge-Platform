@@ -1,0 +1,112 @@
+{
+  "id": "maritime-watch",
+  "split": "heldout",
+  "language": "en",
+  "description": "Fresh EN maritime watchkeeping holdout domain with ES/EN questions.",
+  "units": [
+    {
+      "id": "mw-position",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Independent position verification",
+      "headingPath": ["Navigation", "Position"],
+      "text": "Electronic position aids are checked against approved charted references and other available observations. A single electronic device does not replace independent position verification."
+    },
+    {
+      "id": "mw-visibility",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Restricted visibility",
+      "headingPath": ["Watch", "Visibility"],
+      "text": "When visibility deteriorates, the watch officer applies the vessel's restricted-visibility procedure, including the required speed assessment and additional lookout measures."
+    },
+    {
+      "id": "mw-compass",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Compass error check",
+      "headingPath": ["Navigation", "Compass"],
+      "text": "A compass error check compares an observed bearing with a known reference so the bridge team can identify the current difference between indicated and reference direction."
+    },
+    {
+      "id": "mw-handover",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Watch handover",
+      "headingPath": ["Watch", "Handover"],
+      "text": "The relieving officer receives the vessel's position, course, traffic situation, equipment limitations, weather, and outstanding instructions before accepting the watch."
+    },
+    {
+      "id": "mw-log",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Bridge log",
+      "headingPath": ["Records", "Bridge log"],
+      "text": "The bridge log records significant navigation events, course changes, weather observations, and operational interruptions so later review can reconstruct the watch."
+    },
+    {
+      "id": "mw-alarm",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Navigation alarm",
+      "headingPath": ["Monitoring", "Alarm"],
+      "text": "A navigation alarm is investigated before it is cleared. Repeated acknowledgement without checking the underlying condition is not treated as resolution."
+    }
+  ],
+  "questions": [
+    {
+      "id": "mw-q1",
+      "family": "crosslang-device-does-not-replace-independent-check",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Un único equipo electrónico sustituye la verificación independiente de la posición?",
+      "gold": ["mw-position"],
+      "challenges": ["CROSS_LINGUAL", "NEGATION"]
+    },
+    {
+      "id": "mw-q2",
+      "family": "crosslang-restricted-visibility-response",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué debe hacer la guardia cuando empeora la visibilidad?",
+      "gold": ["mw-visibility"],
+      "challenges": ["CROSS_LINGUAL", "CONDITION"]
+    },
+    {
+      "id": "mw-q3",
+      "family": "reference-bearing-comparison-purpose",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "What does comparing an observed bearing with a known reference allow the bridge team to identify?",
+      "gold": ["mw-compass"],
+      "challenges": ["RELATION_SCOPE"]
+    },
+    {
+      "id": "mw-q4",
+      "family": "handover-information-before-acceptance",
+      "intent": "SEQUENCE",
+      "language": "en",
+      "query": "What information is transferred before the relieving officer accepts the watch?",
+      "gold": ["mw-handover"],
+      "challenges": ["TEMPORAL_ORDER"]
+    },
+    {
+      "id": "mw-q5",
+      "family": "unsupported-log-route-permission",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Does an entry in the bridge log authorize the relieving officer to change the planned route?",
+      "gold": [],
+      "challenges": ["UNSUPPORTED_PERMISSION", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "mw-q6",
+      "family": "unsupported-alarm-clearance-duration",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How many seconds may a navigation alarm remain active before it must be cleared?",
+      "gold": [],
+      "challenges": ["UNSUPPORTED_THRESHOLD", "SAME_VOCABULARY"]
+    }
+  ]
+}

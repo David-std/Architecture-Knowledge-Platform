@@ -1,0 +1,112 @@
+{
+  "id": "restauracion-instrumentos",
+  "split": "heldout",
+  "language": "es",
+  "description": "Fresh ES musical-instrument conservation holdout domain with EN/ES questions.",
+  "units": [
+    {
+      "id": "ri-documentacion",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Documentación previa",
+      "headingPath": ["Intervención", "Antes de desmontar"],
+      "text": "Antes de retirar cuerdas, herrajes u otras piezas desmontables, se documenta su posición y condición para conservar una referencia durante el montaje posterior."
+    },
+    {
+      "id": "ri-adhesivo",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Adhesivo reversible",
+      "headingPath": ["Materiales", "Adhesión"],
+      "text": "Cuando la intervención lo permite, se prefiere un adhesivo reversible para facilitar tratamientos futuros sin obligar a retirar material sano de manera innecesaria."
+    },
+    {
+      "id": "ri-retoque",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Retoque visual",
+      "headingPath": ["Superficie", "Pérdidas"],
+      "text": "Una pérdida cosmética no se retoca automáticamente. La decisión considera estabilidad, legibilidad histórica y el alcance aprobado de la intervención."
+    },
+    {
+      "id": "ri-fotografia",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Fotografía de condición",
+      "headingPath": ["Documentación", "Imagen"],
+      "text": "La fotografía de condición conserva una referencia visual del estado, daños y ubicación de elementos antes y después de una intervención."
+    },
+    {
+      "id": "ri-tension",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Tensión de cuerdas",
+      "headingPath": ["Montaje", "Tensión"],
+      "text": "La tensión se incrementa de forma gradual durante el montaje para observar la respuesta estructural y evitar aplicar de inmediato toda la carga prevista."
+    },
+    {
+      "id": "ri-afinacion",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Registro de afinación",
+      "headingPath": ["Evaluación", "Afinación"],
+      "text": "El registro de afinación describe el estado observado durante la evaluación actual; no establece por sí solo cuál fue la afinación original histórica del instrumento."
+    }
+  ],
+  "questions": [
+    {
+      "id": "ri-q1",
+      "family": "crosslang-document-before-disassembly",
+      "intent": "SEQUENCE",
+      "language": "en",
+      "query": "What is documented before removable strings or hardware are taken off the instrument?",
+      "gold": ["ri-documentacion"],
+      "challenges": ["CROSS_LINGUAL", "TEMPORAL_ORDER"]
+    },
+    {
+      "id": "ri-q2",
+      "family": "crosslang-reversible-material-future-treatment",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why is a reversible adhesive preferred when the intervention allows it?",
+      "gold": ["ri-adhesivo"],
+      "challenges": ["CROSS_LINGUAL", "RATIONALE"]
+    },
+    {
+      "id": "ri-q3",
+      "family": "cosmetic-loss-not-automatic-treatment",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Must every cosmetic loss be retouched automatically?",
+      "gold": ["ri-retoque"],
+      "challenges": ["NEGATION", "POLICY"]
+    },
+    {
+      "id": "ri-q4",
+      "family": "condition-photo-visual-reference",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Qué referencia conserva una fotografía de condición?",
+      "gold": ["ri-fotografia"],
+      "challenges": ["EVIDENCE_REFERENCE"]
+    },
+    {
+      "id": "ri-q5",
+      "family": "unsupported-adhesive-commercial-product",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué producto comercial de adhesivo reversible debe usarse obligatoriamente en toda intervención?",
+      "gold": [],
+      "challenges": ["UNSUPPORTED_PRODUCT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "ri-q6",
+      "family": "current-tuning-does-not-prove-original",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Does the current tuning record by itself prove the instrument's original historical tuning?",
+      "gold": ["ri-afinacion"],
+      "challenges": ["CROSS_LINGUAL", "NEGATION"]
+    }
+  ]
+}
