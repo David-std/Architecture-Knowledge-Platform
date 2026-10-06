@@ -1,0 +1,95 @@
+{
+  "schemaVersion": "akp.contextual-quote-confirmation-fresh-dev.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-06",
+  "baselineSha": "1aa151cf9b00927eff750ac7f5b3db3667b699f2",
+  "dataCommit": "708c31ecdb5e351982b3bbb4a1fcdbe630382dbf",
+  "inputs": [
+    {
+      "path": "evals/generic/contextual-quote-confirmation-fresh-dev/domains/cadena-frio.json",
+      "gitBlobSha": "00fb5d93d0f876b528fe2f3ea625003d4d5b3a18"
+    },
+    {
+      "path": "evals/generic/contextual-quote-confirmation-fresh-dev/domains/mantenimiento-ferroviario.json",
+      "gitBlobSha": "baf6e30b93d48f651d4a268ce4c3b54e3cb387d0"
+    },
+    {
+      "path": "evals/generic/contextual-quote-confirmation-fresh-dev/domains/municipal-records.json",
+      "gitBlobSha": "128a944600e25f9972ef6bcd1f27b423bf5cf446"
+    },
+    {
+      "path": "evals/generic/contextual-quote-confirmation-fresh-dev/domains/solar-microgrid.json",
+      "gitBlobSha": "bd4a0716dae85417c93aebc13ae2465dabad58e1"
+    }
+  ],
+  "dataset": {
+    "split": "development",
+    "domains": [
+      "cadena-frio",
+      "mantenimiento-ferroviario",
+      "municipal-records",
+      "solar-microgrid"
+    ],
+    "questions": 24,
+    "positives": 16,
+    "negatives": 8,
+    "languages": ["en", "es"],
+    "authoredBeforeExecution": true,
+    "reusedPriorHeldout": false
+  },
+  "reader": {
+    "model": "onnx-community/Qwen2.5-1.5B-Instruct",
+    "revision": "9f9c976052bfb08a20793f0c3013563dc095c966",
+    "dtype": "q4",
+    "promptVersion": "evidence-reader-v4",
+    "temperature": 0,
+    "maxOutputTokens": 256
+  },
+  "confirmation": {
+    "promptVersion": "contextual-quote-confirmation-v1",
+    "temperature": 0,
+    "maxOutputTokens": 96,
+    "exactSameQuoteRequired": true,
+    "fullSourcePassageVisible": true,
+    "mayFindDifferentAnswer": false
+  },
+  "protocol": {
+    "phase": "FRESH_DEVELOPMENT_FEASIBILITY_ONLY",
+    "retiredAuthority": ["PASSAGE_TEXT_SUPPORT", "PASSAGE_CUE_SUPPORT"],
+    "singleIndependentVariable": "Require an unchanged source-bound reader-v4 SUPPORTS quote to pass a second contextual confirmation over the original full passage. The confirmer may only approve or reject the already-selected exact quote and may not select a different answer.",
+    "readerCanCreateSupport": false,
+    "confirmerCanCreateSupport": false,
+    "candidateAdmissionsSubsetOfBaseline": true,
+    "readerReceivesOnlyRetiredBaselineCandidates": true,
+    "samePinnedModelBothPasses": true,
+    "noCrossEncoder": true,
+    "noThresholdSweep": true,
+    "primaryPromptUnchanged": true,
+    "providerDefaultsChanged": false,
+    "runtimeChanged": false,
+    "productionAdmissionChanged": false,
+    "noTuningAgainstPriorHeldouts": true
+  },
+  "developmentGate": {
+    "answerableRecallNonRegression": true,
+    "admittedPrecisionNonRegression": true,
+    "falseAcceptanceNonIncrease": true,
+    "wrongAdmissionQuestionsNonIncrease": true,
+    "strictAccuracyNonRegression": true,
+    "candidateAdmissionsSubsetOfBaseline": true,
+    "baselineGoldPreserved": true,
+    "allPrimarySupportsSourceBound": true,
+    "allConfirmationsSameExactQuote": true,
+    "requireMeasuredPrecisionAdvantage": true,
+    "outcomes": [
+      "PROCEED_TO_FRESH_HOLDOUT",
+      "REJECT_FRESH_DEVELOPMENT_FRONTIER",
+      "INVALID_EXPERIMENT"
+    ]
+  },
+  "nextStepBoundary": [
+    "A pass authorizes only a separately authored and frozen family-disjoint holdout.",
+    "A reject terminates this exact quote-confirmation mechanism on this pack without prompt/model/threshold/data retuning.",
+    "No runtime/default/admission change is authorized by development evidence alone."
+  ]
+}
