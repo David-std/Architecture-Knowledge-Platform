@@ -52,6 +52,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": ".github/workflows/evidence-admission-temporal-rule-reader-union-fresh-dev.yml",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": ".github/workflows/evidence-source-selection.yml",
       "category": "PRODUCT_CONTRACT",
       "reason": "configuration or policy contract"
@@ -2482,6 +2487,31 @@
       "reason": "corpus-agnostic product evaluation"
     },
     {
+      "path": "evals/generic/temporal-rule-reader-union-fresh-dev/domains/district-heating.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/temporal-rule-reader-union-fresh-dev/domains/film-restoration.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/temporal-rule-reader-union-fresh-dev/domains/rail-yard-operations.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/temporal-rule-reader-union-fresh-dev/domains/seed-processing.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/temporal-rule-reader-union-fresh-dev/manifest.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
       "path": "evals/registered/agent-ab-public-product-tasks.json",
       "category": "PRODUCT_EVAL",
       "reason": "versioned registered product evaluation"
@@ -4183,6 +4213,11 @@
     },
     {
       "path": "scripts/evidence-admission-recordings.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/evidence-admission-temporal-rule-reader-union-fresh-dev-experiment.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

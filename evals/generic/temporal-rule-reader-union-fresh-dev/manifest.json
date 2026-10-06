@@ -1,0 +1,101 @@
+{
+  "schemaVersion": "akp.temporal-rule-reader-union-fresh-dev.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-06",
+  "baselineSha": "1aa151cf9b00927eff750ac7f5b3db3667b699f2",
+  "dataFreezeCommit": "8b93ad597f8806a1d9d06f94647e993515155522",
+  "inputs": [
+    {
+      "path": "evals/generic/temporal-rule-reader-union-fresh-dev/domains/district-heating.json",
+      "gitBlobSha": "58e011f4985d856d83c464ea1a30aa005ed304f6"
+    },
+    {
+      "path": "evals/generic/temporal-rule-reader-union-fresh-dev/domains/film-restoration.json",
+      "gitBlobSha": "a29e50e5eb8a8190be8e7d5971af896ff55c3209"
+    },
+    {
+      "path": "evals/generic/temporal-rule-reader-union-fresh-dev/domains/rail-yard-operations.json",
+      "gitBlobSha": "540331ed32150ce05455942b5b22b5ac79b21936"
+    },
+    {
+      "path": "evals/generic/temporal-rule-reader-union-fresh-dev/domains/seed-processing.json",
+      "gitBlobSha": "1b8721ba189f28cee36c4de16f30c3b2ff7589dd"
+    }
+  ],
+  "dataset": {
+    "split": "development",
+    "domains": [
+      "district-heating",
+      "film-restoration",
+      "rail-yard-operations",
+      "seed-processing"
+    ],
+    "questions": 24,
+    "answerable": 16,
+    "unanswerable": 8,
+    "languages": ["en", "es"],
+    "authoredBeforeExecution": true,
+    "reusedPriorDevelopment": false,
+    "reusedPriorHeldout": false
+  },
+  "reader": {
+    "model": "onnx-community/Qwen2.5-1.5B-Instruct",
+    "revision": "9f9c976052bfb08a20793f0c3013563dc095c966",
+    "dtype": "q4",
+    "promptVersion": "evidence-reader-v4",
+    "temperature": 0,
+    "maxOutputTokens": 256
+  },
+  "segmentation": {
+    "kind": "INTL_SENTENCE_EXACT_SOURCE_OFFSETS",
+    "allVisibleSentences": true,
+    "preservesOriginalCandidateIdentity": true,
+    "sentenceCanCreateCandidate": false
+  },
+  "structuralFastPath": {
+    "unitType": "RULE",
+    "questionRequiresTemporalCue": true,
+    "ruleRequiresTemporalCue": true,
+    "createsCandidate": false,
+    "preservesOnlyBaselineRetiredCandidate": true
+  },
+  "protocol": {
+    "phase": "FRESH_DEVELOPMENT_FEASIBILITY_ONLY",
+    "retiredAuthority": ["PASSAGE_TEXT_SUPPORT", "PASSAGE_CUE_SUPPORT"],
+    "temporalRuleFastPathFirst": true,
+    "unitReaderSecond": true,
+    "sentenceFallbackOnlyAfterUnitAbstains": true,
+    "readerCanCreateSupport": false,
+    "readerReceivesOnlyRetiredBaselineCandidates": true,
+    "allVisibleSentencesEvaluated": true,
+    "sentenceSpansRemappedToOriginalPassage": true,
+    "noCrossEncoder": true,
+    "noThresholdSweep": true,
+    "noPromptChange": true,
+    "noModelChangeFromReader107": true,
+    "providerDefaultsChanged": false,
+    "runtimeChanged": false,
+    "productionAdmissionChanged": false
+  },
+  "developmentGate": {
+    "answerableRecallNonRegression": true,
+    "admittedPrecisionNonRegression": true,
+    "falseAcceptanceNonIncrease": true,
+    "wrongAdmissionQuestionsNonIncrease": true,
+    "strictAccuracyNonRegression": true,
+    "candidateAdmissionsSubsetOfBaseline": true,
+    "baselineGoldPreserved": true,
+    "allSemanticSupportsSourceBound": true,
+    "requireMeasuredPrecisionAdvantage": true,
+    "outcomes": [
+      "PROCEED_TO_FRESH_HOLDOUT",
+      "REJECT_FRESH_DEVELOPMENT_FRONTIER",
+      "INVALID_EXPERIMENT"
+    ]
+  },
+  "nextStepBoundary": [
+    "A pass authorizes only a separately authored and frozen family-disjoint holdout.",
+    "A reject terminates this exact temporal-rule fast-path plus unit/sentence reader composition without cue, model, prompt, threshold, segmentation or dataset retuning.",
+    "No prior inspected development or heldout pack is loaded by this worker."
+  ]
+}
