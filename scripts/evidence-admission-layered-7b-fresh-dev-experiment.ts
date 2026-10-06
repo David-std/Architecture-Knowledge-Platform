@@ -143,6 +143,7 @@ type OllamaTag = {
   name?: unknown;
   model?: unknown;
   digest?: unknown;
+  context_length?: unknown;
   details?: {
     quantization_level?: unknown;
     parameter_size?: unknown;
@@ -353,6 +354,35 @@ async function verifyOllamaIdentity(
   };
 }
 
+async function verifyOllamaRuntimeContext(
+  baseUrl: string,
+  protocol: Manifest,
+): Promise<number> {
+  const response = await fetch(new URL("/api/ps", baseUrl), {
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) {
+    throw new Error(`LAYERED_7B_OLLAMA_PS_HTTP_${response.status}`);
+  }
+  const payload = (await response.json()) as OllamaTagsResponse;
+  const models = Array.isArray(payload.models)
+    ? (payload.models as OllamaTag[])
+    : [];
+  const selected = models.find(
+    (entry) =>
+      entry.name === protocol.reader.model ||
+      entry.model === protocol.reader.model,
+  );
+  if (
+    !selected ||
+    !Number.isSafeInteger(selected.context_length) ||
+    selected.context_length !== protocol.reader.contextLength
+  ) {
+    throw new Error("LAYERED_7B_RUNTIME_CONTEXT_DRIFT");
+  }
+  return selected.context_length as number;
+}
+
 async function verifyStructuredMatcherEvidence(
   protocol: Manifest,
   head: string,
@@ -538,6 +568,11 @@ try {
   await verifier.dispose();
 }
 
+const observedRuntimeContextLength = await verifyOllamaRuntimeContext(
+  baseUrl,
+  protocol,
+);
+
 const candidate = summarizeEvidenceAdmission(candidateResults);
 const baselineById = new Map(baselineResults.map((row) => [row.id, row]));
 const changes = candidateResults.flatMap((row) => {
@@ -668,7 +703,10 @@ const report = {
   productionDefaultsChanged: false,
   model: {
     ...protocol.reader,
-    observed: ollamaIdentity,
+    observed: {
+      ...ollamaIdentity,
+      runtimeContextLength: observedRuntimeContextLength,
+    },
   },
   reranker: protocol.reranker,
   structuredMatcherEvidence,

@@ -69,7 +69,7 @@
     "promptVersion": "evidence-reader-v4",
     "temperature": 0,
     "maxOutputTokens": 256,
-    "contextLength": 2048,
+    "contextLength": 4096,
     "requestTimeoutMs": 120000
   },
   "operatingPoint": {
