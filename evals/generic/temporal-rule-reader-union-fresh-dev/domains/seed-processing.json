@@ -1,0 +1,112 @@
+{
+  "id": "seed-processing",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES seed-processing development domain.",
+  "units": [
+    {
+      "id": "sp-lote",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Lote de semilla",
+      "headingPath": ["Trazabilidad", "Lote"],
+      "text": "Cantidad identificable de semilla procesada bajo condiciones definidas y asociada a un código que permite rastrear su origen, tratamiento y resultados de control."
+    },
+    {
+      "id": "sp-ensacado",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Liberación para ensacado",
+      "headingPath": ["Calidad", "Ensacado"],
+      "text": "Antes de liberar un lote para ensacado, el laboratorio debe registrar el resultado de germinación, confirmar que la humedad está dentro del límite y cerrar cualquier desviación de calidad abierta."
+    },
+    {
+      "id": "sp-analista",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Muestreo de pureza",
+      "headingPath": ["Laboratorio", "Pureza"],
+      "text": "La analista de semillas prepara la muestra de pureza, separa materia inerte y otras semillas y registra la masa de cada fracción."
+    },
+    {
+      "id": "sp-secado",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Secado suave",
+      "headingPath": ["Acondicionamiento", "Secado"],
+      "text": "El aire de secado se mantiene moderado porque una temperatura excesiva puede dañar el embrión y reducir el porcentaje de germinación del lote."
+    },
+    {
+      "id": "sp-calibrado",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Calibrado por tamaño",
+      "headingPath": ["Limpieza", "Calibrado"],
+      "text": "El operador selecciona la criba correspondiente, verifica el flujo y ajusta la alimentación hasta que la separación por tamaño sea estable."
+    },
+    {
+      "id": "sp-tabla",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Control de lotes",
+      "headingPath": ["Calidad", "Resultados"],
+      "text": "| Lote | Germinación | Humedad |\\n|---|---|---|\\n| S-21 | 94% | 10.8% |\\n| S-22 | 91% | 11.2% |"
+    }
+  ],
+  "questions": [
+    {
+      "id": "sp-q1",
+      "family": "seed-lot-definition",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué es un lote de semilla en el proceso de acondicionamiento?",
+      "gold": ["sp-lote"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "sp-q2",
+      "family": "purity-analyst-role",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién prepara la muestra para el análisis de pureza?",
+      "gold": ["sp-analista"],
+      "challenges": []
+    },
+    {
+      "id": "sp-q3",
+      "family": "moderate-drying-reason",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se mantiene moderada la temperatura del aire de secado?",
+      "gold": ["sp-secado"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "sp-q4",
+      "family": "bagging-release-prereq",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué debe estar confirmado antes de liberar un lote para ensacado?",
+      "gold": ["sp-ensacado"],
+      "challenges": ["PARAPHRASE", "TEMPORAL_RELATION"]
+    },
+    {
+      "id": "sp-q5",
+      "family": "sieve-manufacturer-unknown",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué fabricante produce las cribas usadas para el calibrado?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "sp-q6",
+      "family": "lot-table-protein",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué porcentaje de proteína tiene el lote S-22 según la tabla de control?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    }
+  ]
+}

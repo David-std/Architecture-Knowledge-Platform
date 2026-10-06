@@ -1,0 +1,112 @@
+{
+  "id": "film-restoration",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh film-restoration development domain.",
+  "units": [
+    {
+      "id": "fr-wetgate",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Wet-gate scanning",
+      "headingPath": ["Digitization", "Wet gate"],
+      "text": "A film-scanning method that temporarily fills surface scratches with a compatible liquid during capture so many scratches become less visible in the digital image."
+    },
+    {
+      "id": "fr-cleaning",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Cleaning before scanning",
+      "headingPath": ["Preparation", "Cleaning"],
+      "text": "Before film enters the scanner, loose dust must be removed, damaged splices must be repaired and the technician must confirm that no wet cleaning solvent remains on the film."
+    },
+    {
+      "id": "fr-colorist",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Reference grading",
+      "headingPath": ["Colour", "Reference"],
+      "text": "The restoration colourist compares the scan with approved reference material and documents grading decisions when density or colour balance requires adjustment."
+    },
+    {
+      "id": "fr-shrinkage",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Shrinkage measurement",
+      "headingPath": ["Inspection", "Shrinkage"],
+      "text": "Film shrinkage is measured before transport through precision equipment because excessive shrinkage can damage perforations or cause unstable registration."
+    },
+    {
+      "id": "fr-splice",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Repairing a cement splice",
+      "headingPath": ["Preparation", "Splices"],
+      "text": "The technician trims the damaged ends, aligns the perforations, applies the approved cement and waits for the joint to set before testing the repair."
+    },
+    {
+      "id": "fr-log",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Scan log",
+      "headingPath": ["Digitization", "Log"],
+      "text": "| Reel | Resolution | Frames |\\n|---|---|---|\\n| R04 | 4K | 18,240 |\\n| R05 | 4K | 21,110 |"
+    }
+  ],
+  "questions": [
+    {
+      "id": "fr-q1",
+      "family": "wetgate-meaning",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is wet-gate scanning in film restoration?",
+      "gold": ["fr-wetgate"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "fr-q2",
+      "family": "grading-specialist",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who compares the scan with approved reference material during grading?",
+      "gold": ["fr-colorist"],
+      "challenges": []
+    },
+    {
+      "id": "fr-q3",
+      "family": "shrinkage-measurement-reason",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why is film shrinkage measured before precision transport?",
+      "gold": ["fr-shrinkage"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "fr-q4",
+      "family": "scan-preparation-prereq",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "What must be completed before film enters the scanner?",
+      "gold": ["fr-cleaning"],
+      "challenges": ["PARAPHRASE", "TEMPORAL_RELATION"]
+    },
+    {
+      "id": "fr-q5",
+      "family": "scanner-vendor-unknown",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which vendor supplied the film scanner?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "fr-q6",
+      "family": "scan-log-temperature",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What temperature is recorded for reel R05 in the scan log?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    }
+  ]
+}

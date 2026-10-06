@@ -1,0 +1,112 @@
+{
+  "id": "district-heating",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES district-heating operations development domain.",
+  "units": [
+    {
+      "id": "dh-subestacion",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Subestación térmica",
+      "headingPath": ["Red de calor", "Subestación"],
+      "text": "Instalación que transfiere calor desde la red primaria de distrito hacia el circuito interno de un edificio mediante intercambiadores, control y medición."
+    },
+    {
+      "id": "dh-valvula",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Apertura tras mantenimiento",
+      "headingPath": ["Mantenimiento", "Válvula principal"],
+      "text": "Después de terminar el mantenimiento de una válvula principal, se retiran las herramientas y bloqueos, se confirma que la línea está cerrada aguas abajo y sólo entonces se abre la válvula lentamente."
+    },
+    {
+      "id": "dh-operador",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Ajuste de temperatura de impulsión",
+      "headingPath": ["Sala de control", "Temperatura"],
+      "text": "La operadora de red ajusta la consigna de temperatura de impulsión según la temperatura exterior y la demanda prevista de los edificios conectados."
+    },
+    {
+      "id": "dh-presion",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Alarma de presión diferencial",
+      "headingPath": ["Bombas", "Presión"],
+      "text": "Una presión diferencial demasiado baja puede reducir el caudal disponible en los ramales más alejados, por lo que el sistema genera una alarma para que se revise el bombeo."
+    },
+    {
+      "id": "dh-purga",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Purga de aire",
+      "headingPath": ["Puesta en servicio", "Purga"],
+      "text": "El técnico abre el purgador en el punto alto, deja salir el aire hasta que el flujo de agua sea continuo y luego vuelve a cerrar el dispositivo."
+    },
+    {
+      "id": "dh-tabla",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Demanda diaria",
+      "headingPath": ["Operación", "Demanda"],
+      "text": "| Hora | Demanda | Impulsión |\\n|---|---|---|\\n| 08:00 | 14 MW | 82 °C |\\n| 18:00 | 19 MW | 88 °C |"
+    }
+  ],
+  "questions": [
+    {
+      "id": "dh-q1",
+      "family": "substation-definition",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué es una subestación térmica en una red de calor?",
+      "gold": ["dh-subestacion"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "dh-q2",
+      "family": "supply-setpoint-operator",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién ajusta la consigna de temperatura de impulsión?",
+      "gold": ["dh-operador"],
+      "challenges": []
+    },
+    {
+      "id": "dh-q3",
+      "family": "low-pressure-reason",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se genera una alarma cuando la presión diferencial es demasiado baja?",
+      "gold": ["dh-presion"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "dh-q4",
+      "family": "valve-after-maintenance",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué debe comprobarse después del mantenimiento antes de abrir una válvula principal?",
+      "gold": ["dh-valvula"],
+      "challenges": ["PARAPHRASE", "TEMPORAL_RELATION"]
+    },
+    {
+      "id": "dh-q5",
+      "family": "purger-brand-unknown",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué marca fabrica el purgador usado en el punto alto?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "dh-q6",
+      "family": "demand-table-humidity",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué humedad aparece a las 18:00 en la tabla de demanda diaria?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "id": "rail-yard-operations",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh rail-yard operations development domain.",
+  "units": [
+    {
+      "id": "ry-shunt-signal",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Shunting signal",
+      "headingPath": ["Yard control", "Shunting signal"],
+      "text": "A signal used for low-speed movements within a yard rather than normal main-line running, authorizing a defined shunting movement when displayed."
+    },
+    {
+      "id": "ry-between",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Entering between vehicles",
+      "headingPath": ["Ground safety", "Between vehicles"],
+      "text": "Before a worker enters between coupled rail vehicles, the movement must be stopped, the handbrake secured and the driver or shunter must confirm that no movement will occur."
+    },
+    {
+      "id": "ry-radio",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Shunting radio",
+      "headingPath": ["Communications", "Radio"],
+      "text": "The ground shunter gives movement instructions over the dedicated yard radio channel, and the driver repeats the instruction before moving the consist."
+    },
+    {
+      "id": "ry-visibility",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Reduced-visibility speed",
+      "headingPath": ["Weather", "Visibility"],
+      "text": "During heavy fog, shunting speed is reduced because staff may have less time to identify points, vehicles and people on the movement route."
+    },
+    {
+      "id": "ry-points",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Hand points",
+      "headingPath": ["Route setting", "Hand points"],
+      "text": "The shunter checks the blade position and target route, operates the lever and confirms the points are fully home before authorizing the movement."
+    },
+    {
+      "id": "ry-board",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Yard movement board",
+      "headingPath": ["Yard control", "Movement board"],
+      "text": "| Movement | Track | Length |\\n|---|---|---|\\n| Y12 | 4 | 310 m |\\n| Y18 | 7 | 185 m |"
+    }
+  ],
+  "questions": [
+    {
+      "id": "ry-q1",
+      "family": "shunt-signal-definition",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is a shunting signal in a rail yard?",
+      "gold": ["ry-shunt-signal"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "ry-q2",
+      "family": "radio-instructor",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who gives the driver movement instructions over the yard radio?",
+      "gold": ["ry-radio"],
+      "challenges": []
+    },
+    {
+      "id": "ry-q3",
+      "family": "fog-speed-reason",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why is shunting speed reduced during heavy fog?",
+      "gold": ["ry-visibility"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ry-q4",
+      "family": "between-vehicles-prereq",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "What must be done before a worker enters between coupled rail vehicles?",
+      "gold": ["ry-between"],
+      "challenges": ["PARAPHRASE", "TEMPORAL_RELATION"]
+    },
+    {
+      "id": "ry-q5",
+      "family": "signal-manufacturer-unknown",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which company manufactures the shunting signals used in the yard?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "ry-q6",
+      "family": "movement-board-temperature",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What temperature is listed for movement Y18 on the yard board?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    }
+  ]
+}
