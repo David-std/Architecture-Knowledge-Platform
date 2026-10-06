@@ -1,0 +1,111 @@
+{
+  "schemaVersion": "akp.actor-temporal-structural-reader-fresh-dev.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-06",
+  "baselineSha": "1aa151cf9b00927eff750ac7f5b3db3667b699f2",
+  "dataFreezeCommit": "926de11b12c8abe12e031bcb7c47d0031327d475",
+  "inputs": [
+    {
+      "path": "evals/generic/actor-temporal-structural-reader-fresh-dev/domains/cold-storage.json",
+      "gitBlobSha": "91ac2d186087cb7dcedf5c36d8a4be00b92f7701"
+    },
+    {
+      "path": "evals/generic/actor-temporal-structural-reader-fresh-dev/domains/marine-aquarium.json",
+      "gitBlobSha": "dd62617d613c4e5ca3e4b05e8c0cc57beb3b317b"
+    },
+    {
+      "path": "evals/generic/actor-temporal-structural-reader-fresh-dev/domains/printing-press.json",
+      "gitBlobSha": "b69873bbb92d9d76c22cb52e14859f6703618627"
+    },
+    {
+      "path": "evals/generic/actor-temporal-structural-reader-fresh-dev/domains/public-garden.json",
+      "gitBlobSha": "025fc18c9375c47dad0f23fbb563681979f18b8b"
+    }
+  ],
+  "dataset": {
+    "split": "development",
+    "domains": [
+      "cold-storage",
+      "marine-aquarium",
+      "printing-press",
+      "public-garden"
+    ],
+    "questions": 24,
+    "answerable": 16,
+    "unanswerable": 8,
+    "languages": ["en", "es"],
+    "authoredBeforeExecution": true,
+    "reusedPriorDevelopment": false,
+    "reusedPriorHeldout": false
+  },
+  "reader": {
+    "model": "onnx-community/Qwen2.5-1.5B-Instruct",
+    "revision": "9f9c976052bfb08a20793f0c3013563dc095c966",
+    "dtype": "q4",
+    "promptVersion": "evidence-reader-v4",
+    "temperature": 0,
+    "maxOutputTokens": 256
+  },
+  "segmentation": {
+    "kind": "INTL_SENTENCE_EXACT_SOURCE_OFFSETS",
+    "allVisibleSentences": true,
+    "preservesOriginalCandidateIdentity": true,
+    "sentenceCanCreateCandidate": false
+  },
+  "structuralFastPaths": {
+    "temporalRule": {
+      "unitType": "RULE",
+      "questionRequiresTemporalCue": true,
+      "ruleRequiresTemporalCue": true,
+      "createsCandidate": false
+    },
+    "actorClaim": {
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "questionShape": "WHO_OR_QUIEN",
+      "requiresPredicateAnchor": true,
+      "minimumAnchorCoverage": 0.6,
+      "createsCandidate": false
+    }
+  },
+  "protocol": {
+    "phase": "FRESH_DEVELOPMENT_FEASIBILITY_ONLY",
+    "retiredAuthority": ["PASSAGE_TEXT_SUPPORT", "PASSAGE_CUE_SUPPORT"],
+    "temporalRuleFastPathFirst": true,
+    "actorClaimFastPathSecond": true,
+    "unitReaderThird": true,
+    "sentenceFallbackOnlyAfterUnitAbstains": true,
+    "readerCanCreateSupport": false,
+    "readerReceivesOnlyRetiredBaselineCandidates": true,
+    "allVisibleSentencesEvaluated": true,
+    "sentenceSpansRemappedToOriginalPassage": true,
+    "noCrossEncoder": true,
+    "noThresholdSweep": true,
+    "noPromptChange": true,
+    "noModelChangeFromReader107": true,
+    "providerDefaultsChanged": false,
+    "runtimeChanged": false,
+    "productionAdmissionChanged": false
+  },
+  "developmentGate": {
+    "answerableRecallNonRegression": true,
+    "admittedPrecisionNonRegression": true,
+    "falseAcceptanceNonIncrease": true,
+    "wrongAdmissionQuestionsNonIncrease": true,
+    "strictAccuracyNonRegression": true,
+    "candidateAdmissionsSubsetOfBaseline": true,
+    "baselineGoldPreserved": true,
+    "allSemanticSupportsSourceBound": true,
+    "requireMeasuredPrecisionAdvantage": true,
+    "outcomes": [
+      "PROCEED_TO_FRESH_HOLDOUT",
+      "REJECT_FRESH_DEVELOPMENT_FRONTIER",
+      "INVALID_EXPERIMENT"
+    ]
+  },
+  "nextStepBoundary": [
+    "A pass authorizes only a separately authored and frozen family-disjoint holdout.",
+    "A reject terminates this exact structural-fast-path plus unit/sentence reader composition without cue, model, prompt, threshold, segmentation or dataset retuning.",
+    "No prior inspected development or heldout pack is loaded by this worker."
+  ]
+}
