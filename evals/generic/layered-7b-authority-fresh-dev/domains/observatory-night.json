@@ -1,0 +1,112 @@
+{
+  "id": "observatory-night",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh EN observatory operations admission domain.",
+  "units": [
+    {
+      "id": "on-vent",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Dome ventilation",
+      "headingPath": ["Night preparation", "Thermal control"],
+      "text": "The dome vents are opened before observing so indoor air can approach the outside temperature. Reducing the temperature difference limits local air turbulence around the optical path."
+    },
+    {
+      "id": "on-balance",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Instrument rebalance",
+      "headingPath": ["Telescope setup", "Balance"],
+      "text": "After a camera or other heavy instrument is changed, the telescope is rebalanced before normal slewing. The adjustment reduces uneven load on the drive system."
+    },
+    {
+      "id": "on-flat",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Flat field exposure",
+      "headingPath": ["Calibration", "Flat field"],
+      "text": "A flat field exposure records an evenly illuminated reference so later image processing can correct pixel-to-pixel response differences and broad illumination variation."
+    },
+    {
+      "id": "on-dew",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Condensation risk",
+      "headingPath": ["Weather", "Moisture"],
+      "text": "When the optic temperature approaches the measured dew point, the operator pauses exposed observing and uses the approved dew-control procedure before continuing."
+    },
+    {
+      "id": "on-focus",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Focus verification",
+      "headingPath": ["Imaging", "Focus"],
+      "text": "Focus is checked again after a meaningful temperature change because mechanical dimensions and the optical train can shift as the equipment cools."
+    },
+    {
+      "id": "on-log",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Night log",
+      "headingPath": ["Operations", "Recordkeeping"],
+      "text": "The night log records configuration changes, weather interruptions, calibration actions, and unusual instrument behavior so later data review can reconstruct observing conditions."
+    }
+  ],
+  "questions": [
+    {
+      "id": "on-q1",
+      "family": "dome-temperature-equalization",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why are the dome vents opened before observations begin?",
+      "gold": ["on-vent"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "on-q2",
+      "family": "payload-rebalance-reason",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why should the telescope be balanced again after replacing a heavy camera?",
+      "gold": ["on-balance"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "on-q3",
+      "family": "flat-reference-purpose",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "What correction is an evenly illuminated calibration exposure intended to support?",
+      "gold": ["on-flat"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "on-q4",
+      "family": "dew-risk-action",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "What does the operator do when the optics approach the dew point?",
+      "gold": ["on-dew"],
+      "challenges": ["CONDITION", "PARAPHRASE"]
+    },
+    {
+      "id": "on-q5",
+      "family": "ventilation-duration-missing",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "Exactly how many minutes must the dome vents remain open before every observation?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "on-q6",
+      "family": "dew-sensor-brand-missing",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which humidity sensor brand is mandatory for the dew-control procedure?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}

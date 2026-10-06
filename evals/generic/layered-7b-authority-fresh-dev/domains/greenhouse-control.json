@@ -1,0 +1,112 @@
+{
+  "id": "greenhouse-control",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh EN greenhouse operations admission domain.",
+  "units": [
+    {
+      "id": "gc-moisture",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Root-zone moisture",
+      "headingPath": ["Irrigation", "Root zone"],
+      "text": "Root-zone moisture is checked before an irrigation cycle so watering responds to the growing medium rather than only to a fixed clock schedule."
+    },
+    {
+      "id": "gc-ec",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Nutrient conductivity",
+      "headingPath": ["Nutrition", "Conductivity"],
+      "text": "When measured solution conductivity moves outside the crop's approved range, nutrient dosing is corrected before the next normal feed cycle and the reading is recorded."
+    },
+    {
+      "id": "gc-vent",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Vent opening",
+      "headingPath": ["Climate", "Ventilation"],
+      "text": "Roof vents are opened progressively when excess heat accumulates so warm air can leave without creating an abrupt environmental change around the crop."
+    },
+    {
+      "id": "gc-shade",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Shade screen",
+      "headingPath": ["Climate", "Solar load"],
+      "text": "A shade screen reduces incoming solar load during high-radiation periods and can lower heat stress without replacing the need to monitor air and root-zone conditions."
+    },
+    {
+      "id": "gc-runoff",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Runoff sample",
+      "headingPath": ["Irrigation", "Verification"],
+      "text": "Runoff samples are compared with the supplied solution to reveal whether salts are accumulating in the root zone over repeated irrigation cycles."
+    },
+    {
+      "id": "gc-alarm",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Climate alarm",
+      "headingPath": ["Monitoring", "Alarm"],
+      "text": "A climate alarm that persists after the first control response is acknowledged and escalated for inspection rather than repeatedly cleared without checking the underlying condition."
+    }
+  ],
+  "questions": [
+    {
+      "id": "gc-q1",
+      "family": "root-zone-before-watering",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why check the growing medium before starting irrigation?",
+      "gold": ["gc-moisture"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "gc-q2",
+      "family": "conductivity-outside-range",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "What should happen when nutrient solution conductivity is outside the approved crop range?",
+      "gold": ["gc-ec"],
+      "challenges": ["CONDITION", "PARAPHRASE"]
+    },
+    {
+      "id": "gc-q3",
+      "family": "vent-excess-heat",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why are roof vents opened progressively when the greenhouse gets too warm?",
+      "gold": ["gc-vent"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "gc-q4",
+      "family": "runoff-salt-accumulation",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "What can comparing runoff with the supplied solution reveal?",
+      "gold": ["gc-runoff"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "gc-q5",
+      "family": "vent-angle-missing",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "At exactly what vent angle must every greenhouse begin heat ventilation?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "gc-q6",
+      "family": "conductivity-meter-brand-missing",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which conductivity meter manufacturer is mandatory for nutrient checks?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}

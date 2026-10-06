@@ -1,0 +1,112 @@
+{
+  "id": "cadena-frio",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES cold-chain logistics admission domain.",
+  "units": [
+    {
+      "id": "cf-preenfriado",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Preenfriado de carga",
+      "headingPath": ["Preparación", "Temperatura"],
+      "text": "La carga se preenfría antes de ingresar al vehículo cuando el producto lo requiere, porque el equipo de transporte está destinado principalmente a mantener la temperatura y no a retirar rápidamente el calor inicial del producto."
+    },
+    {
+      "id": "cf-logger",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Ubicación del registrador",
+      "headingPath": ["Monitoreo", "Registrador"],
+      "text": "El registrador de temperatura se coloca en una posición representativa de la carga y no pegado directamente a la salida de aire, para evitar una lectura que describa sólo el flujo del equipo."
+    },
+    {
+      "id": "cf-puerta",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Apertura de puertas",
+      "headingPath": ["Operación", "Puertas"],
+      "text": "Durante una parada, las puertas se mantienen abiertas sólo el tiempo necesario para la operación porque una apertura prolongada favorece el intercambio de aire con el exterior."
+    },
+    {
+      "id": "cf-excursion",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Excursión de temperatura",
+      "headingPath": ["Incidentes", "Evaluación"],
+      "text": "Si se detecta una excursión fuera del rango autorizado, el lote se identifica y queda pendiente de evaluación antes de liberarlo; el registro de temperatura se conserva como evidencia."
+    },
+    {
+      "id": "cf-espacio",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Espacio para circulación",
+      "headingPath": ["Carga", "Distribución"],
+      "text": "La distribución de pallets deja rutas de circulación de aire para reducir zonas aisladas del flujo y favorecer una temperatura más uniforme en la carga."
+    },
+    {
+      "id": "cf-recepcion",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Recepción documentada",
+      "headingPath": ["Entrega", "Recepción"],
+      "text": "En la recepción se comparan la condición del producto, los registros disponibles y la identificación del envío antes de cerrar la transferencia de responsabilidad."
+    }
+  ],
+  "questions": [
+    {
+      "id": "cf-q1",
+      "family": "preenfriado-mantenimiento",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué puede ser necesario enfriar el producto antes de cargarlo al vehículo?",
+      "gold": ["cf-preenfriado"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "cf-q2",
+      "family": "logger-posicion-representativa",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué el registrador no debe colocarse pegado a la salida de aire?",
+      "gold": ["cf-logger"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "cf-q3",
+      "family": "puerta-tiempo-necesario",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se limita el tiempo que permanecen abiertas las puertas durante una parada?",
+      "gold": ["cf-puerta"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "cf-q4",
+      "family": "excursion-lote-accion",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué se hace con un lote cuando se detecta una excursión fuera del rango autorizado?",
+      "gold": ["cf-excursion"],
+      "challenges": ["CONDITION", "PARAPHRASE"]
+    },
+    {
+      "id": "cf-q5",
+      "family": "puerta-segundos-missing",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuál es el número exacto de segundos permitido para mantener abiertas las puertas en toda entrega?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "cf-q6",
+      "family": "logger-modelo-missing",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué modelo exacto de registrador de temperatura es obligatorio para todos los envíos?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}

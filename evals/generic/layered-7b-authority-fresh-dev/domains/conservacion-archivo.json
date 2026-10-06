@@ -1,0 +1,112 @@
+{
+  "id": "conservacion-archivo",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES archival conservation admission domain.",
+  "units": [
+    {
+      "id": "ca-soporte",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Soporte libre de ácido",
+      "headingPath": ["Almacenamiento", "Materiales"],
+      "text": "Los documentos frágiles se colocan sobre soportes estables y libres de ácido para reducir el contacto con materiales que puedan acelerar su deterioro durante el almacenamiento."
+    },
+    {
+      "id": "ca-humedad",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Estabilidad ambiental",
+      "headingPath": ["Ambiente", "Humedad"],
+      "text": "Se evitan cambios bruscos de humedad relativa porque las variaciones repetidas pueden producir expansión y contracción en papel, adhesivos y otros materiales sensibles."
+    },
+    {
+      "id": "ca-luz",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Exposición a la luz",
+      "headingPath": ["Exhibición", "Iluminación"],
+      "text": "La exposición a la luz se limita en materiales sensibles porque el daño fotoquímico es acumulativo y no se revierte al guardar nuevamente la pieza."
+    },
+    {
+      "id": "ca-aislamiento",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Ingreso con indicios biológicos",
+      "headingPath": ["Recepción", "Aislamiento"],
+      "text": "Si un ingreso presenta indicios de actividad biológica, la pieza se mantiene separada de la colección estable hasta que personal autorizado evalúe el riesgo y defina el tratamiento."
+    },
+    {
+      "id": "ca-movimiento",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Traslado de piezas",
+      "headingPath": ["Manipulación", "Traslado"],
+      "text": "Antes de mover una pieza se despeja la ruta y se prepara un apoyo de destino para evitar sostener el objeto mientras se improvisa dónde colocarlo."
+    },
+    {
+      "id": "ca-registro",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Registro de condición",
+      "headingPath": ["Documentación", "Condición"],
+      "text": "El registro de condición describe daños, deformaciones y cambios visibles antes y después de una intervención para conservar una referencia verificable del estado de la pieza."
+    }
+  ],
+  "questions": [
+    {
+      "id": "ca-q1",
+      "family": "soporte-estable-finalidad",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se emplean soportes libres de ácido con documentos frágiles?",
+      "gold": ["ca-soporte"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ca-q2",
+      "family": "variacion-humedad-riesgo",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Qué se busca evitar al mantener estable la humedad relativa?",
+      "gold": ["ca-humedad"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ca-q3",
+      "family": "luz-dano-acumulativo",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se restringe la iluminación de materiales sensibles?",
+      "gold": ["ca-luz"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ca-q4",
+      "family": "indicios-biologicos-accion",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué ocurre con una pieza recién ingresada si muestra indicios de actividad biológica?",
+      "gold": ["ca-aislamiento"],
+      "challenges": ["CONDITION", "PARAPHRASE"]
+    },
+    {
+      "id": "ca-q5",
+      "family": "humedad-porcentaje-missing",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué porcentaje exacto de humedad relativa debe usarse para toda la colección?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "ca-q6",
+      "family": "soporte-marca-missing",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué marca de soporte libre de ácido es obligatoria para los documentos?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}
