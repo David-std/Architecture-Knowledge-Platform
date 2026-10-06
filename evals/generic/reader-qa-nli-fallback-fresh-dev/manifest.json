@@ -1,0 +1,113 @@
+{
+  "schemaVersion": "akp.reader-qa-nli-fallback-fresh-dev.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-05",
+  "baselineSha": "10ade0d2c27aed31c7d5f9c2528a654d9c116d9b",
+  "dataFreezeCommit": "53054b86b21c6a1bb26b84a8d2599dd8c841fb6c",
+  "inputs": [
+    {
+      "path": "evals/generic/reader-qa-nli-fallback-fresh-dev/domains/archive-conservation.json",
+      "gitBlobSha": "be51418735565e79f5ea8dec6c3e6a3f61479cac"
+    },
+    {
+      "path": "evals/generic/reader-qa-nli-fallback-fresh-dev/domains/greenhouse-irrigation.json",
+      "gitBlobSha": "3b0f7328c1b36c944ea2b0a4914fc41f8db06bdf"
+    },
+    {
+      "path": "evals/generic/reader-qa-nli-fallback-fresh-dev/domains/metro-maintenance.json",
+      "gitBlobSha": "9fac36120c95ac19b854a1dadb56d4300deb6754"
+    },
+    {
+      "path": "evals/generic/reader-qa-nli-fallback-fresh-dev/domains/satellite-ops.json",
+      "gitBlobSha": "7f83514e8638896352dbe855c839e09390c175fc"
+    }
+  ],
+  "dataset": {
+    "split": "development",
+    "domains": [
+      "archive-conservation",
+      "greenhouse-irrigation",
+      "metro-maintenance",
+      "satellite-ops"
+    ],
+    "questions": 24,
+    "answerable": 16,
+    "unanswerable": 8,
+    "languages": ["en", "es"],
+    "authoredBeforeExecution": true,
+    "reusedPriorDevelopment": false,
+    "reusedPriorHeldout": false
+  },
+  "reader": {
+    "model": "onnx-community/Qwen2.5-1.5B-Instruct",
+    "revision": "9f9c976052bfb08a20793f0c3013563dc095c966",
+    "dtype": "q4",
+    "promptVersion": "evidence-reader-v4",
+    "temperature": 0,
+    "maxOutputTokens": 256
+  },
+  "qa": {
+    "model": "onnx-community/xlm-roberta-base-squad2-distilled-ONNX",
+    "revision": "484112fae76dde6ad01b640192d559cbc2d488e1",
+    "proposalFloor": 1e-9,
+    "maxAnswerTokens": 15,
+    "authority": false
+  },
+  "nli": {
+    "model": "MoritzLaurer/multilingual-MiniLMv2-L6-mnli-xnli",
+    "revision": "0a71e92a985b6e1ad1828cf67ce9c459639c1dca",
+    "modelFileName": "model",
+    "dtype": "fp32",
+    "labelOrder": ["entailment", "neutral", "contradiction"],
+    "fixedEntailmentThreshold": 0.5,
+    "requireEntailmentTopClass": true
+  },
+  "protocol": {
+    "phase": "FRESH_DEVELOPMENT_FEASIBILITY_ONLY",
+    "singleIndependentVariable": "Replace legacy PASSAGE_TEXT_SUPPORT and PASSAGE_CUE_SUPPORT authority with a heterogeneous source-bound subset gate: Qwen2.5-1.5B evidence-reader-v4 first; only unresolved retired baseline candidates may fall back to exact extractive-QA span proposal plus fixed multilingual NLI entailment validation.",
+    "baseline": "Current assessRetrievalAnswerability on the frozen fresh-development pack.",
+    "candidateComposition": "PRESERVED_NON_PASSAGE_AUTHORITY_OR_SOURCE_BOUND_1P5B_OR_QA_NLI_FALLBACK",
+    "retiredAuthority": ["PASSAGE_TEXT_SUPPORT", "PASSAGE_CUE_SUPPORT"],
+    "readerFirst": true,
+    "fallbackOnlyForReaderUnsupported": true,
+    "readerCanCreateSupport": false,
+    "qaUsedAsSpanProposalOnly": true,
+    "qaDecisionUsedAsAuthority": false,
+    "qaNliCanCreateSupport": false,
+    "qaNliReceivesOnlyReaderUnresolvedRetiredCandidates": true,
+    "nliUsesManualRelationHypotheses": false,
+    "nliHypothesisTemplates": {
+      "EN": "The answer to the question \"<QUESTION>\" is \"<ANSWER>\".",
+      "ES": "La respuesta a la pregunta \"<QUESTION>\" es \"<ANSWER>\"."
+    },
+    "sourcePremise": "Shortest visible source sentence containing the exact QA-proposed span.",
+    "noCrossEncoder": true,
+    "noThresholdSweep": true,
+    "noPromptChange": true,
+    "providerDefaultsChanged": false,
+    "runtimeChanged": false,
+    "productionAdmissionChanged": false
+  },
+  "developmentGate": {
+    "answerableRecallNonRegression": true,
+    "admittedPrecisionNonRegression": true,
+    "falseAcceptanceNonIncrease": true,
+    "wrongAdmissionQuestionsNonIncrease": true,
+    "strictAccuracyNonRegression": true,
+    "candidateAdmissionsSubsetOfBaseline": true,
+    "baselineGoldPreserved": true,
+    "allSemanticSupportsSourceBound": true,
+    "requireMeasuredPrecisionAdvantage": true,
+    "outcomes": [
+      "PROCEED_TO_FRESH_HOLDOUT",
+      "REJECT_FRESH_DEVELOPMENT_FRONTIER",
+      "INVALID_EXPERIMENT"
+    ]
+  },
+  "nextStepBoundary": [
+    "A pass authorizes only a separately authored and frozen family-disjoint holdout.",
+    "No prior inspected development or heldout pack is used for tuning this worker.",
+    "A reject terminates this exact heterogeneous fallback without model, prompt, threshold or dataset retuning.",
+    "No runtime/default/admission change is authorized by development evidence alone."
+  ]
+}
