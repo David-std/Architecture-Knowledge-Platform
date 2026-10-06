@@ -16,6 +16,9 @@ overrides:
   brace-expansion: 2.1.7
   # Security floor for the MCP SDK's transitive Hono dependency.
   hono: 4.13.5
+  # Security floors for advisories published 2026-10-05.
+  proxy-addr: 2.0.8
+  source-map-js: 1.2.2
 allowBuilds:
   esbuild: true
   onnxruntime-node: true
