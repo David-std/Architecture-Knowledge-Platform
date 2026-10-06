@@ -1,0 +1,97 @@
+{
+  "schemaVersion": "akp.bge-reader-1p5b-fresh-dev.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-06",
+  "baselineSha": "10ade0d2c27aed31c7d5f9c2528a654d9c116d9b",
+  "dataFreezeCommit": "8a164ab9daccef4e30e8cb4e5ff0e63a5a6f0ae4",
+  "inputs": [
+    {
+      "path": "evals/generic/bge-reader-1p5b-fresh-dev/domains/invernadero-riego.json",
+      "gitBlobSha": "1492d3d1eee14b38d5ae78b4bd1a1f140bfce1cb"
+    },
+    {
+      "path": "evals/generic/bge-reader-1p5b-fresh-dev/domains/printing-press.json",
+      "gitBlobSha": "677e7ff1412d3e74fe7b6d28a6e1292c26af24f2"
+    },
+    {
+      "path": "evals/generic/bge-reader-1p5b-fresh-dev/domains/rail-platform-ops.json",
+      "gitBlobSha": "4e3f418d6d0c8faaf371009d50be81e2e039c557"
+    },
+    {
+      "path": "evals/generic/bge-reader-1p5b-fresh-dev/domains/vivero-forestal.json",
+      "gitBlobSha": "b992a6943d55d9e952e1f955b93515d44b0b33c5"
+    }
+  ],
+  "dataset": {
+    "split": "development",
+    "domains": [
+      "invernadero-riego",
+      "printing-press",
+      "rail-platform-ops",
+      "vivero-forestal"
+    ],
+    "questions": 24,
+    "answerable": 16,
+    "unanswerable": 8,
+    "languages": ["en", "es"],
+    "authoredBeforeExecution": true,
+    "reusedPriorDevelopment": false,
+    "reusedPriorHeldout": false
+  },
+  "reader": {
+    "model": "onnx-community/Qwen2.5-1.5B-Instruct",
+    "revision": "9f9c976052bfb08a20793f0c3013563dc095c966",
+    "dtype": "q4",
+    "promptVersion": "evidence-reader-v4",
+    "temperature": 0,
+    "maxOutputTokens": 256
+  },
+  "shortlist": {
+    "model": "onnx-community/bge-reranker-v2-m3-ONNX",
+    "revision": "6f5ff65298512715a1e669753bc754d2bc8f367b",
+    "dtype": "int8",
+    "maxTokens": 512
+  },
+  "protocol": {
+    "phase": "FRESH_DEVELOPMENT_FEASIBILITY_ONLY",
+    "singleIndependentVariable": "Use the already-proven BGE v2-m3 relevance-only top-4 shortlist from #105 with the stronger pinned Qwen2.5-1.5B evidence-reader-v4 from #107. Retire PASSAGE_TEXT_SUPPORT and PASSAGE_CUE_SUPPORT as authority, preserve non-PASSAGE deterministic authority, and allow only exact-source-bound reader support. No other model, prompt, shortlist, threshold, ranking or dataset variable changes.",
+    "baseline": "Current assessRetrievalAnswerability.",
+    "candidateComposition": "PRESERVED_NON_PASSAGE_AUTHORITY_OR_BGE_TOP4_SOURCE_BOUND_1P5B_READER",
+    "retiredAuthority": ["PASSAGE_TEXT_SUPPORT", "PASSAGE_CUE_SUPPORT"],
+    "preserveNonPassageBaselineAuthority": true,
+    "readerMayCreateSourceBoundSupport": true,
+    "readerSupportRequiresExactVisibleSpan": true,
+    "bgeRelevanceOnly": true,
+    "readerShortlistSize": 4,
+    "readerConcurrency": 2,
+    "noThresholdSweep": true,
+    "noPromptChange": true,
+    "onlyReaderCapacityChangedFrom105": true,
+    "providerDefaultsChanged": false,
+    "runtimeChanged": false,
+    "productionAdmissionChanged": false
+  },
+  "developmentGate": {
+    "answerableRecallNonRegression": true,
+    "admittedPrecisionNonRegression": true,
+    "falseAcceptanceNonIncrease": true,
+    "wrongAdmissionQuestionsNonIncrease": true,
+    "strictAccuracyNonRegression": true,
+    "baselineGoldPreserved": true,
+    "allSemanticSupportsSourceBound": true,
+    "requireMeasuredQualityAdvantage": true,
+    "noNewFalseAcceptances": true,
+    "noNewWrongAdmissions": true,
+    "outcomes": [
+      "PROCEED_TO_FRESH_HOLDOUT",
+      "REJECT_FRESH_DEVELOPMENT_FRONTIER",
+      "INVALID_EXPERIMENT"
+    ]
+  },
+  "nextStepBoundary": [
+    "A pass authorizes only a separately authored and frozen family-disjoint holdout.",
+    "A reject terminates this exact BGE-top4 plus 1.5B composition without model, prompt, threshold, shortlist or dataset retuning.",
+    "No prior inspected development or heldout pack is loaded for the decision.",
+    "Runtime/default/production admission remains unchanged in this experiment."
+  ]
+}
