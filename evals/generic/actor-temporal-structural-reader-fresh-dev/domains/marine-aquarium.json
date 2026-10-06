@@ -92,12 +92,12 @@
     },
     {
       "id": "ma-q5",
-      "family": "refractometer-brand-unknown",
+      "family": "oxygen-monitor-actor-unknown",
       "intent": "ENTITY",
       "language": "es",
-      "query": "¿Qué fabricante produce el refractómetro usado para verificar salinidad?",
+      "query": "¿Quién vigila el oxígeno disuelto durante la noche?",
       "gold": [],
-      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+      "challenges": ["MISSING_ACTOR", "SAME_VOCABULARY", "PASSIVE_VOICE"]
     },
     {
       "id": "ma-q6",

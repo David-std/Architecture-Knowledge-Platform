@@ -92,12 +92,12 @@
     },
     {
       "id": "cs-q5",
-      "family": "probe-vendor-unknown",
+      "family": "dock-door-actor-unknown",
       "intent": "ENTITY",
       "language": "en",
-      "query": "Which vendor supplied the product temperature probes?",
+      "query": "Who closed the dock doors between vehicle movements?",
       "gold": [],
-      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+      "challenges": ["MISSING_ACTOR", "SAME_VOCABULARY", "PASSIVE_VOICE"]
     },
     {
       "id": "cs-q6",

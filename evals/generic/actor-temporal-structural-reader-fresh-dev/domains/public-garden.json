@@ -92,12 +92,12 @@
     },
     {
       "id": "pg-q5",
-      "family": "stake-vendor-unknown",
+      "family": "compost-use-actor-unknown",
       "intent": "ENTITY",
       "language": "es",
-      "query": "¿Qué empresa fabrica los tutores usados en el jardín?",
+      "query": "¿Quién utiliza compost maduro cerca de raíces jóvenes?",
       "gold": [],
-      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+      "challenges": ["MISSING_ACTOR", "SAME_VOCABULARY", "ACTOR_UNSTATED"]
     },
     {
       "id": "pg-q6",

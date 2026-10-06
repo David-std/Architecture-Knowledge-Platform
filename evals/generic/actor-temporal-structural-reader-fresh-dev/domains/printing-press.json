@@ -92,12 +92,12 @@
     },
     {
       "id": "pp-q5",
-      "family": "blanket-maker-unknown",
+      "family": "static-control-actor-unknown",
       "intent": "ENTITY",
       "language": "en",
-      "query": "Which manufacturer supplies the press blankets?",
+      "query": "Who controlled static charge on the press?",
       "gold": [],
-      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+      "challenges": ["MISSING_ACTOR", "SAME_VOCABULARY", "PASSIVE_VOICE"]
     },
     {
       "id": "pp-q6",
