@@ -1,0 +1,133 @@
+{
+  "schemaVersion": "akp.layered-7b-authority-fresh-holdout.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-06",
+  "baselineSha": "1aa151cf9b00927eff750ac7f5b3db3667b699f2",
+  "candidateCodeSha": "b5f58d9464da43a73b6772efa5589206672e36ab",
+  "dataFreezeCommit": "757bc6d61d793e1bbd37bd98d05e64290a524d10",
+  "developmentEvidence": {
+    "outcome": "PROCEED_TO_FRESH_HOLDOUT",
+    "candidateCommit": "b5f58d9464da43a73b6772efa5589206672e36ab",
+    "protocolHash": "bb5c75a58e6f2d9ae963e25b8b3d6614b22add8b7def1c79d023d4862e2cc472",
+    "answerableRecall": 1,
+    "admittedPrecision": 1,
+    "falseAcceptanceRate": 0,
+    "strictAccuracy": 1,
+    "p95LatencyMs": 6395.109899999996
+  },
+  "frozenRuntimePaths": [
+    "packages/retrieval/src/evidence-admission.ts",
+    "packages/retrieval/src/evidence-reader.ts",
+    "packages/retrieval/src/contextual-evidence.ts",
+    "packages/retrieval/src/support-verifier.ts",
+    "packages/retrieval/src/answerability.ts",
+    "packages/retrieval/src/source-verification.ts"
+  ],
+  "familyDisjointAgainst": "evals/generic/layered-7b-authority-fresh-dev/domains",
+  "inputs": [
+    {
+      "path": "evals/generic/layered-7b-authority-fresh-holdout/domains/fermentacion-artesanal.json",
+      "gitBlobSha": "6a52b973843712d6e42df4ca64f7a560823ba471"
+    },
+    {
+      "path": "evals/generic/layered-7b-authority-fresh-holdout/domains/field-geology.json",
+      "gitBlobSha": "9b6c227fa69d140fdb607c77e8846af6b38d5b72"
+    },
+    {
+      "path": "evals/generic/layered-7b-authority-fresh-holdout/domains/maritime-watch.json",
+      "gitBlobSha": "644b35c517464ebee7c39a0671f2c902ebc49011"
+    },
+    {
+      "path": "evals/generic/layered-7b-authority-fresh-holdout/domains/restauracion-instrumentos.json",
+      "gitBlobSha": "3004160a41ad85c6ec432f0ebd094f336e0dadb7"
+    }
+  ],
+  "dataset": {
+    "split": "heldout",
+    "domains": [
+      "fermentacion-artesanal",
+      "field-geology",
+      "maritime-watch",
+      "restauracion-instrumentos"
+    ],
+    "questions": 24,
+    "answerable": 17,
+    "unanswerable": 7,
+    "languages": ["en", "es"],
+    "authoredAfterDevelopmentPass": true,
+    "reusedPriorDevelopment": false,
+    "reusedPriorHeldout": false,
+    "familyDisjointFromDevelopment": true
+  },
+  "architecture": {
+    "legacyAuthorityRetiredInCandidate": [
+      "PASSAGE_TEXT_SUPPORT",
+      "PASSAGE_CUE_SUPPORT"
+    ],
+    "structuralGuard": "StructuralEvidenceGuard",
+    "structuredMatcher": "ExactStructuredPropositionMatcher",
+    "structuredMatcherIndependentEvidence": "benchmark:structured-proposition-family-disjoint",
+    "semanticReader": "QueryConditionedSemanticEvidenceReader",
+    "readerPromptVersion": "evidence-reader-v4",
+    "rerankerAuthority": false,
+    "readerSupportRequiresExactVisibleSpan": true,
+    "productionDefaultsChanged": false,
+    "runtimeAdmissionChanged": false
+  },
+  "reranker": {
+    "model": "onnx-community/bge-reranker-v2-m3-ONNX",
+    "revision": "6f5ff65298512715a1e669753bc754d2bc8f367b",
+    "shortlistSize": 4,
+    "shortlistFloor": 0.001,
+    "authority": "ORDER_ONLY"
+  },
+  "reader": {
+    "provider": "ollama-openai-compatible",
+    "model": "qwen2.5:7b-instruct",
+    "deploymentDigest": "845dbda0ea48ed749caafd9e6037047aa19acfcfd82e7047ca97d631a0b697e",
+    "quantization": "Q4_K_M",
+    "promptVersion": "evidence-reader-v4",
+    "temperature": 0,
+    "maxOutputTokens": 256,
+    "contextLength": 4096,
+    "requestTimeoutMs": 120000
+  },
+  "operatingPoint": {
+    "policy": "SAFETY_FIRST_ABSOLUTE_FRONTIER",
+    "answerableRecallMinimum": 0.75,
+    "admittedPrecisionMinimum": 0.85,
+    "falseAcceptanceRateMaximum": 0.125,
+    "wrongAdmissionQuestionsMaximum": 4,
+    "strictAccuracyMinimum": 0.7,
+    "p95QuestionLatencyMsMaximum": 30000,
+    "allSemanticSupportsSourceBound": true,
+    "structuredMatcherStrictAccuracyRequired": 1,
+    "baselineGoldPreservationRequired": false,
+    "paretoDominanceOverLegacyRequired": false,
+    "safetyImprovementAgainstLegacy": {
+      "admittedPrecisionMustIncrease": true,
+      "falseAcceptanceRateMustNotIncrease": true
+    }
+  },
+  "protocol": {
+    "phase": "FRESH_FAMILY_DISJOINT_HOLDOUT",
+    "singleIndependentVariable": "The development-approved BGE-shortlisted Qwen2.5 7B reader-v4 behind StructuralEvidenceGuard, with independently proven exact structured proposition authority, is evaluated unchanged on fresh family-disjoint holdout data.",
+    "noThresholdSweep": true,
+    "noPromptChange": true,
+    "noModelChange": true,
+    "noShortlistChange": true,
+    "noRuntimeCodeChangeAfterDevelopment": true,
+    "noDatasetChangeAfterExecution": true,
+    "noCorpusSpecificAliases": true,
+    "noFastPaths": true,
+    "noLegacyCueAuthorityInCandidate": true,
+    "noProductionPromotionFromHoldoutAlone": true
+  },
+  "holdoutGate": {
+    "outcomes": [
+      "PROMOTE_TO_PRIVATE_FRESH_E2E",
+      "REJECT_FRESH_HOLDOUT_FRONTIER",
+      "INVALID_EXPERIMENT"
+    ]
+  }
+}

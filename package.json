@@ -72,7 +72,9 @@
     "benchmark:evidence-verifier-nli-shadow": "tsx scripts/evidence-verifier-nli-shadow-benchmark.ts",
     "benchmark:evidence-verifier-e5-relation-shadow": "tsx scripts/evidence-verifier-e5-relation-shadow-benchmark.ts",
     "benchmark:evidence-verifier-bge-reranker-shadow": "pnpm --filter @akp/retrieval exec tsx scripts/evidence-verifier-bge-reranker-shadow-benchmark.ts",
-    "benchmark:structured-proposition-family-disjoint": "tsx scripts/structured-proposition-family-disjoint-benchmark.ts"
+    "benchmark:structured-proposition-family-disjoint": "tsx scripts/structured-proposition-family-disjoint-benchmark.ts",
+    "benchmark:evidence-admission:layered-7b-fresh-dev": "tsx scripts/evidence-admission-layered-7b-fresh-dev-experiment.ts",
+    "benchmark:evidence-admission:layered-7b-fresh-holdout": "tsx scripts/evidence-admission-layered-7b-fresh-holdout-experiment.ts"
   },
   "devDependencies": {
     "@types/mime-types": "^3.0.1",
