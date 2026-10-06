@@ -1,0 +1,112 @@
+{
+  "id": "mountain-cableway",
+  "split": "heldout",
+  "language": "en",
+  "description": "Family-disjoint holdout for mountain cableway operations.",
+  "units": [
+    {
+      "id": "mc-haul-rope",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Haul rope",
+      "headingPath": ["Drive system", "Haul rope"],
+      "text": "The moving steel rope that transfers traction from the drive machinery to the carriers and pulls them along the line between stations."
+    },
+    {
+      "id": "mc-wind",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "High-wind shutdown",
+      "headingPath": ["Weather", "High wind"],
+      "text": "Passenger service is suspended when the sustained wind threshold is exceeded because carrier swing can reduce clearance at towers and station entrances."
+    },
+    {
+      "id": "mc-evac",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Line evacuation command",
+      "headingPath": ["Emergency response", "Line evacuation"],
+      "text": "The operations supervisor authorizes a line evacuation after confirming that normal recovery cannot return the carriers to a station. Rescue teams deploy only after that authorization."
+    },
+    {
+      "id": "mc-grip",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Detachable grip inspection",
+      "headingPath": ["Maintenance", "Grips"],
+      "text": "A grip that fails the measured closing-force test is removed from service and cannot return until maintenance corrects the defect and a repeat test passes."
+    },
+    {
+      "id": "mc-ice",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Morning de-icing run",
+      "headingPath": ["Winter startup", "De-icing"],
+      "text": "Before passengers board after overnight icing, an empty inspection run checks sheaves, grips and station equipment for ice accumulation."
+    },
+    {
+      "id": "mc-board",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Operating board",
+      "headingPath": ["Operations", "Board"],
+      "text": "| Time | Wind | Cabins in service |\\n|---|---|---|\\n| 08:00 | 18 km/h | 42 |\\n| 12:00 | 31 km/h | 42 |"
+    }
+  ],
+  "questions": [
+    {
+      "id": "mc-q1",
+      "family": "haul-rope-meaning",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is the haul rope in a cableway?",
+      "gold": ["mc-haul-rope"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "mc-q2",
+      "family": "evac-authorizer",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who authorizes a line evacuation when normal recovery cannot move the carriers?",
+      "gold": ["mc-evac"],
+      "challenges": []
+    },
+    {
+      "id": "mc-q3",
+      "family": "wind-stop-reason",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why is passenger service suspended when the wind threshold is exceeded?",
+      "gold": ["mc-wind"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "mc-q4",
+      "family": "grip-return-condition",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "When may a grip that failed its closing-force test return to service?",
+      "gold": ["mc-grip"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "mc-q5",
+      "family": "rope-supplier-unknown",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which manufacturer supplied the haul rope?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "mc-q6",
+      "family": "board-temperature-unknown",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What temperature was recorded at 12:00 on the operating board?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    }
+  ]
+}

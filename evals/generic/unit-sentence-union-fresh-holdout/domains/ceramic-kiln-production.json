@@ -1,0 +1,112 @@
+{
+  "id": "ceramic-kiln-production",
+  "split": "heldout",
+  "language": "es",
+  "description": "Family-disjoint holdout for ceramic kiln production.",
+  "units": [
+    {
+      "id": "ck-bisque",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Cocción de bizcocho",
+      "headingPath": ["Proceso", "Bizcocho"],
+      "text": "Primera cocción de una pieza cerámica seca que endurece el cuerpo sin vitrificarlo por completo y deja una superficie porosa adecuada para recibir el esmalte."
+    },
+    {
+      "id": "ck-controller",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Programa del horno",
+      "headingPath": ["Cocción", "Programa"],
+      "text": "La ceramista responsable carga el programa de temperatura y rampas en el controlador antes de iniciar el ciclo y verifica que corresponda al lote preparado."
+    },
+    {
+      "id": "ck-cooling",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Enfriamiento antes de abrir",
+      "headingPath": ["Cocción", "Enfriamiento"],
+      "text": "El horno permanece cerrado durante el enfriamiento porque una entrada brusca de aire frío puede provocar choque térmico y agrietar las piezas calientes."
+    },
+    {
+      "id": "ck-glaze",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Limpieza de base esmaltada",
+      "headingPath": ["Esmaltado", "Base"],
+      "text": "La base de cada pieza debe quedar libre de esmalte antes de cargar el horno. Una pieza con esmalte en la base se aparta hasta corregirla para evitar que se adhiera a la placa."
+    },
+    {
+      "id": "ck-loading",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Carga de placas",
+      "headingPath": ["Horno", "Carga"],
+      "text": "El operario de horno coloca las piezas dejando separación entre ellas y comprueba que ninguna sobresalga del borde de la placa antes de cerrar la cámara."
+    },
+    {
+      "id": "ck-table",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Registro de hornadas",
+      "headingPath": ["Producción", "Hornadas"],
+      "text": "| Lote | Pico | Duración |\\n|---|---|---|\\n| B-17 | 980 °C | 9 h |\\n| E-04 | 1220 °C | 11 h |"
+    }
+  ],
+  "questions": [
+    {
+      "id": "ck-q1",
+      "family": "bisque-concept",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué es la cocción de bizcocho en cerámica?",
+      "gold": ["ck-bisque"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "ck-q2",
+      "family": "kiln-programmer-role",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién carga el programa de temperatura en el controlador del horno?",
+      "gold": ["ck-controller"],
+      "challenges": []
+    },
+    {
+      "id": "ck-q3",
+      "family": "closed-cooling-reason",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se mantiene cerrado el horno mientras se enfría?",
+      "gold": ["ck-cooling"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ck-q4",
+      "family": "glaze-load-condition",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Cuándo puede cargarse una pieza que tenía esmalte en la base?",
+      "gold": ["ck-glaze"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ck-q5",
+      "family": "shelf-supplier-unknown",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué proveedor fabrica las placas usadas dentro del horno?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "ck-q6",
+      "family": "batch-humidity-unknown",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué humedad tenía el lote E-04 según el registro de hornadas?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    }
+  ]
+}

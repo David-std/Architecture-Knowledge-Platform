@@ -1,0 +1,112 @@
+{
+  "id": "broadcast-studio",
+  "split": "heldout",
+  "language": "en",
+  "description": "Family-disjoint holdout for live broadcast studio operations.",
+  "units": [
+    {
+      "id": "bs-tally",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Tally light",
+      "headingPath": ["Studio signals", "Tally light"],
+      "text": "A visual indicator on or near a camera that shows when that camera is selected for program output, helping presenters and operators know which lens is live."
+    },
+    {
+      "id": "bs-director",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Live camera cuts",
+      "headingPath": ["Control room", "Camera cuts"],
+      "text": "During a live programme, the vision director calls the camera changes and the switcher operator executes those cuts on the production switcher."
+    },
+    {
+      "id": "bs-delay",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Contribution feed delay",
+      "headingPath": ["Remote feeds", "Delay"],
+      "text": "A remote contribution feed is monitored before going live because unstable latency can cause talk-over and make presenter handoffs sound unnatural."
+    },
+    {
+      "id": "bs-silence",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Unexpected silence",
+      "headingPath": ["On-air faults", "Silence"],
+      "text": "If the programme output becomes unexpectedly silent, the transmission operator verifies the program bus and backup source before switching to emergency audio."
+    },
+    {
+      "id": "bs-mic",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Radio microphone handoff",
+      "headingPath": ["Floor operations", "Microphones"],
+      "text": "The floor manager issues each radio microphone to the assigned presenter before rehearsal and checks that it is muted before the presenter enters the studio."
+    },
+    {
+      "id": "bs-log",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Transmission log",
+      "headingPath": ["Transmission", "Log"],
+      "text": "| Segment | Start | Duration |\\n|---|---|---|\\n| News | 18:00 | 22 min |\\n| Weather | 18:22 | 6 min |"
+    }
+  ],
+  "questions": [
+    {
+      "id": "bs-q1",
+      "family": "tally-light-concept",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is a tally light on a studio camera?",
+      "gold": ["bs-tally"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "bs-q2",
+      "family": "camera-caller-role",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who calls the camera changes during a live programme?",
+      "gold": ["bs-director"],
+      "challenges": []
+    },
+    {
+      "id": "bs-q3",
+      "family": "feed-monitor-reason",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why is a remote contribution feed monitored before it goes live?",
+      "gold": ["bs-delay"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "bs-q4",
+      "family": "silence-switch-condition",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "What must be checked before switching to emergency audio after unexpected silence?",
+      "gold": ["bs-silence"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "bs-q5",
+      "family": "microphone-vendor-unknown",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which company supplies the radio microphones?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "bs-q6",
+      "family": "weather-loudness-unknown",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What loudness level is listed for the weather segment in the transmission log?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    }
+  ]
+}

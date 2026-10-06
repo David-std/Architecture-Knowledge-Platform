@@ -1,0 +1,112 @@
+{
+  "id": "wastewater-treatment",
+  "split": "heldout",
+  "language": "es",
+  "description": "Family-disjoint holdout for wastewater treatment operations.",
+  "units": [
+    {
+      "id": "wt-clarifier",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Clarificador secundario",
+      "headingPath": ["Tratamiento biológico", "Clarificador secundario"],
+      "text": "Tanque de sedimentación que separa los sólidos biológicos del agua tratada después del reactor y permite devolver parte del lodo al proceso."
+    },
+    {
+      "id": "wt-oxygen",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Aireación por oxígeno bajo",
+      "headingPath": ["Reactor biológico", "Oxígeno disuelto"],
+      "text": "Si el oxígeno disuelto permanece por debajo del límite operativo, el sistema incrementa la aireación para evitar que el proceso biológico pierda capacidad de oxidación."
+    },
+    {
+      "id": "wt-sample",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Muestra de efluente",
+      "headingPath": ["Laboratorio", "Efluente"],
+      "text": "La técnica de laboratorio toma la muestra compuesta del efluente en el punto designado y registra hora, temperatura y número de muestra antes de conservarla."
+    },
+    {
+      "id": "wt-bypass",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Prohibición de bypass",
+      "headingPath": ["Operación", "Bypass"],
+      "text": "No se deriva caudal alrededor del tratamiento biológico salvo bajo un procedimiento de emergencia autorizado. El jefe de planta debe aprobar la activación antes de abrir la línea de bypass."
+    },
+    {
+      "id": "wt-screen",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Limpieza de rejas",
+      "headingPath": ["Pretratamiento", "Rejas"],
+      "text": "Las rejas automáticas retiran sólidos gruesos antes del bombeo principal. El material acumulado se descarga a un contenedor cerrado para evitar dispersión y olores."
+    },
+    {
+      "id": "wt-table",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Control de efluente",
+      "headingPath": ["Laboratorio", "Control"],
+      "text": "| Parámetro | Lunes | Martes |\\n|---|---|---|\\n| DQO | 38 mg/L | 41 mg/L |\\n| SST | 12 mg/L | 15 mg/L |"
+    }
+  ],
+  "questions": [
+    {
+      "id": "wt-q1",
+      "family": "clarifier-concept",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué es un clarificador secundario?",
+      "gold": ["wt-clarifier"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "wt-q2",
+      "family": "effluent-sampler-role",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién toma la muestra compuesta del efluente?",
+      "gold": ["wt-sample"],
+      "challenges": []
+    },
+    {
+      "id": "wt-q3",
+      "family": "oxygen-aeration-reason",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué aumenta la aireación cuando el oxígeno disuelto permanece bajo?",
+      "gold": ["wt-oxygen"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "wt-q4",
+      "family": "bypass-approval-condition",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Cuándo puede abrirse la línea de bypass alrededor del tratamiento biológico?",
+      "gold": ["wt-bypass"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "wt-q5",
+      "family": "screen-brand-unknown",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué marca fabrica las rejas automáticas del pretratamiento?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "wt-q6",
+      "family": "effluent-ph-unknown",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué pH tuvo el efluente el martes según la tabla de control?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    }
+  ]
+}
