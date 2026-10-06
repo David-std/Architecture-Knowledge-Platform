@@ -1,0 +1,112 @@
+{
+  "id": "mantenimiento-ferroviario",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES railway-maintenance admission domain.",
+  "units": [
+    {
+      "id": "mf-bloqueo",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Posesión de vía",
+      "headingPath": ["Seguridad", "Acceso a vía"],
+      "text": "Antes de que una cuadrilla ingrese a la vía, el controlador debe conceder la posesión y deben estar establecidas las protecciones previstas para impedir movimientos incompatibles."
+    },
+    {
+      "id": "mf-galibo",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Liberación después del trabajo",
+      "headingPath": ["Cierre", "Retorno al servicio"],
+      "text": "Antes de devolver la vía al servicio, el supervisor verifica que el gálibo esté libre, que se hayan retirado las herramientas y que no quede personal dentro de la zona protegida."
+    },
+    {
+      "id": "mf-ultrasonido",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Inspección ultrasónica",
+      "headingPath": ["Inspección", "Rieles"],
+      "text": "En el tramo de alto tráfico, la inspección ultrasónica de los rieles se programa cada treinta días para buscar indicaciones internas que no son visibles en una revisión superficial."
+    },
+    {
+      "id": "mf-defecto",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Indicación de fisura",
+      "headingPath": ["Defectos", "Respuesta"],
+      "text": "Si una indicación de fisura supera el umbral de intervención, se aplica de inmediato una restricción de velocidad y el área de ingeniería evalúa la reparación o sustitución necesaria."
+    },
+    {
+      "id": "mf-equipo",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Equipo ultrasónico",
+      "headingPath": ["Inspección", "Equipos"],
+      "text": "El procedimiento exige que el equipo ultrasónico esté calibrado y sea adecuado para el tipo de riel inspeccionado. No prescribe un fabricante específico."
+    },
+    {
+      "id": "mf-torque",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Ejemplo de torque",
+      "headingPath": ["Capacitación", "Fijaciones"],
+      "text": "Una práctica de capacitación utiliza 250 N·m como ejemplo para un conjunto concreto de fijaciones. Ese valor no es un torque universal obligatorio para todas las fijaciones de la vía."
+    }
+  ],
+  "questions": [
+    {
+      "id": "mf-q1",
+      "family": "ingreso-condicion",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué debe ocurrir antes de que una cuadrilla ingrese a la vía?",
+      "gold": ["mf-bloqueo"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "mf-q2",
+      "family": "retorno-verificacion",
+      "intent": "SEQUENCE",
+      "language": "es",
+      "query": "¿Qué verifica el supervisor antes de devolver la vía al servicio?",
+      "gold": ["mf-galibo"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "mf-q3",
+      "family": "ultrasonido-frecuencia",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Con qué frecuencia se programa la inspección ultrasónica en el tramo de alto tráfico?",
+      "gold": ["mf-ultrasonido"],
+      "challenges": []
+    },
+    {
+      "id": "mf-q4",
+      "family": "fisura-accion",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué se hace cuando una indicación de fisura supera el umbral de intervención?",
+      "gold": ["mf-defecto"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "mf-q5",
+      "family": "equipo-fabricante",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué fabricante de equipo ultrasónico es obligatorio en la inspección de rieles?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "mf-q6",
+      "family": "torque-universal",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué torque universal debe aplicarse a todas las fijaciones de la vía?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}

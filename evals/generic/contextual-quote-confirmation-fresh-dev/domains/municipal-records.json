@@ -1,0 +1,112 @@
+{
+  "id": "municipal-records",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh EN municipal records-management admission domain.",
+  "units": [
+    {
+      "id": "mr-retention",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Contract retention",
+      "headingPath": ["Retention", "Contracts"],
+      "text": "Executed contracts are retained for seven years after the contract is closed, unless a legal hold requires a longer period."
+    },
+    {
+      "id": "mr-hold",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Legal hold",
+      "headingPath": ["Retention", "Legal hold"],
+      "text": "When a legal hold is issued, scheduled destruction is suspended for every record within the hold scope until the hold is formally released."
+    },
+    {
+      "id": "mr-request",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Request intake",
+      "headingPath": ["Public records", "Intake"],
+      "text": "The public records coordinator logs each incoming request, records the received date, and assigns the request to the department that holds the responsive records."
+    },
+    {
+      "id": "mr-redaction",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Redaction before release",
+      "headingPath": ["Disclosure", "Redaction"],
+      "text": "Before public release, staff redact information covered by a statutory exemption. The unredacted master remains restricted and is not substituted with the public copy."
+    },
+    {
+      "id": "mr-format",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Release formats",
+      "headingPath": ["Disclosure", "Format"],
+      "text": "Training examples show releases in PDF and CSV depending on the records involved. The policy does not require one universal file format for every request."
+    },
+    {
+      "id": "mr-fee",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Request fees",
+      "headingPath": ["Public records", "Fees"],
+      "text": "Any applicable fee follows the currently published fee schedule. This procedure does not state a fixed dollar amount that applies to every records request."
+    }
+  ],
+  "questions": [
+    {
+      "id": "mr-q1",
+      "family": "contract-retention",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How long are executed contracts retained after they close?",
+      "gold": ["mr-retention"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "mr-q2",
+      "family": "hold-effect",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "What happens to scheduled destruction when a legal hold is issued?",
+      "gold": ["mr-hold"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "mr-q3",
+      "family": "request-logger",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who logs an incoming public-records request?",
+      "gold": ["mr-request"],
+      "challenges": []
+    },
+    {
+      "id": "mr-q4",
+      "family": "redaction-action",
+      "intent": "SEQUENCE",
+      "language": "en",
+      "query": "What must staff do before releasing records that contain exempt information?",
+      "gold": ["mr-redaction"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "mr-q5",
+      "family": "required-format",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which single file format is mandatory for every public-records release?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "mr-q6",
+      "family": "fixed-fee",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What fixed dollar fee applies to every public-records request?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}

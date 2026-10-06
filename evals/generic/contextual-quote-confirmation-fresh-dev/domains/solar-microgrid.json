@@ -1,0 +1,112 @@
+{
+  "id": "solar-microgrid",
+  "split": "development",
+  "language": "en",
+  "description": "Fresh EN solar microgrid operations admission domain.",
+  "units": [
+    {
+      "id": "sm-islanding",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Grid islanding",
+      "headingPath": ["Operations", "Islanding"],
+      "text": "When utility voltage moves outside the permitted operating band, the microgrid controller opens the point-of-common-coupling breaker and the battery inverter establishes the island. Reconnection waits until utility conditions are stable and the synchronization check passes."
+    },
+    {
+      "id": "sm-reserve",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Battery reserve",
+      "headingPath": ["Storage", "Reserve"],
+      "text": "Before a forecast grid outage, operators maintain at least 25 percent battery state of charge so the controller has enough stored energy to form the island and pick up critical loads if utility power disappears."
+    },
+    {
+      "id": "sm-diesel",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Generator start condition",
+      "headingPath": ["Generation", "Backup generator"],
+      "text": "The backup generator starts only when battery state of charge is below 15 percent and site demand has exceeded the combined solar and battery capability for five continuous minutes."
+    },
+    {
+      "id": "sm-blackstart",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Black-start sequence",
+      "headingPath": ["Recovery", "Black start"],
+      "text": "During black start, the battery inverter first establishes the local voltage and frequency reference. The controller then energizes the critical feeder and later reconnects available solar generation."
+    },
+    {
+      "id": "sm-export",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Commissioning export example",
+      "headingPath": ["Commissioning", "Export test"],
+      "text": "A commissioning worksheet uses 100 kW as a temporary export test point to demonstrate the limiter. The example value is not the permanent site export limit and must not be copied into the operating configuration."
+    },
+    {
+      "id": "sm-vendor",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Inverter interface",
+      "headingPath": ["Integration", "Inverter"],
+      "text": "The controller exchanges status and setpoints with compatible inverters over Modbus TCP. The operating procedure does not prescribe a specific inverter manufacturer."
+    }
+  ],
+  "questions": [
+    {
+      "id": "sm-q1",
+      "family": "islanding-action",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "What does the microgrid controller do when utility voltage leaves the permitted operating band?",
+      "gold": ["sm-islanding"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "sm-q2",
+      "family": "reserve-purpose",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why is a battery reserve maintained before a forecast grid outage?",
+      "gold": ["sm-reserve"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "sm-q3",
+      "family": "diesel-start",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "Under what conditions does the backup generator start?",
+      "gold": ["sm-diesel"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "sm-q4",
+      "family": "blackstart-first",
+      "intent": "SEQUENCE",
+      "language": "en",
+      "query": "Which component establishes voltage and frequency first during black start?",
+      "gold": ["sm-blackstart"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "sm-q5",
+      "family": "export-permanent",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What permanent export limit is required by the commissioning worksheet?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "sm-q6",
+      "family": "inverter-brand",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which inverter manufacturer is mandatory for the microgrid controller?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}

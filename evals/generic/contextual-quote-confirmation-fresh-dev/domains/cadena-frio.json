@@ -1,0 +1,112 @@
+{
+  "id": "cadena-frio",
+  "split": "development",
+  "language": "es",
+  "description": "Fresh ES food cold-chain admission domain.",
+  "units": [
+    {
+      "id": "cf-recepcion",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Recepción refrigerada",
+      "headingPath": ["Recepción", "Temperatura"],
+      "text": "Los productos refrigerados se reciben a 5 °C o menos. Si la temperatura supera ese valor, el lote se identifica y pasa a evaluación antes de autorizar su ingreso al almacén."
+    },
+    {
+      "id": "cf-sonda",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Higiene de la sonda",
+      "headingPath": ["Medición", "Sonda"],
+      "text": "La sonda de penetración se limpia y desinfecta entre lotes para evitar transferir contaminación de un alimento o empaque al siguiente."
+    },
+    {
+      "id": "cf-alarma",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Alarma de cámara",
+      "headingPath": ["Almacenamiento", "Alarmas"],
+      "text": "Si una cámara permanece por encima de 8 °C durante más de diez minutos, el sistema avisa al supervisor y el producto afectado se traslada a una cámara validada mientras se evalúa la desviación."
+    },
+    {
+      "id": "cf-registro",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Registro automático",
+      "headingPath": ["Monitoreo", "Registrador"],
+      "text": "El registrador de datos guarda una lectura de temperatura cada cinco minutos durante el almacenamiento refrigerado."
+    },
+    {
+      "id": "cf-puerta",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Apertura de puerta",
+      "headingPath": ["Operación", "Puertas"],
+      "text": "La puerta de la cámara debe mantenerse abierta solo el tiempo necesario para la operación. El procedimiento no fija un número universal de segundos para cada apertura."
+    },
+    {
+      "id": "cf-marca",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Sondas calibradas",
+      "headingPath": ["Medición", "Equipos"],
+      "text": "Se pueden usar sondas calibradas que cumplan el rango y la exactitud establecidos. El procedimiento no exige una marca comercial concreta."
+    }
+  ],
+  "questions": [
+    {
+      "id": "cf-q1",
+      "family": "recepcion-desviacion",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué ocurre con un lote refrigerado si llega por encima de 5 °C?",
+      "gold": ["cf-recepcion"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "cf-q2",
+      "family": "sonda-desinfeccion",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se desinfecta la sonda entre lotes?",
+      "gold": ["cf-sonda"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "cf-q3",
+      "family": "alarma-accion",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué se hace si una cámara supera 8 °C durante más de diez minutos?",
+      "gold": ["cf-alarma"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "cf-q4",
+      "family": "registro-frecuencia",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cada cuánto registra la temperatura el registrador de datos?",
+      "gold": ["cf-registro"],
+      "challenges": []
+    },
+    {
+      "id": "cf-q5",
+      "family": "puerta-segundos",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántos segundos exactos puede permanecer abierta toda puerta de cámara?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "cf-q6",
+      "family": "sonda-marca",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué marca comercial de sonda es obligatoria para la cadena de frío?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    }
+  ]
+}
