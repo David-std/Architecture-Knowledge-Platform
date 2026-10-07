@@ -2407,6 +2407,31 @@
       "reason": "corpus-agnostic product evaluation"
     },
     {
+      "path": "evals/generic/layered-7b-authority-fresh-holdout/domains/fermentacion-artesanal.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/layered-7b-authority-fresh-holdout/domains/field-geology.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/layered-7b-authority-fresh-holdout/domains/maritime-watch.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/layered-7b-authority-fresh-holdout/domains/restauracion-instrumentos.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
+      "path": "evals/generic/layered-7b-authority-fresh-holdout/manifest.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
       "path": "evals/generic/multi-vault-isolation/basic.jsonl",
       "category": "PRODUCT_EVAL",
       "reason": "corpus-agnostic product evaluation"
@@ -4203,6 +4228,11 @@
     },
     {
       "path": "scripts/evidence-admission-layered-7b-fresh-dev-experiment.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/evidence-admission-layered-7b-fresh-holdout-experiment.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
