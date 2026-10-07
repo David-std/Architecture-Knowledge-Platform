@@ -21,9 +21,12 @@ import {
   CONTEXTUAL_CROSS_ENCODER_DEFAULT_SUPPORT_SCORE,
   ContextualCrossEncoderEvidenceVerifier,
   DeterministicQueryDecomposer,
+  LayeredEvidenceAdmissionPipeline,
   LocalMultilingualQaEvidenceVerifier,
   OpenAICompatibleEvidenceReader,
+  QueryConditionedSemanticEvidenceReader,
   ReaderEvidenceVerifier,
+  type LayeredEvidenceAdmissionEvaluator,
   type QueryConditionedEvidenceVerifier,
   type QueryConditionedEvidenceVerifierMode,
   type QueryTransformerPort,
@@ -71,6 +74,7 @@ export interface ApiServerDependencies {
   evidenceVerifier?: QueryConditionedEvidenceVerifier;
   evidenceVerifierMode?: QueryConditionedEvidenceVerifierMode;
   evidenceVerifierMaxCandidates?: number;
+  evidenceAdmissionPipeline?: LayeredEvidenceAdmissionEvaluator;
 }
 
 export function buildServer(dependencies: ApiServerDependencies = {}) {
@@ -96,6 +100,8 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
                 baseUrl: runtimeConfig.evidenceReader.baseUrl,
                 model: runtimeConfig.evidenceReader.model,
                 timeoutMs: runtimeConfig.evidenceReader.timeoutMs,
+                jsonResponseFormat:
+                  runtimeConfig.evidenceReader.jsonResponseFormat,
                 ...(runtimeConfig.evidenceReader.apiKey
                   ? { apiKey: runtimeConfig.evidenceReader.apiKey }
                   : {}),
@@ -108,6 +114,20 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
               shortlistSize: runtimeConfig.evidenceReader.shortlistSize,
             })
           : undefined);
+  // LAYERED admits only through the layered pipeline; the configured reader
+  // verifier becomes its semantic layer and fails closed on timeout/error.
+  const evidenceAdmissionPipeline =
+    dependencies.evidenceAdmissionPipeline ??
+    ((dependencies.evidenceVerifierMode ??
+      runtimeConfig.evidenceVerifierMode) === "LAYERED" &&
+    runtimeEvidenceVerifier
+      ? new LayeredEvidenceAdmissionPipeline({
+          semanticReader: new QueryConditionedSemanticEvidenceReader({
+            verifier: runtimeEvidenceVerifier,
+            timeoutMs: runtimeConfig.evidenceAdmissionTimeoutMs,
+          }),
+        })
+      : undefined);
   const ownedRuntimeEvidenceVerifier =
     dependencies.evidenceVerifier === undefined &&
     (runtimeEvidenceVerifier instanceof LocalMultilingualQaEvidenceVerifier ||
@@ -319,6 +339,7 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
             runtimeConfig.evidenceVerifierMaxCandidates,
         }
       : {}),
+    ...(evidenceAdmissionPipeline ? { evidenceAdmissionPipeline } : {}),
   });
   registerIngestRoutes(app, db);
   registerKnowledgeRoutes(app, db);

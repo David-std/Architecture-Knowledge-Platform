@@ -27,6 +27,7 @@ describe("API runtime configuration", () => {
       evidenceVerifierMinimumSupportScore: null,
       evidenceVerifierMaxCandidates: 16,
       evidenceVerifierLocalFilesOnly: false,
+      evidenceAdmissionTimeoutMs: 25000,
       evidenceReader: null,
     });
     expect(
@@ -117,6 +118,7 @@ describe("API runtime configuration", () => {
         apiKey: null,
         shortlistSize: 3,
         timeoutMs: 30000,
+        jsonResponseFormat: true,
       },
     });
     expect(() =>
@@ -128,6 +130,50 @@ describe("API runtime configuration", () => {
       }),
     ).toThrow(/AKP_EVIDENCE_READER_SHORTLIST/);
   });
+
+  it("selects layered admission only with an explicit reader", () => {
+    expect(() =>
+      loadApiRuntimeConfig({ AKP_EVIDENCE_VERIFIER_MODE: "LAYERED" }),
+    ).toThrow(/"LAYERED" requires AKP_EVIDENCE_VERIFIER_PROVIDER/);
+    expect(() =>
+      loadApiRuntimeConfig({
+        AKP_EVIDENCE_VERIFIER_PROVIDER: "contextual-cross-encoder",
+        AKP_EVIDENCE_VERIFIER_MODE: "LAYERED",
+      }),
+    ).toThrow(/cross-encoder-reader.*SHADOW/);
+    expect(
+      loadApiRuntimeConfig({
+        AKP_EVIDENCE_VERIFIER_PROVIDER: "cross-encoder-reader",
+        AKP_EVIDENCE_VERIFIER_MODE: "LAYERED",
+        AKP_EVIDENCE_READER_BASE_URL: "https://reader.example.test/v1",
+        AKP_EVIDENCE_READER_MODEL: "hosted-reader",
+        AKP_EVIDENCE_READER_API_KEY: "test-key",
+        AKP_EVIDENCE_READER_JSON_RESPONSE_FORMAT: "false",
+        AKP_EVIDENCE_ADMISSION_TIMEOUT_MS: "20000",
+        AKP_EVIDENCE_VERIFIER_MAX_CANDIDATES: "32",
+      }),
+    ).toMatchObject({
+      evidenceVerifierMode: "LAYERED",
+      evidenceVerifierMaxCandidates: 32,
+      evidenceAdmissionTimeoutMs: 20000,
+      evidenceReader: {
+        baseUrl: "https://reader.example.test/v1",
+        model: "hosted-reader",
+        apiKey: "test-key",
+        shortlistSize: 4,
+        jsonResponseFormat: false,
+      },
+    });
+  });
+
+  it.each(["", "9", "60001", "abc"])(
+    "rejects invalid AKP_EVIDENCE_ADMISSION_TIMEOUT_MS=%j",
+    (value) => {
+      expect(() =>
+        loadApiRuntimeConfig({ AKP_EVIDENCE_ADMISSION_TIMEOUT_MS: value }),
+      ).toThrow(/AKP_EVIDENCE_ADMISSION_TIMEOUT_MS/);
+    },
+  );
 
   it.each(["", "0", "-0.1", "1.1", "abc"])(
     "rejects invalid AKP_EVIDENCE_VERIFIER_MIN_SCORE=%j",

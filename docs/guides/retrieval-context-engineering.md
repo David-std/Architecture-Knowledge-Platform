@@ -170,7 +170,7 @@ Evidence admission is intentionally separate from relevance ranking. The target 
 
 These boundaries do not make a relevance score evidence authority. The cross-encoder and other rerankers may order or shortlist candidates, but only admission can return a unit as supported evidence.
 
-The current integrated deterministic path still retains legacy prose authority through `PASSAGE_TEXT_SUPPORT` and `PASSAGE_CUE_SUPPORT`. Their removal has **not** earned promotion: structural-only removal collapses ordinary-prose recall, and the tested source-bound semantic replacements have not yet preserved the required precision/coverage frontier. Keep those legacy reasons until a separately frozen replacement experiment passes development and a fresh family-disjoint holdout. Do not add query- or corpus-specific cue dictionaries to work around an experiment failure.
+The default deterministic path still retains legacy prose authority through `PASSAGE_TEXT_SUPPORT` and `PASSAGE_CUE_SUPPORT`. Structural-only removal collapses ordinary-prose recall, so the replacement is the layered composition rather than deletion. The explicitly configured [`LAYERED` admission mode](#layered-admission-layered) withdraws that legacy authority; it is not the default while its precision over unreviewed units remains unadjudicated and its fresh family-disjoint holdout is pending. Do not add query- or corpus-specific cue dictionaries to work around an experiment failure.
 
 The source-bound reader contract is available only when explicitly configured. Optional semantic verifier/reranker providers remain disabled by default and must fail safely; a provider error cannot silently enable a different authority path.
 
@@ -236,6 +236,30 @@ AKP_EVIDENCE_READER_TIMEOUT_MS=30000
 ```
 
 The reader sends passage text to the configured endpoint. Use a local endpoint, or a remote one only where sending the vault content is acceptable. Its admission quality depends on the model and must be measured on the admission pack before it is enforced.
+
+### Layered admission (`LAYERED`)
+
+`LAYERED` makes `LayeredEvidenceAdmissionPipeline` the only admission authority for search and context requests. The structural guard keeps lifecycle, truth, exact-identifier, visible-span and explicit year/number/unit authority; structured propositions and the `cross-encoder-reader` semantic layer own support. The deterministic passage reasons, including `PASSAGE_TEXT_SUPPORT` and `PASSAGE_CUE_SUPPORT`, are still computed as diagnostics but never admit. Only an `ANSWERS` verdict with an exact visible source span admits a unit; `CONTRADICTS` and `RELATED_NOT_ANSWERING` stay exploratory. Candidates beyond `AKP_EVIDENCE_VERIFIER_MAX_CANDIDATES`, in fused pool order, are not read and stay exploratory. A reader timeout, error or malformed batch admits nothing, records `VERIFIER_ERROR` and adds `EVIDENCE_VERIFIER_DEGRADED:VERIFIER_ERROR`; it never falls back to legacy authority.
+
+```dotenv
+AKP_EVIDENCE_VERIFIER_PROVIDER=cross-encoder-reader
+AKP_EVIDENCE_VERIFIER_MODE=LAYERED
+AKP_EVIDENCE_READER_BASE_URL=http://127.0.0.1:11434
+AKP_EVIDENCE_READER_MODEL=qwen2.5:7b-instruct
+# Optional
+# Leading pool candidates the shortlist may read, 1..64.
+AKP_EVIDENCE_VERIFIER_MAX_CANDIDATES=16
+# Fail-closed bound for one admission batch, 10..60000 ms; below the 30 s request timeout.
+AKP_EVIDENCE_ADMISSION_TIMEOUT_MS=25000
+# Hosted OpenAI-compatible endpoints only.
+AKP_EVIDENCE_READER_API_KEY=
+# Set to false for hosts that reject `response_format`.
+AKP_EVIDENCE_READER_JSON_RESPONSE_FORMAT=true
+```
+
+Measured evidence, aggregate only: on identical fresh `queryKnowledge` pools for a private vault (113 questions: 95 answerable, 18 unanswerable), the frozen layered composition with `qwen2.5:7b-instruct` Q4_K_M, `evidence-reader-v4` and an order-only BGE v2-m3 top-4 shortlist over the whole pool admitted an exactly bound gold atomic unit for 43/90 questions, against 19/90 for the default deterministic gate, and admitted on 1/18 unanswerable questions against 4/18. Its remaining misses were candidate retrieval (17), the reading shortlist (15) and the reader (15). Admissions outside the reviewed gold documents were not adjudicated, so admitted-unit precision is not measured and the mode is not a default. In that run the first 16 pool candidates contained 40 of the 43 admitted gold units; a wider window trades shortlist latency for recall.
+
+A hosted model is configured the same way, with its OpenAI-compatible base URL, model name and `AKP_EVIDENCE_READER_API_KEY`. It receives every shortlisted passage and the query, so use it only where sending that vault content to the provider is acceptable, and compare it with the local reader on the same pools before enforcing it.
 
 Measure a change with:
 
