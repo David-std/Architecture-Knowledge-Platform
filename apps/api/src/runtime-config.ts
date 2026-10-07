@@ -26,6 +26,80 @@ export interface ApiRuntimeConfig {
   /** Fail-closed bound for one LAYERED admission batch. */
   evidenceAdmissionTimeoutMs: number;
   evidenceReader: EvidenceReaderRuntimeConfig | null;
+  queryTransformProvider: QueryTransformProvider;
+  queryTranslation: QueryTranslationRuntimeConfig | null;
+}
+
+export type QueryTransformProvider =
+  "disabled" | "deterministic-decomposer" | "openai-compatible-translation";
+
+export interface QueryTranslationRuntimeConfig {
+  baseUrl: string;
+  model: string;
+  apiKey: string | null;
+  corpusLanguages: string[];
+  timeoutMs: number;
+  jsonResponseFormat: boolean;
+}
+
+function queryTransformProvider(
+  env: NodeJS.ProcessEnv,
+): QueryTransformProvider {
+  // AKP_QUERY_TRANSFORM_ENABLED=true keeps selecting the deterministic
+  // decomposer when no provider is named.
+  const raw =
+    env.AKP_QUERY_TRANSFORM_PROVIDER ??
+    (env.AKP_QUERY_TRANSFORM_ENABLED === "true"
+      ? "deterministic-decomposer"
+      : "disabled");
+  if (
+    raw === "disabled" ||
+    raw === "deterministic-decomposer" ||
+    raw === "openai-compatible-translation"
+  )
+    return raw;
+  throw new Error(
+    `AKP_QUERY_TRANSFORM_PROVIDER must be "disabled", "deterministic-decomposer" or "openai-compatible-translation"; received ${JSON.stringify(raw)}.`,
+  );
+}
+
+function queryTranslationConfig(
+  env: NodeJS.ProcessEnv,
+): QueryTranslationRuntimeConfig {
+  const baseUrl = env.AKP_QUERY_TRANSLATION_BASE_URL?.trim();
+  const model = env.AKP_QUERY_TRANSLATION_MODEL?.trim();
+  const corpusLanguages = (env.AKP_QUERY_TRANSLATION_LANGUAGES ?? "")
+    .split(",")
+    .map((code) => code.trim().toLowerCase())
+    .filter(Boolean);
+  if (!baseUrl || !model || corpusLanguages.length === 0) {
+    throw new Error(
+      "AKP_QUERY_TRANSLATION_BASE_URL, AKP_QUERY_TRANSLATION_MODEL and AKP_QUERY_TRANSLATION_LANGUAGES are required when the openai-compatible-translation query transform is enabled.",
+    );
+  }
+  if (corpusLanguages.some((code) => !/^[a-z]{2}$/u.test(code))) {
+    throw new Error(
+      `AKP_QUERY_TRANSLATION_LANGUAGES must list ISO 639-1 codes such as "es,en"; received ${JSON.stringify(env.AKP_QUERY_TRANSLATION_LANGUAGES)}.`,
+    );
+  }
+  return {
+    baseUrl,
+    model,
+    apiKey: env.AKP_QUERY_TRANSLATION_API_KEY?.trim() || null,
+    corpusLanguages: [...new Set(corpusLanguages)],
+    timeoutMs: integerSetting(
+      env,
+      "AKP_QUERY_TRANSLATION_TIMEOUT_MS",
+      10_000,
+      1_000,
+      60_000,
+    ),
+    jsonResponseFormat: booleanSetting(
+      env,
+      "AKP_QUERY_TRANSLATION_JSON_RESPONSE_FORMAT",
+      true,
+    ),
+  };
 }
 
 function integerSetting(
@@ -100,6 +174,7 @@ export function loadApiRuntimeConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): ApiRuntimeConfig {
   const evidenceVerifierProvider = verifierProvider(env);
+  const transformProvider = queryTransformProvider(env);
   const evidenceVerifierMode = env.AKP_EVIDENCE_VERIFIER_MODE ?? "SHADOW";
   if (
     evidenceVerifierMode !== "SHADOW" &&
@@ -205,5 +280,10 @@ export function loadApiRuntimeConfig(
       60_000,
     ),
     evidenceReader,
+    queryTransformProvider: transformProvider,
+    queryTranslation:
+      transformProvider === "openai-compatible-translation"
+        ? queryTranslationConfig(env)
+        : null,
   };
 }

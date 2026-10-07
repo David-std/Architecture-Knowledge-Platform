@@ -29,6 +29,8 @@ describe("API runtime configuration", () => {
       evidenceVerifierLocalFilesOnly: false,
       evidenceAdmissionTimeoutMs: 25000,
       evidenceReader: null,
+      queryTransformProvider: "disabled",
+      queryTranslation: null,
     });
     expect(
       loadApiRuntimeConfig({ AKP_RATE_LIMIT_MAX: "240", PORT: "9090" }),
@@ -164,6 +166,51 @@ describe("API runtime configuration", () => {
         jsonResponseFormat: false,
       },
     });
+  });
+
+  it("selects query transformation providers explicitly", () => {
+    expect(
+      loadApiRuntimeConfig({ AKP_QUERY_TRANSFORM_ENABLED: "true" }),
+    ).toMatchObject({
+      queryTransformProvider: "deterministic-decomposer",
+      queryTranslation: null,
+    });
+    expect(() =>
+      loadApiRuntimeConfig({
+        AKP_QUERY_TRANSFORM_PROVIDER: "openai-compatible-translation",
+      }),
+    ).toThrow(/AKP_QUERY_TRANSLATION_BASE_URL/);
+    expect(() =>
+      loadApiRuntimeConfig({
+        AKP_QUERY_TRANSFORM_PROVIDER: "openai-compatible-translation",
+        AKP_QUERY_TRANSLATION_BASE_URL: "http://127.0.0.1:11434",
+        AKP_QUERY_TRANSLATION_MODEL: "local-model",
+        AKP_QUERY_TRANSLATION_LANGUAGES: "es,spanish",
+      }),
+    ).toThrow(/ISO 639-1/);
+    expect(
+      loadApiRuntimeConfig({
+        AKP_QUERY_TRANSFORM_PROVIDER: "openai-compatible-translation",
+        AKP_QUERY_TRANSLATION_BASE_URL: "https://translator.example.test/v1",
+        AKP_QUERY_TRANSLATION_MODEL: "hosted-model",
+        AKP_QUERY_TRANSLATION_LANGUAGES: " es, EN ,es",
+        AKP_QUERY_TRANSLATION_API_KEY: "test-key",
+        AKP_QUERY_TRANSLATION_JSON_RESPONSE_FORMAT: "false",
+      }),
+    ).toMatchObject({
+      queryTransformProvider: "openai-compatible-translation",
+      queryTranslation: {
+        baseUrl: "https://translator.example.test/v1",
+        model: "hosted-model",
+        apiKey: "test-key",
+        corpusLanguages: ["es", "en"],
+        timeoutMs: 10000,
+        jsonResponseFormat: false,
+      },
+    });
+    expect(() =>
+      loadApiRuntimeConfig({ AKP_QUERY_TRANSFORM_PROVIDER: "llm" }),
+    ).toThrow(/AKP_QUERY_TRANSFORM_PROVIDER/);
   });
 
   it.each(["", "9", "60001", "abc"])(

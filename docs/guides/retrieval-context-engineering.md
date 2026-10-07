@@ -100,6 +100,24 @@ The provider token limit still applies: this recipe does not repair overlong chu
 Metadata improves retrieval scope, not answer authority. This experiment does not
 establish general source/span precision or precision for unseen question families.
 
+### Cross-lingual query translation
+
+When questions and sources use different languages, the optional `openai-compatible-translation` query transform asks any OpenAI-compatible chat endpoint for one faithful translation of the query into each listed corpus language. Each translation is an additional lexical and vector retrieval variant, merged by best score; the original query always runs first, every variant is persisted in the query trace, and admission still judges candidates against the original query. Translations never grant evidence support. An unknown language, an empty or oversized variant, or a copy of the original query is dropped; a malformed reply, HTTP error or timeout skips translation with `QUERY_TRANSFORM_SKIPPED` and retrieval continues with the original query.
+
+```dotenv
+AKP_QUERY_TRANSFORM_PROVIDER=openai-compatible-translation
+AKP_QUERY_TRANSLATION_BASE_URL=http://127.0.0.1:11434
+AKP_QUERY_TRANSLATION_MODEL=qwen2.5:7b-instruct
+# ISO 639-1 codes of the corpus languages.
+AKP_QUERY_TRANSLATION_LANGUAGES=es,en
+# Optional
+AKP_QUERY_TRANSLATION_TIMEOUT_MS=10000
+AKP_QUERY_TRANSLATION_API_KEY=
+AKP_QUERY_TRANSLATION_JSON_RESPONSE_FORMAT=true
+```
+
+`AKP_QUERY_TRANSFORM_ENABLED=true` without a provider still selects the deterministic decomposer. The endpoint receives the query text, so a hosted endpoint is appropriate only where sending queries to that provider is acceptable.
+
 Graph traversal is bounded by hops, fanout, candidates and time. Community/PPR policies bound nodes, iterations, allowed domains/relations, score threshold and per-scope caps. DRIFT uses exact/lexical/vector seeds to orient the active community index, excludes those seed documents from the community expansion, and contributes only the additional truth-valid members through normal fusion. GLOBAL community routing remains a separate corpus-wide mode.
 
 The registered retrieval arena measures DRIFT as its own feature-on configuration alongside GLOBAL community routing and PPR. Those results are comparative evidence only; they do not select a production default, and community summaries remain non-citable derived indexes.

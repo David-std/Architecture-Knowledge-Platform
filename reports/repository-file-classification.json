@@ -3692,6 +3692,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/query-translation.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/reasoning-executor.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3888,6 +3893,11 @@
     },
     {
       "path": "packages/retrieval/test/query-transform.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/query-translation.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

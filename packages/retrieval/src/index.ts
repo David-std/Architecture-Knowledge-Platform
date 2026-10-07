@@ -22,6 +22,7 @@ export * from "./reasoning-plan.js";
 export * from "./reasoning-executor.js";
 export * from "./reasoning-planner.js";
 export * from "./query-transform.js";
+export * from "./query-translation.js";
 export * from "./support-verifier.js";
 export * from "./assertion-recall.js";
 export * from "./answerability.js";
