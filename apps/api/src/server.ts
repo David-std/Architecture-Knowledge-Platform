@@ -24,6 +24,7 @@ import {
   LayeredEvidenceAdmissionPipeline,
   LocalMultilingualQaEvidenceVerifier,
   OpenAICompatibleEvidenceReader,
+  OpenAICompatibleQueryTranslator,
   QueryConditionedSemanticEvidenceReader,
   ReaderEvidenceVerifier,
   type LayeredEvidenceAdmissionEvaluator,
@@ -312,11 +313,25 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   registerSourceConnectorRoutes(app, db);
   registerProviderTaskRoutes(app, db);
   registerOperatorRoutes(app, db);
+  // Translations only add lexical/vector retrieval variants; admission still
+  // judges every candidate against the original query.
   const queryTransformer =
     dependencies.queryTransformer ??
-    (process.env.AKP_QUERY_TRANSFORM_ENABLED === "true"
+    (runtimeConfig.queryTransformProvider === "deterministic-decomposer"
       ? new DeterministicQueryDecomposer()
-      : undefined);
+      : runtimeConfig.queryTranslation
+        ? new OpenAICompatibleQueryTranslator({
+            baseUrl: runtimeConfig.queryTranslation.baseUrl,
+            model: runtimeConfig.queryTranslation.model,
+            corpusLanguages: runtimeConfig.queryTranslation.corpusLanguages,
+            timeoutMs: runtimeConfig.queryTranslation.timeoutMs,
+            jsonResponseFormat:
+              runtimeConfig.queryTranslation.jsonResponseFormat,
+            ...(runtimeConfig.queryTranslation.apiKey
+              ? { apiKey: runtimeConfig.queryTranslation.apiKey }
+              : {}),
+          })
+        : undefined);
   registerSearchRoutes(app, db, {
     ...(dependencies.contextTokenizer
       ? { contextTokenizer: dependencies.contextTokenizer }
