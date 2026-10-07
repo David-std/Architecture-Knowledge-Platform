@@ -48,7 +48,14 @@ export interface RetrievalAnswerabilityContext {
 export type QueryConditionedEvidenceDecision =
   "SUPPORTS" | "CONTRADICTS" | "INSUFFICIENT";
 
-export type QueryConditionedEvidenceVerifierMode = "SHADOW" | "ENFORCE";
+/**
+ * SHADOW and ENFORCE apply a single verifier on top of the deterministic gate.
+ * LAYERED admits only through `LayeredEvidenceAdmissionPipeline` (see
+ * `assessRetrievalAnswerabilityWithLayeredAdmission`); it is not a verifier
+ * policy mode.
+ */
+export type QueryConditionedEvidenceVerifierMode =
+  "SHADOW" | "ENFORCE" | "LAYERED";
 
 export interface QueryConditionedEvidenceSpan {
   /** Zero-based UTF-16 offset in the exact passage supplied to the verifier. */

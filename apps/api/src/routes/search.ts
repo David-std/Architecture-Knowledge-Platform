@@ -26,6 +26,7 @@ import {
 } from "@akp/contracts";
 import {
   assessRetrievalAnswerability,
+  assessRetrievalAnswerabilityWithLayeredAdmission,
   assessRetrievalAnswerabilityWithVerifier,
   evidenceCandidateDiagnostic,
   assertionRecallSelectionReason,
@@ -53,6 +54,7 @@ import {
   runtimeChannelEnabled,
   toPgVector,
   type ActiveEmbeddingGenerationDescriptor,
+  type LayeredEvidenceAdmissionEvaluator,
   type PersonalizedPageRankPolicy,
   type QueryConditionedEvidenceVerifier,
   type QueryConditionedEvidenceVerifierMode,
@@ -62,6 +64,7 @@ import {
   type QueryTransformationVariant,
   type QueryTransformerPort,
   type RetrievalAnswerabilityAssessment,
+  type RetrievalAnswerabilityContext,
   type EvidenceRetrievalStageSnapshot,
   type RetrievalCandidate,
   type RetrievalPolicyInput,
@@ -639,6 +642,52 @@ export interface SearchRouteDependencies {
   /** Injected verifiers default to SHADOW so evaluation cannot silently gate. */
   evidenceVerifierMode?: QueryConditionedEvidenceVerifierMode;
   evidenceVerifierMaxCandidates?: number;
+  /**
+   * Required by LAYERED mode, where it is the only admission authority:
+   * deterministic passage heuristics are diagnostics and never admit.
+   */
+  evidenceAdmissionPipeline?: LayeredEvidenceAdmissionEvaluator;
+}
+
+/**
+ * Applies the configured admission authority to one request's candidate pool:
+ * LAYERED admits only through the layered pipeline, a verifier keeps its
+ * SHADOW/ENFORCE policy over the deterministic gate, and otherwise the
+ * deterministic gate decides alone.
+ */
+async function assessCandidateAnswerability(
+  dependencies: SearchRouteDependencies,
+  pool: readonly SearchHit[],
+  query: string,
+  context: RetrievalAnswerabilityContext,
+): Promise<RetrievalAnswerabilityAssessment> {
+  const maxCandidates =
+    dependencies.evidenceVerifierMaxCandidates === undefined
+      ? {}
+      : { maxCandidates: dependencies.evidenceVerifierMaxCandidates };
+  if (dependencies.evidenceVerifierMode === "LAYERED") {
+    return assessRetrievalAnswerabilityWithLayeredAdmission(
+      pool,
+      query,
+      dependencies.evidenceAdmissionPipeline!,
+      maxCandidates,
+      {},
+      context,
+    );
+  }
+  return dependencies.evidenceVerifier
+    ? assessRetrievalAnswerabilityWithVerifier(
+        pool,
+        query,
+        dependencies.evidenceVerifier,
+        {
+          mode: dependencies.evidenceVerifierMode ?? "SHADOW",
+          ...maxCandidates,
+        },
+        {},
+        context,
+      )
+    : assessRetrievalAnswerability(pool, query, {}, context);
 }
 
 interface StoredContextPacketRow {
@@ -3792,6 +3841,14 @@ export function registerSearchRoutes(
   db: Postgres,
   dependencies: SearchRouteDependencies = {},
 ): void {
+  if (
+    dependencies.evidenceVerifierMode === "LAYERED" &&
+    !dependencies.evidenceAdmissionPipeline
+  ) {
+    throw new Error(
+      "LAYERED evidence admission requires an evidence admission pipeline",
+    );
+  }
   app.post(
     "/v1/search",
     {
@@ -4007,28 +4064,12 @@ export function registerSearchRoutes(
         allowGraphSupport: plan.intent === "IMPACT_ANALYSIS",
         comparisonHits: answerabilityPool,
       };
-      const answerability = dependencies.evidenceVerifier
-        ? await assessRetrievalAnswerabilityWithVerifier(
-            answerabilityPool,
-            parsed.data.query,
-            dependencies.evidenceVerifier,
-            {
-              mode: dependencies.evidenceVerifierMode ?? "SHADOW",
-              ...(dependencies.evidenceVerifierMaxCandidates === undefined
-                ? {}
-                : {
-                    maxCandidates: dependencies.evidenceVerifierMaxCandidates,
-                  }),
-            },
-            {},
-            answerabilityContext,
-          )
-        : assessRetrievalAnswerability(
-            answerabilityPool,
-            parsed.data.query,
-            {},
-            answerabilityContext,
-          );
+      const answerability = await assessCandidateAnswerability(
+        dependencies,
+        answerabilityPool,
+        parsed.data.query,
+        answerabilityContext,
+      );
       const partitioned = partitionSearchHitsByAnswerability(
         answerabilityPool,
         answerability.supportedCandidateKeys,
@@ -5005,28 +5046,12 @@ export function registerSearchRoutes(
             )),
         comparisonHits: answerabilityPool,
       };
-      const answerability = dependencies.evidenceVerifier
-        ? await assessRetrievalAnswerabilityWithVerifier(
-            answerabilityPool,
-            parsed.data.query,
-            dependencies.evidenceVerifier,
-            {
-              mode: dependencies.evidenceVerifierMode ?? "SHADOW",
-              ...(dependencies.evidenceVerifierMaxCandidates === undefined
-                ? {}
-                : {
-                    maxCandidates: dependencies.evidenceVerifierMaxCandidates,
-                  }),
-            },
-            {},
-            answerabilityContext,
-          )
-        : assessRetrievalAnswerability(
-            answerabilityPool,
-            parsed.data.query,
-            {},
-            answerabilityContext,
-          );
+      const answerability = await assessCandidateAnswerability(
+        dependencies,
+        answerabilityPool,
+        parsed.data.query,
+        answerabilityContext,
+      );
       recordAnswerabilityDiagnostics(answerability, "context");
       retrievalWarnings.push(
         ...evidenceVerifierDegradationWarnings(answerability),

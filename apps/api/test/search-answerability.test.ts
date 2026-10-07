@@ -7,6 +7,7 @@ import {
 import {
   internalAnswerabilityCandidateLimit,
   partitionSearchHitsByAnswerability,
+  registerSearchRoutes,
 } from "../src/routes/search.js";
 
 function hit(id: string, unitId?: string): SearchHit {
@@ -167,5 +168,15 @@ it("keeps hidden source assertions exploratory at the search presentation bounda
     hits: [],
     exploratoryHits: [candidate],
     retrievalOutcome: "EXPLORATORY_ONLY",
+  });
+});
+
+describe("layered admission wiring", () => {
+  it("refuses LAYERED mode without its admission pipeline", () => {
+    expect(() =>
+      registerSearchRoutes({} as never, {} as never, {
+        evidenceVerifierMode: "LAYERED",
+      }),
+    ).toThrow(/LAYERED evidence admission requires/);
   });
 });

@@ -10,16 +10,21 @@ export interface EvidenceReaderRuntimeConfig {
   apiKey: string | null;
   shortlistSize: number;
   timeoutMs: number;
+  jsonResponseFormat: boolean;
 }
+
+export type EvidenceVerifierMode = "SHADOW" | "ENFORCE" | "LAYERED";
 
 export interface ApiRuntimeConfig {
   rateLimitMax: number;
   port: number;
   evidenceVerifierProvider: EvidenceVerifierProvider;
-  evidenceVerifierMode: "SHADOW" | "ENFORCE";
+  evidenceVerifierMode: EvidenceVerifierMode;
   evidenceVerifierMinimumSupportScore: number | null;
   evidenceVerifierMaxCandidates: number;
   evidenceVerifierLocalFilesOnly: boolean;
+  /** Fail-closed bound for one LAYERED admission batch. */
+  evidenceAdmissionTimeoutMs: number;
   evidenceReader: EvidenceReaderRuntimeConfig | null;
 }
 
@@ -96,20 +101,24 @@ export function loadApiRuntimeConfig(
 ): ApiRuntimeConfig {
   const evidenceVerifierProvider = verifierProvider(env);
   const evidenceVerifierMode = env.AKP_EVIDENCE_VERIFIER_MODE ?? "SHADOW";
-  if (evidenceVerifierMode !== "SHADOW" && evidenceVerifierMode !== "ENFORCE") {
+  if (
+    evidenceVerifierMode !== "SHADOW" &&
+    evidenceVerifierMode !== "ENFORCE" &&
+    evidenceVerifierMode !== "LAYERED"
+  ) {
     throw new Error(
-      `AKP_EVIDENCE_VERIFIER_MODE must be "SHADOW" or "ENFORCE"; received ${JSON.stringify(evidenceVerifierMode)}.`,
+      `AKP_EVIDENCE_VERIFIER_MODE must be "SHADOW", "ENFORCE" or "LAYERED"; received ${JSON.stringify(evidenceVerifierMode)}.`,
     );
   }
   // A relevance-only score does not establish that the requested fact is
   // present. Only the reader path can be explicitly selected for admission;
   // cross-encoder and extractive QA diagnostics remain shadow-only.
   if (
-    evidenceVerifierMode === "ENFORCE" &&
+    evidenceVerifierMode !== "SHADOW" &&
     evidenceVerifierProvider !== "cross-encoder-reader"
   ) {
     throw new Error(
-      `AKP_EVIDENCE_VERIFIER_MODE "ENFORCE" requires AKP_EVIDENCE_VERIFIER_PROVIDER "cross-encoder-reader"; ${JSON.stringify(evidenceVerifierProvider)} remains SHADOW only.`,
+      `AKP_EVIDENCE_VERIFIER_MODE ${JSON.stringify(evidenceVerifierMode)} requires AKP_EVIDENCE_VERIFIER_PROVIDER "cross-encoder-reader"; ${JSON.stringify(evidenceVerifierProvider)} remains SHADOW only.`,
     );
   }
   const evidenceVerifierMinimumSupportScore = optionalFraction(
@@ -152,6 +161,13 @@ export function loadApiRuntimeConfig(
         1_000,
         300_000,
       ),
+      // Some OpenAI-compatible hosts reject `response_format`; replies are
+      // parsed and source-bound either way.
+      jsonResponseFormat: booleanSetting(
+        env,
+        "AKP_EVIDENCE_READER_JSON_RESPONSE_FORMAT",
+        true,
+      ),
     };
   }
 
@@ -178,6 +194,15 @@ export function loadApiRuntimeConfig(
       env,
       "AKP_EVIDENCE_VERIFIER_LOCAL_FILES_ONLY",
       false,
+    ),
+    // Below the 30 s HTTP request timeout so a slow reader yields an
+    // INSUFFICIENT admission instead of a dropped request.
+    evidenceAdmissionTimeoutMs: integerSetting(
+      env,
+      "AKP_EVIDENCE_ADMISSION_TIMEOUT_MS",
+      25_000,
+      10,
+      60_000,
     ),
     evidenceReader,
   };

@@ -532,7 +532,9 @@ export interface LayeredEvidenceAdmissionInput {
 }
 
 /**
- * R5 shadow pipeline. It is not wired into production admission yet.
+ * R5 layered admission. Production uses it only when explicitly configured
+ * (`AKP_EVIDENCE_VERIFIER_MODE=LAYERED`) through
+ * `assessRetrievalAnswerabilityWithLayeredAdmission`.
  *
  * Explicit structured propositions take precedence. Otherwise the semantic
  * reader may propose a verdict, but the structural guard remains the final
@@ -557,57 +559,126 @@ export class LayeredEvidenceAdmissionPipeline {
   async evaluate(
     input: LayeredEvidenceAdmissionInput,
   ): Promise<EvidenceAdmissionDecision> {
-    const eligible = this.guard.candidateEligible(input.hit, input.query);
-    if (!eligible.accepted) {
-      return {
-        layer: "STRUCTURAL_GUARD",
-        verdict: eligible.verdict,
-        reason: eligible.reason,
-      };
-    }
+    const [decision] = await this.evaluateBatch([input]);
+    return decision!;
+  }
 
-    if (input.queryProposition && input.candidateProposition) {
-      const structured = this.propositionMatcher.match({
-        query: input.queryProposition,
-        candidate: input.candidateProposition,
+  /**
+   * Batch form used by governed semantic experiments and future production
+   * wiring. Structural/proposition decisions are resolved before any model
+   * call. Only the remaining eligible candidates reach the semantic reader,
+   * which allows an order-only shortlist to compare candidates without ever
+   * becoming evidence authority.
+   */
+  async evaluateBatch(
+    inputs: readonly LayeredEvidenceAdmissionInput[],
+  ): Promise<EvidenceAdmissionDecision[]> {
+    if (inputs.length === 0) return [];
+
+    const output: Array<EvidenceAdmissionDecision | undefined> = new Array(
+      inputs.length,
+    );
+    const semanticIndexes: number[] = [];
+    const semanticInputs: QueryConditionedEvidenceVerifierInput[] = [];
+
+    inputs.forEach((input, index) => {
+      const eligible = this.guard.candidateEligible(input.hit, input.query);
+      if (!eligible.accepted) {
+        output[index] = {
+          layer: "STRUCTURAL_GUARD",
+          verdict: eligible.verdict,
+          reason: eligible.reason,
+        };
+        return;
+      }
+
+      if (input.queryProposition && input.candidateProposition) {
+        const structured = this.propositionMatcher.match({
+          query: input.queryProposition,
+          candidate: input.candidateProposition,
+        });
+        if (structured.kind !== "INSUFFICIENT") {
+          const constrained = this.guard.constrainVerdict(
+            input.hit,
+            input.query,
+            structured,
+          );
+          output[index] = {
+            layer: "STRUCTURED_PROPOSITION",
+            verdict: constrained.verdict,
+            reason: constrained.reason,
+          };
+          return;
+        }
+      }
+
+      semanticIndexes.push(index);
+      semanticInputs.push({
+        query: input.query,
+        candidateKey: `${input.hit.documentId}:${input.hit.unitId ?? "document"}`,
+        title: input.hit.title,
+        ...(input.hit.headingPath
+          ? { headingPath: input.hit.headingPath }
+          : {}),
+        passage: input.hit.excerpt,
+        unitType: input.hit.unitType ?? null,
+        parentUnitType: input.hit.parentUnitType ?? null,
+        documentType: input.hit.type,
       });
-      if (structured.kind !== "INSUFFICIENT") {
+    });
+
+    if (semanticInputs.length > 0) {
+      let semanticDecisions: EvidenceAdmissionDecision[];
+      try {
+        semanticDecisions = this.semanticReader.readBatch
+          ? await this.semanticReader.readBatch(semanticInputs)
+          : await Promise.all(
+              semanticInputs.map((input) => this.semanticReader.read(input)),
+            );
+      } catch {
+        semanticDecisions = semanticInputs.map(() => ({
+          layer: "SEMANTIC_READER",
+          verdict: { kind: "INSUFFICIENT" },
+          reason: "SEMANTIC_READER_BATCH_FAILURE",
+          readerId: this.semanticReader.id,
+        }));
+      }
+      if (semanticDecisions.length !== semanticInputs.length) {
+        semanticDecisions = semanticInputs.map(() => ({
+          layer: "SEMANTIC_READER",
+          verdict: { kind: "INSUFFICIENT" },
+          reason: "SEMANTIC_READER_BATCH_SIZE_MISMATCH",
+          readerId: this.semanticReader.id,
+        }));
+      }
+
+      semanticIndexes.forEach((inputIndex, semanticIndex) => {
+        const input = inputs[inputIndex]!;
+        const semantic = semanticDecisions[semanticIndex]!;
         const constrained = this.guard.constrainVerdict(
           input.hit,
           input.query,
-          structured,
+          semantic.verdict,
         );
-        return {
-          layer: "STRUCTURED_PROPOSITION",
+        output[inputIndex] = {
+          ...semantic,
           verdict: constrained.verdict,
-          reason: constrained.reason,
+          reason:
+            constrained.reason === "STRUCTURAL_SOURCE_SPAN_VALID" ||
+            constrained.reason === "STRUCTURAL_NO_SOURCE_SPAN_REQUIRED"
+              ? semantic.reason
+              : constrained.reason,
         };
-      }
+      });
     }
 
-    const semantic = await this.semanticReader.read({
-      query: input.query,
-      candidateKey: `${input.hit.documentId}:${input.hit.unitId ?? "document"}`,
-      title: input.hit.title,
-      ...(input.hit.headingPath ? { headingPath: input.hit.headingPath } : {}),
-      passage: input.hit.excerpt,
-      unitType: input.hit.unitType ?? null,
-      parentUnitType: input.hit.parentUnitType ?? null,
-      documentType: input.hit.type,
-    });
-    const constrained = this.guard.constrainVerdict(
-      input.hit,
-      input.query,
-      semantic.verdict,
+    return output.map(
+      (decision) =>
+        decision ?? {
+          layer: "STRUCTURAL_GUARD",
+          verdict: { kind: "INSUFFICIENT" },
+          reason: "EVIDENCE_ADMISSION_INTERNAL_GAP",
+        },
     );
-    return {
-      ...semantic,
-      verdict: constrained.verdict,
-      reason:
-        constrained.reason === "STRUCTURAL_SOURCE_SPAN_VALID" ||
-        constrained.reason === "STRUCTURAL_NO_SOURCE_SPAN_REQUIRED"
-          ? semantic.reason
-          : constrained.reason,
-    };
   }
 }
