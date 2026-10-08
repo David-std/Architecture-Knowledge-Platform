@@ -2152,6 +2152,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/selective-semantic-admission.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/assurance/README.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
@@ -3737,6 +3742,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/selective-evaluation.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/source-verification.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3943,6 +3953,11 @@
     },
     {
       "path": "packages/retrieval/test/rrf.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/selective-admission.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

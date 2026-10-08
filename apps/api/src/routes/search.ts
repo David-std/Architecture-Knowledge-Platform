@@ -647,6 +647,9 @@ export interface SearchRouteDependencies {
    * deterministic passage heuristics are diagnostics and never admit.
    */
   evidenceAdmissionPipeline?: LayeredEvidenceAdmissionEvaluator;
+  /** Query-level abstention; meaningful only in LAYERED mode. */
+  evidenceAdmissionMinDistinctDocuments?: number;
+  evidenceAdmissionAbstainOnConflict?: boolean;
 }
 
 /**
@@ -670,7 +673,21 @@ async function assessCandidateAnswerability(
       pool,
       query,
       dependencies.evidenceAdmissionPipeline!,
-      maxCandidates,
+      {
+        ...maxCandidates,
+        ...(dependencies.evidenceAdmissionMinDistinctDocuments === undefined
+          ? {}
+          : {
+              minimumDistinctDocuments:
+                dependencies.evidenceAdmissionMinDistinctDocuments,
+            }),
+        ...(dependencies.evidenceAdmissionAbstainOnConflict === undefined
+          ? {}
+          : {
+              abstainOnSourceConflict:
+                dependencies.evidenceAdmissionAbstainOnConflict,
+            }),
+      },
       {},
       context,
     );

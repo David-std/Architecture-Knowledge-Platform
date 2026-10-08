@@ -28,6 +28,7 @@ export * from "./assertion-recall.js";
 export * from "./answerability.js";
 export * from "./evidence-admission.js";
 export * from "./layered-answerability.js";
+export * from "./selective-evaluation.js";
 export * from "./requested-answer-slot.js";
 export * from "./requested-answer-followup.js";
 export * from "./proposition-projection.js";

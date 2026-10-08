@@ -26,6 +26,10 @@ export interface LayeredAnswerabilityOptions {
   maxCandidates?: number;
   /** Recorded in traces of decisions that carry no reader identity. */
   admissionId?: string;
+  /** Optional query-level abstention until N distinct documents provide support. */
+  minimumDistinctDocuments?: number;
+  /** Abstain if a checked source passage explicitly contradicts the claim. */
+  abstainOnSourceConflict?: boolean;
 }
 
 export const DEFAULT_LAYERED_ADMISSION_MAX_CANDIDATES = 64;
@@ -144,6 +148,16 @@ export async function assessRetrievalAnswerabilityWithLayeredAdmission(
   context: RetrievalAnswerabilityContext = {},
 ): Promise<RetrievalAnswerabilityAssessment> {
   const maxCandidates = boundedWindow(options.maxCandidates);
+  const minimumDistinctDocuments = options.minimumDistinctDocuments ?? 1;
+  if (
+    !Number.isSafeInteger(minimumDistinctDocuments) ||
+    minimumDistinctDocuments < 1 ||
+    minimumDistinctDocuments > 256
+  ) {
+    throw new Error(
+      "layered admission minimumDistinctDocuments must be in [1,256]",
+    );
+  }
   const admissionId = options.admissionId ?? "layered-admission";
   const baseline = assessRetrievalAnswerability(
     hits,
@@ -203,9 +217,22 @@ export async function assessRetrievalAnswerabilityWithLayeredAdmission(
     };
   });
 
-  const supportedSignals = candidateSignals.filter(
+  const sourceBoundSignals = candidateSignals.filter(
     (signal) => signal.passageSupport.supported,
   );
+  const distinctDocuments = new Set(
+    sourceBoundSignals.map((signal) => signal.documentId),
+  );
+  // Source corroboration is a selective answer policy, not a claim that
+  // documents are statistically independent or that the quotes are correct.
+  const sourceConflict = candidateSignals.some(
+    (signal) => signal.queryConditionedEvidence?.decision === "CONTRADICTS",
+  );
+  const supportedSignals =
+    distinctDocuments.size >= minimumDistinctDocuments &&
+    !(options.abstainOnSourceConflict && sourceConflict)
+      ? sourceBoundSignals
+      : [];
   return {
     ...baseline,
     supported: supportedSignals.length > 0,

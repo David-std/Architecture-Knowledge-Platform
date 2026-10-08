@@ -360,11 +360,17 @@ export interface EvidenceShortlistScorer {
   dispose?(): Promise<void> | void;
 }
 
+export type EvidenceShortlistStrategy = "score" | "document-diverse";
+
 export interface ReaderEvidenceVerifierOptions {
   readonly reader: EvidenceReader;
   readonly shortlist?: EvidenceShortlistScorer;
   /** Candidates read per query, highest shortlist scores first. */
   readonly shortlistSize?: number;
+  /** Cover distinct source documents before repeated units, without extra calls. */
+  readonly shortlistStrategy?: EvidenceShortlistStrategy;
+  /** Re-read only the cited quote without heading or broader context. Opt-in. */
+  readonly confirmQuoteSufficiency?: boolean;
   /** Shortlist score below which a candidate is never read. */
   readonly shortlistFloor?: number;
   readonly concurrency?: number;
@@ -381,6 +387,8 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
   private readonly reader: EvidenceReader;
   private readonly shortlist: EvidenceShortlistScorer | undefined;
   private readonly shortlistSize: number;
+  private readonly shortlistStrategy: EvidenceShortlistStrategy;
+  private readonly confirmQuoteSufficiency: boolean;
   private readonly shortlistFloor: number;
   private readonly concurrency: number;
 
@@ -388,6 +396,11 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
     this.reader = options.reader;
     this.shortlist = options.shortlist;
     this.shortlistSize = options.shortlistSize ?? 4;
+    this.shortlistStrategy = options.shortlistStrategy ?? "score";
+    this.confirmQuoteSufficiency = options.confirmQuoteSufficiency ?? false;
+    if (!["score", "document-diverse"].includes(this.shortlistStrategy)) {
+      throw new Error("Reader shortlistStrategy is invalid");
+    }
     this.shortlistFloor = options.shortlistFloor ?? 0.001;
     this.concurrency = options.concurrency ?? 2;
     if (!Number.isSafeInteger(this.shortlistSize) || this.shortlistSize < 1) {
@@ -403,9 +416,52 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
     if (!Number.isSafeInteger(this.concurrency) || this.concurrency < 1) {
       throw new Error("Reader concurrency must be a positive integer");
     }
-    this.id = this.shortlist
+    const baseId = this.shortlist
       ? `reader:${this.reader.id}+shortlist:${this.shortlist.id}`
       : `reader:${this.reader.id}`;
+    this.id = [
+      baseId,
+      ...(this.shortlistStrategy === "document-diverse"
+        ? ["document-diverse"]
+        : []),
+      ...(this.confirmQuoteSufficiency ? ["quote-confirmed"] : []),
+    ].join(":");
+  }
+
+  /** Diversity affects selection only, not whether evidence is admitted. */
+  private chooseCandidates(
+    inputs: readonly QueryConditionedEvidenceVerifierInput[],
+    scores: readonly number[] | undefined,
+  ): number[] {
+    const ranked = inputs
+      .map((_, index) => index)
+      .filter((index) => (scores?.[index] ?? 1) >= this.shortlistFloor)
+      .sort(
+        (left, right) =>
+          (scores?.[right] ?? 0) - (scores?.[left] ?? 0) || left - right,
+      );
+    if (this.shortlistStrategy === "score") {
+      return ranked.slice(0, this.shortlistSize);
+    }
+    const selected: number[] = [];
+    const selectedIds = new Set<number>();
+    const sourceDocuments = new Set<string>();
+    for (const index of ranked) {
+      const key = inputs[index]!.candidateKey;
+      const separator = key.lastIndexOf(":");
+      const documentKey = separator < 0 ? key : key.slice(0, separator);
+      if (sourceDocuments.has(documentKey)) continue;
+      sourceDocuments.add(documentKey);
+      selected.push(index);
+      selectedIds.add(index);
+      if (selected.length === this.shortlistSize) return selected;
+    }
+    for (const index of ranked) {
+      if (selectedIds.has(index)) continue;
+      selected.push(index);
+      if (selected.length === this.shortlistSize) break;
+    }
+    return selected;
   }
 
   private async read(
@@ -459,6 +515,37 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
         reason: "READER_QUOTE_NOT_IN_PASSAGE",
       };
     }
+    if (this.confirmQuoteSufficiency) {
+      // The second opinion is restricted to the quote, not the document scope.
+      // A repeated model judgment is a heuristic, not independent proof.
+      try {
+        const confirmation = await this.reader.judge({
+          query: input.query,
+          scope: "",
+          body: judgment.quote,
+        });
+        const quotedOnly = contextualEvidenceText({
+          title: "",
+          passage: judgment.quote,
+        });
+        if (
+          !confirmation.answers ||
+          !locateEvidenceQuote(quotedOnly, confirmation.quote)
+        ) {
+          return {
+            decision: "INSUFFICIENT",
+            ...scored,
+            reason: "READER_QUOTE_SUFFICIENCY_NOT_DEMONSTRATED",
+          };
+        }
+      } catch {
+        return {
+          decision: "INSUFFICIENT",
+          ...scored,
+          reason: "READER_QUOTE_SUFFICIENCY_ERROR",
+        };
+      }
+    }
     return {
       decision: "SUPPORTS",
       ...scored,
@@ -473,11 +560,14 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
     const scores = this.shortlist
       ? await this.shortlist.scoreBatch(inputs)
       : undefined;
-    const selected = inputs
-      .map((_, index) => index)
-      .filter((index) => (scores?.[index] ?? 1) >= this.shortlistFloor)
-      .sort((left, right) => (scores?.[right] ?? 0) - (scores?.[left] ?? 0))
-      .slice(0, this.shortlistSize);
+    if (
+      scores &&
+      (scores.length !== inputs.length ||
+        scores.some((score) => !Number.isFinite(score)))
+    ) {
+      throw new Error("READER_SHORTLIST_SCORES_INVALID");
+    }
+    const selected = this.chooseCandidates(inputs, scores);
     const results: QueryConditionedEvidenceVerification[] = inputs.map(
       (_, index) => ({
         decision: "INSUFFICIENT",

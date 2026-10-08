@@ -120,6 +120,9 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
                 localFilesOnly: runtimeConfig.evidenceVerifierLocalFilesOnly,
               }),
               shortlistSize: runtimeConfig.evidenceReader.shortlistSize,
+              shortlistStrategy: runtimeConfig.evidenceReader.shortlistStrategy,
+              confirmQuoteSufficiency:
+                runtimeConfig.evidenceReader.confirmQuoteSufficiency,
             })
           : undefined);
   // LAYERED admits only through the layered pipeline; the configured reader
@@ -361,7 +364,15 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
             runtimeConfig.evidenceVerifierMaxCandidates,
         }
       : {}),
-    ...(evidenceAdmissionPipeline ? { evidenceAdmissionPipeline } : {}),
+    ...(evidenceAdmissionPipeline
+      ? {
+          evidenceAdmissionPipeline,
+          evidenceAdmissionMinDistinctDocuments:
+            runtimeConfig.evidenceAdmissionMinDistinctDocuments,
+          evidenceAdmissionAbstainOnConflict:
+            runtimeConfig.evidenceAdmissionAbstainOnConflict,
+        }
+      : {}),
   });
   registerIngestRoutes(app, db);
   registerKnowledgeRoutes(app, db);

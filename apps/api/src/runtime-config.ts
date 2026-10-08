@@ -9,6 +9,8 @@ export interface EvidenceReaderRuntimeConfig {
   model: string;
   apiKey: string | null;
   shortlistSize: number;
+  shortlistStrategy: "score" | "document-diverse";
+  confirmQuoteSufficiency: boolean;
   timeoutMs: number;
   /** Bounded completion-token budget; default 256 preserves current behavior. */
   maxOutputTokens: number;
@@ -29,6 +31,8 @@ export interface ApiRuntimeConfig {
   evidenceVerifierLocalFilesOnly: boolean;
   /** Fail-closed bound for one LAYERED admission batch. */
   evidenceAdmissionTimeoutMs: number;
+  evidenceAdmissionMinDistinctDocuments: number;
+  evidenceAdmissionAbstainOnConflict: boolean;
   evidenceReader: EvidenceReaderRuntimeConfig | null;
   queryTransformProvider: QueryTransformProvider;
   queryTranslation: QueryTranslationRuntimeConfig | null;
@@ -231,9 +235,25 @@ export function loadApiRuntimeConfig(
         "AKP_EVIDENCE_READER_REASONING_EFFORT must be none, minimal, low, medium or high.",
       );
     }
+    const shortlistStrategy =
+      env.AKP_EVIDENCE_READER_SHORTLIST_STRATEGY ?? "score";
+    if (
+      shortlistStrategy !== "score" &&
+      shortlistStrategy !== "document-diverse"
+    ) {
+      throw new Error(
+        "AKP_EVIDENCE_READER_SHORTLIST_STRATEGY must be score or document-diverse",
+      );
+    }
     evidenceReader = {
       baseUrl,
       model,
+      shortlistStrategy,
+      confirmQuoteSufficiency: booleanSetting(
+        env,
+        "AKP_EVIDENCE_READER_CONFIRM_QUOTE",
+        false,
+      ),
       apiKey: env.AKP_EVIDENCE_READER_API_KEY?.trim() || null,
       shortlistSize: integerSetting(
         env,
@@ -301,6 +321,18 @@ export function loadApiRuntimeConfig(
       25_000,
       10,
       60_000,
+    ),
+    evidenceAdmissionMinDistinctDocuments: integerSetting(
+      env,
+      "AKP_EVIDENCE_ADMISSION_MIN_DISTINCT_DOCUMENTS",
+      1,
+      1,
+      16,
+    ),
+    evidenceAdmissionAbstainOnConflict: booleanSetting(
+      env,
+      "AKP_EVIDENCE_ADMISSION_ABSTAIN_ON_CONFLICT",
+      false,
     ),
     evidenceReader,
     queryTransformProvider: transformProvider,
