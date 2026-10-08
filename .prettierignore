@@ -6,3 +6,6 @@ reports/retrieval/curated-benchmark.json
 reports/scale/*.json
 # Frozen byte-exact source oracle: formatting would invalidate its source hash.
 test/fixtures/r2-r7-fresh-source/fidelity-probe.md
+# R5/F5 evaluated holdout is frozen under Git blob 58ce6614f4485a65670d137c0e9f2c00ef0fbedb.
+# Reformatting would invalidate the preregistered byte-exact source/span oracle.
+evals/generic/functional-r5-f5-20261008.json
