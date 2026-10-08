@@ -133,6 +133,40 @@ describe("API runtime configuration", () => {
     ).toThrow(/AKP_EVIDENCE_READER_SHORTLIST/);
   });
 
+  it("configures hosted reader output budget and reasoning only when explicitly enabled", () => {
+    const base = {
+      AKP_EVIDENCE_VERIFIER_PROVIDER: "cross-encoder-reader",
+      AKP_EVIDENCE_READER_BASE_URL:
+        "https://generativelanguage.googleapis.com/v1beta/openai/",
+      AKP_EVIDENCE_READER_MODEL: "hosted-model",
+    };
+    expect(loadApiRuntimeConfig(base).evidenceReader).toMatchObject({
+      maxOutputTokens: 256,
+      reasoningEffort: null,
+    });
+    expect(
+      loadApiRuntimeConfig({
+        ...base,
+        AKP_EVIDENCE_READER_MAX_OUTPUT_TOKENS: "1024",
+        AKP_EVIDENCE_READER_REASONING_EFFORT: "low",
+      }).evidenceReader,
+    ).toMatchObject({ maxOutputTokens: 1024, reasoningEffort: "low" });
+    for (const value of ["15", "0", "16385", "abc"]) {
+      expect(() =>
+        loadApiRuntimeConfig({
+          ...base,
+          AKP_EVIDENCE_READER_MAX_OUTPUT_TOKENS: value,
+        }),
+      ).toThrow(/AKP_EVIDENCE_READER_MAX_OUTPUT_TOKENS/);
+    }
+    expect(() =>
+      loadApiRuntimeConfig({
+        ...base,
+        AKP_EVIDENCE_READER_REASONING_EFFORT: "ultra",
+      }),
+    ).toThrow(/AKP_EVIDENCE_READER_REASONING_EFFORT/);
+  });
+
   it("selects layered admission only with an explicit reader", () => {
     expect(() =>
       loadApiRuntimeConfig({ AKP_EVIDENCE_VERIFIER_MODE: "LAYERED" }),

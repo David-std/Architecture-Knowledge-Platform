@@ -251,6 +251,10 @@ AKP_EVIDENCE_READER_MODEL=<model name served by the endpoint>
 AKP_EVIDENCE_READER_API_KEY=
 AKP_EVIDENCE_READER_SHORTLIST=4
 AKP_EVIDENCE_READER_TIMEOUT_MS=30000
+# Optional: defaults to 256 tokens. Set only after an independent benchmark.
+# AKP_EVIDENCE_READER_MAX_OUTPUT_TOKENS=1024
+# Optional: omitted by default; host/model may reject unsupported values.
+# AKP_EVIDENCE_READER_REASONING_EFFORT=low
 ```
 
 The reader sends passage text to the configured endpoint. Use a local endpoint, or a remote one only where sending the vault content is acceptable. Its admission quality depends on the model and must be measured on the admission pack before it is enforced.
@@ -277,7 +281,9 @@ AKP_EVIDENCE_READER_JSON_RESPONSE_FORMAT=true
 
 Measured evidence, aggregate only: on identical fresh `queryKnowledge` pools for a private vault (113 questions: 95 answerable, 18 unanswerable), the frozen layered composition with `qwen2.5:7b-instruct` Q4_K_M, `evidence-reader-v4` and an order-only BGE v2-m3 top-4 shortlist over the whole pool admitted an exactly bound gold atomic unit for 43/90 questions, against 19/90 for the default deterministic gate, and admitted on 1/18 unanswerable questions against 4/18. Its remaining misses were candidate retrieval (17), the reading shortlist (15) and the reader (15). Admissions outside the reviewed gold documents were not adjudicated, so admitted-unit precision is not measured and the mode is not a default. In that run the first 16 pool candidates contained 40 of the 43 admitted gold units; a wider window trades shortlist latency for recall.
 
-A hosted model is configured the same way, with its OpenAI-compatible base URL, model name and `AKP_EVIDENCE_READER_API_KEY`. It receives every shortlisted passage and the query, so use it only where sending that vault content to the provider is acceptable, and compare it with the local reader on the same pools before enforcing it.
+A hosted model is configured the same way, with its OpenAI-compatible base URL, model name and `AKP_EVIDENCE_READER_API_KEY`. For example, the Gemini compatibility base URL is `https://generativelanguage.googleapis.com/v1beta/openai/`. It receives every shortlisted passage and the query, so use it only where sending that vault content to the provider is acceptable, and compare it with the local reader on the same pools before enforcing it.
+
+The optional `AKP_EVIDENCE_READER_MAX_OUTPUT_TOKENS` sets the `max_tokens` request field (16–16,384, default 256). The optional `AKP_EVIDENCE_READER_REASONING_EFFORT` sends `reasoning_effort` (`none`, `minimal`, `low`, `medium`, `high`); it is **omitted** without explicit configuration. Provider/model support varies. Gemini compatibility maps `reasoning_effort` to model-specific thinking settings and may reject `none`. Increasing either setting can change latency, cost and exact source-quote behavior, so require a separately pre-registered A/B against the same frozen pools. Default model behavior and prompt remain unchanged, and malformed/unfinished replies still fail closed. Reader IDs distinguish nondefault token/reasoning configurations to prevent trace collisions.
 
 Measure a change with:
 

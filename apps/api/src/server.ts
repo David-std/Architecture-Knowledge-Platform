@@ -101,6 +101,13 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
                 baseUrl: runtimeConfig.evidenceReader.baseUrl,
                 model: runtimeConfig.evidenceReader.model,
                 timeoutMs: runtimeConfig.evidenceReader.timeoutMs,
+                maxOutputTokens: runtimeConfig.evidenceReader.maxOutputTokens,
+                ...(runtimeConfig.evidenceReader.reasoningEffort
+                  ? {
+                      reasoningEffort:
+                        runtimeConfig.evidenceReader.reasoningEffort,
+                    }
+                  : {}),
                 jsonResponseFormat:
                   runtimeConfig.evidenceReader.jsonResponseFormat,
                 ...(runtimeConfig.evidenceReader.apiKey

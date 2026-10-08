@@ -10,6 +10,10 @@ export interface EvidenceReaderRuntimeConfig {
   apiKey: string | null;
   shortlistSize: number;
   timeoutMs: number;
+  /** Bounded completion-token budget; default 256 preserves current behavior. */
+  maxOutputTokens: number;
+  /** Optional OpenAI-compatible reasoning control; null omits it. */
+  reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | null;
   jsonResponseFormat: boolean;
 }
 
@@ -218,6 +222,15 @@ export function loadApiRuntimeConfig(
         "AKP_EVIDENCE_READER_BASE_URL and AKP_EVIDENCE_READER_MODEL are required when the cross-encoder reader verifier is enabled.",
       );
     }
+    const rawEffort = env.AKP_EVIDENCE_READER_REASONING_EFFORT?.trim() ?? "";
+    if (
+      rawEffort &&
+      !["none", "minimal", "low", "medium", "high"].includes(rawEffort)
+    ) {
+      throw new Error(
+        "AKP_EVIDENCE_READER_REASONING_EFFORT must be none, minimal, low, medium or high.",
+      );
+    }
     evidenceReader = {
       baseUrl,
       model,
@@ -236,6 +249,16 @@ export function loadApiRuntimeConfig(
         1_000,
         300_000,
       ),
+      maxOutputTokens: integerSetting(
+        env,
+        "AKP_EVIDENCE_READER_MAX_OUTPUT_TOKENS",
+        256,
+        16,
+        16_384,
+      ),
+      reasoningEffort: rawEffort
+        ? (rawEffort as EvidenceReaderRuntimeConfig["reasoningEffort"])
+        : null,
       // Some OpenAI-compatible hosts reject `response_format`; replies are
       // parsed and source-bound either way.
       jsonResponseFormat: booleanSetting(
