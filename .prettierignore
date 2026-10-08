@@ -8,4 +8,4 @@ reports/scale/*.json
 test/fixtures/r2-r7-fresh-source/fidelity-probe.md
 # R5/F5 evaluated holdout is frozen under Git blob 58ce6614f4485a65670d137c0e9f2c00ef0fbedb.
 # Reformatting would invalidate the preregistered byte-exact source/span oracle.
-evals/generic/functional-r5-f5-20261008.json
+evals/generic/functional-r5-f5.json

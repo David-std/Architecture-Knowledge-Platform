@@ -2372,6 +2372,11 @@
       "reason": "corpus-agnostic product evaluation"
     },
     {
+      "path": "evals/generic/functional-r5-f5.json",
+      "category": "PRODUCT_EVAL",
+      "reason": "corpus-agnostic product evaluation"
+    },
+    {
       "path": "evals/generic/global-synthesis/basic.jsonl",
       "category": "PRODUCT_EVAL",
       "reason": "corpus-agnostic product evaluation"
@@ -4228,6 +4233,11 @@
     },
     {
       "path": "scripts/filtered-ann-baseline.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/functional-r5-f5-holdout.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

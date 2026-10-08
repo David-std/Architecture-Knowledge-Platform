@@ -57,8 +57,8 @@ type Protocol = {
     noDefaultChange: boolean;
   };
 };
-const dataPath = "evals/generic/functional-r5-f5-20261008.json";
-const outputPath = "reports/ci/functional-r5-f5-20261008.json";
+const dataPath = "evals/generic/functional-r5-f5.json";
+const outputPath = "reports/ci/functional-r5-f5.json";
 const freezeCommit = "b3d6c8c83954e1ffe5a3d166ed282579f772647d";
 const frozenBlob = "58ce6614f4485a65670d137c0e9f2c00ef0fbedb";
 const codeHead = "a4dbdfff6ea836c87726177f4b4fd071907b2b2b";
@@ -171,7 +171,10 @@ function hitsFor(q: Question) {
     citations: [],
   }));
 }
-const e5CacheDir = "C:/Users/david/AppData/Local/AKP/model-cache";
+const e5CacheDir = process.env.AKP_MODEL_CACHE_DIR?.trim();
+if (!e5CacheDir) {
+  throw new Error("F5_LOCAL_MODEL_CACHE_REQUIRED: set AKP_MODEL_CACHE_DIR");
+}
 const verifier = new ReaderEvidenceVerifier({
   reader: new OpenAICompatibleEvidenceReader({
     baseUrl: "http://127.0.0.1:11434",
