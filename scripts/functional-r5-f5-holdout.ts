@@ -358,10 +358,10 @@ const report = {
   gates: g,
   outcome:
     g.primaryImproved && g.negativeGuard && g.precisionGuard && g.sourceBound
-      ? "PROMOTE_F5_GENERIC"
+      ? "F5_ORACLE_FRONTIER_PASS_OWNER_ADJUDICATION_REQUIRED"
       : "REJECT_F5_GENERIC",
   warning:
-    "Supplied candidate admission fixture; not production queryKnowledge/private E2E. F3 owner adjudication is a separate gate.",
+    "The supplied-candidate span oracle is an objective proxy, not the owner-adjudicated admitted-unit precision required by section 21.4. F5 is not complete for product recommendation until owner precision and private production E2E requirements independently pass.",
   privatePayloadIncluded: false,
 };
 await mkdir("reports/ci", { recursive: true });
