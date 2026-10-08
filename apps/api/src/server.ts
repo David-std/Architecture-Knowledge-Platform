@@ -120,6 +120,8 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
                 localFilesOnly: runtimeConfig.evidenceVerifierLocalFilesOnly,
               }),
               shortlistSize: runtimeConfig.evidenceReader.shortlistSize,
+              adaptiveMaxCandidates:
+                runtimeConfig.evidenceReader.adaptiveMaxCandidates,
               shortlistStrategy: runtimeConfig.evidenceReader.shortlistStrategy,
               confirmQuoteSufficiency:
                 runtimeConfig.evidenceReader.confirmQuoteSufficiency,

@@ -9,6 +9,7 @@ export interface EvidenceReaderRuntimeConfig {
   model: string;
   apiKey: string | null;
   shortlistSize: number;
+  adaptiveMaxCandidates: number;
   shortlistStrategy: "score" | "document-diverse";
   confirmQuoteSufficiency: boolean;
   timeoutMs: number;
@@ -245,6 +246,13 @@ export function loadApiRuntimeConfig(
         "AKP_EVIDENCE_READER_SHORTLIST_STRATEGY must be score or document-diverse",
       );
     }
+    const shortlistSize = integerSetting(
+      env,
+      "AKP_EVIDENCE_READER_SHORTLIST",
+      4,
+      1,
+      16,
+    );
     evidenceReader = {
       baseUrl,
       model,
@@ -255,12 +263,13 @@ export function loadApiRuntimeConfig(
         false,
       ),
       apiKey: env.AKP_EVIDENCE_READER_API_KEY?.trim() || null,
-      shortlistSize: integerSetting(
+      shortlistSize,
+      adaptiveMaxCandidates: integerSetting(
         env,
-        "AKP_EVIDENCE_READER_SHORTLIST",
-        4,
-        1,
-        16,
+        "AKP_EVIDENCE_READER_ADAPTIVE_MAX_CANDIDATES",
+        shortlistSize,
+        shortlistSize,
+        64,
       ),
       timeoutMs: integerSetting(
         env,

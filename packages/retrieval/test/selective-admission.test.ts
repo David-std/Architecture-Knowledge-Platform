@@ -99,7 +99,7 @@ describe("opt-in evidence admission mechanisms", () => {
     expect(judge.mock.calls[1]?.[0]).toEqual({
       query: "When does the rover sleep?",
       scope: "",
-      body: statement,
+      body: statement.replace(/\.$/u, ""),
     });
   });
 
@@ -228,5 +228,132 @@ describe("owner-grounded precision and risk/coverage accounting", () => {
     ]);
     expect(graded.emittedAnswerPrecision?.rate).toBe(0.5);
     expect(graded.emittedAnswerPrecision?.wilson95Lower).toBeLessThan(0.5);
+  });
+});
+
+describe("bounded adaptive evidence reading", () => {
+  function adaptiveInputs() {
+    return [
+      candidate("a", 1, "Related alert policy."),
+      candidate("b", 1, "Related operational note."),
+      candidate("c", 1, "Rover Echo sleeps after three dust alarms."),
+      candidate("d", 1, "Another unrelated monitoring note."),
+    ];
+  }
+
+  it("does not increase model calls once the first shortlist found a source answer", async () => {
+    const calls: string[] = [];
+    const reader: EvidenceReader = {
+      id: "adaptive-fake",
+      judge: async ({ body }) => {
+        calls.push(body);
+        return {
+          answers: body === "Related alert policy.",
+          quote: body,
+        };
+      },
+    };
+    const verifier = new ReaderEvidenceVerifier({
+      reader,
+      shortlist: {
+        id: "ordered",
+        scoreBatch: async () => [0.9, 0.8, 0.7, 0.6],
+      },
+      shortlistSize: 2,
+      adaptiveMaxCandidates: 4,
+    });
+    const results = await verifier.verifyBatch(adaptiveInputs());
+    expect(calls).toHaveLength(2);
+    expect(results[0]?.decision).toBe("SUPPORTS");
+    expect(results[2]?.reason).toBe("NOT_SHORTLISTED_FOR_READING");
+  });
+
+  it("reads additional candidates only when the initial shortlist is insufficient", async () => {
+    const calls: string[] = [];
+    const reader: EvidenceReader = {
+      id: "adaptive-fake",
+      judge: async ({ body }) => {
+        calls.push(body);
+        return {
+          answers: body === "Rover Echo sleeps after three dust alarms.",
+          quote: body,
+        };
+      },
+    };
+    const verifier = new ReaderEvidenceVerifier({
+      reader,
+      shortlist: {
+        id: "ordered",
+        scoreBatch: async () => [0.9, 0.8, 0.7, 0.6],
+      },
+      shortlistSize: 2,
+      adaptiveMaxCandidates: 4,
+    });
+    const results = await verifier.verifyBatch(adaptiveInputs());
+    expect(calls).toHaveLength(4);
+    expect(results[2]?.decision).toBe("SUPPORTS");
+  });
+
+  it("does not amplify a reader outage into more calls", async () => {
+    const judge = vi.fn(async () => {
+      throw new Error("upstream unavailable");
+    });
+    const verifier = new ReaderEvidenceVerifier({
+      reader: { id: "broken", judge },
+      shortlistSize: 2,
+      adaptiveMaxCandidates: 4,
+    });
+    const results = await verifier.verifyBatch(adaptiveInputs());
+    expect(judge).toHaveBeenCalledTimes(2);
+    expect(results[2]?.reason).toBe("NOT_SHORTLISTED_FOR_READING");
+  });
+
+  it("rejects invalid adaptive budgets at construction", () => {
+    expect(
+      () =>
+        new ReaderEvidenceVerifier({
+          reader: {
+            id: "fake",
+            judge: async () => ({ answers: false, quote: "" }),
+          },
+          shortlistSize: 4,
+          adaptiveMaxCandidates: 3,
+        }),
+    ).toThrow("Reader adaptiveMaxCandidates");
+  });
+});
+
+describe("exact quote replay", () => {
+  it("checks the cited source bytes rather than a table-row restatement", async () => {
+    const passage = "| Class | Deadline |\n|---|---|\n| II | 24 hours |";
+    const calls: string[] = [];
+    const reader: EvidenceReader = {
+      id: "span-grounded",
+      judge: async ({ body }) => {
+        calls.push(body);
+        return calls.length === 1
+          ? {
+              answers: true,
+              quote: "Class: II; Deadline: 24 hours",
+            }
+          : { answers: false, quote: "" };
+      },
+    };
+    const verifier = new ReaderEvidenceVerifier({
+      reader,
+      confirmQuoteSufficiency: true,
+    });
+    const result = await verifier.verify({
+      ...candidate("table", 1, passage),
+      query: "What is the Class II deadline?",
+      title: "Recalls",
+      unitType: "TABLE",
+    });
+    expect(result).toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "READER_QUOTE_SUFFICIENCY_NOT_DEMONSTRATED",
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toBe("II | 24 hours");
   });
 });
