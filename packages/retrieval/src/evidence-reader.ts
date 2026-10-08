@@ -121,6 +121,9 @@ export type EvidenceReaderFetch = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+export type EvidenceReaderReasoningEffort =
+  "none" | "minimal" | "low" | "medium" | "high";
+
 export interface OpenAICompatibleEvidenceReaderOptions {
   /** Host or base path. `/v1/chat/completions` is appended when absent. */
   readonly baseUrl: string;
@@ -129,6 +132,8 @@ export interface OpenAICompatibleEvidenceReaderOptions {
   readonly apiKey?: string;
   readonly timeoutMs?: number;
   readonly maxOutputTokens?: number;
+  /** Optional OpenAI-compatible reasoning control; omitted by default. */
+  readonly reasoningEffort?: EvidenceReaderReasoningEffort;
   /**
    * Ask the server for a JSON object reply (`response_format`). Servers that
    * do not support it can disable this; replies are parsed either way.
@@ -145,7 +150,7 @@ function chatCompletionsUrl(baseUrl: string): string {
   const path = url.pathname.replace(/\/+$/u, "");
   url.pathname = path.endsWith("/chat/completions")
     ? path
-    : path.endsWith("/v1")
+    : path.endsWith("/v1") || path.endsWith("/openai")
       ? `${path}/chat/completions`
       : `${path}/v1/chat/completions`;
   return url.toString();
@@ -212,6 +217,7 @@ export class OpenAICompatibleEvidenceReader implements EvidenceReader {
   private readonly apiKey: string | undefined;
   private readonly timeoutMs: number;
   private readonly maxOutputTokens: number;
+  private readonly reasoningEffort: EvidenceReaderReasoningEffort | undefined;
   private readonly jsonResponseFormat: boolean;
   private readonly fetchImpl: EvidenceReaderFetch;
 
@@ -224,6 +230,7 @@ export class OpenAICompatibleEvidenceReader implements EvidenceReader {
     this.apiKey = options.apiKey?.trim() || undefined;
     this.timeoutMs = options.timeoutMs ?? 30_000;
     this.maxOutputTokens = options.maxOutputTokens ?? 256;
+    this.reasoningEffort = options.reasoningEffort;
     this.jsonResponseFormat = options.jsonResponseFormat ?? true;
     if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs < 1) {
       throw new Error("Evidence reader timeoutMs must be a positive integer");
@@ -234,8 +241,22 @@ export class OpenAICompatibleEvidenceReader implements EvidenceReader {
     ) {
       throw new Error("Evidence reader maxOutputTokens must be at least 16");
     }
+    if (
+      this.reasoningEffort !== undefined &&
+      !["none", "minimal", "low", "medium", "high"].includes(
+        this.reasoningEffort,
+      )
+    ) {
+      throw new Error(
+        "Evidence reader reasoningEffort must be none, minimal, low, medium or high",
+      );
+    }
     this.fetchImpl = options.fetch ?? fetch;
-    this.id = `openai-compatible:${this.model}:${EVIDENCE_READER_PROMPT_VERSION}`;
+    const baselineId = `openai-compatible:${this.model}:${EVIDENCE_READER_PROMPT_VERSION}`;
+    this.id =
+      this.maxOutputTokens === 256 && this.reasoningEffort === undefined
+        ? baselineId
+        : `${baselineId}:max-${this.maxOutputTokens}:reasoning-${this.reasoningEffort ?? "default"}`;
   }
 
   async judge(input: EvidenceReaderInput): Promise<EvidenceReaderJudgment> {
@@ -265,6 +286,9 @@ export class OpenAICompatibleEvidenceReader implements EvidenceReader {
               messages: evidenceReaderMessages(input),
               temperature: 0,
               max_tokens: this.maxOutputTokens,
+              ...(this.reasoningEffort === undefined
+                ? {}
+                : { reasoning_effort: this.reasoningEffort }),
               stream: false,
               ...(this.jsonResponseFormat
                 ? { response_format: { type: "json_object" } }

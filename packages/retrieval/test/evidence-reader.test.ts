@@ -358,6 +358,87 @@ describe("OpenAI-compatible evidence reader", () => {
     expect(reader.id).not.toContain("secret");
   });
 
+  it("passes explicitly configured output budget and reasoning effort to a hosted OpenAI-compatible reader", async () => {
+    let calledUrl = "";
+    let body: Record<string, unknown> = {};
+    const reader = new OpenAICompatibleEvidenceReader({
+      baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/",
+      model: "hosted-reader",
+      maxOutputTokens: 1024,
+      reasoningEffort: "low",
+      fetch: async (url, init) => {
+        calledUrl = String(url);
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: { content: '{"answers":false,"quote":""}' },
+                finish_reason: "stop",
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      },
+    });
+    await expect(
+      reader.judge({ query: "Q?", scope: "S", body: "B." }),
+    ).resolves.toEqual({ answers: false, quote: "" });
+    expect(calledUrl).toBe(
+      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    );
+    expect(body).toMatchObject({
+      max_tokens: 1024,
+      reasoning_effort: "low",
+      temperature: 0,
+      stream: false,
+    });
+    const defaultReader = new OpenAICompatibleEvidenceReader({
+      baseUrl: "http://127.0.0.1:11434",
+      model: "hosted-reader",
+    });
+    expect(reader.id).not.toBe(defaultReader.id);
+    expect(reader.id).toContain("max-1024:reasoning-low");
+  });
+
+  it("preserves the existing default payload and fails early for invalid reasoning settings", async () => {
+    let body: Record<string, unknown> = {};
+    const reader = new OpenAICompatibleEvidenceReader({
+      baseUrl: "http://127.0.0.1:11434",
+      model: "m",
+      fetch: async (_url, init) => {
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({
+            choices: [{ message: { content: '{"answers":false,"quote":""}' } }],
+          }),
+          { status: 200 },
+        );
+      },
+    });
+    await reader.judge({ query: "Q?", scope: "", body: "B." });
+    expect(body.max_tokens).toBe(256);
+    expect(body).not.toHaveProperty("reasoning_effort");
+    expect(reader.id).toBe("openai-compatible:m:evidence-reader-v4");
+    expect(
+      () =>
+        new OpenAICompatibleEvidenceReader({
+          baseUrl: "http://127.0.0.1:11434",
+          model: "m",
+          maxOutputTokens: 15,
+        }),
+    ).toThrow(/maxOutputTokens/);
+    expect(
+      () =>
+        new OpenAICompatibleEvidenceReader({
+          baseUrl: "http://127.0.0.1:11434",
+          model: "m",
+          reasoningEffort: "infinite" as never,
+        }),
+    ).toThrow(/reasoningEffort/);
+  });
+
   it("reports HTTP failures without the response body", async () => {
     const reader = new OpenAICompatibleEvidenceReader({
       baseUrl: "http://127.0.0.1:11434/v1",
