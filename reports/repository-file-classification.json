@@ -1447,6 +1447,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/worker/src/source-projection-backfill.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/worker/src/truth-maintenance.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -4158,6 +4163,11 @@
     },
     {
       "path": "scripts/aggregate-agent-benchmark-shards.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/backfill-source-markdown.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
