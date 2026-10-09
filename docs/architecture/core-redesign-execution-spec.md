@@ -138,12 +138,14 @@ Do not create `LegacyThingAdapter` or two implementations that both persist stat
 - [x] S0.3 Gate manifest-level cycles, invalid internal edges and pure-module layering with regression tests.
 - [x] S0.4 Audit TS source imports and gate undeclared package subpaths or relative production-source module escapes.
 - [x] S0.5 Inventory large modules and candidate exports, classify false positives, and document the known worker-test cross-module integration as S1 test-placement debt (no artificial production dependency).
-- [ ] S0.6 Confirm **CI success on the final exact S0 commit SHA**, including architecture controls, before claiming completed.
+- [x] S0.6 Confirm **CI success on the exact S0 implementation SHA** `6b54e2b38d6e117c4a7751d3fdde193ce52d5309`, including architecture controls. Later documentation/coding commits require their own same-SHA CI before being declared verified.
 - [x] S0.7 Draft PR #38 description embeds S0–S5 checkbox statuses and links this specification, with original PR text preserved.
 
 **Artifacts:** `docs/adr/0004-core-product-scope-and-simplification.md`, `docs/architecture/{repository-standards,core-redesign-roadmap,s0-architecture-inventory,core-redesign-execution-spec}.md`, `scripts/{validate-module-boundaries,validate-import-surfaces,report-architecture-inventory}`, test files, `pnpm boundaries`.
 
 **Quality evidence:** `pnpm boundaries`, `pnpm docs:validate`, `pnpm hygiene:validate`, `pnpm retrieval:generality:validate`, affected unit tests/typechecks, PR CI exact SHA. S0 does not claim source fidelity or RAG accuracy improvement.
+
+**Verified S0.6 CI record (2026-10-08):** `6b54e2b38d6e117c4a7751d3fdde193ce52d5309`, GitHub Actions `ci` run `37869858647` (`success`; including `pnpm check`, formatting, docs/hygiene, build, integration), with the other triggered required workflows also successful. Optional workflows that were skipped are not counted as passed tests. This closes S0.6 for that implementation SHA only; a future documentation or implementation commit requires its own CI and does not establish S1 behavior.
 
 **Exit:** S0 tasks complete and initial technical debt is explicitly assigned to S1–S5; no default behavior changed. Next agent begins at S1 with the documented source path.
 
