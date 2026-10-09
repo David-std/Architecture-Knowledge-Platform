@@ -215,6 +215,35 @@ integration("S1 faithful source projection compiler parity", () => {
       );
       expect(repeated.status).toBe("ALREADY_MATERIALIZED");
       expect(repeated.markdownSha256).toBe(markdown.sha256);
+      const initialSourceUnits = await db.pool.query<{ count: number }>(
+        "select count(*)::int count from source_projection_units where source_artifact_id=$1",
+        [artifactId],
+      );
+      const originalStructuredHash = structuredHash;
+      const damagedStructuredHash = "f".repeat(64);
+      await db.pool.query(
+        "update source_artifacts set structured_content_hash=$2 where id=$1",
+        [artifactId, damagedStructuredHash],
+      );
+      try {
+        await expect(
+          backfillHistoricalSourceProjection(db, target, true),
+        ).rejects.toThrow("SOURCE_PROJECTION_BACKFILL_ARTIFACT_HASH_MISMATCH");
+        const afterRejectedRepair = await db.pool.query<{
+          count: number;
+        }>(
+          "select count(*)::int count from source_projection_units where source_artifact_id=$1",
+          [artifactId],
+        );
+        expect(afterRejectedRepair.rows[0]?.count).toBe(
+          initialSourceUnits.rows[0]?.count,
+        );
+      } finally {
+        await db.pool.query(
+          "update source_artifacts set structured_content_hash=$2 where id=$1",
+          [artifactId, originalStructuredHash],
+        );
+      }
       const sourceUnits = await db.pool.query<{
         unit_type: string;
         body: string;

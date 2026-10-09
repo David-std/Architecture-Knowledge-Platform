@@ -62,14 +62,14 @@ The PostgreSQL integration test at `apps/worker/test/source-markdown-parity.inte
 
 ### Historical Markdown projection recovery (bounded operator workflow)
 
-The operation is **manual**, requires \`DATABASE_URL\` and explicit UUIDs for the space, vault, source and artifact, plus the source SHA-256. Read \`sources\` and \`source_artifacts\` with an authorized operator's SQL inspection first. Run without \`--apply\` to validate and print a metadata-only dry run; inspect \`DRY_RUN\`, source SHA and derived Markdown hash before repeating with \`--apply\`. This command handles **one artifact**, not a scan or bulk update:
+The operation is **manual**, requires `DATABASE_URL` and explicit UUIDs for the space, vault, source and artifact, plus the source SHA-256. Read `sources` and `source_artifacts` with an authorized operator's SQL inspection first. Run without `--apply` to validate and print a metadata-only dry run; inspect `DRY_RUN`, source SHA and derived Markdown hash before repeating with `--apply`. This command handles **one artifact**, not a scan or bulk update:
 
-\`\`\`sh
+```sh
 pnpm backfill:source-markdown --space-id <space-uuid> --vault-id <vault-uuid> --source-id <source-uuid> --artifact-id <artifact-uuid> --source-sha256 <64-hex-source-sha>
 pnpm backfill:source-markdown --space-id <space-uuid> --vault-id <vault-uuid> --source-id <source-uuid> --artifact-id <artifact-uuid> --source-sha256 <64-hex-source-sha> --apply
-\`\`\`
+```
 
-The CLI deliberately logs only identifiers, computed digest, version, length and status. Existing correct projections produce \`ALREADY_MATERIALIZED\` without rewrite. Corrupt, redaction-unsafe or stale representations fail closed: use controlled original-source re-extraction after investigation, not an automatic parser fallback. Migration 091 allows legacy NULL records; no schema edit or mutable knowledge publication is necessary. A verified source projection is still machine-extracted evidence, not an approved Git document.
+The CLI deliberately logs only identifiers, computed digest, version, length and status. Existing correct projections produce `ALREADY_MATERIALIZED` without rewrite. Corrupt, redaction-unsafe or stale representations fail closed: use controlled original-source re-extraction after investigation, not an automatic parser fallback. Migration 091 allows legacy NULL records; no schema edit or mutable knowledge publication is necessary. A verified source projection is still machine-extracted evidence, not an approved Git document.
 
 ### S1.6 source-unit projection (pending same-SHA CI)
 
@@ -78,3 +78,11 @@ Migration `092_source_projection_units.sql` creates a physically separate noncan
 `GET /v1/sources/:id/artifacts/:artifactId/units` requires `source:read` and a whole-vault authorization scope, plus exact `sourceSha256` and `markdownSha256` query pins. It excludes retired sources and disabled vaults, exposes only machine-extracted (not approved) units and returns UTF-16 offsets into the full exact Markdown projection, body hash and original-span hash. Revoked access, a wrong source/artifact or mismatched revision cannot fall back to approved-knowledge permissions or to old units. Responses use `Cache-Control: no-store`. This is a structural source-unit listing, **not** a new independent semantic retrieval/ranking engine. A future S2 source-passage candidate path may reuse these verified records with a measured ranking policy; it must not silently promote them into Git knowledge.
 
 The E2E lifecycle and PostgreSQL backfill suites now assert unit spans, revision mismatch and restricted-read denial. They do not certify OCR/table extraction fidelity on every document class nor full dual-file compiler ON/OFF end-to-end parity.
+
+### S1.10 raw-file dual-route parity (full process; CI pending)
+
+`apps/api/test/product-lifecycle.integration.test.ts` now contains an independent end-to-end comparison using **two disposable vaults** and two byte-identical Markdown uploads. Both traverse HTTP ingestion, the actual worker, content-addressed MinIO, the actual extractor, normalized `DocumentArtifact` persistence and the independent source-unit index. The first route has the compiler explicitly disabled and produces a review-required machine source draft; the second configures a loopback OpenAI-compatible HTTP endpoint that receives a real bounded compiler input but intentionally returns `NO_MATERIAL`. Assertions compare the immutable raw SHA and MinIO key, byte-for-byte full Markdown and its SHA, renderer version, normalized original locators and structural passage rows. The source UUIDs and artifact UUIDs must differ between vaults; they are deliberately **not** compared for equality. No knowledge document is published from either route without review. The mocked provider verifies mode routing and source fidelity, not semantic generation quality. The normal provider configuration remains unchanged.
+
+### Historical corruption quarantine and verified re-extraction
+
+An exact-target backfill rejects an altered structured-content digest before any writes. The PostgreSQL regression now verifies that rejecting a corrupted artifact does not rebuild or silently delete its source units. Runbooks require operator inspection of the source ID, space/vault membership, immutable SHA and stored blob before any explicit new ingest of an operator-verified original. A mismatch is quarantined from source-unit reads by revision/hash fences; no tool silently asserts a different hash or marks an extracted document as approved. Re-extraction from the original is a new auditable ingest job with the existing review gate, **not** an unchecked backfill repair.
