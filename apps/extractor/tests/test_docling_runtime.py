@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from app.adapters.optional import DoclingAdapter
-from app.ports import DocumentExtractionRequest
+from app.ports import DocumentExtractionRequest, DocumentIntelligenceError
 
 
 @pytest.mark.provider_runtime
@@ -192,16 +192,35 @@ def test_real_docling_digital_pdf_preserves_visible_text_and_page_locator() -> N
     )
     assert source.is_file()
 
-    artifact = DoclingAdapter().extract(
-        DocumentExtractionRequest(
-            source_path=source,
-            source_id="s1-digital-pdf-3179",
-            source_uri="fixture://document-intelligence/s1-digital-fidelity.pdf",
-            media_type="application/pdf",
-            complexity="simple",
-            privacy_policy="LOCAL_ONLY",
-        )
+    request = DocumentExtractionRequest(
+        source_path=source,
+        source_id="s1-digital-pdf-3179",
+        source_uri="fixture://document-intelligence/s1-digital-fidelity.pdf",
+        media_type="application/pdf",
+        complexity="simple",
+        privacy_policy="LOCAL_ONLY",
     )
+    adapter = DoclingAdapter()
+    try:
+        artifact = adapter.extract(request)
+    except DocumentIntelligenceError as error:
+        # Synthetic fixture only: expose provider diagnostics in CI while
+        # preserving the production fail-closed behavior and private redaction.
+        converter, _ = adapter._converter(request)
+        conversion = converter.convert(str(source))
+        provider_errors = [
+            {
+                "type": type(item).__name__,
+                "code": str(getattr(item, "error_code", "")),
+                "message": str(getattr(item, "error_message", ""))[:400],
+            }
+            for item in getattr(conversion, "errors", [])
+        ]
+        raise AssertionError(
+            f"Two-page digital PDF is incomplete: "
+            f"status={getattr(conversion, 'status', None)} "
+            f"errors={provider_errors}"
+        ) from error
     assert artifact.extractor == "docling"
     assert artifact.configuration["mapping"] == "native-docling-document"
     assert artifact.configuration["flattened_before_mapping"] is False
