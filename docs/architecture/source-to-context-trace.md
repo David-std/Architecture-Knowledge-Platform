@@ -97,7 +97,7 @@ The following **synthetic, nonprivate** documents exercise distinct extraction m
 
 | Fixture / test | Real extraction | Source-to-context fidelity gate | Known limit |
 | --- | --- | --- | --- |
-| Digital PDF (`test_real_docling_digital_pdf_preserves_visible_text_and_page_locator`) | Native Docling with selectable PDF text | Source marker, page-1 locator, native blocks and reading order, OCR not requested | One-page fixture, not a broad PDF benchmark |
+| Digital PDF (`test_real_docling_digital_pdf_preserves_visible_text_and_page_locator`) | Native Docling with selectable PDF text | Distinct text on pages 1 and 2, native page locators, blocks and reading order, OCR not requested | Synthetic two-page PDF, not a large multi-column benchmark |
 | DOCX (`test_real_docling_docx_preserves_tables_headings_and_native_locators`) | Native Docling over a real generated DOCX | Heading, paragraph, terminal marker, table value `47 minutes`, original block IDs and source hashes | Merged-cell layouts, images and arbitrary pagination remain unmeasured |
 | OCR PDF (`document-intelligence.integration.test.ts`) | Real Tesseract through API, worker, extractor and MinIO | OCR provenance, page/region, full authorized Markdown replay, structural units and span SHA, no automatic knowledge promotion | High-contrast fixture; degraded-scan error rate unmeasured |
 | Same-file compiler OFF/ON (`product-lifecycle.integration.test.ts`) | Two real worker ingests, one local HTTP provider mock | Byte-identical raw-source hashes, Markdown, locators and derived passages | The model mock tests routing, not semantic generation quality |
