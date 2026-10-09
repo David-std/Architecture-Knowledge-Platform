@@ -200,7 +200,8 @@ describe("compilation stage", () => {
     expect(output.plan.summary).toContain("no semantic compilation occurred");
     expect(output.metadata).toMatchObject({
       sourceMarkdownHash: stageInput().sourceMarkdown.sha256,
-      sourceMarkdownRendererVersion: stageInput().sourceMarkdown.rendererVersion,
+      sourceMarkdownRendererVersion:
+        stageInput().sourceMarkdown.rendererVersion,
     });
     expect(output.plan.proposedChanges[0]?.content).toContain(
       stageInput().sourceMarkdown.content,
@@ -617,7 +618,8 @@ describe("compilation stage", () => {
     expect(output.metadata).toMatchObject({
       mode: "GENERATIVE",
       sourceMarkdownHash: stageInput().sourceMarkdown.sha256,
-      sourceMarkdownRendererVersion: stageInput().sourceMarkdown.rendererVersion,
+      sourceMarkdownRendererVersion:
+        stageInput().sourceMarkdown.rendererVersion,
       provider: configured.descriptor,
       retrievalChannels: ["exact", "lexical"],
       retrievalWarnings: ["COMPILER_SEMANTIC_RETRIEVAL_DISABLED"],

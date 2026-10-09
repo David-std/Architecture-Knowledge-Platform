@@ -1,6 +1,6 @@
 # Source-to-context pipeline: S1 source authority trace
 
-- **Reviewed:** 2026-10-08, draft PR #38, source code at `6b54e2b38d6e117c4a7751d3fdde193ce52d5309` (the subsequent S0 commits only update documentation).
+- **Reviewed:** 2026-10-08, draft PR #38. Initial trace at `6b54e2b3`; source-projection binding updated in `d7d85b2c`, pending same-head CI verification.
 - **Scope:** S1.1 source/persistence/reader trace. This is a static code and SQL-path audit, **not** a passing compiler ON/OFF database integration, OCR quality claim or S1 exit certification.
 - **Authorities:** immutable raw bytes in object storage and `sources`; sanitized `DocumentArtifact` in `source_artifacts`; reviewed Markdown in managed Git/`knowledge_documents`; evidence excerpts, plans, index units and model output are derived or provisional.
 
@@ -17,7 +17,7 @@
 
 ## 2. Read and index paths
 
-- `apps/api/src/routes/operator.ts`, `GET /v1/operator/sources/:id`, authorizes `source:read` and vault/space membership, then reads the `sources` record, structured `source_artifacts.document_artifact`, `evidence`, descendant knowledge documents and associated reviews. The operator route does **not** select a stored faithful Markdown field because no such field exists yet.
+- `apps/api/src/routes/operator.ts`, `GET /v1/operator/sources/:id`, authorizes `source:read` and vault/space membership, then reads the `sources` record, structured `source_artifacts.document_artifact`, persisted `source_markdown` plus hash and renderer version, evidence, descendants and reviews. Its recursive operational sanitization can redact literal paths inside content, so the returned text is **not** an exact-byte verified Markdown download; do not equate the response with source-hash parity. A dedicated, permission-scoped faithful read contract remains future work.
 - `apps/api/src/routes/knowledge.ts`, `GET /v1/sources/:id`, is a separate metadata/evidence response; it does not return a full Markdown projection. No full Markdown read API is demonstrated by either of these endpoints.
 - `apps/web/app/sources/[id]/page.tsx` reads structured artifact blocks/headings/tables/figures for a source preview; it is not proof of independently persisted Markdown.
 - `packages/indexing/src/index.ts`, `rebuildChangedUnits`, reads approved `knowledge_documents.body_cache` from managed Git indexing and feeds `parseKnowledgeUnits`; a source artifact may be linked via validated `frontmatter.source_artifact_id`. This path does **not** independently index an arbitrary unapproved `source_artifacts.document_artifact` as approved knowledge. That distinction is desirable for authority, but source retrieval needs an explicitly authorized, noncanonical channel if required by the user journey.
@@ -27,13 +27,13 @@
 
 **Proven from code:** raw bytes and the structured sanitized `DocumentArtifact` are persisted independently of the compiler. The reviewed Git draft path differs across the two modes.
 
-**Implemented in draft PR #38:** an explicit, hashed, independently persisted **faithful Markdown projection** tied to the same source-artifact identity and extractor configuration. The worker now reloads it from the same authorized `source_artifacts` row and verifies its artifact correspondence before the compiler branches; fallback uses these exact persisted bytes, while the generative plan still contains separate proposed knowledge changes. A full real-database compiler ON/OFF parity integration and direct, permission-scoped indexing of source units remain unproven.
+**Implemented in draft PR #38, pending final CI:** an explicit, hashed, independently persisted **faithful Markdown projection** tied to the same source-artifact identity and extractor configuration. On a new compilation path, the worker reloads it from the authorized `source_artifacts` row and rejects source/structured-artifact hash or renderer mismatches before model routing; fallback consumes those persisted bytes, while the generative plan remains separate proposed knowledge. A full real-database compiler ON/OFF parity integration, exact-byte authorized download and direct permission-scoped source-unit indexing remain unproven.
 
-This is a representation/availability gap; it is **not** proof that existing source bytes or the structured artifact are lost when the LLM is enabled. It also does not justify treating extracted source text as an approved rule.
+The remaining gap is independent user-facing source retrieval and full compiler-mode E2E parity; it is **not** proof that the original bytes or structured artifact are lost when the LLM is enabled. It also does not justify treating extracted source text as an approved rule.
 
 ## 4. Single-owner correction to prove before cutover
 
-- Make `source_artifacts` (same original source, same structured artifact identity) the owner of one **derived, complete source Markdown projection**, computed deterministically from its sanitized `DocumentArtifact` **before** any optional compiler decision. Record the source SHA, artifact/configuration identity, renderer version and Markdown content hash. Do not create a second authoritative knowledge writer or silently promote a source extract to managed Git.
+- **Implemented (CI pending):** `source_artifacts` owns one derived, complete source Markdown projection created before optional compiler selection; a SHA and renderer version are preserved. A candidate cannot become approved knowledge without managed Git review.
 - Decide the schema/migration and one-time backfill only after listing existing artifact readers and persisted historical rows; new SQL must be append-only, with source-hash and digest invariants tested. Historical missing projections must be reported, backfilled or explicitly reprocessed rather than fabricated.
 - Provide an authorized, revision-aware read surface for this projection; never leak raw source URIs, object-store keys or provider credentials. Keep source retrieval distinct from approved knowledge retrieval and preserve source-located units.
 - Avoid an old/new parallel renderer: migrate the existing fallback draft and any API consumer to the one renderer/contract before removing superseded paths. A UI preview remains a bounded view and may not define searchable content.
