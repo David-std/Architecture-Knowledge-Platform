@@ -179,10 +179,14 @@ integration("S1 faithful source projection compiler parity", () => {
         sourceSha256: rawHash,
       };
       await expect(
-        backfillHistoricalSourceProjection(db, {
-          ...target,
-          sourceSha256: "b".repeat(64),
-        }, true),
+        backfillHistoricalSourceProjection(
+          db,
+          {
+            ...target,
+            sourceSha256: "b".repeat(64),
+          },
+          true,
+        ),
       ).rejects.toThrow("SOURCE_PROJECTION_BACKFILL_TARGET_NOT_FOUND");
       const dryRun = await backfillHistoricalSourceProjection(db, target);
       expect(dryRun).toMatchObject({
@@ -193,12 +197,15 @@ integration("S1 faithful source projection compiler parity", () => {
       });
       const beforeApply = await db.pool.query<{
         source_markdown: string | null;
-      }>(
-        "select source_markdown from source_artifacts where id=$1",
-        [artifactId],
-      );
+      }>("select source_markdown from source_artifacts where id=$1", [
+        artifactId,
+      ]);
       expect(beforeApply.rows[0]?.source_markdown).toBeNull();
-      const applied = await backfillHistoricalSourceProjection(db, target, true);
+      const applied = await backfillHistoricalSourceProjection(
+        db,
+        target,
+        true,
+      );
       expect(applied.status).toBe("MATERIALIZED");
       expect(applied.markdownSha256).toBe(markdown.sha256);
       const repeated = await backfillHistoricalSourceProjection(

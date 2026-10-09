@@ -2,8 +2,7 @@ import "dotenv/config";
 import { Postgres } from "../packages/postgres/src/index.js";
 import { backfillHistoricalSourceProjection } from "../apps/worker/src/source-projection-backfill.js";
 
-const UUID =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SHA256 = /^[a-f0-9]{64}$/;
 
 function argumentsOf(argv: string[]): Record<string, string | boolean> {
