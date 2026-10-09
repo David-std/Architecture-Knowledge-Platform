@@ -749,6 +749,67 @@ describe("product lifecycle E2E", () => {
         .update(sourceMarkdownBody.content, "utf8")
         .digest("hex"),
     ).toBe(sourceMarkdownBody.sha256);
+    const unitBase = `/v1/sources/${indexed.rows[0]?.source_id}/artifacts/${sourceProjection!.id}/units`;
+    const unitUrl = `${unitBase}?sourceSha256=${firstSourceHash}&markdownSha256=${sourceProjection!.source_markdown_hash}`;
+    const unitResponse = await app.inject({
+      method: "GET",
+      url: unitUrl,
+      headers,
+    });
+    expect(unitResponse.statusCode, unitResponse.body).toBe(200);
+    const indexedSourceUnits = unitResponse.json() as {
+      sourceId: string;
+      markdownSha256: string;
+      canonicalKnowledge: boolean;
+      trustTier: string;
+      total: number;
+      units: Array<{
+        body: string;
+        bodySha256: string;
+        sourceSpanSha256: string;
+        locator: { startChar: number; endChar: number };
+      }>;
+    };
+    expect(indexedSourceUnits).toMatchObject({
+      sourceId: indexed.rows[0]?.source_id,
+      markdownSha256: sourceProjection!.source_markdown_hash,
+      canonicalKnowledge: false,
+      trustTier: "MACHINE_EXTRACTED",
+    });
+    expect(indexedSourceUnits.total).toBeGreaterThan(0);
+    expect(
+      indexedSourceUnits.units.some((unit) => unit.body.includes(firstMarker)),
+    ).toBe(true);
+    for (const unit of indexedSourceUnits.units) {
+      expect(
+        createHash("sha256").update(unit.body, "utf8").digest("hex"),
+      ).toBe(unit.bodySha256);
+      expect(
+        createHash("sha256")
+          .update(
+            sourceProjection!.source_markdown.slice(
+              unit.locator.startChar,
+              unit.locator.endChar,
+            ),
+            "utf8",
+          )
+          .digest("hex"),
+      ).toBe(unit.sourceSpanSha256);
+    }
+    const missingRevision = await app.inject({
+      method: "GET",
+      url: unitBase,
+      headers,
+    });
+    expect(missingRevision.statusCode).toBe(400);
+    const staleRevision = await app.inject({
+      method: "GET",
+      url: `${unitBase}?sourceSha256=${firstSourceHash}&markdownSha256=${"b".repeat(64)}`,
+      headers,
+    });
+    expect(staleRevision.statusCode).toBe(409);
+    expect(staleRevision.body).not.toContain(firstMarker);
+
     const knowledgeOnlyToken = `e2e-knowledge-only-${randomUUID()}`;
     const knowledgeOnlyTokenHash = createHash("sha256")
       .update(knowledgeOnlyToken)
@@ -781,6 +842,15 @@ describe("product lifecycle E2E", () => {
       });
       expect(denied.statusCode).toBe(403);
       expect(denied.body).not.toContain(firstMarker);
+      const deniedUnits = await app.inject({
+        method: "GET",
+        url: unitUrl,
+        headers: {
+          authorization: `Bearer ${knowledgeOnlyToken}`,
+        },
+      });
+      expect(deniedUnits.statusCode).toBe(403);
+      expect(deniedUnits.body).not.toContain(firstMarker);
     } finally {
       await db.pool.query("delete from api_tokens where token_hash=$1", [
         knowledgeOnlyTokenHash,
@@ -793,6 +863,12 @@ describe("product lifecycle E2E", () => {
     });
     expect(wrongSource.statusCode).toBe(404);
     expect(wrongSource.body).not.toContain(firstMarker);
+    const wrongSourceUnits = await app.inject({
+      method: "GET",
+      url: `/v1/sources/${randomUUID()}/artifacts/${sourceProjection!.id}/units?sourceSha256=${firstSourceHash}&markdownSha256=${sourceProjection!.source_markdown_hash}`,
+      headers,
+    });
+    expect(wrongSourceUnits.statusCode).toBe(404);
 
     const wrongArtifact = await app.inject({
       method: "GET",

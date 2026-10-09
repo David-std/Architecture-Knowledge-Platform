@@ -215,6 +215,33 @@ integration("S1 faithful source projection compiler parity", () => {
       );
       expect(repeated.status).toBe("ALREADY_MATERIALIZED");
       expect(repeated.markdownSha256).toBe(markdown.sha256);
+      const sourceUnits = await db.pool.query<{
+        unit_type: string;
+        body: string;
+        body_sha256: string;
+        source_span_sha256: string;
+        markdown_sha256: string;
+        locator: { startChar: number; endChar: number; page?: number };
+      }>(
+        "select unit_type,body,body_sha256,source_span_sha256,markdown_sha256,locator from source_projection_units where source_artifact_id=$1 order by structural_order",
+        [artifactId],
+      );
+      expect(sourceUnits.rowCount).toBeGreaterThan(0);
+      expect(
+        sourceUnits.rows.some((unit) => unit.body.includes("47 minutes")),
+      ).toBe(true);
+      expect(sourceUnits.rows.every((unit) => unit.markdown_sha256 === markdown.sha256)).toBe(true);
+      for (const unit of sourceUnits.rows) {
+        expect(sha256(unit.body)).toBe(unit.body_sha256);
+        expect(
+          sha256(
+            markdown.content.slice(
+              unit.locator.startChar,
+              unit.locator.endChar,
+            ),
+          ),
+        ).toBe(unit.source_span_sha256);
+      }
 
       const fragment = selectEvidenceFragment(artifact, markdown.content);
       const evidence = await db.pool.query<{ id: string }>(
