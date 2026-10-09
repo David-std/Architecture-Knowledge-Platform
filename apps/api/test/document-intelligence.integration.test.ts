@@ -360,8 +360,7 @@ describe("document intelligence E2E", () => {
 
     const markdownResponse = await app.inject({
       method: "GET",
-      url:
-        "/v1/sources/" + sourceId + "/artifacts/" + artifactId + "/markdown",
+      url: "/v1/sources/" + sourceId + "/artifacts/" + artifactId + "/markdown",
       headers,
     });
     expect(markdownResponse.statusCode, markdownResponse.body).toBe(200);
@@ -382,9 +381,15 @@ describe("document intelligence E2E", () => {
     const unitResponse = await app.inject({
       method: "GET",
       url:
-        "/v1/sources/" + sourceId + "/artifacts/" + artifactId + "/units" +
-        "?sourceSha256=" + sha256 +
-        "&markdownSha256=" + row.source_markdown_hash,
+        "/v1/sources/" +
+        sourceId +
+        "/artifacts/" +
+        artifactId +
+        "/units" +
+        "?sourceSha256=" +
+        sha256 +
+        "&markdownSha256=" +
+        row.source_markdown_hash,
       headers,
     });
     expect(unitResponse.statusCode, unitResponse.body).toBe(200);
@@ -408,9 +413,9 @@ describe("document intelligence E2E", () => {
       true,
     );
     for (const unit of indexed.units) {
-      expect(
-        createHash("sha256").update(unit.body, "utf8").digest("hex"),
-      ).toBe(unit.bodySha256);
+      expect(createHash("sha256").update(unit.body, "utf8").digest("hex")).toBe(
+        unit.bodySha256,
+      );
       expect(
         createHash("sha256")
           .update(
@@ -425,6 +430,5 @@ describe("document intelligence E2E", () => {
       expect(unit.locator.endChar).toBeGreaterThan(unit.locator.startChar);
     }
     expect(unitResponse.headers["cache-control"]).toBe("no-store");
-
   }, 180_000);
 });
