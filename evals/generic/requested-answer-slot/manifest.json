@@ -1,0 +1,233 @@
+{
+  "schemaVersion": "akp.requested-answer-slot.v1",
+  "frozen": true,
+  "baselineSha": "6099c8948dff5bb0135305350092770955dd88c8",
+  "splits": {
+    "development": [
+      {
+        "id": "dev-en-subject-emits",
+        "family": "SUBJECT_DIRECT",
+        "language": "EN",
+        "query": "Which service emits audit events to the archive?",
+        "expected": {
+          "role": "SUBJECT",
+          "relationAnchor": "emits",
+          "boundArgumentAnchors": ["audit", "events", "to", "archive"]
+        }
+      },
+      {
+        "id": "dev-en-subject-reviews",
+        "family": "SUBJECT_DIRECT",
+        "language": "EN",
+        "query": "Who reviews release exceptions before deployment?",
+        "expected": {
+          "role": "SUBJECT",
+          "relationAnchor": "reviews",
+          "boundArgumentAnchors": [
+            "release",
+            "exceptions",
+            "before",
+            "deployment"
+          ]
+        }
+      },
+      {
+        "id": "dev-en-object-publish",
+        "family": "OBJECT_AUXILIARY",
+        "language": "EN",
+        "query": "What artifact does gateway publish to the registry?",
+        "expected": {
+          "role": "OBJECT",
+          "relationAnchor": "publish",
+          "boundArgumentAnchors": ["gateway", "to", "registry"]
+        }
+      },
+      {
+        "id": "dev-en-object-generate",
+        "family": "OBJECT_AUXILIARY",
+        "language": "EN",
+        "query": "Which report does scheduler generate nightly?",
+        "expected": {
+          "role": "OBJECT",
+          "relationAnchor": "generate",
+          "boundArgumentAnchors": ["scheduler", "nightly"]
+        }
+      },
+      {
+        "id": "dev-es-subject-consume",
+        "family": "SUBJECT_DIRECT",
+        "language": "ES",
+        "query": "Qué servicio consume mensajes de entrada?",
+        "expected": {
+          "role": "SUBJECT",
+          "relationAnchor": "consume",
+          "boundArgumentAnchors": ["mensajes", "entrada"]
+        }
+      },
+      {
+        "id": "dev-es-subject-approve",
+        "family": "SUBJECT_DIRECT",
+        "language": "ES",
+        "query": "Quién aprueba cambios antes de producción?",
+        "expected": {
+          "role": "SUBJECT",
+          "relationAnchor": "aprueba",
+          "boundArgumentAnchors": ["cambios", "antes", "produccion"]
+        }
+      },
+      {
+        "id": "dev-es-object-publish",
+        "family": "OBJECT_AUXILIARY",
+        "language": "ES",
+        "query": "Qué artefacto debe gateway publicar al registro?",
+        "expected": {
+          "role": "OBJECT",
+          "relationAnchor": "publicar",
+          "boundArgumentAnchors": ["gateway", "al", "registro"]
+        }
+      },
+      {
+        "id": "dev-es-object-generate",
+        "family": "OBJECT_AUXILIARY",
+        "language": "ES",
+        "query": "Cuál informe debe scheduler generar diariamente?",
+        "expected": {
+          "role": "OBJECT",
+          "relationAnchor": "generar",
+          "boundArgumentAnchors": ["scheduler", "diariamente"]
+        }
+      }
+    ],
+    "heldout": [
+      {
+        "id": "hold-en-copular-custodian",
+        "family": "COPULAR_RELATION",
+        "language": "EN",
+        "query": "Who is the designated custodian of the audit ledger?",
+        "expected": {
+          "role": "RELATION_VALUE",
+          "relationAnchor": "custodian",
+          "boundArgumentAnchors": ["audit", "ledger"]
+        }
+      },
+      {
+        "id": "hold-en-copular-approver",
+        "family": "COPULAR_RELATION",
+        "language": "EN",
+        "query": "Who is the final approver for deployment exceptions?",
+        "expected": {
+          "role": "RELATION_VALUE",
+          "relationAnchor": "approver",
+          "boundArgumentAnchors": ["deployment", "exceptions"]
+        }
+      },
+      {
+        "id": "hold-es-copular-custodian",
+        "family": "COPULAR_RELATION",
+        "language": "ES",
+        "query": "Quién es el custodio del registro financiero?",
+        "expected": {
+          "role": "RELATION_VALUE",
+          "relationAnchor": "custodio",
+          "boundArgumentAnchors": ["registro", "financiero"]
+        }
+      },
+      {
+        "id": "hold-es-copular-responsible",
+        "family": "COPULAR_RELATION",
+        "language": "ES",
+        "query": "Quién es la persona responsable de la cola crítica?",
+        "expected": {
+          "role": "RELATION_VALUE",
+          "relationAnchor": "responsable",
+          "boundArgumentAnchors": ["cola", "critica"]
+        }
+      },
+      {
+        "id": "hold-en-location-persist",
+        "family": "LOCATION",
+        "language": "EN",
+        "query": "Where does collector persist telemetry?",
+        "expected": {
+          "role": "LOCATION",
+          "relationAnchor": "persist",
+          "boundArgumentAnchors": ["collector", "telemetry"]
+        }
+      },
+      {
+        "id": "hold-en-location-store",
+        "family": "LOCATION",
+        "language": "EN",
+        "query": "Where must gateway store audit copies?",
+        "expected": {
+          "role": "LOCATION",
+          "relationAnchor": "store",
+          "boundArgumentAnchors": ["gateway", "audit", "copies"]
+        }
+      },
+      {
+        "id": "hold-es-location-store",
+        "family": "LOCATION",
+        "language": "ES",
+        "query": "Dónde almacena agente métricas?",
+        "expected": {
+          "role": "LOCATION",
+          "relationAnchor": "almacena",
+          "boundArgumentAnchors": ["agente", "metricas"]
+        }
+      },
+      {
+        "id": "hold-es-location-publish",
+        "family": "LOCATION",
+        "language": "ES",
+        "query": "Dónde publica servicio eventos?",
+        "expected": {
+          "role": "LOCATION",
+          "relationAnchor": "publica",
+          "boundArgumentAnchors": ["servicio", "eventos"]
+        }
+      },
+      {
+        "id": "hold-unsupported-why",
+        "family": "UNSUPPORTED",
+        "language": "EN",
+        "query": "Why does gateway retry?",
+        "expected": null
+      },
+      {
+        "id": "hold-unsupported-how",
+        "family": "UNSUPPORTED",
+        "language": "EN",
+        "query": "How does worker recover?",
+        "expected": null
+      },
+      {
+        "id": "hold-unsupported-when-es",
+        "family": "UNSUPPORTED",
+        "language": "ES",
+        "query": "Cuándo inicia despliegue?",
+        "expected": null
+      },
+      {
+        "id": "hold-unsupported-prose",
+        "family": "UNSUPPORTED",
+        "language": "EN",
+        "query": "Explain the deployment pipeline.",
+        "expected": null
+      }
+    ]
+  },
+  "protocol": {
+    "developmentFamilies": ["SUBJECT_DIRECT", "OBJECT_AUXILIARY"],
+    "heldoutFamilies": ["COPULAR_RELATION", "LOCATION", "UNSUPPORTED"],
+    "familyDisjoint": true,
+    "noTuningAfterHeldout": true
+  },
+  "promotionRule": {
+    "developmentStrictAccuracy": 1,
+    "heldoutStrictAccuracyAtLeast": 0.9,
+    "unsupportedFalseProjectionRate": 0,
+    "relationAnchorAccuracyAtLeast": 0.9,
+    "boundArgumentExactAccuracyAtLeast": 0.9
+  }
+}

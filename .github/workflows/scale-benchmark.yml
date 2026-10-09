@@ -119,6 +119,263 @@ jobs:
         if: always()
         run: docker compose down -v --remove-orphans
 
+  retrieval-quality-scale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - run: docker compose up -d --wait postgres
+      - run: pnpm db:migrate
+      - name: Build workspace for retrieval quality scale benchmark
+        run: pnpm build
+      - name: Execute fixed-gold retrieval quality scale benchmark
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          pnpm benchmark:retrieval:quality-scale -- \
+            --output reports/ci/retrieval-quality-scale.json \
+            --distractor-counts 1000,10000,20000,50000,100000 \
+            --iterations 3 \
+            2>&1 | tee reports/ci/retrieval-quality-scale.log
+      - name: Validate fixed-gold retrieval quality scale evidence
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/retrieval-quality-scale.json", "utf8"),
+          );
+          if (report.schemaVersion !== "akp.retrieval-quality-scale.v2") {
+            throw new Error(`Unexpected R8 schema: ${report.schemaVersion}`);
+          }
+          if (report.evidenceLevel !== "SYNTHETIC_ISOLATED_POSTGRES") {
+            throw new Error(`Unexpected R8 evidence level: ${report.evidenceLevel}`);
+          }
+          if (report.outcome === "INCONCLUSIVE") {
+            throw new Error("Full R8 matrix must produce PROMOTE or REJECT, not INCONCLUSIVE.");
+          }
+          if (JSON.stringify(report.scope?.targets) !== JSON.stringify([0, 1000, 10000, 20000, 50000, 100000])) {
+            throw new Error(`R8 target matrix changed: ${JSON.stringify(report.scope?.targets)}`);
+          }
+          for (const key of [
+            "fixedGold",
+            "goldResolvedBeforeRetrieval",
+            "queryKnowledgeUsed",
+            "syntheticFixtureDatabase",
+            "cleanupSucceeded",
+          ]) {
+            if (report.acceptance?.[key] !== true) {
+              throw new Error(`R8 acceptance failed: ${key}`);
+            }
+          }
+          if (report.acceptance?.goldLabelScope !== "CLOSED_GOLD_BENCHMARK") {
+            throw new Error(
+              `R8 gold label scope is not explicit: ${report.acceptance?.goldLabelScope}`,
+            );
+          }
+          if (report.acceptance?.semanticLabelAuthorityMeasured !== false) {
+            throw new Error(
+              "R8 must not claim universal semantic authority for closed benchmark labels.",
+            );
+          }
+          if (report.acceptance?.topKBoundsChanged !== false) {
+            throw new Error("R8 must not change topK bounds.");
+          }
+          const expectedFamilies = [
+            "UNRELATED",
+            "NEAR_DUPLICATE",
+            "STALE_VERSION",
+            "SAME_TITLE_OTHER_VAULT",
+            "WRONG_RELATION",
+            "CLOSE_NUMBER_DATE",
+            "CONTRADICTORY_POLICY",
+          ];
+          const rows = Array.isArray(report.results) ? report.results : [];
+          if (rows.length !== 6) {
+            throw new Error(`Expected six R8 rows including baseline, got ${rows.length}.`);
+          }
+          let previous = Object.fromEntries(expectedFamilies.map((family) => [family, 0]));
+          for (const row of rows) {
+            const counts = row.distractorFamilies ?? {};
+            const total = Object.values(counts).reduce(
+              (sum, value) => sum + Number(value ?? 0),
+              0,
+            );
+            if (total !== row.distractorCount) {
+              throw new Error(`R8 family counts do not sum to ${row.distractorCount}.`);
+            }
+            for (const family of expectedFamilies) {
+              if (!Number.isInteger(counts[family]) || counts[family] < 0) {
+                throw new Error(`R8 family ${family} has invalid count.`);
+              }
+              if (row.distractorCount > 0 && counts[family] <= previous[family]) {
+                throw new Error(`R8 family ${family} did not grow at target ${row.distractorCount}.`);
+              }
+            }
+            if (
+              typeof row.relevance?.anyHitAtK?.["10"] !== "number" ||
+              typeof row.relevance?.recallAtK?.["10"] !== "number"
+            ) {
+              throw new Error(
+                `R8 row ${row.distractorCount} must report both any-hit and required-unit recall.`,
+              );
+            }
+            if (
+              (row.falseAcceptance?.negativeCases ?? 0) < 4 ||
+              typeof row.falseAcceptance?.negativeFalseAcceptanceRate !== "number"
+            ) {
+              throw new Error(
+                `R8 row ${row.distractorCount} lacks sufficient explicit no-answer false-acceptance evidence.`,
+              );
+            }
+            if (typeof row.falseAcceptance?.outsideClosedGoldRate !== "number") {
+              throw new Error(
+                `R8 row ${row.distractorCount} lacks the outside-closed-gold admission diagnostic.`,
+              );
+            }
+            for (const result of row.cases ?? []) {
+              if (!result.goldStagePresence || !result.stageAttribution) {
+                throw new Error(`R8 case ${result.caseId} lacks stage attribution.`);
+              }
+              const attribution = result.stageAttribution;
+              const isExplicitNoAnswer =
+                result.expectNoAnswer === true &&
+                (result.goldTargets?.length ?? 0) === 0;
+              if (
+                attribution.labelScope !== "CLOSED_GOLD_BENCHMARK" ||
+                attribution.labelsComplete !== isExplicitNoAnswer
+              ) {
+                throw new Error(
+                  `R8 case ${result.caseId} misstates benchmark label authority.`,
+                );
+              }
+              if ((attribution.unresolved?.length ?? 0) !== 0) {
+                throw new Error(
+                  `R8 case ${result.caseId} has unresolved stage attribution: ${JSON.stringify(attribution.unresolved)}`,
+                );
+              }
+              for (const stage of [
+                "ingestion",
+                "unitization",
+                "candidates",
+                "channels",
+                "rerank",
+                "shortlist",
+                "admission",
+              ]) {
+                if (attribution.measuredStages?.[stage] !== true) {
+                  throw new Error(
+                    `R8 case ${result.caseId} did not measure stage ${stage}.`,
+                  );
+                }
+              }
+              if (
+                attribution.measuredStages?.context !== false ||
+                attribution.measuredStages?.generation !== false
+              ) {
+                throw new Error(
+                  `R8 case ${result.caseId} must leave context/generation explicitly unmeasured.`,
+                );
+              }
+              if (!Array.isArray(attribution.admittedOutsideAdmissible)) {
+                throw new Error(
+                  `R8 case ${result.caseId} lacks outside-gold admission diagnostics.`,
+                );
+              }
+              if (isExplicitNoAnswer) {
+                const falsePositiveFailures = (attribution.failures ?? []).filter(
+                  (failure) => failure.stage === "ADMISSION_FALSE_POSITIVE",
+                );
+                const admittedOutside = attribution.admittedOutsideAdmissible;
+                for (const failure of falsePositiveFailures) {
+                  if (
+                    !failure.target?.documentId ||
+                    !Object.prototype.hasOwnProperty.call(
+                      failure.target,
+                      "unitId",
+                    ) ||
+                    failure.target.evidenceSpan !== null
+                  ) {
+                    throw new Error(
+                      `R8 no-answer case ${result.caseId} has incomplete false-positive target metadata.`,
+                    );
+                  }
+                }
+                const identityKey = (identity) =>
+                  `${identity.documentId}:${identity.unitId ?? "document"}`;
+                const admittedOutsideKeys = admittedOutside.map(identityKey);
+                const falsePositiveKeys = falsePositiveFailures.map(
+                  (failure) => identityKey(failure.target),
+                );
+                if (Boolean(result.admitted) !== (admittedOutsideKeys.length > 0)) {
+                  throw new Error(
+                    `R8 no-answer case ${result.caseId} disagrees with admitted metadata.`,
+                  );
+                }
+                if (
+                  falsePositiveKeys.length !== admittedOutsideKeys.length ||
+                  [...falsePositiveKeys].sort().join("\n") !==
+                    [...admittedOutsideKeys].sort().join("\n")
+                ) {
+                  throw new Error(
+                    `R8 no-answer case ${result.caseId} false-positive attribution does not match admitted metadata.`,
+                  );
+                }
+              } else if (
+                (attribution.failures ?? []).some(
+                  (failure) => failure.stage === "ADMISSION_FALSE_POSITIVE",
+                )
+              ) {
+                throw new Error(
+                  `R8 positive case ${result.caseId} promoted outside-gold evidence to a false-positive label.`,
+                );
+              }
+            }
+            previous = counts;
+          }
+          console.log(JSON.stringify({
+            outcome: report.outcome,
+            targets: report.scope.targets,
+            finalFamilies: rows.at(-1)?.distractorFamilies,
+            finalRecallAt10: rows.at(-1)?.relevance?.recallAtK?.["10"],
+            finalNegativeFalseAcceptance:
+              rows.at(-1)?.falseAcceptance?.negativeFalseAcceptanceRate,
+            finalOutsideClosedGoldAdmission:
+              rows.at(-1)?.falseAcceptance?.outsideClosedGoldRate,
+          }, null, 2));
+          NODE
+      - name: Capture R8 scale diagnostics
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          mkdir -p reports/ci
+          docker compose ps --all > reports/ci/retrieval-quality-scale-compose.txt 2>&1
+          docker compose logs --no-color --timestamps postgres \
+            > reports/ci/retrieval-quality-scale-postgres.log 2>&1
+      - name: Upload fixed-gold retrieval quality scale evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: retrieval-quality-scale-${{ github.run_id }}
+          path: reports/ci
+          if-no-files-found: error
+          retention-days: 14
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
+
   enterprise-state-scale:
     runs-on: ubuntu-latest
     timeout-minutes: 15

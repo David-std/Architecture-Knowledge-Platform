@@ -1,11 +1,21 @@
+import { contextualEvidenceSpanText } from "./contextual-evidence.js";
 import type { SearchHit } from "@akp/contracts";
 import {
   DEFAULT_DETERMINISTIC_PASSAGE_SUPPORT_POLICY,
+  quantitativeEvidenceMatches,
+  dateYearEvidenceMatches,
+  explicitYearBindingsMatch,
+  explicitYearValues,
   resolveDeterministicPassageSupportPolicy,
   verifyDeterministicPassageSupport,
   type DeterministicPassageSupportPolicy,
   type DeterministicPassageSupportSignal,
 } from "./support-verifier.js";
+import {
+  SourceVerificationError,
+  sourceVerificationFailureCode,
+  validateSourceBoundVerification,
+} from "./source-verification.js";
 
 const DIRECT_SUPPORT_CHANNELS = new Set([
   "exact",
@@ -38,7 +48,14 @@ export interface RetrievalAnswerabilityContext {
 export type QueryConditionedEvidenceDecision =
   "SUPPORTS" | "CONTRADICTS" | "INSUFFICIENT";
 
-export type QueryConditionedEvidenceVerifierMode = "SHADOW" | "ENFORCE";
+/**
+ * SHADOW and ENFORCE apply a single verifier on top of the deterministic gate.
+ * LAYERED admits only through `LayeredEvidenceAdmissionPipeline` (see
+ * `assessRetrievalAnswerabilityWithLayeredAdmission`); it is not a verifier
+ * policy mode.
+ */
+export type QueryConditionedEvidenceVerifierMode =
+  "SHADOW" | "ENFORCE" | "LAYERED";
 
 export interface QueryConditionedEvidenceSpan {
   /** Zero-based UTF-16 offset in the exact passage supplied to the verifier. */
@@ -51,7 +68,7 @@ export interface QueryConditionedEvidenceVerification {
   decision: QueryConditionedEvidenceDecision;
   /** Optional calibrated provider score. Core policy never treats it as proof. */
   score?: number;
-  /** SUPPORTS must point to an inspectable span in the supplied passage. */
+  /** SUPPORTS and CONTRADICTS must point to an inspectable source span. */
   evidenceSpan?: QueryConditionedEvidenceSpan;
   reason: string;
 }
@@ -60,6 +77,8 @@ export interface QueryConditionedEvidenceVerifierInput {
   query: string;
   candidateKey: string;
   title: string;
+  /** Section headings that scope the passage, outermost first. */
+  headingPath?: readonly string[];
   passage: string;
   unitType: string | null;
   parentUnitType: string | null;
@@ -71,6 +90,10 @@ export interface QueryConditionedEvidenceVerifier {
   verify(
     input: QueryConditionedEvidenceVerifierInput,
   ): Promise<QueryConditionedEvidenceVerification>;
+  /** Optional batched form; results are returned in input order. */
+  verifyBatch?(
+    inputs: readonly QueryConditionedEvidenceVerifierInput[],
+  ): Promise<QueryConditionedEvidenceVerification[]>;
 }
 
 export interface QueryConditionedEvidencePolicy {
@@ -113,6 +136,7 @@ export type RetrievalAnswerabilityReason =
   | "PASSAGE_TEXT_SUPPORT"
   | "PASSAGE_CUE_SUPPORT"
   | "CLAIM_RELATION_SUPPORT"
+  | "CONCEPT_DEFINITION_SUPPORT"
   | "SUPPORT_NOT_DEMONSTRATED";
 
 export interface CandidatePassageSupport {
@@ -266,7 +290,8 @@ function supportedReason(reason: CandidateSupportReason): boolean {
     reason === "QUERY_CONDITIONED_SUPPORT" ||
     reason === "PASSAGE_TEXT_SUPPORT" ||
     reason === "PASSAGE_CUE_SUPPORT" ||
-    reason === "CLAIM_RELATION_SUPPORT"
+    reason === "CLAIM_RELATION_SUPPORT" ||
+    reason === "CONCEPT_DEFINITION_SUPPORT"
   );
 }
 
@@ -351,6 +376,7 @@ function topLevelReason(
     "PASSAGE_TEXT_SUPPORT",
     "PASSAGE_CUE_SUPPORT",
     "CLAIM_RELATION_SUPPORT",
+    "CONCEPT_DEFINITION_SUPPORT",
   ] as const) {
     if (reasons.includes(reason)) return reason;
   }
@@ -473,53 +499,90 @@ function resolveQueryConditionedEvidencePolicy(
 }
 
 function exactCandidatePassage(hit: SearchHit): string {
-  return hit.parentContext?.trim() || hit.excerpt.trim();
+  return hit.excerpt.trim();
 }
 
 function hardDeterministicRequirementsSatisfied(
-  signal: CandidateAnswerabilitySignal,
+  signal: {
+    passageSupport: Pick<
+      CandidatePassageSupport,
+      "requiredAnswerCues" | "matchedAnswerCues"
+    >;
+  },
+  evidence: {
+    query: string;
+    valueText: string;
+    scopedText: string;
+    periodScope: string;
+    factGroups?: readonly { valueText: string; scopedText: string }[];
+  },
 ): boolean {
-  return (["QUANTITY", "DATE_YEAR"] as const).every(
-    (cue) =>
-      !signal.passageSupport.requiredAnswerCues.includes(cue) ||
-      signal.passageSupport.matchedAnswerCues.includes(cue),
-  );
+  if (!explicitYearBindingsMatch(evidence.periodScope, evidence.query))
+    return false;
+  return (["QUANTITY", "DATE_YEAR"] as const).every((cue) => {
+    if (!signal.passageSupport.requiredAnswerCues.includes(cue)) return true;
+    return (evidence.factGroups ?? [evidence]).every((group) =>
+      cue === "QUANTITY"
+        ? quantitativeEvidenceMatches(
+            group.valueText,
+            evidence.query,
+            group.scopedText,
+          )
+        : dateYearEvidenceMatches(group.valueText, evidence.query),
+    );
+  });
 }
 
-function validateQueryConditionedVerification(
-  passage: string,
-  result: QueryConditionedEvidenceVerification,
-): QueryConditionedEvidenceVerification {
-  if (
-    result.decision !== "SUPPORTS" &&
-    result.decision !== "CONTRADICTS" &&
-    result.decision !== "INSUFFICIENT"
-  ) {
-    throw new Error("QUERY_CONDITIONED_EVIDENCE_DECISION_INVALID");
+function verifierInput(
+  hit: SearchHit,
+  query: string,
+): QueryConditionedEvidenceVerifierInput {
+  return {
+    query,
+    candidateKey: retrievalAnswerabilityCandidateKey(hit),
+    title: hit.title,
+    ...(hit.headingPath ? { headingPath: hit.headingPath } : {}),
+    passage: exactCandidatePassage(hit),
+    unitType: hit.unitType ?? null,
+    parentUnitType: hit.parentUnitType ?? null,
+    documentType: hit.type,
+  };
+}
+
+function verificationTrace(
+  verifier: QueryConditionedEvidenceVerifier,
+  policy: QueryConditionedEvidencePolicy,
+  input: QueryConditionedEvidenceVerifierInput,
+  result: unknown,
+): QueryConditionedEvidenceTrace {
+  try {
+    const verified = validateSourceBoundVerification(input.passage, result);
+    return {
+      verifierId: verifier.id,
+      mode: policy.mode,
+      decision: verified.decision,
+      score: verified.score ?? null,
+      reason: verified.reason,
+      evidenceSpan: verified.evidenceSpan ?? null,
+    };
+  } catch (error) {
+    return verifierErrorTrace(verifier, policy, error);
   }
-  if (!result.reason?.trim()) {
-    throw new Error("QUERY_CONDITIONED_EVIDENCE_REASON_REQUIRED");
-  }
-  if (
-    result.score !== undefined &&
-    (!Number.isFinite(result.score) || result.score < 0 || result.score > 1)
-  ) {
-    throw new Error("QUERY_CONDITIONED_EVIDENCE_SCORE_INVALID");
-  }
-  if (result.decision === "SUPPORTS") {
-    const span = result.evidenceSpan;
-    if (
-      !span ||
-      !Number.isSafeInteger(span.startOffset) ||
-      !Number.isSafeInteger(span.endOffset) ||
-      span.startOffset < 0 ||
-      span.endOffset <= span.startOffset ||
-      span.endOffset > passage.length
-    ) {
-      throw new Error("QUERY_CONDITIONED_EVIDENCE_SPAN_REQUIRED");
-    }
-  }
-  return { ...result, reason: result.reason.trim() };
+}
+
+function verifierErrorTrace(
+  verifier: QueryConditionedEvidenceVerifier,
+  policy: QueryConditionedEvidencePolicy,
+  error: unknown,
+): QueryConditionedEvidenceTrace {
+  return {
+    verifierId: verifier.id,
+    mode: policy.mode,
+    decision: "VERIFIER_ERROR",
+    score: null,
+    reason: sourceVerificationFailureCode(error),
+    evidenceSpan: null,
+  };
 }
 
 async function verifyQueryConditionedEvidence(
@@ -529,55 +592,55 @@ async function verifyQueryConditionedEvidence(
   policy: QueryConditionedEvidencePolicy,
 ): Promise<Map<string, QueryConditionedEvidenceTrace>> {
   const output = new Map<string, QueryConditionedEvidenceTrace>();
-  const candidates = hits.slice(0, policy.maxCandidates);
+  const inputs = hits
+    .slice(0, policy.maxCandidates)
+    .map((hit) => verifierInput(hit, query));
+  if (verifier.verifyBatch) {
+    try {
+      const results: unknown = await verifier.verifyBatch(inputs);
+      if (!Array.isArray(results) || results.length !== inputs.length) {
+        throw new SourceVerificationError(
+          "QUERY_CONDITIONED_EVIDENCE_BATCH_SIZE_MISMATCH",
+        );
+      }
+      inputs.forEach((input, index) =>
+        output.set(
+          input.candidateKey,
+          verificationTrace(verifier, policy, input, results[index]),
+        ),
+      );
+    } catch (error) {
+      for (const input of inputs) {
+        output.set(
+          input.candidateKey,
+          verifierErrorTrace(verifier, policy, error),
+        );
+      }
+    }
+    return output;
+  }
   for (
     let offset = 0;
-    offset < candidates.length;
+    offset < inputs.length;
     offset += policy.maxConcurrency
   ) {
-    const batch = candidates.slice(offset, offset + policy.maxConcurrency);
+    const batch = inputs.slice(offset, offset + policy.maxConcurrency);
     const rows = await Promise.all(
-      batch.map(async (hit) => {
-        const candidateKey = retrievalAnswerabilityCandidateKey(hit);
-        const passage = exactCandidatePassage(hit);
+      batch.map(async (input) => {
         try {
-          const result = validateQueryConditionedVerification(
-            passage,
-            await verifier.verify({
-              query,
-              candidateKey,
-              title: hit.title,
-              passage,
-              unitType: hit.unitType ?? null,
-              parentUnitType: hit.parentUnitType ?? null,
-              documentType: hit.type,
-            }),
-          );
           return [
-            candidateKey,
-            {
-              verifierId: verifier.id,
-              mode: policy.mode,
-              decision: result.decision,
-              score: result.score ?? null,
-              reason: result.reason,
-              evidenceSpan: result.evidenceSpan ?? null,
-            } satisfies QueryConditionedEvidenceTrace,
+            input.candidateKey,
+            verificationTrace(
+              verifier,
+              policy,
+              input,
+              await verifier.verify(input),
+            ),
           ] as const;
         } catch (error) {
           return [
-            candidateKey,
-            {
-              verifierId: verifier.id,
-              mode: policy.mode,
-              decision: "VERIFIER_ERROR",
-              score: null,
-              reason:
-                error instanceof Error
-                  ? error.message
-                  : "QUERY_CONDITIONED_EVIDENCE_VERIFIER_ERROR",
-              evidenceSpan: null,
-            } satisfies QueryConditionedEvidenceTrace,
+            input.candidateKey,
+            verifierErrorTrace(verifier, policy, error),
           ] as const;
         }
       }),
@@ -603,9 +666,9 @@ function enforcedQueryConditionedReason(
   if (trace.decision !== "SUPPORTS") {
     return "QUERY_CONDITIONED_INSUFFICIENT";
   }
-  return hardDeterministicRequirementsSatisfied(baseline)
-    ? "QUERY_CONDITIONED_SUPPORT"
-    : "QUERY_CONDITIONED_INSUFFICIENT";
+  // SUPPORTS reaches here only after validating its selected source facts.
+  // A baseline over the raw table cannot veto the verified column scope.
+  return "QUERY_CONDITIONED_SUPPORT";
 }
 
 /**
@@ -640,8 +703,11 @@ export async function assessRetrievalAnswerabilityWithVerifier(
     verifier,
     verifierPolicy,
   );
+  const hitsByKey = new Map(
+    hits.map((hit) => [retrievalAnswerabilityCandidateKey(hit), hit]),
+  );
   const candidateSignals = baseline.candidateSignals.map((signal) => {
-    const trace =
+    let trace =
       traces.get(signal.candidateKey) ??
       ({
         verifierId: verifier.id,
@@ -656,6 +722,89 @@ export async function assessRetrievalAnswerabilityWithVerifier(
       return { ...signal, queryConditionedEvidence: trace };
     }
 
+    const hit = hitsByKey.get(signal.candidateKey);
+    if (
+      trace.decision === "SUPPORTS" &&
+      trace.evidenceSpan &&
+      hit &&
+      signal.passageSupport.reason !== "DIRECT_CHANNEL_SUPPORT"
+    ) {
+      // Selected cell values retain their column scope, never sibling facts.
+      const evidence = contextualEvidenceSpanText(
+        exactCandidatePassage(hit),
+        trace.evidenceSpan,
+      );
+      // Explicit periods in selected columns take precedence over wider
+      // title/heading context. A model cannot substitute a neighboring period.
+      const requestedYears = explicitYearValues(query);
+      const periodScopeForCell = (
+        cell: (typeof evidence.selectedCells)[number],
+      ) =>
+        explicitYearValues(cell.header).length ? cell.header : cell.rowScope;
+      const periodCells = requestedYears.length
+        ? evidence.selectedCells.filter(
+            (cell) => explicitYearValues(periodScopeForCell(cell)).length > 0,
+          )
+        : [];
+      const matchingPeriodCells = periodCells.filter((cell) =>
+        explicitYearValues(periodScopeForCell(cell)).some((year) =>
+          requestedYears.includes(year),
+        ),
+      );
+      const periodEvidence = periodCells.length
+        ? {
+            valueText: matchingPeriodCells.map((cell) => cell.value).join("; "),
+            scopedText: evidence.scopedText,
+            periodScope: periodCells.map(periodScopeForCell).join("; "),
+            factGroups: requestedYears.map((year) => {
+              const cells = matchingPeriodCells.filter((cell) =>
+                explicitYearValues(periodScopeForCell(cell)).includes(year),
+              );
+              return {
+                valueText: cells.map((cell) => cell.value).join("; "),
+                scopedText: cells
+                  .map((cell) =>
+                    [cell.rowScope, cell.header, cell.value].join("; "),
+                  )
+                  .join("; "),
+              };
+            }),
+          }
+        : {
+            valueText: evidence.valueText,
+            scopedText: evidence.scopedText,
+            periodScope: explicitYearValues(evidence.scopedText).length
+              ? evidence.scopedText
+              : [
+                  hit.title,
+                  ...(hit.headingPath ?? []),
+                  evidence.scopedText,
+                ].join(" "),
+          };
+      const passageSupport = verifyDeterministicPassageSupport(
+        { ...hit, excerpt: evidence.scopedText },
+        query,
+        policyInput,
+      );
+      if (passageSupport.reason === "NO_CONCRETE_PASSAGE") {
+        trace = {
+          ...trace,
+          decision: "INSUFFICIENT",
+          reason: "EVIDENCE_SPAN_NOT_ASSERTION",
+        };
+      } else if (
+        !hardDeterministicRequirementsSatisfied(
+          { passageSupport },
+          { ...periodEvidence, query },
+        )
+      ) {
+        trace = {
+          ...trace,
+          decision: "INSUFFICIENT",
+          reason: "EVIDENCE_SPAN_MISSING_REQUIRED_FACT",
+        };
+      }
+    }
     const reason = enforcedQueryConditionedReason(signal, trace);
     return {
       ...signal,

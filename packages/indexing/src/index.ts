@@ -10,6 +10,7 @@ import { parseWikiLinks } from "@akp/vault-importer";
 import {
   createConfiguredEmbeddingProvider,
   parseKnowledgeUnits,
+  tableRowLexicalContextByUnitKey,
 } from "@akp/retrieval";
 import { withSpan } from "@akp/observability";
 import { rebuildCommunityIndex } from "./community-index.js";
@@ -18,6 +19,7 @@ import { buildEmbeddingIndex } from "./embedding-index.js";
 export * from "./embedding-generation.js";
 export * from "./embedding-index.js";
 export * from "./community-index.js";
+export * from "./source-projection-units.js";
 
 export interface ManagedChange {
   path: string;
@@ -515,6 +517,10 @@ async function rebuildChangedUnits(
   const parsed = activeDocuments.map((document) => ({
     document,
     units: parseKnowledgeUnits(document.title, document.body_cache),
+    lexicalContextByUnitKey: tableRowLexicalContextByUnitKey(
+      document.title,
+      document.body_cache,
+    ),
   }));
 
   const artifactIdsByDocument = new Map<string, string>();
@@ -593,12 +599,14 @@ async function rebuildChangedUnits(
           document_id,space_id,vault_id,unit_key,unit_type,heading_path,body,
           content_hash,corpus_revision,lifecycle,trust_tier,source_ids,
           token_estimate,parent_unit_id,document_revision,permissions,locator,
-          structural_order,container_only,embedding_eligible,artifact_id
+          structural_order,container_only,embedding_eligible,artifact_id,
+          lexical_context
         )
         select u.document_id,u.space_id,u.vault_id,u.unit_key,u.unit_type,
                u.heading_path,u.body,u.content_hash,$4,u.lifecycle,u.trust_tier,
                u.source_ids,u.token_estimate,null,$4,u.permissions,u.locator,
-               u.structural_order,u.container_only,u.embedding_eligible,u.artifact_id
+               u.structural_order,u.container_only,u.embedding_eligible,u.artifact_id,
+               u.lexical_context
           from knowledge_units u
           join knowledge_documents d on d.id=u.document_id
          where u.space_id=$1 and u.vault_id=$2 and u.corpus_revision=$3
@@ -616,7 +624,8 @@ async function rebuildChangedUnits(
           structural_order=excluded.structural_order,
           container_only=excluded.container_only,
           embedding_eligible=excluded.embedding_eligible,
-          artifact_id=excluded.artifact_id,updated_at=now()
+          artifact_id=excluded.artifact_id,
+          lexical_context=excluded.lexical_context,updated_at=now()
         `,
         [
           options.spaceId,
@@ -652,7 +661,7 @@ async function rebuildChangedUnits(
         ],
       );
     }
-    for (const { document, units } of parsed) {
+    for (const { document, units, lexicalContextByUnitKey } of parsed) {
       const unitIds = new Map<string, string>();
       for (const unit of units) {
         const inserted = await client.query<{ id: string }>(
@@ -661,9 +670,10 @@ async function rebuildChangedUnits(
             document_id,space_id,vault_id,unit_key,unit_type,heading_path,body,
             content_hash,corpus_revision,lifecycle,trust_tier,source_ids,
             token_estimate,parent_unit_id,document_revision,permissions,locator,
-            structural_order,container_only,embedding_eligible,artifact_id
+            structural_order,container_only,embedding_eligible,artifact_id,
+            lexical_context
           ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,
-                   $17::jsonb,$18,$19,$20,$21)
+                   $17::jsonb,$18,$19,$20,$21,$22)
           on conflict(document_id,unit_key,corpus_revision) do update set
             space_id=excluded.space_id,vault_id=excluded.vault_id,
             unit_type=excluded.unit_type,heading_path=excluded.heading_path,
@@ -676,7 +686,8 @@ async function rebuildChangedUnits(
             structural_order=excluded.structural_order,
             container_only=excluded.container_only,
             embedding_eligible=excluded.embedding_eligible,
-            artifact_id=excluded.artifact_id,updated_at=now()
+            artifact_id=excluded.artifact_id,
+            lexical_context=excluded.lexical_context,updated_at=now()
           returning id
           `,
           [
@@ -703,6 +714,7 @@ async function rebuildChangedUnits(
             unit.containerOnly,
             unit.embeddingEligible,
             artifactIdsByDocument.get(document.id) ?? artifactId,
+            lexicalContextByUnitKey.get(unit.unitKey) ?? "",
           ],
         );
         const unitId = inserted.rows[0]?.id;

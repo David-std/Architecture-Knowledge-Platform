@@ -13,8 +13,16 @@ docker compose ps
 
 Set private values for `AKP_API_TOKEN`, `AKP_API_TOKEN_SCOPES`,
 `AKP_EXTRACTOR_TOKEN`, MinIO credentials and managed-repository paths. Do not
-reuse example placeholders or commit `.env`. Start API, worker and Web in
-separate terminals:
+reuse example placeholders or commit `.env`. `AKP_MANAGED_REPO` must name the
+actual root of its managed Git worktree. For a new repository, choose an
+independent directory outside another checkout. An uninitialized subdirectory
+of a checkout is rejected with `GIT_REPOSITORY_ROOT_INVALID`; Git would otherwise
+discover and operate on the ancestor repository. Linked Git worktree roots are
+valid, but an unavailable `main` checkout fails without reinitializing files.
+An empty setting uses the temporary managed-knowledge default consistently in
+API and worker; it must not resolve to the application working directory.
+
+Start API, worker and Web in separate terminals:
 
 ```powershell
 pnpm --filter @akp/api dev
@@ -205,3 +213,53 @@ git diff --check
 
 Broad retrieval/document/agent/load comparisons are release validation evidence,
 not a reason to weaken focused correctness gates.
+
+## Docling on CPU
+
+Use the locked CPU profile on hosts without a GPU:
+
+```powershell
+cd apps/extractor
+uv sync --locked --extra docling-cpu
+uv run --locked --extra docling-cpu python -c "import torch; print(torch.__version__); assert torch.version.cuda is None"
+```
+
+Select `docling-cpu` on every `uv run` that needs this environment. It installs the optional Docling provider and pins the same Torch, TorchVision and Docling Core versions as the existing provider lock, with CPU wheels on Linux and Windows. The [explicit PyTorch index](https://docs.astral.sh/uv/guides/integration/pytorch/#configuring-accelerators-with-optional-dependencies) is scoped to those packages. Provider selection remains an explicit extractor configuration decision.
+
+The CPU profile conflicts with the normal `docling` and `marker` extras to prevent mixing incompatible accelerator sources. Use the normal profile for the existing accelerator setup; base installation still excludes heavyweight providers. CI selects the CPU profile for native Docling and OCR tests and asserts `torch.version.cuda is None` before extraction.
+
+## Recover missing or corrupt historical source projections
+
+The `source_artifacts` structured representation is not the same as the
+immutable source object. For a legacy artifact without derived Markdown, an
+operator may reconstruct **only** that missing representation, provided its
+stored structured SHA, extractor/configuration identities, source SHA and
+redaction pass validation.
+
+1. Select an **individual** ACTIVE source in an authorized, enabled vault and
+   independently inspect its source ID, artifact ID, source SHA-256 and source
+   object key. Never copy the source's private text or object key into Git.
+2. Run `pnpm backfill:source-markdown` with `--space-id`, `--vault-id`,
+   `--source-id`, `--artifact-id`, `--source-sha256`, first **without**
+   `--apply`. A failure in the identity/structured hash/redaction check
+   means **do not apply**. An accepted dry-run emits metadata-only hashes.
+3. Once the source/structured digest and target are independently confirmed,
+   repeat with `--apply`. The operation writes the Markdown and revision-
+   pinned source units atomically, then may be safely repeated.
+4. For corrupted or mismatched structured data, stop. Preserve the original
+   artifact as incident evidence and verify the original file's SHA matches
+   the immutable `sources.sha256` and the object-store object. Only an
+   authorized operator may explicitly resubmit the verified original via
+   `POST /v1/ingest` with exact `expectedSha256`, the same vault and
+   `REVIEW_REQUIRED` policy. The existing worker re-extracts and records
+   provider events; publication still requires the normal human review.
+   If source bytes cannot be verified or the extractor is unavailable,
+   quarantine the record for manual investigation instead of guessing.
+5. Verify the new projection's SHA, source units, locator span replay,
+   artifact/extractor versions and access control. Never repair by copying
+   a rendered UI preview, overriding source SHA, modifying approved Git
+   documents directly, or merging a draft automatically.
+
+The recovery operation processes exactly one pinned artifact at a time.
+It is not a bulk migration, source deletion or automatic OCR reprocessing
+procedure; keep its record with the audit/incident context.

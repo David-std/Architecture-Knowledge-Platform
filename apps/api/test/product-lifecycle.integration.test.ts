@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -76,7 +77,10 @@ async function waitFor<T>(
   throw new Error(`Timed out waiting for ${label}: ${JSON.stringify(last)}`);
 }
 
-async function runWorkerDrain(): Promise<void> {
+async function runWorkerDrain(
+  vectorEnabled = false,
+  compiler?: { baseUrl: string },
+): Promise<void> {
   const root = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../../..",
@@ -104,7 +108,14 @@ async function runWorkerDrain(): Promise<void> {
       AKP_RAW_SECRET_KEY: process.env.AKP_RAW_SECRET_KEY ?? "change-me",
       AKP_EXTRACTOR_TOKEN:
         process.env.AKP_EXTRACTOR_TOKEN ?? "local-extractor-development-token",
-      AKP_VECTOR_ENABLED: "false",
+      AKP_VECTOR_ENABLED: vectorEnabled ? "true" : "false",
+      AKP_MODEL_ROLE_POLICIES_JSON: "",
+      AKP_MODEL_ENDPOINTS_JSON: "",
+      AKP_LLM_PROVIDER: compiler ? "openai-compatible" : "disabled",
+      AKP_LLM_BASE_URL: compiler?.baseUrl ?? "",
+      AKP_LLM_MODEL: compiler ? "e2e-local-grounded-compiler" : "",
+      AKP_LLM_DATA_RESIDENCY: "LOCAL_ONLY",
+      AKP_LLM_MAX_RETRIES: "0",
     },
   });
   if (result.stderr.trim()) {
@@ -138,27 +149,27 @@ async function removeRawObjects(keys: readonly string[]): Promise<void> {
  * intentionally retained: the platform makes them append-only evidence and
  * their foreign key keeps the vault registry row addressable after cleanup.
  */
-async function purgeMutableFixtures(): Promise<void> {
-  if (!db || !vaultId) return;
+async function purgeMutableFixtures(targetVaultId = vaultId): Promise<void> {
+  if (!db || !targetVaultId) return;
   const sourceRows = await db.pool.query<{ object_key: string }>(
     "select object_key from sources where vault_id=$1",
-    [vaultId],
+    [targetVaultId],
   );
   sourceObjectKeys.push(...sourceRows.rows.map((row) => row.object_key));
 
   const documentRows = await db.pool.query<{ id: string }>(
     "select id from knowledge_documents where vault_id=$1",
-    [vaultId],
+    [targetVaultId],
   );
   const documentIds = documentRows.rows.map((row) => row.id);
   const jobRows = await db.pool.query<{ id: string }>(
     "select id from ingest_jobs where vault_id=$1",
-    [vaultId],
+    [targetVaultId],
   );
   const jobIds = jobRows.rows.map((row) => row.id);
   const reviewRows = await db.pool.query<{ id: string }>(
     "select id from reviews where vault_id=$1",
-    [vaultId],
+    [targetVaultId],
   );
   const reviewIds = reviewRows.rows.map((row) => row.id);
 
@@ -175,25 +186,31 @@ async function purgeMutableFixtures(): Promise<void> {
     [repositoryPublicationKey(managedRepository)],
   );
   await db.pool.query("delete from context_packets where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
-  await db.pool.query("delete from eval_runs where vault_id=$1", [vaultId]);
+  await db.pool.query("delete from eval_runs where vault_id=$1", [
+    targetVaultId,
+  ]);
   await db.pool.query("delete from knowledge_lint_runs where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
-  await db.pool.query("delete from error_book where vault_id=$1", [vaultId]);
+  await db.pool.query("delete from error_book where vault_id=$1", [
+    targetVaultId,
+  ]);
   await db.pool.query("delete from schema_dry_runs where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
   await db.pool.query("delete from agent_sessions where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
-  await db.pool.query("delete from projects where vault_id=$1", [vaultId]);
+  await db.pool.query("delete from projects where vault_id=$1", [
+    targetVaultId,
+  ]);
   await db.pool.query("delete from incremental_index_runs where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
   await db.pool.query("delete from vault_index_revisions where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
   if (reviewIds.length) {
     await db.pool.query(
@@ -240,10 +257,10 @@ async function purgeMutableFixtures(): Promise<void> {
     );
   }
   await db.pool.query("delete from contradiction_clusters where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
   await db.pool.query("delete from embedding_generations where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
   if (jobIds.length) {
     await db.pool.query(
@@ -255,12 +272,14 @@ async function purgeMutableFixtures(): Promise<void> {
       [jobIds],
     );
   }
-  await db.pool.query("delete from reviews where vault_id=$1", [vaultId]);
-  await db.pool.query("delete from ingest_jobs where vault_id=$1", [vaultId]);
+  await db.pool.query("delete from reviews where vault_id=$1", [targetVaultId]);
+  await db.pool.query("delete from ingest_jobs where vault_id=$1", [
+    targetVaultId,
+  ]);
   const sourceIds = (
     await db.pool.query<{ id: string }>(
       "select id from sources where vault_id=$1",
-      [vaultId],
+      [targetVaultId],
     )
   ).rows.map((row) => row.id);
   if (sourceIds.length) {
@@ -277,15 +296,21 @@ async function purgeMutableFixtures(): Promise<void> {
       [sourceIds],
     );
   }
-  await db.pool.query("delete from sources where vault_id=$1", [vaultId]);
-  await db.pool.query("delete from audit_events where vault_id=$1", [vaultId]);
-  await db.pool.query("delete from api_tokens where token_hash=$1", [
-    tokenHash,
+  await db.pool.query("delete from sources where vault_id=$1", [targetVaultId]);
+  await db.pool.query("delete from audit_events where vault_id=$1", [
+    targetVaultId,
   ]);
+  if (targetVaultId === vaultId) {
+    await db.pool.query("delete from api_tokens where token_hash=$1", [
+      tokenHash,
+    ]);
+  }
   await db.pool.query("delete from vault_memberships where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
-  await db.pool.query("update vaults set enabled=false where id=$1", [vaultId]);
+  await db.pool.query("update vaults set enabled=false where id=$1", [
+    targetVaultId,
+  ]);
   await removeRawObjects(sourceObjectKeys);
 }
 
@@ -500,6 +525,402 @@ afterAll(async () => {
 });
 
 describe("product lifecycle E2E", () => {
+  it("ingests identical bytes with compiler OFF and local mock ON without publishing", async () => {
+    const marker = "s1-dual-" + randomUUID().replaceAll("-", "");
+    const name = "Identical source under two compiler modes";
+    const fence = String.fromCharCode(96).repeat(3);
+    const original = [
+      "# " + name,
+      "",
+      "Exact source marker: " + marker,
+      "",
+      "| condition | timeout |",
+      "| --- | --- |",
+      "| recovery | 47 minutes |",
+      "",
+      fence + "typescript",
+      "const recoveryDeadline = 47;",
+      fence,
+      "",
+      "Historical passage: verify immutable recovery provenance. ".repeat(165),
+      "",
+      "End-of-file evidence marker: " + marker,
+    ].join("\n");
+    const originalHash = createHash("sha256").update(original).digest("hex");
+    const files = ["off", "on"].map((mode) =>
+      path.join(sourceRoot, "s1-dual-" + mode + "-" + randomUUID() + ".md"),
+    );
+    await Promise.all(files.map((file) => writeFile(file, original, "utf8")));
+    const createdVaultIds: string[] = [];
+    let provider: ReturnType<typeof createServer> | undefined;
+    const providerInputs: Array<Record<string, unknown>> = [];
+    try {
+      for (const mode of ["off", "on"]) {
+        const vault = await registerVault(
+          db,
+          {
+            vaultKey: "s1-dual-" + mode + "-" + randomUUID().slice(0, 12),
+            name: "S1 dual-route " + mode,
+            spaceId: defaultSpace,
+            gitRepository: null,
+            defaultBranch: "main",
+            localPath: path.join(fixtureRoot, "s1-dual-vault-" + mode),
+            contentRoots: ["."],
+            sourceRoots: [sourceRoot],
+            schemaProfile: {},
+            evalPack: {
+              name: "generic",
+              version: "1",
+              enabled: true,
+              criticalCases: [],
+            },
+            retrievalConfig: {},
+            permissions: {},
+            visibility: "PRIVATE",
+            enabled: true,
+          },
+          { ownerUserId: admin },
+        );
+        createdVaultIds.push(vault.id);
+        await grantVaultMembership(db, {
+          userId: admin,
+          vaultId: vault.id,
+          role: "ADMIN",
+          permissions: [
+            "knowledge:read",
+            "source:read",
+            "source:write",
+            "knowledge:propose",
+            "knowledge:review",
+            "eval:run",
+            "admin",
+          ],
+        });
+      }
+      provider = createServer(async (request, response) => {
+        try {
+          if (
+            request.method !== "POST" ||
+            request.url !== "/v1/chat/completions"
+          ) {
+            response.writeHead(404).end();
+            return;
+          }
+          const chunks: Buffer[] = [];
+          for await (const chunk of request) chunks.push(Buffer.from(chunk));
+          const payload = JSON.parse(
+            Buffer.concat(chunks).toString("utf8"),
+          ) as {
+            messages: Array<{ role: string; content: string }>;
+          };
+          const message = payload.messages.find((item) => item.role === "user");
+          if (!message) throw new Error("PROVIDER_TEST_INPUT_MISSING");
+          const input = JSON.parse(
+            message.content.slice(message.content.indexOf("\n") + 1),
+          ) as Record<string, unknown>;
+          providerInputs.push(input);
+          const generated = {
+            identity: {
+              classification: "DISTINCT",
+              candidates: [],
+              reason: "No sufficiently grounded material to propose.",
+            },
+            evidenceCandidates: [],
+            knowledgeCandidates: [],
+            contradictions: [],
+            proposedFileChanges: [],
+            impactedDocumentIds: [],
+            probes: [],
+            warnings: [],
+            summary:
+              "No material proposal; raw source remains independently retrievable.",
+          };
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    role: "assistant",
+                    content: JSON.stringify(generated),
+                  },
+                },
+              ],
+            }),
+          );
+        } catch {
+          response.writeHead(400).end();
+        }
+      });
+      await new Promise<void>((resolve, reject) => {
+        provider!.once("error", reject);
+        provider!.listen(0, "127.0.0.1", resolve);
+      });
+      const address = provider.address();
+      if (!address || typeof address === "string") {
+        throw new Error("TEST_COMPILER_LISTENER_UNAVAILABLE");
+      }
+      const baseUrl = "http://127.0.0.1:" + address.port + "/v1";
+      const jobs: string[] = [];
+      for (const [index, vaultId] of createdVaultIds.entries()) {
+        const response = await app.inject({
+          method: "POST",
+          url: "/v1/ingest",
+          headers,
+          payload: {
+            spaceId: defaultSpace,
+            vaultId,
+            sourceUri: files[index],
+            expectedSha256: originalHash,
+            title: name,
+            mediaType: "text/markdown",
+            policy: "REVIEW_REQUIRED",
+          },
+        });
+        expect(response.statusCode, response.body).toBe(202);
+        const jobId = (response.json() as { jobId: string }).jobId;
+        jobs.push(jobId);
+        await seedEventConsumerForJob(jobId);
+        await runWorkerDrain(false, index === 1 ? { baseUrl } : undefined);
+      }
+      const artifacts = await db.pool.query<{
+        job_id: string;
+        state: string;
+        source_id: string;
+        object_key: string;
+        raw_hash: string;
+        artifact_id: string;
+        markdown: string;
+        markdown_hash: string;
+        renderer_version: string;
+        document_artifact: { locators: Array<Record<string, unknown>> };
+        compilation: { mode: string; sourceMarkdownHash: string };
+      }>(
+        "select j.id job_id,j.state,s.id source_id,s.object_key," +
+          "s.sha256 raw_hash,a.id artifact_id," +
+          "a.source_markdown markdown,a.source_markdown_hash markdown_hash," +
+          "a.source_markdown_renderer_version renderer_version," +
+          "a.document_artifact,j.stage_outputs->'compilation' compilation " +
+          "from ingest_jobs j join sources s on s.id=(j.stage_outputs->>'sourceId')::uuid " +
+          "join source_artifacts a on a.source_id=s.id and a.kind='document-artifact' " +
+          "where j.id=any($1::uuid[]) order by array_position($1::uuid[],j.id)",
+        [jobs],
+      );
+      expect(artifacts.rowCount).toBe(2);
+      const [off, on] = artifacts.rows;
+      if (!off || !on) throw new Error("DUAL_ROUTE_ARTIFACT_MISSING");
+      expect(off.job_id).toBe(jobs[0]);
+      expect(on.job_id).toBe(jobs[1]);
+      expect(off.state).toBe("REVIEW_REQUIRED");
+      expect(on.state).toBe("NO_MATERIAL");
+      expect(off.compilation.mode).toBe("SOURCE_SUMMARY_FALLBACK");
+      expect(on.compilation.mode).toBe("GENERATIVE");
+      expect(off.source_id).not.toBe(on.source_id);
+      expect(off.artifact_id).not.toBe(on.artifact_id);
+      expect(off.raw_hash).toBe(originalHash);
+      expect(on.raw_hash).toBe(originalHash);
+      expect(off.object_key).toBe(on.object_key);
+      expect(off.markdown).toBe(on.markdown);
+      expect(off.markdown).toContain("47 minutes");
+      expect(off.markdown).toContain("const recoveryDeadline = 47");
+      expect(off.markdown).toContain("End-of-file evidence marker");
+      expect(off.markdown_hash).toBe(on.markdown_hash);
+      const integrityBefore = await db.pool.query<{
+        structured_content_hash: string;
+      }>("select structured_content_hash from source_artifacts where id=$1", [
+        on.artifact_id,
+      ]);
+      const storedHash = integrityBefore.rows[0]?.structured_content_hash;
+      if (!storedHash) throw new Error("DUAL_ROUTE_STRUCTURED_HASH_REQUIRED");
+      await db.pool.query(
+        "update source_artifacts set structured_content_hash=$2 where id=$1",
+        [on.artifact_id, "f".repeat(64)],
+      );
+      try {
+        const checkMarkdown = await app.inject({
+          method: "GET",
+          url:
+            "/v1/sources/" +
+            on.source_id +
+            "/artifacts/" +
+            on.artifact_id +
+            "/markdown",
+          headers,
+        });
+        expect(checkMarkdown.statusCode).toBe(409);
+        expect(checkMarkdown.body).not.toContain(marker);
+        const checkUnits = await app.inject({
+          method: "GET",
+          url:
+            "/v1/sources/" +
+            on.source_id +
+            "/artifacts/" +
+            on.artifact_id +
+            "/units?sourceSha256=" +
+            originalHash +
+            "&markdownSha256=" +
+            on.markdown_hash,
+          headers,
+        });
+        expect(checkUnits.statusCode).toBe(409);
+        expect(checkUnits.body).not.toContain(marker);
+      } finally {
+        await db.pool.query(
+          "update source_artifacts set structured_content_hash=$2 where id=$1",
+          [on.artifact_id, storedHash],
+        );
+      }
+
+      expect(off.markdown_hash).toBe(
+        createHash("sha256").update(off.markdown).digest("hex"),
+      );
+      expect(off.compilation.sourceMarkdownHash).toBe(off.markdown_hash);
+      expect(on.compilation.sourceMarkdownHash).toBe(on.markdown_hash);
+      expect(off.renderer_version).toBe(on.renderer_version);
+      const locatorsWithoutIdentity = (items: Array<Record<string, unknown>>) =>
+        items.map(({ path: _path, ...locator }) => locator);
+      expect(locatorsWithoutIdentity(off.document_artifact.locators)).toEqual(
+        locatorsWithoutIdentity(on.document_artifact.locators),
+      );
+      const storedUnits = await db.pool.query<{
+        source_id: string;
+        unit_type: string;
+        heading_path: string[];
+        body: string;
+        source_span_sha256: string;
+      }>(
+        "select source_id,unit_type,heading_path,body,source_span_sha256 " +
+          "from source_projection_units where source_id=any($1::uuid[]) " +
+          "order by source_id,structural_order",
+        [[off.source_id, on.source_id]],
+      );
+      const unitsFor = (sourceId: string) =>
+        storedUnits.rows
+          .filter((unit) => unit.source_id === sourceId)
+          .map(({ source_id: _sourceId, ...unit }) => unit);
+      expect(unitsFor(off.source_id).length).toBeGreaterThan(0);
+      expect(unitsFor(off.source_id)).toEqual(unitsFor(on.source_id));
+      expect(providerInputs).toHaveLength(1);
+      expect((providerInputs[0]?.source as { sha256: string }).sha256).toBe(
+        originalHash,
+      );
+
+      // A corrupted historical structured digest cannot be served. The
+      // operator resubmits the original immutable bytes with their exact SHA
+      // through the same review-required worker path, not via a DB override.
+      const originalDigest = await db.pool.query<{
+        structured_content_hash: string;
+      }>("select structured_content_hash from source_artifacts where id=$1", [
+        off.artifact_id,
+      ]);
+      const expectedStructured =
+        originalDigest.rows[0]?.structured_content_hash;
+      if (!expectedStructured)
+        throw new Error("SOURCE_REEXTRACTION_DIGEST_MISSING");
+      await db.pool.query(
+        "update source_artifacts set structured_content_hash=$2 where id=$1",
+        [off.artifact_id, "f".repeat(64)],
+      );
+      const quarantinedRead = await app.inject({
+        method: "GET",
+        url:
+          "/v1/sources/" +
+          off.source_id +
+          "/artifacts/" +
+          off.artifact_id +
+          "/markdown",
+        headers,
+      });
+      expect(quarantinedRead.statusCode).toBe(409);
+      expect(quarantinedRead.body).not.toContain(marker);
+
+      const resubmit = await app.inject({
+        method: "POST",
+        url: "/v1/ingest",
+        headers,
+        payload: {
+          spaceId: defaultSpace,
+          vaultId: createdVaultIds[0],
+          sourceUri: files[0],
+          expectedSha256: originalHash,
+          title: name,
+          mediaType: "text/markdown",
+          policy: "REVIEW_REQUIRED",
+        },
+      });
+      expect(resubmit.statusCode, resubmit.body).toBe(202);
+      const resubmitJobId = (resubmit.json() as { jobId: string }).jobId;
+      await seedEventConsumerForJob(resubmitJobId);
+      await runWorkerDrain(false);
+      const recovered = await db.pool.query<{
+        state: string;
+        source_id: string;
+        artifact_id: string;
+        raw_hash: string;
+        structured_content_hash: string;
+        source_markdown: string;
+        source_markdown_hash: string;
+      }>(
+        "select j.state,s.id source_id,a.id artifact_id," +
+          "s.sha256 raw_hash,a.structured_content_hash," +
+          "a.source_markdown,a.source_markdown_hash " +
+          "from ingest_jobs j " +
+          "join sources s on s.id=(j.stage_outputs->>'sourceId')::uuid " +
+          "join source_artifacts a on a.id=" +
+          "(j.stage_outputs->'extracted'->>'source_artifact_id')::uuid " +
+          "where j.id=$1",
+        [resubmitJobId],
+      );
+      const verified = recovered.rows[0];
+      expect(verified).toBeDefined();
+      expect(verified?.state).toBe("REVIEW_REQUIRED");
+      expect(verified?.source_id).toBe(off.source_id);
+      expect(verified?.artifact_id).toBe(off.artifact_id);
+      expect(verified?.raw_hash).toBe(originalHash);
+      expect(verified?.structured_content_hash).toBe(expectedStructured);
+      expect(verified?.source_markdown).toBe(off.markdown);
+      expect(verified?.source_markdown_hash).toBe(off.markdown_hash);
+      const recoveredRead = await app.inject({
+        method: "GET",
+        url:
+          "/v1/sources/" +
+          off.source_id +
+          "/artifacts/" +
+          off.artifact_id +
+          "/markdown",
+        headers,
+      });
+      expect(recoveredRead.statusCode, recoveredRead.body).toBe(200);
+      const recoveredUnits = await app.inject({
+        method: "GET",
+        url:
+          "/v1/sources/" +
+          off.source_id +
+          "/artifacts/" +
+          off.artifact_id +
+          "/units?sourceSha256=" +
+          originalHash +
+          "&markdownSha256=" +
+          off.markdown_hash,
+        headers,
+      });
+      expect(recoveredUnits.statusCode, recoveredUnits.body).toBe(200);
+
+      const published = await db.pool.query<{ count: number }>(
+        "select count(*)::int count from knowledge_documents where vault_id=any($1::uuid[])",
+        [createdVaultIds],
+      );
+      expect(published.rows[0]?.count).toBe(0);
+    } finally {
+      if (provider) {
+        await new Promise<void>((resolve) => provider!.close(() => resolve()));
+      }
+      for (const createdVaultId of createdVaultIds) {
+        await purgeMutableFixtures(createdVaultId);
+      }
+    }
+  }, 180_000);
+
   it("ingests, reviews, publishes, indexes with the real worker, searches, rejects, and rolls back", async () => {
     const firstMarker = `publication-marker-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
     const first = await submitIngest("published-product-source", firstMarker);
@@ -689,8 +1110,14 @@ describe("product lifecycle E2E", () => {
     const artifact = await db.pool.query<{
       document_artifact: Record<string, unknown>;
       object_key: string;
+      id: string;
+      source_markdown: string;
+      source_markdown_hash: string;
+      source_markdown_renderer_version: string;
     }>(
-      `select a.document_artifact,a.object_key from source_artifacts a
+      `select a.id,a.document_artifact,a.object_key,a.source_markdown,
+              a.source_markdown_hash,a.source_markdown_renderer_version
+         from source_artifacts a
            join sources s on s.id=a.source_id
           where s.vault_id=$1 and s.sha256=$2`,
       [vaultId, firstSourceHash],
@@ -700,6 +1127,228 @@ describe("product lifecycle E2E", () => {
       media_type: "text/markdown",
     });
     expect(String(artifact.rows[0]?.object_key)).toContain("sha256/");
+    const sourceProjection = artifact.rows[0];
+    expect(sourceProjection?.source_markdown).toContain(firstMarker);
+    expect(sourceProjection?.source_markdown_renderer_version).toBe("1.0");
+    expect(sourceProjection?.source_markdown_hash).toBe(
+      createHash("sha256")
+        .update(sourceProjection!.source_markdown, "utf8")
+        .digest("hex"),
+    );
+
+    const sourceMarkdownResponse = await app.inject({
+      method: "GET",
+      url: `/v1/sources/${indexed.rows[0]?.source_id}/artifacts/${sourceProjection!.id}/markdown`,
+      headers,
+    });
+    expect(sourceMarkdownResponse.statusCode, sourceMarkdownResponse.body).toBe(
+      200,
+    );
+    expect(sourceMarkdownResponse.headers["cache-control"]).toBe("no-store");
+    const sourceMarkdownBody = sourceMarkdownResponse.json() as {
+      sourceId: string;
+      artifactId: string;
+      sourceSha256: string;
+      content: string;
+      sha256: string;
+      rendererVersion: string;
+      trustTier: string;
+      canonicalKnowledge: boolean;
+    };
+    expect(sourceMarkdownBody).toMatchObject({
+      sourceId: indexed.rows[0]?.source_id,
+      artifactId: sourceProjection!.id,
+      sourceSha256: firstSourceHash,
+      content: sourceProjection!.source_markdown,
+      sha256: sourceProjection!.source_markdown_hash,
+      rendererVersion: "1.0",
+      trustTier: "MACHINE_EXTRACTED",
+      canonicalKnowledge: false,
+    });
+    expect(
+      createHash("sha256")
+        .update(sourceMarkdownBody.content, "utf8")
+        .digest("hex"),
+    ).toBe(sourceMarkdownBody.sha256);
+    const unitBase = `/v1/sources/${indexed.rows[0]?.source_id}/artifacts/${sourceProjection!.id}/units`;
+    const unitUrl = `${unitBase}?sourceSha256=${firstSourceHash}&markdownSha256=${sourceProjection!.source_markdown_hash}`;
+    const unitResponse = await app.inject({
+      method: "GET",
+      url: unitUrl,
+      headers,
+    });
+    expect(unitResponse.statusCode, unitResponse.body).toBe(200);
+    const indexedSourceUnits = unitResponse.json() as {
+      sourceId: string;
+      markdownSha256: string;
+      canonicalKnowledge: boolean;
+      trustTier: string;
+      total: number;
+      units: Array<{
+        body: string;
+        bodySha256: string;
+        sourceSpanSha256: string;
+        locator: { startChar: number; endChar: number };
+      }>;
+    };
+    expect(indexedSourceUnits).toMatchObject({
+      sourceId: indexed.rows[0]?.source_id,
+      markdownSha256: sourceProjection!.source_markdown_hash,
+      canonicalKnowledge: false,
+      trustTier: "MACHINE_EXTRACTED",
+    });
+    expect(indexedSourceUnits.total).toBeGreaterThan(0);
+    expect(
+      indexedSourceUnits.units.some((unit) => unit.body.includes(firstMarker)),
+    ).toBe(true);
+    for (const unit of indexedSourceUnits.units) {
+      expect(createHash("sha256").update(unit.body, "utf8").digest("hex")).toBe(
+        unit.bodySha256,
+      );
+      expect(
+        createHash("sha256")
+          .update(
+            sourceProjection!.source_markdown.slice(
+              unit.locator.startChar,
+              unit.locator.endChar,
+            ),
+            "utf8",
+          )
+          .digest("hex"),
+      ).toBe(unit.sourceSpanSha256);
+    }
+    // A forged Markdown/hash pair must not bypass the structured artifact.
+    const forgedMarkdown =
+      sourceProjection!.source_markdown + "\n\nFabricated content";
+    const forgedHash = createHash("sha256")
+      .update(forgedMarkdown, "utf8")
+      .digest("hex");
+    await db.pool.query(
+      "update source_artifacts set source_markdown=$2,source_markdown_hash=$3 where id=$1",
+      [sourceProjection!.id, forgedMarkdown, forgedHash],
+    );
+    try {
+      const tamperedMarkdown = await app.inject({
+        method: "GET",
+        url: `/v1/sources/${indexed.rows[0]?.source_id}/artifacts/${sourceProjection!.id}/markdown`,
+        headers,
+      });
+      expect(tamperedMarkdown.statusCode).toBe(409);
+      expect(tamperedMarkdown.json()).toMatchObject({
+        code: "SOURCE_MARKDOWN_ARTIFACT_MISMATCH",
+      });
+      expect(tamperedMarkdown.body).not.toContain("Fabricated content");
+      const tamperedUnits = await app.inject({
+        method: "GET",
+        url: `${unitBase}?sourceSha256=${firstSourceHash}&markdownSha256=${forgedHash}`,
+        headers,
+      });
+      expect(tamperedUnits.statusCode).toBe(409);
+      expect(tamperedUnits.json()).toMatchObject({
+        code: "SOURCE_UNIT_PROJECTION_INVALID",
+      });
+      expect(tamperedUnits.body).not.toContain("Fabricated content");
+    } finally {
+      await db.pool.query(
+        "update source_artifacts set source_markdown=$2,source_markdown_hash=$3 where id=$1",
+        [
+          sourceProjection!.id,
+          sourceProjection!.source_markdown,
+          sourceProjection!.source_markdown_hash,
+        ],
+      );
+    }
+    const missingRevision = await app.inject({
+      method: "GET",
+      url: unitBase,
+      headers,
+    });
+    expect(missingRevision.statusCode).toBe(400);
+    const staleRevision = await app.inject({
+      method: "GET",
+      url: `${unitBase}?sourceSha256=${firstSourceHash}&markdownSha256=${"b".repeat(64)}`,
+      headers,
+    });
+    expect(staleRevision.statusCode).toBe(409);
+    expect(staleRevision.body).not.toContain(firstMarker);
+
+    const knowledgeOnlyToken = `e2e-knowledge-only-${randomUUID()}`;
+    const knowledgeOnlyTokenHash = createHash("sha256")
+      .update(knowledgeOnlyToken)
+      .digest("hex");
+    await db.pool.query(
+      `insert into api_tokens(user_id,token_hash,label,scopes)
+       values($1,$2,$3,$4::jsonb)`,
+      [
+        admin,
+        knowledgeOnlyTokenHash,
+        "source-read denied E2E",
+        JSON.stringify({
+          spaces: [
+            {
+              spaceId: defaultSpace,
+              pathPrefix: null,
+              permissions: ["knowledge:read"],
+            },
+          ],
+        }),
+      ],
+    );
+    try {
+      const denied = await app.inject({
+        method: "GET",
+        url: `/v1/sources/${indexed.rows[0]?.source_id}/artifacts/${sourceProjection!.id}/markdown`,
+        headers: {
+          authorization: `Bearer ${knowledgeOnlyToken}`,
+        },
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(denied.body).not.toContain(firstMarker);
+      const deniedUnits = await app.inject({
+        method: "GET",
+        url: unitUrl,
+        headers: {
+          authorization: `Bearer ${knowledgeOnlyToken}`,
+        },
+      });
+      expect(deniedUnits.statusCode).toBe(403);
+      expect(deniedUnits.body).not.toContain(firstMarker);
+    } finally {
+      await db.pool.query("delete from api_tokens where token_hash=$1", [
+        knowledgeOnlyTokenHash,
+      ]);
+    }
+    const wrongSource = await app.inject({
+      method: "GET",
+      url: `/v1/sources/${randomUUID()}/artifacts/${sourceProjection!.id}/markdown`,
+      headers,
+    });
+    expect(wrongSource.statusCode).toBe(404);
+    expect(wrongSource.body).not.toContain(firstMarker);
+    const wrongSourceUnits = await app.inject({
+      method: "GET",
+      url: `/v1/sources/${randomUUID()}/artifacts/${sourceProjection!.id}/units?sourceSha256=${firstSourceHash}&markdownSha256=${sourceProjection!.source_markdown_hash}`,
+      headers,
+    });
+    expect(wrongSourceUnits.statusCode).toBe(404);
+
+    const wrongArtifact = await app.inject({
+      method: "GET",
+      url: `/v1/sources/${indexed.rows[0]?.source_id}/artifacts/${randomUUID()}/markdown`,
+      headers,
+    });
+    expect(wrongArtifact.statusCode).toBe(404);
+    const invalidArtifact = await app.inject({
+      method: "GET",
+      url: `/v1/sources/${indexed.rows[0]?.source_id}/artifacts/not-a-uuid/markdown`,
+      headers,
+    });
+    expect(invalidArtifact.statusCode).toBe(400);
+    const anonymousSource = await app.inject({
+      method: "GET",
+      url: `/v1/sources/${indexed.rows[0]?.source_id}/artifacts/${sourceProjection!.id}/markdown`,
+    });
+    expect(anonymousSource.statusCode).toBe(401);
 
     const search = await app.inject({
       method: "POST",
@@ -1224,4 +1873,839 @@ describe("product lifecycle E2E", () => {
       rollbackDeliveries.rows.every((row) => row.status === "SUCCEEDED"),
     ).toBe(true);
   }, 180_000);
+
+  const freshSourceIt =
+    process.env.AKP_RUN_R2_R7_FRESH_E2E === "1" ? it : it.skip;
+
+  freshSourceIt(
+    "proves the frozen R2/R7 fresh source oracle through artifact, units, vector, admission and ContextPacket",
+    async () => {
+      const repositoryRoot = path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        "../../..",
+      );
+      const oraclePath = path.join(
+        repositoryRoot,
+        "evals",
+        "registered",
+        "r2-r7-fresh-source-e2e.json",
+      );
+      const oracle = JSON.parse(await readFile(oraclePath, "utf8")) as {
+        schemaVersion: string;
+        frozen: boolean;
+        baselineSha: string;
+        claimBoundary: {
+          passOutcome: string;
+          failOutcome: string;
+          privateReplayStillRequired: boolean;
+          statement: string;
+        };
+        source: {
+          path: string;
+          gitBlobSha: string;
+          sha256: string;
+          mediaType: string;
+          title: string;
+          lineCount: number;
+          requiredRawText: string[];
+          structuralOracle: {
+            headings: Array<{ text: string; line: number; level: number }>;
+            table: {
+              startLine: number;
+              endLine: number;
+              headers: string[];
+              rows: string[][];
+            };
+          };
+        };
+        publication: {
+          compilerMode: string;
+          relativePath: string;
+          persistedPathSuffix: string;
+          requiredFrontmatter: Record<string, string>;
+          requiredPublishedText: string[];
+        };
+        unitOracle: Array<{
+          id: string;
+          unitType: string;
+          exactBody: string;
+          table?: number;
+          row?: number;
+          column?: number;
+          embeddingEligible: boolean;
+        }>;
+        retrievalCases: Array<{
+          id: string;
+          query: string;
+          expectNoAnswer: boolean;
+          requiredEvidenceTerms?: string[];
+          requireSupportedAdmission: boolean;
+          requireContextPacket: boolean;
+        }>;
+        gates: Record<string, boolean | number>;
+      };
+      expect(oracle.schemaVersion).toBe("akp.r2-r7-fresh-source-e2e.v1");
+      expect(oracle.frozen).toBe(true);
+
+      const citationTransitReportPath =
+        process.env.AKP_FRESH_EXACT_CITATION_TRANSIT_REPORT?.trim() || null;
+      const citationTransitProtocol = citationTransitReportPath
+        ? (JSON.parse(
+            await readFile(
+              path.join(
+                repositoryRoot,
+                "evals",
+                "registered",
+                "fresh-source-exact-citation-transit.json",
+              ),
+              "utf8",
+            ),
+          ) as {
+            schemaVersion: string;
+            frozen: boolean;
+            baselineSha: string;
+            upstream: {
+              r2r7Oracle: { path: string; gitBlobSha: string };
+              sourceFixture: {
+                path: string;
+                gitBlobSha: string;
+                sha256: string;
+              };
+              answerableCaseId: string;
+              noAnswerCaseId: string;
+            };
+            measurement: {
+              evidenceCitationPrefix: string;
+              productionBehaviorChanged: boolean;
+              retrievalChanged: boolean;
+              admissionChanged: boolean;
+              contextPacketChanged: boolean;
+            };
+            gates: {
+              searchEvidenceLocatorPrecision: number;
+              searchExactLocatorRecall: number;
+              contextSectionEvidenceLocatorPrecision: number;
+              contextSectionExactLocatorRecall: number;
+              packetEvidenceLocatorPrecision: number;
+              packetExactLocatorRecall: number;
+              noAnswerEvidenceFalseAcceptance: number;
+              crossVaultLeakageCount: number;
+            };
+            outcomes: { pass: string; fail: string };
+            claimBoundary: string;
+          })
+        : null;
+      if (citationTransitProtocol) {
+        expect(citationTransitProtocol).toMatchObject({
+          schemaVersion: "akp.fresh-source-exact-citation-transit.v1",
+          frozen: true,
+          baselineSha: "851e28aea8cce15b6eafe25d13f83cab2e09f5d3",
+          measurement: {
+            productionBehaviorChanged: false,
+            retrievalChanged: false,
+            admissionChanged: false,
+            contextPacketChanged: false,
+          },
+        });
+        const oracleBlob = await execFileAsync(
+          "git",
+          ["hash-object", citationTransitProtocol.upstream.r2r7Oracle.path],
+          { cwd: repositoryRoot, windowsHide: true },
+        );
+        expect(oracleBlob.stdout.trim()).toBe(
+          citationTransitProtocol.upstream.r2r7Oracle.gitBlobSha,
+        );
+        expect(citationTransitProtocol.upstream.sourceFixture).toMatchObject({
+          path: oracle.source.path,
+          gitBlobSha: oracle.source.gitBlobSha,
+          sha256: oracle.source.sha256,
+        });
+      }
+
+      const fixturePath = path.join(repositoryRoot, oracle.source.path);
+      const fixtureBytes = await readFile(fixturePath);
+      const fixtureText = fixtureBytes.toString("utf8");
+      expect(createHash("sha256").update(fixtureBytes).digest("hex")).toBe(
+        oracle.source.sha256,
+      );
+      const blob = await execFileAsync("git", ["hash-object", fixturePath], {
+        cwd: repositoryRoot,
+        windowsHide: true,
+      });
+      expect(blob.stdout.trim()).toBe(oracle.source.gitBlobSha);
+      expect(fixtureText.trimEnd().split(/\r?\n/u)).toHaveLength(
+        oracle.source.lineCount,
+      );
+      for (const expected of oracle.source.requiredRawText) {
+        expect(fixtureText).toContain(expected);
+      }
+
+      const sourcePath = path.join(sourceRoot, "r2-r7-fidelity-probe.md");
+      await writeFile(sourcePath, fixtureBytes);
+      const submitted = await app.inject({
+        method: "POST",
+        url: "/v1/ingest",
+        headers,
+        payload: {
+          spaceId: defaultSpace,
+          vaultId,
+          sourceUri: sourcePath,
+          expectedSha256: oracle.source.sha256,
+          title: oracle.source.title,
+          mediaType: oracle.source.mediaType,
+          documentIntelligence: {
+            complexity: "simple",
+            extractor: "deterministic-baseline",
+            ocr: false,
+          },
+          policy: "REVIEW_REQUIRED",
+        },
+      });
+      expect(submitted.statusCode, submitted.body).toBe(202);
+      const job = submitted.json() as { jobId: string; state: string };
+      expect(job.state).toBe("RECEIVED");
+      await seedEventConsumerForJob(job.jobId);
+      await runWorkerDrain(true);
+
+      const reviewId = await reviewIdForJob(job.jobId);
+      const jobBeforeApproval = await db.pool.query<{
+        state: string;
+        source_id: string;
+        compilation: Record<string, unknown>;
+      }>(
+        "select state,stage_outputs->>'sourceId' source_id,stage_outputs->'compilation' compilation from ingest_jobs where id=$1",
+        [job.jobId],
+      );
+      expect(jobBeforeApproval.rows[0]?.state).toBe("REVIEW_REQUIRED");
+      expect(jobBeforeApproval.rows[0]?.compilation).toMatchObject({
+        mode: oracle.publication.compilerMode,
+      });
+      const sourceId = jobBeforeApproval.rows[0]?.source_id;
+      expect(sourceId).toEqual(expect.any(String));
+
+      const source = await db.pool.query<{
+        id: string;
+        sha256: string;
+        object_key: string;
+      }>(
+        "select id,sha256,object_key from sources where vault_id=$1 and sha256=$2",
+        [vaultId, oracle.source.sha256],
+      );
+      expect(source.rows).toHaveLength(1);
+      expect(source.rows[0]).toMatchObject({
+        id: sourceId,
+        sha256: oracle.source.sha256,
+      });
+      sourceObjectKeys.push(...source.rows.map((row) => row.object_key));
+
+      const artifact = await db.pool.query<{
+        id: string;
+        source_hash: string;
+        extractor: string;
+        extractor_version: string;
+        document_artifact: {
+          source_hash?: string;
+          media_type?: string;
+          headings?: Array<{
+            text?: string;
+            locator?: Record<string, unknown>;
+            metadata?: { level?: number };
+          }>;
+          paragraphs?: Array<{
+            text?: string;
+            locator?: Record<string, unknown>;
+          }>;
+          tables?: Array<{
+            headers?: string[];
+            rows?: string[][];
+            locator?: Record<string, unknown>;
+          }>;
+          locators?: Array<Record<string, unknown>>;
+        };
+      }>(
+        "select id,source_hash,extractor,extractor_version,document_artifact from source_artifacts where source_id=$1 and kind='document-artifact'",
+        [sourceId],
+      );
+      expect(artifact.rows).toHaveLength(1);
+      const artifactRow = artifact.rows[0]!;
+      expect(artifactRow.source_hash).toBe(oracle.source.sha256);
+      expect(artifactRow.extractor).toBe("deterministic-text");
+      expect(artifactRow.document_artifact).toMatchObject({
+        source_hash: oracle.source.sha256,
+        media_type: oracle.source.mediaType,
+      });
+      const artifactValue = artifactRow.document_artifact;
+      for (const heading of oracle.source.structuralOracle.headings) {
+        expect(
+          artifactValue.headings?.some(
+            (candidate) =>
+              candidate.text === heading.text &&
+              candidate.metadata?.level === heading.level &&
+              candidate.locator?.start_line === heading.line &&
+              candidate.locator?.end_line === heading.line,
+          ),
+          JSON.stringify(artifactValue.headings),
+        ).toBe(true);
+      }
+      const expectedTable = oracle.source.structuralOracle.table;
+      expect(
+        artifactValue.tables?.some(
+          (table) =>
+            JSON.stringify(table.headers) ===
+              JSON.stringify(expectedTable.headers) &&
+            JSON.stringify(table.rows) === JSON.stringify(expectedTable.rows) &&
+            table.locator?.start_line === expectedTable.startLine &&
+            table.locator?.end_line === expectedTable.endLine,
+        ),
+        JSON.stringify(artifactValue.tables),
+      ).toBe(true);
+
+      const evidence = await db.pool.query<{
+        id: string;
+        artifact_id: string;
+        locator: Record<string, unknown>;
+        content_hash: string;
+        excerpt: string;
+      }>(
+        "select id,artifact_id,locator,content_hash,excerpt from evidence where source_id=$1 and artifact_id=$2",
+        [sourceId, artifactRow.id],
+      );
+      expect(evidence.rows).toHaveLength(1);
+      const evidenceRow = evidence.rows[0]!;
+      expect(evidenceRow.locator.source_hash).toBe(oracle.source.sha256);
+      expect(evidenceRow.excerpt).toBe(oracle.source.requiredRawText[0]);
+      expect(
+        createHash("sha256").update(evidenceRow.excerpt).digest("hex"),
+      ).toBe(evidenceRow.content_hash);
+      expect(
+        artifactValue.locators?.some(
+          (locator) =>
+            JSON.stringify(locator) === JSON.stringify(evidenceRow.locator),
+        ),
+        JSON.stringify({
+          locator: evidenceRow.locator,
+          locators: artifactValue.locators,
+        }),
+      ).toBe(true);
+
+      const canonicalJson = (value: unknown): string => {
+        const canonicalize = (entry: unknown): unknown => {
+          if (Array.isArray(entry)) return entry.map(canonicalize);
+          if (!entry || typeof entry !== "object") return entry;
+          return Object.fromEntries(
+            Object.entries(entry as Record<string, unknown>)
+              .sort(([left], [right]) => left.localeCompare(right))
+              .map(([key, nested]) => [key, canonicalize(nested)]),
+          );
+        };
+        return JSON.stringify(canonicalize(value));
+      };
+      const expectedEvidenceLocatorKey = canonicalJson(evidenceRow.locator);
+      const expectedEvidenceLocatorHash = createHash("sha256")
+        .update(expectedEvidenceLocatorKey)
+        .digest("hex");
+      const scoreEvidenceLocatorCitations = (values: readonly string[]) => {
+        const prefix =
+          citationTransitProtocol?.measurement.evidenceCitationPrefix ??
+          "evidence:";
+        const evidenceCitations = values.filter((value) =>
+          value.startsWith(prefix),
+        );
+        let exactMatches = 0;
+        let malformed = 0;
+        for (const citation of evidenceCitations) {
+          try {
+            const parsed = JSON.parse(citation.slice(prefix.length)) as unknown;
+            if (canonicalJson(parsed) === expectedEvidenceLocatorKey) {
+              exactMatches += 1;
+            }
+          } catch {
+            malformed += 1;
+          }
+        }
+        return {
+          total: evidenceCitations.length,
+          exactMatches,
+          malformed,
+          precision:
+            evidenceCitations.length === 0
+              ? 0
+              : exactMatches / evidenceCitations.length,
+          exactLocatorRecall: exactMatches > 0 ? 1 : 0,
+        };
+      };
+
+      const pendingReview = await app.inject({
+        method: "GET",
+        url: "/v1/reviews/" + reviewId,
+        headers,
+      });
+      expect(pendingReview.statusCode, pendingReview.body).toBe(200);
+      const pending = pendingReview.json() as {
+        status: string;
+        impact_manifest?: {
+          proposedChanges?: Array<{ path?: string; content?: string }>;
+        };
+      };
+      expect(pending.status).toBe("PENDING");
+      const proposed = pending.impact_manifest?.proposedChanges?.[0];
+      expect(proposed?.path).toBe(oracle.publication.relativePath);
+      expect(proposed?.content).toContain(oracle.source.sha256);
+      for (const expected of oracle.publication.requiredPublishedText) {
+        expect(proposed?.content).toContain(expected);
+      }
+
+      const approved = await decide(
+        reviewId,
+        "APPROVE",
+        "Frozen R2/R7 public source fidelity oracle approved for publication",
+      );
+      expect(approved.statusCode, approved.body).toBe(200);
+      const approvedBody = approved.json() as {
+        status: string;
+        mergedCommit?: string;
+        indexing?: string;
+      };
+      expect(approvedBody).toMatchObject({
+        status: "APPROVED",
+        indexing: "PENDING",
+      });
+      expect(approvedBody.mergedCommit).toEqual(expect.any(String));
+      await runWorkerDrain(true);
+
+      const document = await db.pool.query<{
+        id: string;
+        path: string;
+        body_cache: string;
+        frontmatter: Record<string, unknown>;
+        current_revision: string;
+        lifecycle: string;
+      }>(
+        "select id,path,body_cache,frontmatter,current_revision,lifecycle from knowledge_documents where vault_id=$1 and frontmatter->>'source_sha256'=$2 and lifecycle in ('ACTIVE','DISPUTED')",
+        [vaultId, oracle.source.sha256],
+      );
+      expect(document.rows).toHaveLength(1);
+      const documentRow = document.rows[0]!;
+      expect(
+        documentRow.path.endsWith(oracle.publication.persistedPathSuffix),
+      ).toBe(true);
+      for (const [key, value] of Object.entries(
+        oracle.publication.requiredFrontmatter,
+      )) {
+        expect(String(documentRow.frontmatter[key])).toBe(value);
+      }
+      for (const expected of oracle.publication.requiredPublishedText) {
+        expect(documentRow.body_cache).toContain(expected);
+      }
+
+      const units = await db.pool.query<{
+        id: string;
+        unit_type: string;
+        body: string;
+        locator: Record<string, unknown>;
+        embedding_eligible: boolean;
+        container_only: boolean;
+        corpus_revision: string;
+      }>(
+        "select id,unit_type,body,locator,embedding_eligible,container_only,corpus_revision from knowledge_units where document_id=$1 and lifecycle in ('ACTIVE','DISPUTED') order by structural_order,id",
+        [documentRow.id],
+      );
+      expect(units.rows.length).toBeGreaterThan(0);
+      for (const expected of oracle.unitOracle) {
+        const match = units.rows.find(
+          (unit) =>
+            unit.unit_type === expected.unitType &&
+            unit.body === expected.exactBody &&
+            (expected.table === undefined ||
+              unit.locator.table === expected.table) &&
+            (expected.row === undefined || unit.locator.row === expected.row) &&
+            (expected.column === undefined ||
+              unit.locator.column === expected.column),
+        );
+        expect(
+          match,
+          JSON.stringify({ expected, units: units.rows }),
+        ).toBeDefined();
+        expect(match?.embedding_eligible).toBe(expected.embeddingEligible);
+        expect(match?.locator.sourceFrame).toBe("markdown-body-cache-raw-v1");
+        expect(match?.locator.sourceEncoding).toBe("utf-16-code-units");
+        expect(match?.locator.sourceTextProjection).toBe(
+          "visible-markdown-lf-trim-v1",
+        );
+        const start = Number(match?.locator.startChar);
+        const end = Number(match?.locator.endChar);
+        expect(
+          Number.isInteger(start) && Number.isInteger(end) && end > start,
+        ).toBe(true);
+        expect(documentRow.body_cache.slice(start, end).trim()).toBe(
+          expected.exactBody,
+        );
+      }
+
+      const index = await db.pool.query<{
+        status: string;
+        warnings: string[];
+        corpus_revision: string;
+        lexical_revision: string;
+        vector_revision: string;
+        graph_revision: string;
+        context_pack_revision: string;
+      }>(
+        "select status,warnings,corpus_revision,lexical_revision,vector_revision,graph_revision,context_pack_revision from vault_index_revisions where vault_id=$1",
+        [vaultId],
+      );
+      expect(index.rows).toHaveLength(1);
+      const indexRow = index.rows[0]!;
+      expect(indexRow.status).toBe("CONSISTENT");
+      expect(indexRow.warnings).toEqual([]);
+      const vaultRevision = await db.pool.query<{ current_revision: string }>(
+        "select current_revision from vaults where id=$1",
+        [vaultId],
+      );
+      expect(vaultRevision.rows).toHaveLength(1);
+      expect(indexRow.corpus_revision).toBe(
+        `composite:${vaultRevision.rows[0]?.current_revision}+managed:${documentRow.current_revision}`,
+      );
+      expect(indexRow.lexical_revision).toBe(indexRow.corpus_revision);
+      expect(indexRow.vector_revision).toBe(indexRow.corpus_revision);
+      expect(indexRow.graph_revision).toBe(indexRow.corpus_revision);
+      expect(indexRow.context_pack_revision).toBe(indexRow.corpus_revision);
+
+      const generation = await db.pool.query<{
+        id: string;
+        status: string;
+        corpus_revision: string;
+        provider: string;
+        model_revision: string;
+        dimensions: number;
+      }>(
+        "select id,status,corpus_revision,provider,model_revision,dimensions from embedding_generations where vault_id=$1 and status='ACTIVE' order by activated_at desc nulls last,created_at desc limit 1",
+        [vaultId],
+      );
+      expect(generation.rows).toHaveLength(1);
+      expect(generation.rows[0]?.corpus_revision).toBe(
+        indexRow.corpus_revision,
+      );
+
+      const embeddingParity = await db.pool.query<{
+        eligible_units: number;
+        embedded_units: number;
+      }>(
+        "select (select count(*)::int from knowledge_units where vault_id=$1 and corpus_revision=$2 and embedding_eligible and lifecycle in ('ACTIVE','DISPUTED')) eligible_units,(select count(distinct ue.unit_id)::int from unit_embeddings ue join knowledge_units u on u.id=ue.unit_id where ue.generation_id=$3 and u.vault_id=$1 and u.corpus_revision=$2 and u.embedding_eligible and u.lifecycle in ('ACTIVE','DISPUTED')) embedded_units",
+        [vaultId, indexRow.corpus_revision, generation.rows[0]?.id],
+      );
+      expect(embeddingParity.rows[0]?.eligible_units).toBeGreaterThan(0);
+      expect(embeddingParity.rows[0]?.embedded_units).toBe(
+        embeddingParity.rows[0]?.eligible_units,
+      );
+
+      const answerable = oracle.retrievalCases.find(
+        (entry) => !entry.expectNoAnswer,
+      )!;
+      const search = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers,
+        payload: {
+          query: answerable.query,
+          spaceId: defaultSpace,
+          vaultId,
+          vaultIds: [],
+          federated: false,
+          types: [],
+          minimumTrust: "MACHINE_SUPPORTED",
+          mode: "SOURCE_BACKED",
+          limit: 10,
+        },
+      });
+      expect(search.statusCode, search.body).toBe(200);
+      const searchBody = search.json() as {
+        hits: Array<{
+          vaultId: string;
+          unitId?: string;
+          excerpt: string;
+          citations: string[];
+          retrievalTrace?: {
+            contributions: Array<{ candidateRevision?: string | null }>;
+          };
+        }>;
+        scope: { vaultIds: string[] };
+      };
+      expect(searchBody.scope.vaultIds).toEqual([vaultId]);
+      const goldHit = searchBody.hits.find(
+        (hit) =>
+          hit.vaultId === vaultId &&
+          answerable.requiredEvidenceTerms?.every((term) =>
+            hit.excerpt.includes(term),
+          ),
+      );
+      expect(goldHit, JSON.stringify(searchBody)).toBeDefined();
+      expect(goldHit?.unitId).toEqual(expect.any(String));
+      expect(
+        goldHit?.citations.some(
+          (citation) =>
+            citation.includes(oracle.publication.persistedPathSuffix) &&
+            citation.includes(documentRow.current_revision),
+        ),
+        JSON.stringify(goldHit),
+      ).toBe(true);
+      expect(
+        goldHit?.retrievalTrace?.contributions.some(
+          (contribution) =>
+            contribution.candidateRevision === indexRow.corpus_revision,
+        ),
+        JSON.stringify(goldHit?.retrievalTrace),
+      ).toBe(true);
+
+      const context = await app.inject({
+        method: "POST",
+        url: "/v1/context",
+        headers,
+        payload: {
+          query: answerable.query,
+          spaceId: defaultSpace,
+          vaultId,
+          vaultIds: [],
+          federated: false,
+          types: [],
+          minimumTrust: "MACHINE_SUPPORTED",
+          mode: "SOURCE_BACKED",
+          limit: 10,
+        },
+      });
+      expect(context.statusCode, context.body).toBe(200);
+      const contextBody = context.json() as {
+        packetId: string;
+        vaultId: string;
+        status: string;
+        sections: Array<{
+          vaultId: string;
+          content: string;
+          sourceOrEvidenceIds?: string[];
+        }>;
+        citations: string[];
+      };
+      expect(contextBody).toMatchObject({
+        vaultId,
+        status: "SUPPORTED",
+      });
+      expect(
+        contextBody.sections.some(
+          (section) =>
+            section.vaultId === vaultId &&
+            answerable.requiredEvidenceTerms?.every((term) =>
+              section.content.includes(term),
+            ),
+        ),
+        JSON.stringify(contextBody),
+      ).toBe(true);
+      expect(
+        contextBody.citations.some(
+          (citation) =>
+            citation.includes(oracle.publication.persistedPathSuffix) &&
+            citation.includes(documentRow.current_revision),
+        ),
+        JSON.stringify(contextBody.citations),
+      ).toBe(true);
+
+      const noAnswer = oracle.retrievalCases.find(
+        (entry) => entry.expectNoAnswer,
+      )!;
+      const absent = await app.inject({
+        method: "POST",
+        url: "/v1/search",
+        headers,
+        payload: {
+          query: noAnswer.query,
+          spaceId: defaultSpace,
+          vaultId,
+          vaultIds: [],
+          federated: false,
+          types: [],
+          minimumTrust: "MACHINE_SUPPORTED",
+          mode: "SOURCE_BACKED",
+          limit: 10,
+        },
+      });
+      expect(absent.statusCode, absent.body).toBe(200);
+      const absentBody = absent.json() as {
+        hits: Array<{ vaultId: string; citations?: string[] }>;
+        scope: { vaultIds: string[] };
+      };
+      expect(absentBody.scope.vaultIds).toEqual([vaultId]);
+      expect(absentBody.hits).toHaveLength(0);
+
+      const leakageCount =
+        searchBody.hits.filter((hit) => hit.vaultId !== vaultId).length +
+        absentBody.hits.filter((hit) => hit.vaultId !== vaultId).length;
+
+      if (citationTransitProtocol && citationTransitReportPath) {
+        expect(answerable.id).toBe(
+          citationTransitProtocol.upstream.answerableCaseId,
+        );
+        expect(noAnswer.id).toBe(
+          citationTransitProtocol.upstream.noAnswerCaseId,
+        );
+        const goldSections = contextBody.sections.filter(
+          (section) =>
+            section.vaultId === vaultId &&
+            answerable.requiredEvidenceTerms?.every((term) =>
+              section.content.includes(term),
+            ),
+        );
+        const searchEvidence = scoreEvidenceLocatorCitations(
+          goldHit?.citations ?? [],
+        );
+        const sectionEvidence = scoreEvidenceLocatorCitations(
+          goldSections.flatMap((section) => section.sourceOrEvidenceIds ?? []),
+        );
+        const packetEvidence = scoreEvidenceLocatorCitations(
+          contextBody.citations,
+        );
+        const noAnswerEvidenceCitations = absentBody.hits.flatMap((hit) =>
+          (hit.citations ?? []).filter((citation) =>
+            citation.startsWith(
+              citationTransitProtocol.measurement.evidenceCitationPrefix,
+            ),
+          ),
+        );
+        const citationMetrics = {
+          searchEvidenceLocatorPrecision: searchEvidence.precision,
+          searchExactLocatorRecall: searchEvidence.exactLocatorRecall,
+          contextSectionEvidenceLocatorPrecision: sectionEvidence.precision,
+          contextSectionExactLocatorRecall: sectionEvidence.exactLocatorRecall,
+          packetEvidenceLocatorPrecision: packetEvidence.precision,
+          packetExactLocatorRecall: packetEvidence.exactLocatorRecall,
+          noAnswerEvidenceFalseAcceptance: noAnswerEvidenceCitations.length,
+          crossVaultLeakageCount: leakageCount,
+        };
+        const citationGates = Object.fromEntries(
+          Object.entries(citationTransitProtocol.gates).map(
+            ([name, expected]) => [
+              name,
+              citationMetrics[name as keyof typeof citationMetrics] ===
+                expected,
+            ],
+          ),
+        );
+        const citationPass = Object.values(citationGates).every(Boolean);
+        const citationReport = {
+          schemaVersion: citationTransitProtocol.schemaVersion,
+          generatedAt: new Date().toISOString(),
+          commit: process.env.GITHUB_SHA ?? null,
+          baselineSha: citationTransitProtocol.baselineSha,
+          outcome: citationPass
+            ? citationTransitProtocol.outcomes.pass
+            : citationTransitProtocol.outcomes.fail,
+          claimBoundary: citationTransitProtocol.claimBoundary,
+          productionBehaviorChanged: false,
+          retrievalChanged: false,
+          admissionChanged: false,
+          contextPacketChanged: false,
+          gold: {
+            sourceSha256: oracle.source.sha256,
+            evidenceLocatorSha256: expectedEvidenceLocatorHash,
+            evidenceExcerptSha256: evidenceRow.content_hash,
+          },
+          observations: {
+            search: searchEvidence,
+            contextSection: sectionEvidence,
+            packet: packetEvidence,
+            noAnswerEvidenceCitations: noAnswerEvidenceCitations.length,
+            crossVaultLeakageCount: leakageCount,
+          },
+          metrics: citationMetrics,
+          gates: citationGates,
+        };
+        await mkdir(path.dirname(citationTransitReportPath), {
+          recursive: true,
+        });
+        await writeFile(
+          citationTransitReportPath,
+          JSON.stringify(citationReport, null, 2) + "\n",
+          "utf8",
+        );
+        expect(
+          citationReport.outcome,
+          JSON.stringify(citationReport, null, 2),
+        ).toBe(citationTransitProtocol.outcomes.pass);
+      }
+
+      const gates = {
+        sourceHashExact: true,
+        sourceArtifactHashExact: true,
+        structuralArtifactOracleExact: true,
+        evidenceBoundToArtifactLocator: true,
+        reviewRequiredBeforePublication: true,
+        publicationApprovedViaReviewApi: true,
+        publishedProvenanceExact: true,
+        atomicUnitOracleExact: true,
+        allEmbeddingEligibleUnitsCovered:
+          embeddingParity.rows[0]?.eligible_units ===
+          embeddingParity.rows[0]?.embedded_units,
+        activeEmbeddingGenerationAtCurrentRevision:
+          generation.rows[0]?.corpus_revision === indexRow.corpus_revision,
+        allServedIndexRevisionsEqualCurrentCorpus:
+          indexRow.lexical_revision === indexRow.corpus_revision &&
+          indexRow.vector_revision === indexRow.corpus_revision &&
+          indexRow.graph_revision === indexRow.corpus_revision &&
+          indexRow.context_pack_revision === indexRow.corpus_revision,
+        answerableSearchSupportedWithGoldEvidence: Boolean(goldHit),
+        answerableContextContainsGoldEvidenceAndCitation:
+          contextBody.status === "SUPPORTED" &&
+          contextBody.citations.some((citation) =>
+            citation.includes(oracle.publication.persistedPathSuffix),
+          ),
+        noAnswerDoesNotAdmitEvidence: absentBody.hits.length === 0,
+        crossVaultLeakageCount: leakageCount,
+      };
+      expect(gates).toEqual(oracle.gates);
+
+      const report = {
+        schemaVersion: oracle.schemaVersion,
+        generatedAt: new Date().toISOString(),
+        commit: process.env.GITHUB_SHA ?? null,
+        baselineSha: oracle.baselineSha,
+        outcome: oracle.claimBoundary.passOutcome,
+        claimBoundary: oracle.claimBoundary,
+        source: {
+          sha256: oracle.source.sha256,
+          sourceId,
+          artifactId: artifactRow.id,
+          evidenceId: evidenceRow.id,
+        },
+        publication: {
+          reviewId,
+          revision: indexRow.corpus_revision,
+          documentId: documentRow.id,
+          path: documentRow.path,
+        },
+        units: {
+          active: units.rows.length,
+          oracleCases: oracle.unitOracle.length,
+          embeddingEligible: embeddingParity.rows[0]?.eligible_units,
+          embedded: embeddingParity.rows[0]?.embedded_units,
+        },
+        vector: generation.rows[0],
+        retrieval: {
+          answerableHits: searchBody.hits.length,
+          answerableGoldUnitId: goldHit?.unitId ?? null,
+          noAnswerHits: absentBody.hits.length,
+          contextPacketId: contextBody.packetId,
+        },
+        gates,
+      };
+      const reportPath = path.resolve(
+        process.env.AKP_R2_R7_FRESH_E2E_REPORT ??
+          "reports/ci/r2-r7-fresh-source-e2e.json",
+      );
+      await mkdir(path.dirname(reportPath), { recursive: true });
+      await writeFile(
+        reportPath,
+        JSON.stringify(report, null, 2) + "\n",
+        "utf8",
+      );
+    },
+    180_000,
+  );
 });

@@ -3,6 +3,7 @@ import {
   LOCAL_MULTILINGUAL_NLI_MDEBERTA_DESCRIPTOR,
   LOCAL_MULTILINGUAL_NLI_MINILM_DESCRIPTOR,
   LocalMultilingualNliEvidenceVerifier,
+  evidenceSentenceWindows,
   type LocalMultilingualNliRuntimeFactory,
 } from "../src/local-multilingual-nli-evidence.js";
 
@@ -19,6 +20,29 @@ const input = {
 } as const;
 
 describe("local multilingual NLI evidence verifier", () => {
+  it.each([
+    "The valve releases 0.25 liters; the output is measured per stroke.",
+    "La válvula entrega 0.25 litros; la salida se mide por ciclo.",
+  ])(
+    "preserves decimals and semicolons in one evidence sentence: %s",
+    (text) => {
+      const passage = `  ${text}  \nThe next sentence reports maintenance.`;
+      const windows = evidenceSentenceWindows(passage);
+      expect(windows).toHaveLength(2);
+      expect(windows[0]).toEqual({
+        text,
+        premise: text,
+        startOffset: 2,
+        endOffset: text.length + 2,
+      });
+      for (const window of windows) {
+        expect(passage.slice(window.startOffset, window.endOffset)).toBe(
+          window.text,
+        );
+      }
+    },
+  );
+
   it("accepts a clearly entailed negative answer and returns the bounded span", async () => {
     const runtimeFactory: LocalMultilingualNliRuntimeFactory = async () => ({
       infer: async (_premise, hypothesis) =>
@@ -43,6 +67,160 @@ describe("local multilingual NLI evidence verifier", () => {
     });
   });
 
+  it("exposes one-pass polarity diagnostics for calibration", async () => {
+    const verifier = new LocalMultilingualNliEvidenceVerifier({
+      minimumEntailmentScore: 0.7,
+      minimumPolarityMargin: 0.2,
+      runtimeFactory: async () => ({
+        infer: async (_premise, hypothesis) =>
+          hypothesis.includes("do not define")
+            ? { entailment: 0.9, neutral: 0.07, contradiction: 0.03 }
+            : { entailment: 0.2, neutral: 0.1, contradiction: 0.7 },
+      }),
+    });
+
+    await expect(verifier.evaluate(input)).resolves.toMatchObject({
+      score: 0.9,
+      oppositeScore: 0.2,
+      polarityMargin: 0.7,
+      direction: "NEGATIVE",
+      evidenceSpan: {
+        startOffset: expect.any(Number),
+        endOffset: expect.any(Number),
+      },
+      reason: "LOCAL_MULTILINGUAL_NLI_POLARITY_CANDIDATE",
+    });
+  });
+
+  it("selects a calibrated passage even when an ambiguous passage has a higher raw score", async () => {
+    const passage = "An ambiguous assertion. A reliable assertion.";
+    const verifier = new LocalMultilingualNliEvidenceVerifier({
+      minimumEntailmentScore: 0.8,
+      minimumPolarityMargin: 0.2,
+      runtimeFactory: async () => ({
+        infer: async (premise, hypothesis) => {
+          const negative = hypothesis.includes("do not define");
+          const entailment = premise.startsWith("An ambiguous")
+            ? negative
+              ? 0.98
+              : 0.99
+            : negative
+              ? 0.05
+              : 0.9;
+          return {
+            entailment,
+            neutral: (1 - entailment) / 2,
+            contradiction: (1 - entailment) / 2,
+          };
+        },
+      }),
+    });
+
+    // Raw calibration diagnostics stay independent of the configured boundary.
+    await expect(
+      verifier.evaluate({ ...input, passage }),
+    ).resolves.toMatchObject({
+      score: 0.99,
+      polarityMargin: expect.closeTo(0.01),
+      evidenceSpan: {
+        startOffset: 0,
+        endOffset: "An ambiguous assertion.".length,
+      },
+    });
+    await expect(verifier.verify({ ...input, passage })).resolves.toMatchObject(
+      {
+        decision: "SUPPORTS",
+        score: 0.9,
+        evidenceSpan: {
+          startOffset: passage.indexOf("A reliable"),
+          endOffset: passage.length,
+        },
+      },
+    );
+  });
+
+  it("forms Spanish yes/no polarity hypotheses without borrowing a title predicate", async () => {
+    const hypotheses: string[] = [];
+    const verifier = new LocalMultilingualNliEvidenceVerifier({
+      minimumEntailmentScore: 0.7,
+      minimumPolarityMargin: 0.2,
+      runtimeFactory: async () => ({
+        infer: async (_premise, hypothesis) => {
+          hypotheses.push(hypothesis);
+          return hypothesis.startsWith("No es cierto")
+            ? { entailment: 0.05, neutral: 0.15, contradiction: 0.8 }
+            : { entailment: 0.9, neutral: 0.07, contradiction: 0.03 };
+        },
+      }),
+    });
+
+    await expect(
+      verifier.verify({
+        ...input,
+        query: "¿Puede ALTO usar BRIO?",
+        title: "Unrelated catalog title",
+        passage: "ALTO puede usar BRIO para transportar eventos.",
+      }),
+    ).resolves.toMatchObject({
+      decision: "SUPPORTS",
+      reason: "LOCAL_MULTILINGUAL_NLI_POSITIVE_ANSWER_SUPPORT",
+    });
+    expect(hypotheses).toEqual([
+      "Puede ALTO usar BRIO.",
+      "No es cierto que puede ALTO usar BRIO.",
+    ]);
+  });
+
+  it("keeps candidate titles out of the NLI evidence premise", async () => {
+    const premises: string[] = [];
+    const verifier = new LocalMultilingualNliEvidenceVerifier({
+      minimumEntailmentScore: 0.7,
+      minimumPolarityMargin: 0.2,
+      runtimeFactory: async () => ({
+        infer: async (premise, hypothesis) => {
+          premises.push(premise);
+          return hypothesis.includes("do not define")
+            ? { entailment: 0.9, neutral: 0.07, contradiction: 0.03 }
+            : { entailment: 0.04, neutral: 0.08, contradiction: 0.88 };
+        },
+      }),
+    });
+
+    await verifier.verify({
+      ...input,
+      title: "Misleading title claims the patterns define architecture",
+    });
+
+    expect(premises.length).toBeGreaterThan(0);
+    expect(premises).not.toContain(
+      "Misleading title claims the patterns define architecture",
+    );
+    expect(
+      premises.every(
+        (premise) =>
+          !premise.includes(
+            "Misleading title claims the patterns define architecture",
+          ),
+      ),
+    ).toBe(true);
+    expect(premises).toContain("Strategy y Adapter son patrones locales.");
+  });
+
+  it("does not turn an open Spanish question into a yes/no hypothesis", async () => {
+    const runtimeFactory = vi.fn<LocalMultilingualNliRuntimeFactory>();
+    const verifier = new LocalMultilingualNliEvidenceVerifier({
+      minimumEntailmentScore: 0.7,
+      minimumPolarityMargin: 0.2,
+      runtimeFactory,
+    });
+    await expect(
+      verifier.verify({ ...input, query: "¿Por qué ALTO usa BRIO?" }),
+    ).resolves.toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "LOCAL_MULTILINGUAL_NLI_QUERY_SHAPE_UNSUPPORTED",
+    });
+    expect(runtimeFactory).not.toHaveBeenCalled();
+  });
   it("rejects a lexical distractor when both polarities remain neutral", async () => {
     const verifier = new LocalMultilingualNliEvidenceVerifier({
       minimumEntailmentScore: 0.6,
@@ -66,6 +244,63 @@ describe("local multilingual NLI evidence verifier", () => {
       decision: "INSUFFICIENT",
       reason: "LOCAL_MULTILINGUAL_NLI_NO_ENTAILED_POLARITY",
     });
+  });
+
+  it("uses candidate title scope to build a generic yes/no relation hypothesis", async () => {
+    const hypotheses: string[] = [];
+    const verifier = new LocalMultilingualNliEvidenceVerifier({
+      minimumEntailmentScore: 0.6,
+      minimumPolarityMargin: 0.2,
+      runtimeFactory: async () => ({
+        infer: async (_premise, hypothesis) => {
+          hypotheses.push(hypothesis);
+          return hypothesis.includes("reduces reasons to change")
+            ? { entailment: 0.9, neutral: 0.06, contradiction: 0.04 }
+            : { entailment: 0.05, neutral: 0.08, contradiction: 0.87 };
+        },
+      }),
+    });
+
+    await expect(
+      verifier.verify({
+        ...input,
+        query: "Does a single-purpose module reduce reasons to change?",
+        title: "Single-purpose modules",
+        passage:
+          "Un módulo con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
+      }),
+    ).resolves.toMatchObject({
+      decision: "SUPPORTS",
+      reason: "LOCAL_MULTILINGUAL_NLI_POSITIVE_ANSWER_SUPPORT",
+    });
+    expect(hypotheses).toContain(
+      "a single-purpose module reduces reasons to change.",
+    );
+    expect(hypotheses).toContain(
+      "a single-purpose module does not reduce reasons to change.",
+    );
+  });
+
+  it("refuses generic relation parsing when the candidate title scopes the object instead of the subject", async () => {
+    const runtimeFactory = vi.fn<LocalMultilingualNliRuntimeFactory>();
+    const verifier = new LocalMultilingualNliEvidenceVerifier({
+      minimumEntailmentScore: 0.6,
+      minimumPolarityMargin: 0.2,
+      runtimeFactory,
+    });
+
+    await expect(
+      verifier.verify({
+        ...input,
+        query: "Can ORCA call LUMA?",
+        title: "LUMA integration",
+        passage: "LUMA can call ORCA during reconciliation.",
+      }),
+    ).resolves.toEqual({
+      decision: "INSUFFICIENT",
+      reason: "LOCAL_MULTILINGUAL_NLI_QUERY_SHAPE_UNSUPPORTED",
+    });
+    expect(runtimeFactory).not.toHaveBeenCalled();
   });
 
   it("refuses query shapes for which it cannot build a faithful hypothesis", async () => {

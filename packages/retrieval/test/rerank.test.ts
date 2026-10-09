@@ -148,6 +148,39 @@ describe("safe search hit reranking", () => {
     expect(second.rerankTrace).toBeUndefined();
   });
 
+  it("allows distinct atomic units from the same document to be reranked independently", () => {
+    const documentId = "00000000-0000-4000-8000-000000000003";
+    const first = hit(documentId, "Shared document", "General context", {
+      unitId: "10000000-0000-4000-8000-000000000001",
+      unitType: "PARAGRAPH",
+    });
+    const second = hit(documentId, "Shared document", "Retry policy guidance", {
+      unitId: "10000000-0000-4000-8000-000000000002",
+      unitType: "PARAGRAPH",
+    });
+
+    const output = rerankSearchHits(
+      "retry policy",
+      [first, second],
+      deterministicLexicalReranker,
+    );
+
+    expect(output.map((candidate) => candidate.unitId)).toEqual([
+      second.unitId,
+      first.unitId,
+    ]);
+    expect(output.map((candidate) => candidate.rerankTrace?.preRank)).toEqual([
+      2, 1,
+    ]);
+    expect(() =>
+      rerankSearchHits(
+        "retry policy",
+        [first, { ...first }],
+        deterministicLexicalReranker,
+      ),
+    ).toThrow("RERANK_DUPLICATE_CANDIDATE_ID");
+  });
+
   it("rejects duplicate identities before scoring", () => {
     const candidate = hit(
       "00000000-0000-4000-8000-000000000003",

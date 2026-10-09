@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ReaderEvidenceVerifier } from "../src/evidence-reader.js";
 import type { SearchHit } from "@akp/contracts";
 import {
   assessRetrievalAnswerability,
@@ -20,6 +21,10 @@ function hit(
     type?: string;
     trust?: SearchHit["trust"];
     externalId?: string;
+    structuralOrder?: number;
+    headingPath?: string[];
+    unitType?: string;
+    aliases?: string[];
   },
 ): SearchHit {
   const documentId = `11111111-1111-4111-8111-${String(idSuffix).padStart(12, "0")}`;
@@ -28,11 +33,16 @@ function hit(
     documentId,
     vaultId: VAULT_ID,
     unitId,
-    unitType: "PARAGRAPH",
+    unitType: input.unitType ?? "PARAGRAPH",
+    ...(input.structuralOrder === undefined
+      ? {}
+      : { structuralOrder: input.structuralOrder }),
+    ...(input.headingPath ? { headingPath: input.headingPath } : {}),
     document: {
       externalId: input.externalId ?? `public-fixture-${idSuffix}`,
       path: `docs/public-${idSuffix}.md`,
       title: input.title,
+      ...(input.aliases ? { aliases: input.aliases } : {}),
     },
     revision: "revision-1",
     title: input.title,
@@ -64,6 +74,119 @@ function contribution(
 }
 
 describe("retrieval answerability", () => {
+  it("does not infer a relation from a catalog sentence that lists both entities", () => {
+    const catalog = hit(904, {
+      title: "FINP and LEDG catalog",
+      type: "dashboard",
+      excerpt:
+        "FINP and LEDG have separate reports; the review requires owner approval.",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+    const result = assessRetrievalAnswerability(
+      [catalog],
+      "Does FINP require LEDG?",
+    );
+    expect(result.supported).toBe(false);
+  });
+  it("rejects a proposition with the same entities but a different unrecognized relation", () => {
+    const topicalClaim = hit(905, {
+      title: "NEXO and QARO documentation",
+      type: "claim",
+      excerpt: "NEXO and QARO are documented in separate reports.",
+      contributions: [contribution("vector", 0.92, 1)],
+    });
+    const direct = hit(906, {
+      title: "NEXO integration",
+      type: "claim",
+      excerpt: "NEXO can use QARO for delivery.",
+      contributions: [contribution("vector", 0.9, 2)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [topicalClaim, direct],
+      "Can NEXO use QARO?",
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(direct),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: false,
+    });
+    expect(result.candidateSignals[1]?.passageSupport).toMatchObject({
+      supported: true,
+      boundedRelationRoleMatched: true,
+    });
+  });
+
+  it("rejects the reverse direction for an unrecognized relation", () => {
+    const reverse = hit(907, {
+      title: "QARO integration",
+      type: "decision-rule",
+      excerpt: "QARO can use NEXO for delivery.",
+      contributions: [contribution("vector", 0.93, 1)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [reverse],
+      "Can NEXO use QARO?",
+    );
+
+    expect(result.supported).toBe(false);
+  });
+
+  it("does not let title scope substitute for the subject of an unrecognized relation", () => {
+    const anaphoric = hit(908, {
+      title: "NEXO integration",
+      type: "rule",
+      excerpt: "It can use QARO for delivery.",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+    const otherSubject = hit(911, {
+      title: "NEXO integration",
+      type: "claim",
+      excerpt: "Reviewers can use QARO while checking NEXO reports.",
+      contributions: [contribution("vector", 0.9, 2)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [anaphoric, otherSubject],
+      "Can NEXO use QARO?",
+    );
+
+    expect(result.supported).toBe(false);
+    expect(result.supportedCandidateKeys).toEqual([]);
+  });
+
+  it("keeps catalog mentions and wrong entities exploratory for yes/no relations", () => {
+    const catalog = hit(901, {
+      title: "NEXO and QARO catalog",
+      type: "dashboard",
+      excerpt:
+        "NEXO and QARO have separate reports; the audit can add examples after review.",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+    const wrongEntity = hit(902, {
+      title: "VEXO integration",
+      type: "claim",
+      excerpt: "VEXO can use QARO for delivery.",
+      contributions: [contribution("vector", 0.9, 2)],
+    });
+    const direct = hit(903, {
+      title: "NEXO integration",
+      type: "claim",
+      excerpt: "NEXO can use QARO for delivery.",
+      contributions: [contribution("vector", 0.89, 3)],
+    });
+    const result = assessRetrievalAnswerability(
+      [catalog, wrongEntity, direct],
+      "Can NEXO use QARO?",
+    );
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(direct),
+    ]);
+  });
+
   it("accepts multiple answer-bearing passages even when the vector neighbourhood is dense", () => {
     const hits = [
       hit(1, {
@@ -210,7 +333,8 @@ describe("retrieval answerability", () => {
       title: "Canonical knowledge",
       parentContext:
         "Approved Markdown in managed Git is canonical knowledge. PostgreSQL, vector indexes, graphs, packets and caches are derived operational projections.",
-      excerpt: "Approved Markdown in managed Git is canonical knowledge.",
+      excerpt:
+        "Approved Markdown in managed Git is canonical knowledge. PostgreSQL, vector indexes, graphs, packets and caches are derived operational projections.",
       contributions: [contribution("vector", 0.86, 1)],
     });
     const result = assessRetrievalAnswerability(
@@ -226,6 +350,98 @@ describe("retrieval answerability", () => {
       supported: true,
       requiredAnswerCues: ["DEFINITION"],
     });
+  });
+
+  it("accepts a bilingual functional description only from the introductory concept unit", () => {
+    const candidate = hit(920, {
+      title: "Adaptive failover routing",
+      type: "concept",
+      trust: "MACHINE_SUPPORTED",
+      structuralOrder: 2,
+      headingPath: ["Adaptive failover routing"],
+      aliases: ["enrutamiento adaptativo"],
+      excerpt:
+        "El enrutamiento adaptativo selecciona un destino saludable y conserva una alternativa determinista cuando falla la ruta principal.",
+      contributions: [contribution("vector", 0.84, 4)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "What is adaptive failover routing?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      reason: "CONCEPT_DEFINITION_SUPPORT",
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      reason: "CONCEPT_DEFINITION_SUPPORT",
+      requiredAnswerCues: ["DEFINITION"],
+      matchedAnswerCues: ["DEFINITION"],
+    });
+  });
+
+  it("does not treat a thematic introductory concept paragraph as a definition when it never names the concept", () => {
+    const candidate = hit(923, {
+      title: "Adaptive failover routing",
+      type: "concept",
+      trust: "MACHINE_SUPPORTED",
+      structuralOrder: 2,
+      headingPath: ["Adaptive failover routing"],
+      aliases: ["enrutamiento adaptativo"],
+      excerpt:
+        "Latency, availability, and error counters are recorded every minute for operations.",
+      contributions: [contribution("vector", 0.93, 1)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "What is adaptive failover routing?",
+    );
+
+    expect(result.supported).toBe(false);
+  });
+
+  it("does not treat a later paragraph from the same concept as its definition", () => {
+    const candidate = hit(921, {
+      title: "Adaptive failover routing",
+      type: "concept",
+      trust: "MACHINE_SUPPORTED",
+      structuralOrder: 7,
+      headingPath: ["Adaptive failover routing", "Operations"],
+      excerpt:
+        "The dashboard records latency and availability for adaptive failover routing.",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "What is adaptive failover routing?",
+    );
+
+    expect(result.supported).toBe(false);
+  });
+
+  it("does not grant definition support to a non-concept introductory document", () => {
+    const candidate = hit(922, {
+      title: "Adaptive failover routing",
+      type: "dashboard",
+      trust: "HUMAN_REVIEWED",
+      structuralOrder: 2,
+      headingPath: ["Adaptive failover routing"],
+      excerpt:
+        "The dashboard records latency and availability for adaptive failover routing.",
+      contributions: [contribution("vector", 0.92, 1)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "What is adaptive failover routing?",
+    );
+
+    expect(result.supported).toBe(false);
   });
 
   it("rejects a topical definition when the query asks for an avoidance condition, even on a direct channel", () => {
@@ -359,6 +575,9 @@ describe("retrieval answerability", () => {
   it("accepts a bilingual architecture paraphrase without lowering the global overlap threshold", () => {
     const candidate = hit(33, {
       title: "Local patterns are not system architecture",
+      type: "claim",
+      trust: "MACHINE_SUPPORTED",
+      externalId: "CLM-33",
       excerpt:
         "Mediator y Facade no determinan el conjunto de módulos, límites ni la dirección global de dependencias.",
       contributions: [contribution("vector", 0.9, 1)],
@@ -441,6 +660,51 @@ describe("retrieval answerability", () => {
     expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
       supported: true,
       requiredAnswerCues: ["RULE"],
+    });
+  });
+
+  it("lets a title scope the subject but requires predicate and object in the evidence sentence", () => {
+    const candidate = hit(152, {
+      title: "Blue widget requirement",
+      type: "profile",
+      excerpt: "It requires a storage engine for durable state.",
+      contributions: [contribution("vector", 0.73, 5)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "Does a blue widget require a storage engine?",
+    );
+
+    expect(result).toMatchObject({
+      supported: true,
+      supportedCandidateKeys: [retrievalAnswerabilityCandidateKey(candidate)],
+    });
+  });
+
+  it("does not synthesize a relation by taking the object from the title and the predicate from another sentence", () => {
+    const candidate = hit(153, {
+      title: "Blue widget storage engine practice guide",
+      type: "profile",
+      excerpt:
+        "In practice, a blue widget deployment guide uses a storage engine. The guide does not require the widget itself.",
+      contributions: [contribution("vector", 0.72, 4)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [candidate],
+      "Does a blue widget require a storage engine in practice?",
+    );
+
+    expect(result).toMatchObject({
+      supported: false,
+      supportedCandidateKeys: [],
+      reason: "SUPPORT_NOT_DEMONSTRATED",
+    });
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: false,
+      reason: "ANSWER_CUE_MISMATCH",
+      boundedRelationRoleMatched: false,
     });
   });
 
@@ -768,6 +1032,90 @@ describe("retrieval answerability", () => {
     ).toBeGreaterThanOrEqual(0.4);
   });
 
+  it.each(["rule", "decision-rule"] as const)(
+    "applies the same bounded relation proof to support-eligible %s documents",
+    (type) => {
+      const proposition = hit(type === "rule" ? 909 : 910, {
+        title: "Local filters and system architecture",
+        type,
+        trust: "MACHINE_SUPPORTED",
+        externalId: type === "rule" ? "RUL-909" : "DRL-910",
+        excerpt:
+          "Local filters do not determine modules, boundaries, or global dependency direction.",
+        contributions: [contribution("vector", 0.88, 6)],
+      });
+
+      const result = assessRetrievalAnswerability(
+        [proposition],
+        "Do local filters define the overall system architecture?",
+      );
+
+      expect(result).toMatchObject({
+        supported: true,
+        supportedCandidateKeys: [
+          retrievalAnswerabilityCandidateKey(proposition),
+        ],
+      });
+      expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+        supported: true,
+        reason: "CLAIM_RELATION_SUPPORT",
+      });
+    },
+  );
+
+  it.each([
+    {
+      name: "shared resource refers to other subjects",
+      query: "Can intake and dispatch share a queue?",
+      direct: "Intake and dispatch share a durable queue.",
+      unrelated:
+        "Intake and dispatch monitor two processors, although both processors use the same queue.",
+    },
+    {
+      name: "optionality refers to another component",
+      query: "Is a scheduler mandatory for processing jobs?",
+      direct: "A scheduler is not mandatory for processing jobs.",
+      unrelated: "Jobs run on a scheduler with an optional audit collector.",
+    },
+    {
+      name: "insufficiency is asserted about another subject",
+      query: "Does a gateway prove that the architecture is secure?",
+      direct: "A gateway does not prove that the architecture is secure.",
+      unrelated:
+        "A gateway displays notices that a proxy alone is insufficient to establish security of the architecture.",
+    },
+  ])(
+    "keeps $name exploratory while accepting a direct relation",
+    ({ query, direct, unrelated }) => {
+      const supported = hit(920, {
+        title: "Relation assessment",
+        type: "claim",
+        excerpt: direct,
+        contributions: [contribution("vector", 0.8, 2)],
+      });
+      const distractor = hit(921, {
+        title: "Relation assessment",
+        type: "claim",
+        excerpt: unrelated,
+        contributions: [contribution("vector", 0.99, 1)],
+      });
+
+      const result = assessRetrievalAnswerability(
+        [distractor, supported],
+        query,
+      );
+
+      expect(result.supportedCandidateKeys).toEqual([
+        retrievalAnswerabilityCandidateKey(supported),
+      ]);
+      expect(result.candidateSignals[0]?.passageSupport.supported).toBe(false);
+      expect(result.candidateSignals[1]?.passageSupport.supported).toBe(true);
+      expect(assessRetrievalAnswerability([distractor], query).supported).toBe(
+        false,
+      );
+    },
+  );
+
   it("does not apply claim relation fallback to unreviewed claims", () => {
     const unreviewed = hit(43, {
       title: "Local pattern scope",
@@ -834,6 +1182,137 @@ describe("retrieval answerability", () => {
     ).toContain("QUANTITY");
   });
 
+  it("binds an explicit reporting year instead of accepting a different year", () => {
+    const table = hit(210, {
+      title: "Reliability report",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Indicator | Target | 2025 |\n|---|---|---|\n| Technical dispatch reliability | 99.5% | 99.2% |",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+
+    const missing = assessRetrievalAnswerability(
+      [table],
+      "What was technical dispatch reliability in 2023?",
+    );
+    expect(missing.supported).toBe(false);
+
+    const present = assessRetrievalAnswerability(
+      [table],
+      "What was technical dispatch reliability in 2025?",
+    );
+    expect(present.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(table),
+    ]);
+  });
+
+  it("binds a short numeric table row key to its matching header column", () => {
+    const table = hit(212, {
+      title: "Viajeros por línea",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Línea | Viajeros diarios (2025) |\n|---|---|\n| Metro L1 | 182000 |\n| Metro L2 | 141000 |",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+
+    const missing = assessRetrievalAnswerability(
+      [table],
+      "¿Cuántos viajeros diarios tiene la línea 3 de metro?",
+    );
+    expect(missing.supported).toBe(false);
+
+    const present = assessRetrievalAnswerability(
+      [table],
+      "¿Cuántos viajeros diarios tiene la línea 2 de metro?",
+    );
+    expect(present.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(table),
+    ]);
+  });
+
+  it("does not bind a requested row key from a numeric metric cell", () => {
+    const table = hit(213, {
+      title: "Riders by line",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Line | Daily riders |\n|---|---|\n| Metro L1 | 3.5 |\n| Metro L2 | 141000 |",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [table],
+      "How many daily riders does metro line 3 have?",
+    );
+    expect(result.supported).toBe(false);
+  });
+
+  it.each([
+    ["Metro 3.5", "How many daily riders does metro line 3 have?"],
+    ["Metro -3", "How many daily riders does metro line 3 have?"],
+    ["Metro $3", "How many daily riders does metro line 3 have?"],
+    ["Metro 3%", "How many daily riders does metro line 3 have?"],
+    ["Metro 1,234", "How many daily riders does metro line 1 have?"],
+    ["Metro 1 234", "How many daily riders does metro line 234 have?"],
+  ])(
+    "does not treat composite numeric values as row identifiers: %s",
+    (rowKey, query) => {
+      const table = hit(214, {
+        title: "Riders by line",
+        type: "dashboard",
+        unitType: "TABLE",
+        excerpt: `| Line | Daily riders |\n|---|---|\n| ${rowKey} | 141000 |`,
+        contributions: [contribution("vector", 0.9, 1)],
+      });
+      expect(assessRetrievalAnswerability([table], query).supported).toBe(
+        false,
+      );
+    },
+  );
+
+  it("keeps compact alphanumeric row identifiers eligible", () => {
+    const table = hit(215, {
+      title: "Riders by line",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt: "| Line | Daily riders |\n|---|---|\n| Metro L3 | 141000 |",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+    expect(
+      assessRetrievalAnswerability(
+        [table],
+        "How many daily riders does metro line 3 have?",
+      ).supported,
+    ).toBe(true);
+  });
+
+  it("binds compact numeric selectors to matching table headers", () => {
+    const table = hit(216, {
+      title: "Warehouse KPIs",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| KPI | Target | Q3 |\n|---|---|---|\n| Order picking accuracy | 99.8% | 99.6% |\n| Dock-to-stock time | 24 h | 31 h |",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+
+    const missing = assessRetrievalAnswerability(
+      [table],
+      "What was the order picking accuracy in Q2?",
+    );
+    expect(missing.supported).toBe(false);
+
+    const present = assessRetrievalAnswerability(
+      [table],
+      "What was the dock-to-stock time in Q3?",
+    );
+    expect(present.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(table),
+    ]);
+  });
+
   it("requires an explicit year when the question asks which year", () => {
     const topical = hit(22, {
       title: "Compatibility window history",
@@ -898,7 +1377,7 @@ describe("retrieval answerability", () => {
     });
   });
 
-  it("uses structural parent context when the presentation excerpt omits the decisive passage", () => {
+  it("does not let structural parent context substitute for the cited atomic unit", () => {
     const candidate = hit(1, {
       title: "Durable publication",
       excerpt: "Publication overview.",
@@ -912,12 +1391,14 @@ describe("retrieval answerability", () => {
     );
 
     expect(result).toMatchObject({
-      supported: true,
-      reason: "PASSAGE_TEXT_SUPPORT",
+      supported: false,
+      reason: "SUPPORT_NOT_DEMONSTRATED",
+      supportedCandidateKeys: [],
     });
     expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
-      passageSource: "STRUCTURAL_CONTEXT",
-      supportSurfaceExtendsExcerpt: true,
+      passageSource: "EXCERPT",
+      supportSurfaceExtendsExcerpt: false,
+      supported: false,
     });
   });
 
@@ -1074,6 +1555,35 @@ describe("retrieval answerability", () => {
     });
   });
 
+  it("passes only the atomic excerpt to a query-conditioned verifier", async () => {
+    const candidate = hit(912, {
+      title: "Atomic evidence boundary",
+      excerpt: "The selected unit contains no recovery guarantee.",
+      parentContext:
+        "The parent section states that the durable mechanism guarantees recovery after a crash.",
+      contributions: [contribution("vector", 0.82, 2)],
+    });
+    let observedPassage = "";
+    await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "Does the durable mechanism guarantee recovery after a crash?",
+      {
+        id: "atomic-boundary-verifier",
+        async verify(input) {
+          observedPassage = input.passage;
+          return {
+            decision: "INSUFFICIENT",
+            reason: "atomic unit does not answer",
+          };
+        },
+      },
+      { mode: "SHADOW" },
+    );
+
+    expect(observedPassage).toBe(candidate.excerpt);
+    expect(observedPassage).not.toContain("guarantees recovery");
+  });
+
   it("enforces query-conditioned support on the exact candidate relation", async () => {
     const wrong = hit(41, {
       title: "Adapter example",
@@ -1136,6 +1646,106 @@ describe("retrieval answerability", () => {
           },
         }),
       }),
+    ]);
+  });
+
+  it.each([
+    [
+      "What is the monthly operating cost of the subsystem?",
+      "The inventory contains 72 machines. The monthly operating cost is reviewed regularly.",
+      "The monthly operating cost is reviewed regularly.",
+    ],
+    [
+      "Which year did the review start?",
+      "The policy was stored in 2020. The review start is unspecified.",
+      "The review start is unspecified.",
+    ],
+  ])(
+    "does not borrow a required exact fact from outside the verified span: %s",
+    async (query, excerpt, quote) => {
+      const candidate = hit(914, {
+        title: "Operational record",
+        excerpt,
+        contributions: [contribution("vector", 0.9, 1)],
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        query,
+        {
+          id: "overconfident-verifier",
+          verify: async () => ({
+            decision: "SUPPORTS",
+            reason: "fixture",
+            evidenceSpan: {
+              startOffset: excerpt.indexOf(quote),
+              endOffset: excerpt.indexOf(quote) + quote.length,
+            },
+          }),
+        },
+        { mode: "ENFORCE" },
+      );
+      expect(result.supported).toBe(false);
+      expect(result.candidateSignals[0]?.queryConditionedEvidence?.reason).toBe(
+        "EVIDENCE_SPAN_MISSING_REQUIRED_FACT",
+      );
+    },
+  );
+
+  it("checks the actual reader quote rather than a whole-line envelope", async () => {
+    const candidate = hit(916, {
+      title: "Operational record",
+      excerpt:
+        "The inventory contains 72 machines. The monthly operating cost is reviewed regularly.",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+    const verifier = new ReaderEvidenceVerifier({
+      reader: {
+        id: "reader",
+        judge: async () => ({
+          answers: true,
+          quote: "The monthly operating cost is reviewed regularly.",
+        }),
+      },
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "What is the monthly operating cost of the subsystem?",
+      verifier,
+      { mode: "ENFORCE" },
+    );
+    expect(result.supported).toBe(false);
+    expect(result.candidateSignals[0]?.queryConditionedEvidence?.reason).toBe(
+      "EVIDENCE_SPAN_MISSING_REQUIRED_FACT",
+    );
+  });
+
+  it("retains an exact quantity inside the selected evidence span", async () => {
+    const excerpt =
+      "The inventory contains 72 machines. The monthly operating cost is 90 euros.";
+    const quote = "The monthly operating cost is 90 euros.";
+    const candidate = hit(915, {
+      title: "Operational record",
+      excerpt,
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "What is the monthly operating cost of the subsystem?",
+      {
+        id: "quantity-verifier",
+        verify: async () => ({
+          decision: "SUPPORTS",
+          reason: "fixture",
+          evidenceSpan: {
+            startOffset: excerpt.indexOf(quote),
+            endOffset: excerpt.length,
+          },
+        }),
+      },
+      { mode: "ENFORCE" },
+    );
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(candidate),
     ]);
   });
 
@@ -1205,6 +1815,288 @@ describe("retrieval answerability", () => {
     );
   });
 
+  it("requires visible UTF-16 source spans for SUPPORTS and CONTRADICTS", async () => {
+    const excerpt = "😀 Visible answer. <!-- hidden 🔒 denial -->";
+    const candidate = hit(45, {
+      title: "Source boundary",
+      excerpt,
+      contributions: [contribution("vector", 0.8, 1)],
+    });
+    const visibleEnd = excerpt.indexOf("<!--");
+    const supported = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "What is visible?",
+      {
+        id: "utf16-visible",
+        verify: async () => ({
+          decision: "SUPPORTS",
+          evidenceSpan: { startOffset: 0, endOffset: visibleEnd },
+          reason: "visible source",
+        }),
+      },
+      { mode: "SHADOW" },
+    );
+    expect(
+      supported.candidateSignals[0]?.queryConditionedEvidence,
+    ).toMatchObject({
+      decision: "SUPPORTS",
+      evidenceSpan: { startOffset: 0, endOffset: visibleEnd },
+    });
+
+    const hiddenStart = excerpt.indexOf("<!--");
+    const contradicted = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "What is visible?",
+      {
+        id: "utf16-hidden-contradiction",
+        verify: async () => ({
+          decision: "CONTRADICTS",
+          evidenceSpan: {
+            startOffset: hiddenStart + 4,
+            endOffset: hiddenStart + 15,
+          },
+          reason: "hidden source must not be evidence",
+        }),
+      },
+      { mode: "SHADOW" },
+    );
+    expect(
+      contradicted.candidateSignals[0]?.queryConditionedEvidence,
+    ).toMatchObject({
+      decision: "VERIFIER_ERROR",
+      reason: "QUERY_CONDITIONED_EVIDENCE_SPAN_HIDDEN_SOURCE",
+      evidenceSpan: null,
+    });
+  });
+
+  it("rejects verifier spans that split an astral code point", async () => {
+    const candidate = hit(450, {
+      title: "Surrogate boundary",
+      excerpt: "😀 fact",
+      contributions: [contribution("vector", 0.8, 1)],
+    });
+    const verify = (startOffset: number, endOffset: number) =>
+      assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        "What is the fact?",
+        {
+          id: `surrogate-${startOffset}-${endOffset}`,
+          verify: async () => ({
+            decision: "SUPPORTS" as const,
+            evidenceSpan: { startOffset, endOffset },
+            reason: "source-bound fixture",
+          }),
+        },
+        { mode: "SHADOW" },
+      );
+
+    for (const [startOffset, endOffset] of [
+      [0, 1],
+      [1, 2],
+    ]) {
+      const result = await verify(startOffset, endOffset);
+      expect(
+        result.candidateSignals[0]?.queryConditionedEvidence,
+      ).toMatchObject({
+        decision: "VERIFIER_ERROR",
+        reason: "QUERY_CONDITIONED_EVIDENCE_SPAN_INVALID",
+        evidenceSpan: null,
+      });
+    }
+
+    const valid = await verify(0, 2);
+    expect(valid.candidateSignals[0]?.queryConditionedEvidence).toMatchObject({
+      decision: "SUPPORTS",
+      evidenceSpan: { startOffset: 0, endOffset: 2 },
+    });
+  });
+
+  it.each([
+    [
+      "unknown decision",
+      () => ({
+        decision: "MAYBE",
+        evidenceSpan: { startOffset: 0, endOffset: 4 },
+        reason: "untrusted output",
+      }),
+      "QUERY_CONDITIONED_EVIDENCE_DECISION_INVALID",
+    ],
+    ["null result", () => null, "QUERY_CONDITIONED_EVIDENCE_RESULT_INVALID"],
+    [
+      "invalid score",
+      () => ({
+        decision: "SUPPORTS",
+        score: 2,
+        evidenceSpan: { startOffset: 0, endOffset: 4 },
+        reason: "untrusted output",
+      }),
+      "QUERY_CONDITIONED_EVIDENCE_SCORE_INVALID",
+    ],
+    [
+      "spanless contradiction",
+      () => ({ decision: "CONTRADICTS", reason: "untrusted output" }),
+      "QUERY_CONDITIONED_EVIDENCE_SPAN_REQUIRED",
+    ],
+    [
+      "out of bounds contradiction",
+      () => ({
+        decision: "CONTRADICTS",
+        evidenceSpan: { startOffset: 0, endOffset: 99 },
+        reason: "untrusted output",
+      }),
+      "QUERY_CONDITIONED_EVIDENCE_SPAN_INVALID",
+    ],
+    [
+      "unexpected insufficient span",
+      () => ({
+        decision: "INSUFFICIENT",
+        evidenceSpan: { startOffset: 0, endOffset: 4 },
+        reason: "untrusted output",
+      }),
+      "QUERY_CONDITIONED_EVIDENCE_SPAN_UNEXPECTED",
+    ],
+  ])(
+    "fails closed for malformed verifier output: %s",
+    async (_label, verifyResult, reason) => {
+      const candidate = hit(46, {
+        title: "Malformed verifier output",
+        excerpt: "Fact.",
+        contributions: [contribution("vector", 0.8, 1)],
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        "What is the fact?",
+        {
+          id: "malformed-output",
+          verify: async () => verifyResult() as never,
+        },
+        { mode: "ENFORCE" },
+      );
+      expect(result.supported).toBe(false);
+      expect(
+        result.candidateSignals[0]?.queryConditionedEvidence,
+      ).toMatchObject({
+        decision: "VERIFIER_ERROR",
+        reason,
+        evidenceSpan: null,
+      });
+    },
+  );
+
+  it("keeps batch failures bounded to the affected candidate and closes operation failures", async () => {
+    const first = hit(47, {
+      title: "First fact",
+      excerpt: "First fact is recorded.",
+      contributions: [contribution("vector", 0.8, 1)],
+    });
+    const second = hit(48, {
+      title: "Second fact",
+      excerpt: "Second fact is recorded.",
+      contributions: [contribution("vector", 0.79, 2)],
+    });
+    const query = "What fact is recorded?";
+    const baseline = assessRetrievalAnswerability([first, second], query);
+    const rowFailure = await assessRetrievalAnswerabilityWithVerifier(
+      [first, second],
+      query,
+      {
+        id: "row-bounded",
+        verifyBatch: async () =>
+          [
+            {
+              decision: "SUPPORTS",
+              evidenceSpan: { startOffset: 0, endOffset: first.excerpt.length },
+              reason: "first source",
+            },
+            {
+              decision: "UNKNOWN",
+              evidenceSpan: {
+                startOffset: 0,
+                endOffset: second.excerpt.length,
+              },
+              reason: "malformed second row",
+            },
+          ] as never,
+      },
+      { mode: "SHADOW" },
+    );
+    expect(
+      rowFailure.candidateSignals[0]?.queryConditionedEvidence,
+    ).toMatchObject({ decision: "SUPPORTS" });
+    expect(
+      rowFailure.candidateSignals[1]?.queryConditionedEvidence,
+    ).toMatchObject({
+      decision: "VERIFIER_ERROR",
+      reason: "QUERY_CONDITIONED_EVIDENCE_DECISION_INVALID",
+    });
+    expect(rowFailure.supported).toBe(baseline.supported);
+    expect(rowFailure.supportedCandidateKeys).toEqual(
+      baseline.supportedCandidateKeys,
+    );
+
+    const batchFailure = await assessRetrievalAnswerabilityWithVerifier(
+      [first, second],
+      query,
+      {
+        id: "batch-size-failure",
+        verifyBatch: async () =>
+          [
+            {
+              decision: "SUPPORTS",
+              evidenceSpan: { startOffset: 0, endOffset: first.excerpt.length },
+              reason: "only one row",
+            },
+          ] as never,
+      },
+      { mode: "SHADOW" },
+    );
+    expect(
+      batchFailure.candidateSignals.map(
+        (signal) => signal.queryConditionedEvidence,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        decision: "VERIFIER_ERROR",
+        reason: "QUERY_CONDITIONED_EVIDENCE_BATCH_SIZE_MISMATCH",
+      }),
+      expect.objectContaining({
+        decision: "VERIFIER_ERROR",
+        reason: "QUERY_CONDITIONED_EVIDENCE_BATCH_SIZE_MISMATCH",
+      }),
+    ]);
+    expect(batchFailure.supported).toBe(baseline.supported);
+    expect(batchFailure.supportedCandidateKeys).toEqual(
+      baseline.supportedCandidateKeys,
+    );
+  });
+
+  it("does not expose provider exception text in the verifier trace", async () => {
+    const candidate = hit(49, {
+      title: "Provider boundary",
+      excerpt: "Private source text.",
+      contributions: [contribution("vector", 0.8, 1)],
+    });
+    const secret = "private-source https://user:password@example.invalid/token";
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "What is the source text?",
+      {
+        id: "provider-failure",
+        verify: async () => {
+          throw new Error(secret);
+        },
+      },
+      { mode: "SHADOW" },
+    );
+    const trace = result.candidateSignals[0]?.queryConditionedEvidence;
+    expect(trace).toMatchObject({
+      decision: "VERIFIER_ERROR",
+      reason: "QUERY_CONDITIONED_EVIDENCE_VERIFIER_ERROR",
+      evidenceSpan: null,
+    });
+    expect(JSON.stringify(trace)).not.toContain(secret);
+  });
+
   it("uses the comparison pool only for vector diagnostics, never as implicit support", () => {
     const winner = hit(1, {
       title: "Observability",
@@ -1236,4 +2128,762 @@ describe("retrieval answerability", () => {
       resolveRetrievalAnswerabilityPolicy({ minimumSalientOverlap: 0 }),
     ).toThrow("minimumSalientOverlap");
   });
+});
+
+describe("requirement absence evidence", () => {
+  it("keeps implicit capability-without claims exploratory until the predicate is demonstrated", () => {
+    const optionalScheduler = hit(1871, {
+      title: "Ejecución de trabajos",
+      type: "claim",
+      excerpt:
+        "Los trabajos pueden procesarse directamente sin scheduler; incorporarlo es una opción operativa.",
+      contributions: [contribution("lexical")],
+    });
+    const optionalCollector = hit(1872, {
+      title: "Ejecución de trabajos",
+      type: "claim",
+      excerpt:
+        "Los trabajos pueden procesarse con scheduler sin un recolector de auditoría.",
+      contributions: [contribution("lexical")],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [optionalCollector, optionalScheduler],
+      "¿Es obligatorio usar un scheduler para procesar trabajos?",
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([]);
+    expect(result.candidateSignals[0]?.passageSupport.supported).toBe(false);
+  });
+
+  it("does not use a capability word as a general requirement proof", () => {
+    const optionalChecksum = hit(1873, {
+      title: "Record validation",
+      type: "claim",
+      excerpt: "Record validation can continue without a checksum.",
+      contributions: [contribution("lexical")],
+    });
+    const unrelatedAbsence = hit(1874, {
+      title: "Record validation",
+      type: "claim",
+      excerpt:
+        "Record validation can continue with a checksum without an audit marker.",
+      contributions: [contribution("lexical")],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [unrelatedAbsence, optionalChecksum],
+      "Is a checksum mandatory for record validation?",
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([]);
+    expect(result.candidateSignals[0]?.passageSupport.supported).toBe(false);
+  });
+});
+
+describe("conditional table evidence", () => {
+  it("binds condition and decision cells in the same row without admitting a metric table", () => {
+    const decision = hit(1901, {
+      title: "Partitioned dispatch selection",
+      type: "rule",
+      unitType: "TABLE",
+      excerpt:
+        "| Observed situation | Decision |\n|---|---|\n| Independent destinations with bursty traffic | Select partitioned dispatch |\n| One stable destination with small constant load | Use a single consumer |",
+      contributions: [contribution("lexical")],
+    });
+    const metrics = hit(1902, {
+      title: "Partitioned dispatch selection",
+      type: "rule",
+      unitType: "TABLE",
+      excerpt:
+        "| Metric | Recorded value |\n|---|---|\n| Partitioned dispatch | Queue length |\n| Single consumer | Delivery count |",
+      contributions: [contribution("lexical")],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [decision, metrics],
+      "When should partitioned dispatch be selected?",
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(decision),
+    ]);
+    expect(result.candidateSignals[0]?.passageSupport).toMatchObject({
+      supported: true,
+      matchedAnswerCues: ["CONDITION"],
+    });
+    expect(result.candidateSignals[1]?.passageSupport.supported).toBe(false);
+  });
+
+  it("uses bilingual condition and decision headers without admitting metric tables", () => {
+    const decision = hit(1903, {
+      title: "Batched delivery selection",
+      type: "decision-rule",
+      unitType: "TABLE",
+      excerpt:
+        "| Situación observada | Decisión |\n|---|---|\n| Varias entregas pequeñas al mismo destino | Seleccionar batched delivery |\n| Una entrega urgente independiente | Enviar directamente |",
+      contributions: [contribution("lexical")],
+    });
+    const metrics = hit(1904, {
+      title: "Batched delivery selection",
+      type: "decision-rule",
+      unitType: "TABLE",
+      excerpt:
+        "| Métrica | Valor registrado |\n|---|---|\n| Batched delivery | Número de entregas |\n| Envío directo | Duración observada |",
+      contributions: [contribution("lexical")],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [decision, metrics],
+      "When should batched delivery be selected?",
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(decision),
+    ]);
+    expect(result.candidateSignals[1]?.passageSupport.supported).toBe(false);
+  });
+
+  it("binds condition and decision cells outside the dispatch domain", () => {
+    const decision = hit(1906, {
+      title: "Reconciliation policy",
+      type: "decision-rule",
+      unitType: "TABLE",
+      excerpt:
+        "| Condition | Decision |\n|---|---|\n| Settlement mismatch after the cutoff | Select manual reconciliation |\n| Matched settlement within the cutoff | Continue automatically |",
+      contributions: [contribution("lexical")],
+    });
+    const metrics = hit(1907, {
+      title: "Reconciliation metrics",
+      type: "decision-rule",
+      unitType: "TABLE",
+      excerpt:
+        "| Metric | Recorded value |\n|---|---|\n| Manual reconciliation | Case count |\n| Automatic processing | Duration |",
+      contributions: [contribution("lexical")],
+    });
+
+    const result = assessRetrievalAnswerability(
+      [decision, metrics],
+      "When should manual reconciliation be selected?",
+    );
+
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(decision),
+    ]);
+    expect(result.candidateSignals[1]?.passageSupport.supported).toBe(false);
+  });
+
+  it("does not borrow target anchors from the condition cell", () => {
+    const candidate = hit(1905, {
+      title: "Partitioned dispatch selection",
+      type: "rule",
+      unitType: "TABLE",
+      excerpt:
+        "| Observed situation | Decision |\n|---|---|\n| Partitioned dispatch with bursty traffic | Use a single consumer |",
+      contributions: [contribution("lexical")],
+    });
+
+    expect(
+      assessRetrievalAnswerability(
+        [candidate],
+        "When should partitioned dispatch be selected?",
+      ).supported,
+    ).toBe(false);
+  });
+});
+
+describe("questions are not evidence assertions", () => {
+  it.each([
+    "Can ALFA call BETA?",
+    "Do delivery workers share one queue?",
+    "Does a lease require renewal?",
+  ])("rejects a source that only repeats %s", (query) => {
+    const candidate = hit(2001, {
+      title: "Open questions",
+      type: "claim",
+      excerpt: query,
+      contributions: [contribution("lexical")],
+    });
+    expect(assessRetrievalAnswerability([candidate], query).supported).toBe(
+      false,
+    );
+  });
+});
+
+describe("requirement absence predicate boundaries", () => {
+  it.each([
+    "Record validation reports can be viewed without a checksum.",
+    "Record validation can be simulated without a checksum.",
+    "Record validation can continue without a checksummer.",
+  ])("does not infer validation requirements from %s", (excerpt) => {
+    const candidate = hit(2010, {
+      title: "Record validation",
+      type: "claim",
+      excerpt,
+      contributions: [contribution("lexical")],
+    });
+    expect(
+      assessRetrievalAnswerability(
+        [candidate],
+        "Is a checksum mandatory for record validation?",
+      ).supported,
+    ).toBe(false);
+  });
+});
+
+describe("table assertion boundaries", () => {
+  it.each([
+    "Should manual reconciliation be selected?",
+    '"Select manual reconciliation?"',
+  ])("does not accept a decision cell containing only %s", (decision) => {
+    const candidate = hit(2011, {
+      title: "Reconciliation policy",
+      type: "decision-rule",
+      unitType: "TABLE",
+      excerpt: `| Condition | Decision |\n|---|---|\n| Settlement mismatch | ${decision} |`,
+      contributions: [contribution("lexical")],
+    });
+    expect(
+      assessRetrievalAnswerability(
+        [candidate],
+        "When should manual reconciliation be selected?",
+      ).supported,
+    ).toBe(false);
+  });
+
+  it("does not infer a decision from a decision-count metric", () => {
+    const candidate = hit(2012, {
+      title: "Reconciliation metrics",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Condition | Decision count |\n|---|---|\n| Settlement mismatch | Manual reconciliation: 12 |",
+      contributions: [contribution("lexical")],
+    });
+    expect(
+      assessRetrievalAnswerability(
+        [candidate],
+        "When should manual reconciliation be selected?",
+      ).supported,
+    ).toBe(false);
+  });
+});
+
+describe("interrogative formatting and sentence boundaries", () => {
+  it.each([
+    '"Can ALFA call BETA?"',
+    "**Can ALFA call BETA?**",
+    "Can ALFA call BETA？",
+    "Can ALFA call BETA؟",
+    '"Can ALFA call BETA?" The deployment is still under review.',
+    "Can ALFA call BETA?\nThe deployment is still under review.",
+  ])("does not turn an open question into a claim: %s", (excerpt) => {
+    const candidate = hit(2013, {
+      title: "Open integration questions",
+      type: "claim",
+      excerpt,
+      contributions: [contribution("lexical")],
+    });
+    expect(
+      assessRetrievalAnswerability([candidate], "Can ALFA call BETA?")
+        .supported,
+    ).toBe(false);
+  });
+
+  it("preserves an actual answer following an interrogative", () => {
+    const candidate = hit(2014, {
+      title: "Integration decision",
+      type: "claim",
+      excerpt: "Can ALFA call BETA? ALFA can call BETA during reconciliation.",
+      contributions: [contribution("lexical")],
+    });
+    expect(
+      assessRetrievalAnswerability([candidate], "Can ALFA call BETA?")
+        .supported,
+    ).toBe(true);
+  });
+});
+
+describe("reader assertion boundaries", () => {
+  it.each([
+    "Can ALFA call BETA?",
+    "Can ALFA call BETA？",
+    "Can ALFA call BETA؟",
+  ])(
+    "rejects a verifier that calls an open question evidence: %s",
+    async (excerpt) => {
+      const candidate = hit(2020, {
+        type: "claim",
+        unitType: "CLAIM",
+        excerpt,
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        "Can ALFA call BETA?",
+        {
+          id: "adversarial-reader",
+          verify: async () => ({
+            decision: "SUPPORTS",
+            reason: "FIXTURE_VERDICT",
+            score: 1,
+            evidenceSpan: { startOffset: 0, endOffset: excerpt.length },
+          }),
+        },
+        { mode: "ENFORCE" },
+      );
+      expect(result.supported).toBe(false);
+      expect(result.candidateSignals[0]?.queryConditionedEvidence?.reason).toBe(
+        "EVIDENCE_SPAN_NOT_ASSERTION",
+      );
+    },
+  );
+});
+
+describe("reference-only punctuation boundaries", () => {
+  it.each([
+    "[[Ops/controller-acceptance]].",
+    "[[Ops/controller-acceptance]] and [[Ops/decoder-acceptance]].",
+    "[Controller acceptance](ops/controller-acceptance.md).",
+    ". — …",
+  ])(
+    "does not use a title to turn a pointer into an assertion: %s",
+    (excerpt) => {
+      const candidate = hit(2030, {
+        title: "Controller decoder releases",
+        type: "adr",
+        excerpt,
+        contributions: [contribution("lexical")],
+      });
+      const result = assessRetrievalAnswerability(
+        [candidate],
+        "Which decoder release does the controller use?",
+      );
+      expect(result.supported).toBe(false);
+      expect(result.candidateSignals[0]?.passageSupport.reason).toBe(
+        "NO_CONCRETE_PASSAGE",
+      );
+    },
+  );
+});
+
+describe("hidden Markdown assertions", () => {
+  it.each(["lexical", "vector", "exact", "raw"])(
+    "rejects a comment-only assertion from %s",
+    (channel) => {
+      const candidate = hit(2040, {
+        title: "Integration decision",
+        type: "claim",
+        excerpt: "<!-- ALFA can call BETA during reconciliation. -->",
+        contributions: [contribution(channel, 0.99)],
+      });
+      expect(
+        assessRetrievalAnswerability([candidate], "Can ALFA call BETA?")
+          .supported,
+      ).toBe(false);
+    },
+  );
+
+  it("rejects an external verifier selecting hidden source bytes", async () => {
+    const excerpt =
+      "<!-- ALFA can call BETA. -->\nThe integration is under review.";
+    const startOffset = excerpt.indexOf("ALFA");
+    const candidate = hit(2041, {
+      title: "Integration",
+      type: "claim",
+      excerpt,
+      contributions: [contribution("vector", 0.99)],
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "Can ALFA call BETA?",
+      {
+        id: "hidden-assertion-verifier",
+        verify: async () => ({
+          decision: "SUPPORTS",
+          reason: "FIXTURE_VERDICT",
+          score: 1,
+          evidenceSpan: {
+            startOffset,
+            endOffset: startOffset + "ALFA can call BETA.".length,
+          },
+        }),
+      },
+      { mode: "ENFORCE" },
+    );
+    expect(result.supported).toBe(false);
+  });
+});
+
+describe("reader table-cell fact boundary", () => {
+  it.each([
+    [
+      "How much is the monthly service cost?",
+      "| Monthly service cost | Capacity baseline |\n| --- | --- |\n| Monthly service cost unknown | 72 |",
+      "Monthly service cost: Monthly service cost unknown",
+    ],
+    [
+      "How many seats are available?",
+      "| Seats available | Capacity baseline |\n| --- | --- |\n| Seat count unknown | 72 |",
+      "Seats available: Seat count unknown",
+    ],
+    [
+      "In what year did the service begin?",
+      "| Service beginning | Previous audit |\n| --- | --- |\n| Service start year unknown | 2024 |",
+      "Service beginning: Service start year unknown",
+    ],
+    [
+      "In what year did the service begin?",
+      "| Service beginning 2024 | Previous audit |\n| --- | --- |\n| Service start year unknown | 2023 |",
+      "Service beginning 2024: Service start year unknown",
+    ],
+  ])(
+    "does not borrow an unrelated value from the same row: %s",
+    async (query, excerpt, quote) => {
+      const candidate = hit(990, {
+        title: "Service facts",
+        excerpt,
+        unitType: "TABLE",
+        type: "claim",
+        contributions: [contribution("vector", 0.99)],
+      });
+      const verifier = new ReaderEvidenceVerifier({
+        reader: {
+          id: "fixture",
+          judge: async () => ({ answers: true, quote }),
+        },
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        query,
+        verifier,
+        { mode: "ENFORCE" },
+      );
+      expect(result.supportedCandidateKeys).toEqual([]);
+      expect(
+        result.candidateSignals[0]!.queryConditionedEvidence,
+      ).toMatchObject({
+        decision: "INSUFFICIENT",
+        reason: "EVIDENCE_SPAN_MISSING_REQUIRED_FACT",
+      });
+    },
+  );
+  it.each([
+    [
+      "How much is the monthly service cost?",
+      "| Monthly service cost | Capacity baseline |\n| --- | --- |\n| 12 euros | 72 |",
+      "Monthly service cost: 12 euros",
+      "12 euros",
+    ],
+    [
+      "In what year did the service begin?",
+      "| Service beginning | Previous audit |\n| --- | --- |\n| 2025 | 2024 |",
+      "Service beginning: 2025",
+      "2025",
+    ],
+  ])(
+    "retains a directly quoted quantity or year: %s",
+    async (query, excerpt, quote, exact) => {
+      const candidate = hit(991, {
+        title: "Service facts",
+        excerpt,
+        unitType: "TABLE",
+        type: "claim",
+        contributions: [contribution("vector", 0.99)],
+      });
+      const verifier = new ReaderEvidenceVerifier({
+        reader: {
+          id: "fixture",
+          judge: async () => ({ answers: true, quote }),
+        },
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        query,
+        verifier,
+        { mode: "ENFORCE" },
+      );
+      expect(result.supportedCandidateKeys).toEqual([
+        retrievalAnswerabilityCandidateKey(candidate),
+      ]);
+      const span =
+        result.candidateSignals[0]!.queryConditionedEvidence!.evidenceSpan!;
+      expect(excerpt.slice(span.startOffset, span.endOffset)).toBe(exact);
+    },
+  );
+});
+
+describe("reader explicit reporting-period boundary", () => {
+  it.each([
+    [
+      "What was service availability in 2023?",
+      "| Indicator | 2025 |\n| --- | --- |\n| Service availability | 99.2% |",
+      "2025: 99.2%",
+    ],
+    [
+      "What was service availability in 2023?",
+      "| Indicator | 2023 | 2025 |\n| --- | --- | --- |\n| Service availability | Unknown | 99.2% |",
+      "2025: 99.2%",
+    ],
+  ])(
+    "rejects a reader choosing a different reporting period: %s",
+    async (query, excerpt, quote) => {
+      const candidate = hit(2201, {
+        title: "Availability report",
+        type: "dashboard",
+        unitType: "TABLE",
+        excerpt,
+        contributions: [contribution("vector", 0.99)],
+      });
+      const verifier = new ReaderEvidenceVerifier({
+        reader: {
+          id: "fixture",
+          judge: async () => ({ answers: true, quote }),
+        },
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        query,
+        verifier,
+        { mode: "ENFORCE" },
+      );
+      expect(result.supported).toBe(false);
+      expect(result.candidateSignals[0]?.queryConditionedEvidence?.reason).toBe(
+        "EVIDENCE_SPAN_MISSING_REQUIRED_FACT",
+      );
+    },
+  );
+
+  it("accepts the matching reporting period's actual cell value", async () => {
+    const candidate = hit(2202, {
+      title: "Availability report",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Indicator | 2023 | 2025 |\n| --- | --- | --- |\n| Service availability | 99.1% | 99.2% |",
+      contributions: [contribution("vector", 0.99)],
+    });
+    const verifier = new ReaderEvidenceVerifier({
+      reader: {
+        id: "fixture",
+        judge: async () => ({ answers: true, quote: "2023: 99.1%" }),
+      },
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "What was service availability in 2023?",
+      verifier,
+      { mode: "ENFORCE" },
+    );
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(candidate),
+    ]);
+  });
+});
+
+describe("reader period-value binding", () => {
+  it("requires an actual quantity for each requested reporting period", async () => {
+    const candidate = hit(2213, {
+      title: "Fleet statistics",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Metric | 2023 | 2025 |\n| --- | --- | --- |\n| Active vehicles | Unknown | 72 |",
+      contributions: [contribution("vector", 0.99)],
+    });
+    const verifier = new ReaderEvidenceVerifier({
+      reader: {
+        id: "fixture",
+        judge: async () => ({
+          answers: true,
+          quote: "Metric: Active vehicles; 2023: Unknown; 2025: 72",
+        }),
+      },
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "How many active vehicles were there in 2023 and 2025?",
+      verifier,
+      { mode: "ENFORCE" },
+    );
+    expect(result.supported).toBe(false);
+  });
+
+  it("does not let title context override an explicit period in selected prose", async () => {
+    const candidate = hit(2214, {
+      title: "Fleet statistics 2023",
+      excerpt: "In 2025, the active fleet had 72 vehicles.",
+      contributions: [contribution("vector", 0.99)],
+    });
+    const verifier = new ReaderEvidenceVerifier({
+      reader: {
+        id: "fixture",
+        judge: async () => ({
+          answers: true,
+          quote: candidate.excerpt,
+        }),
+      },
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "How many active vehicles were there in 2023?",
+      verifier,
+      { mode: "ENFORCE" },
+    );
+    expect(result.supported).toBe(false);
+  });
+  it.each([
+    [
+      "Fleet statistics",
+      [],
+      "| Metric | 2023 | 2025 |\n| --- | --- | --- |\n| Active vehicles | Unknown | 72 |",
+      "Metric: Active vehicles; 2023: Unknown; 2025: 72",
+    ],
+    [
+      "Fleet statistics 2023",
+      [],
+      "| Metric | 2025 |\n| --- | --- |\n| Active vehicles | 72 |",
+      "2025: 72",
+    ],
+  ])(
+    "does not borrow another period's numeric value even when the title matches",
+    async (title, headingPath, excerpt, quote) => {
+      const candidate = hit(2210, {
+        title,
+        headingPath,
+        type: "dashboard",
+        unitType: "TABLE",
+        excerpt,
+        contributions: [contribution("vector", 0.99)],
+      });
+      const verifier = new ReaderEvidenceVerifier({
+        reader: {
+          id: "fixture",
+          judge: async () => ({ answers: true, quote }),
+        },
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        "How many active vehicles were there in 2023?",
+        verifier,
+        { mode: "ENFORCE" },
+      );
+      expect(result.supported).toBe(false);
+    },
+  );
+
+  it.each([
+    ["Fleet statistics 2023", []],
+    ["Fleet statistics", ["Annual reporting", "2023"]],
+  ])(
+    "retains a period supplied by source metadata when the selected column has no period",
+    async (title, headingPath) => {
+      const candidate = hit(2211, {
+        title,
+        headingPath,
+        type: "dashboard",
+        unitType: "TABLE",
+        excerpt: "| Metric | Actual |\n| --- | --- |\n| Active vehicles | 72 |",
+        contributions: [contribution("vector", 0.99)],
+      });
+      const verifier = new ReaderEvidenceVerifier({
+        reader: {
+          id: "fixture",
+          judge: async () => ({ answers: true, quote: "Actual: 72" }),
+        },
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        "How many active vehicles were there in 2023?",
+        verifier,
+        { mode: "ENFORCE" },
+      );
+      expect(result.supported).toBe(true);
+    },
+  );
+
+  it("retains both requested periods in a comparison", async () => {
+    const candidate = hit(2212, {
+      title: "Fleet statistics",
+      type: "dashboard",
+      unitType: "TABLE",
+      excerpt:
+        "| Metric | 2023 | 2025 |\n| --- | --- | --- |\n| Active vehicles | 65 | 72 |",
+      contributions: [contribution("vector", 0.99)],
+    });
+    const verifier = new ReaderEvidenceVerifier({
+      reader: {
+        id: "fixture",
+        judge: async () => ({
+          answers: true,
+          quote: "Metric: Active vehicles; 2023: 65; 2025: 72",
+        }),
+      },
+    });
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [candidate],
+      "How many active vehicles were there in 2023 and 2025?",
+      verifier,
+      { mode: "ENFORCE" },
+    );
+    expect(result.supported).toBe(true);
+  });
+});
+
+describe("reader row context without numeric donation", () => {
+  it.each([
+    [
+      "How much was the monthly service cost in 2023?",
+      "| Metric | 2023 | 2025 |\n| --- | --- | --- |\n| Monthly service cost | USD 72 | USD 90 |",
+      "2023: USD 72",
+      true,
+    ],
+    [
+      "How much was the monthly service cost in 2023?",
+      "| Metric | 2023 | 2025 |\n| --- | --- | --- |\n| Monthly service cost | Unknown | USD 90 |",
+      "Metric: Monthly service cost; 2023: Unknown; 2025: USD 90",
+      false,
+    ],
+    [
+      "How many active vehicles were there in 2023?",
+      "| Year | Active vehicles |\n| --- | --- |\n| 2023 | 65 |\n| 2025 | 72 |",
+      "Year: 2023; Active vehicles: 65",
+      true,
+    ],
+    [
+      "How many active vehicles were there in 2023?",
+      "| Year | Active vehicles |\n| --- | --- |\n| 2023 | Unknown |\n| 2025 | 72 |",
+      "Year: 2025; Active vehicles: 72",
+      false,
+    ],
+    [
+      "How many active vehicles were there in 2023?",
+      "| Year | Active vehicles |\n| --- | --- |\n| 2023 | Unknown |\n| 2025 | 72 |",
+      "Active vehicles: Unknown",
+      false,
+    ],
+  ])(
+    "binds row/column source context to selected values: %s",
+    async (query, excerpt, quote, supported) => {
+      const candidate = hit(2220, {
+        title: "Operational statistics",
+        type: "dashboard",
+        unitType: "TABLE",
+        excerpt,
+        contributions: [contribution("vector", 0.99)],
+      });
+      const verifier = new ReaderEvidenceVerifier({
+        reader: {
+          id: "fixture",
+          judge: async () => ({ answers: true, quote }),
+        },
+      });
+      const result = await assessRetrievalAnswerabilityWithVerifier(
+        [candidate],
+        query,
+        verifier,
+        { mode: "ENFORCE" },
+      );
+      expect(result.supported).toBe(supported);
+    },
+  );
 });

@@ -11,6 +11,7 @@ import {
   buildCompilationStage,
   modelProviderMetricAttributes,
 } from "../src/compilation-stage.js";
+import { buildFaithfulSourceMarkdown } from "../src/document-artifact.js";
 
 const SPACE_ID = "11111111-1111-4111-8111-111111111111";
 const VAULT_ID = "22222222-2222-4222-8222-222222222222";
@@ -100,11 +101,50 @@ function stageInput() {
     extractor: "fixture",
     extractorVersion: "1",
     artifact: artifact(),
+    sourceMarkdown: buildFaithfulSourceMarkdown(artifact()),
     vectorEnabled: false,
   };
 }
 
 describe("compilation stage", () => {
+  it("rejects absent projections before routing or any database access", async () => {
+    const query = vi.fn();
+    const db = { pool: { query } } as unknown as Postgres;
+    await expect(
+      buildCompilationStage(
+        db,
+        {
+          ...stageInput(),
+          sourceMarkdown: undefined as unknown as ReturnType<
+            typeof buildFaithfulSourceMarkdown
+          >,
+        },
+        null,
+      ),
+    ).rejects.toThrow("SOURCE_MARKDOWN_PROJECTION_INVALID");
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("fails before model routing if the source Markdown is not the persisted artifact projection", async () => {
+    const input = stageInput();
+    const query = vi.fn();
+    const db = { pool: { query } } as unknown as Postgres;
+    await expect(
+      buildCompilationStage(
+        db,
+        {
+          ...input,
+          sourceMarkdown: {
+            ...input.sourceMarkdown,
+            content: "unrelated or truncated text",
+          },
+        },
+        null,
+      ),
+    ).rejects.toThrow("SOURCE_MARKDOWN_ARTIFACT_CONTENT_MISMATCH");
+    expect(query).not.toHaveBeenCalled();
+  });
+
   it("emits bounded provider telemetry dimensions without endpoint or source labels", () => {
     const candidate = compilerCandidate(
       {
@@ -176,6 +216,14 @@ describe("compilation stage", () => {
     expect(output.plan.proposedChanges[0]?.evidenceIds).toEqual([EVIDENCE_ID]);
     expect(output.plan.probes[0]?.evidenceIds).toEqual([EVIDENCE_ID]);
     expect(output.plan.summary).toContain("no semantic compilation occurred");
+    expect(output.metadata).toMatchObject({
+      sourceMarkdownHash: stageInput().sourceMarkdown.sha256,
+      sourceMarkdownRendererVersion:
+        stageInput().sourceMarkdown.rendererVersion,
+    });
+    expect(output.plan.proposedChanges[0]?.content).toContain(
+      stageInput().sourceMarkdown.content,
+    );
   });
 
   it("never instantiates an external compiler for LOCAL_ONLY source data", async () => {
@@ -587,6 +635,9 @@ describe("compilation stage", () => {
 
     expect(output.metadata).toMatchObject({
       mode: "GENERATIVE",
+      sourceMarkdownHash: stageInput().sourceMarkdown.sha256,
+      sourceMarkdownRendererVersion:
+        stageInput().sourceMarkdown.rendererVersion,
       provider: configured.descriptor,
       retrievalChannels: ["exact", "lexical"],
       retrievalWarnings: ["COMPILER_SEMANTIC_RETRIEVAL_DISABLED"],

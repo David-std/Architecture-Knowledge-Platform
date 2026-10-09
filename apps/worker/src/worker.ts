@@ -25,6 +25,7 @@ import {
   type RawObjectRef,
 } from "@akp/object-store";
 import { CompilationPlan } from "@akp/compiler";
+import { replaceSourceProjectionUnits } from "@akp/indexing";
 import { ModelResidency } from "@akp/contracts";
 import { GitKnowledgeStore } from "@akp/git-store";
 import { validateMarkdownDocument } from "@akp/validation";
@@ -47,7 +48,9 @@ import {
 } from "./assurance-worker.js";
 import {
   DOCUMENT_ARTIFACT_SCHEMA_VERSION,
+  buildFaithfulSourceMarkdown,
   parseCanonicalExtractionResponse,
+  type FaithfulSourceMarkdown,
   renderDocumentArtifactPreview,
 } from "./document-artifact.js";
 import { buildCompilationStage } from "./compilation-stage.js";
@@ -461,6 +464,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         warnings: canonical.warnings,
       });
 
+      const sourceMarkdown = buildFaithfulSourceMarkdown(canonical.artifact);
       const preview = renderDocumentArtifactPreview(canonical.artifact, 4_000);
       const evidenceFragment = selectEvidenceFragment(
         canonical.artifact,
@@ -473,6 +477,8 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         artifact_schema_version: DOCUMENT_ARTIFACT_SCHEMA_VERSION,
         configuration_hash: canonical.configurationHash,
         structured_content_hash: canonical.contentHash,
+        source_markdown_hash: sourceMarkdown.sha256,
+        source_markdown_renderer_version: sourceMarkdown.rendererVersion,
         routing: canonical.routing,
         warnings: canonical.warnings,
         source_artifact_id: "",
@@ -493,9 +499,10 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
             insert into source_artifacts(
               source_id,kind,object_key,source_hash,extractor,extractor_version,
               quality,metadata,document_artifact,artifact_schema_version,
-              configuration_hash,structured_content_hash
+              configuration_hash,structured_content_hash,
+              source_markdown,source_markdown_hash,source_markdown_renderer_version
             )
-            values($1,'document-artifact',$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11)
+            values($1,'document-artifact',$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12,$13,$14)
             on conflict (source_id,extractor,extractor_version,configuration_hash)
               where kind='document-artifact'
             do update set
@@ -505,7 +512,10 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
               metadata=excluded.metadata,
               document_artifact=excluded.document_artifact,
               artifact_schema_version=excluded.artifact_schema_version,
-              structured_content_hash=excluded.structured_content_hash
+              structured_content_hash=excluded.structured_content_hash,
+              source_markdown=excluded.source_markdown,
+              source_markdown_hash=excluded.source_markdown_hash,
+              source_markdown_renderer_version=excluded.source_markdown_renderer_version
             returning id
             `,
             [
@@ -524,6 +534,9 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
               DOCUMENT_ARTIFACT_SCHEMA_VERSION,
               canonical.configurationHash,
               canonical.contentHash,
+              sourceMarkdown.content,
+              sourceMarkdown.sha256,
+              sourceMarkdown.rendererVersion,
             ],
           );
           const artifactId =
@@ -549,6 +562,14 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
             throw new Error("Could not persist document artifact.");
           }
           extracted.source_artifact_id = artifactId;
+          await replaceSourceProjectionUnits(client, {
+            sourceId: String(outputs.sourceId),
+            sourceArtifactId: artifactId,
+            sourceSha256: raw.sha256,
+            markdown: sourceMarkdown.content,
+            markdownSha256: sourceMarkdown.sha256,
+            title: String(outputs.title ?? payload.title ?? "Source"),
+          });
 
           const storedEvidence = await client.query<{ id: string }>(
             `
@@ -592,6 +613,9 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       evidence_id?: string;
       extractor?: string;
       extractor_version?: string;
+      structured_content_hash?: string;
+      source_markdown_hash?: string;
+      source_markdown_renderer_version?: string;
     };
     if (
       !extracted?.document_artifact ||
@@ -648,6 +672,52 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       return;
     }
 
+    const projection = await db.pool.query<{
+      source_markdown: string | null;
+      source_markdown_hash: string | null;
+      source_markdown_renderer_version: string | null;
+    }>(
+      `
+      select a.source_markdown,a.source_markdown_hash,
+             a.source_markdown_renderer_version
+        from source_artifacts a
+        join sources s on s.id=a.source_id
+       where a.id=$1 and a.source_id=$2
+         and s.space_id=$3 and s.vault_id is not distinct from $4::uuid
+         and a.kind='document-artifact' and a.source_hash=$5
+         and s.sha256=$5 and a.structured_content_hash=$6
+      `,
+      [
+        extracted.source_artifact_id,
+        outputs.sourceId,
+        spaceId,
+        vaultId,
+        raw.sha256,
+        extracted.structured_content_hash,
+      ],
+    );
+    const persisted = projection.rows[0];
+    if (
+      !persisted ||
+      persisted.source_markdown === null ||
+      persisted.source_markdown_hash === null ||
+      persisted.source_markdown_renderer_version === null
+    ) {
+      throw new Error("SOURCE_MARKDOWN_PROJECTION_UNAVAILABLE");
+    }
+    if (
+      extracted.source_markdown_hash !== persisted.source_markdown_hash ||
+      extracted.source_markdown_renderer_version !==
+        persisted.source_markdown_renderer_version
+    ) {
+      throw new Error("SOURCE_MARKDOWN_PROJECTION_REVISION_MISMATCH");
+    }
+    const sourceMarkdown: FaithfulSourceMarkdown = {
+      content: persisted.source_markdown,
+      sha256: persisted.source_markdown_hash,
+      rendererVersion: persisted.source_markdown_renderer_version,
+    };
+
     const title = String(
       payload.title ?? outputs.originalName ?? basename(sourceUri),
     );
@@ -665,6 +735,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       extractor: artifactResult.extractor,
       extractorVersion: artifactResult.extractorVersion,
       artifact: artifactResult.artifact,
+      sourceMarkdown,
       vectorEnabled: process.env.AKP_VECTOR_ENABLED === "true",
     });
     const plan = CompilationPlan.parse(compilationStage.plan);

@@ -71,6 +71,99 @@ jobs:
       - run: pnpm auth:provision
       - name: Run pnpm check
         run: pnpm check
+      - name: Run requested answer slot family-disjoint projection
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'experiment/requested-answer-slot-projection'
+        env:
+          AKP_REQUESTED_SLOT_REPORT: reports/ci/requested-answer-slot-projection.json
+        run: pnpm exec tsx scripts/requested-answer-slot-projection-experiment.ts
+      - name: Run structured proposition family-disjoint holdout
+        run: pnpm benchmark:structured-proposition-family-disjoint
+      - name: Verify structured row lexical context wiring on an isolated database
+        env:
+          DATABASE_URL: postgres://akp:akp@localhost:55432/akp_structured_row_test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup_structured_row_database() {
+            docker compose exec -T postgres dropdb -U akp --if-exists akp_structured_row_test >/dev/null 2>&1 || true
+          }
+          trap cleanup_structured_row_database EXIT
+          cleanup_structured_row_database
+          docker compose exec -T postgres createdb -U akp akp_structured_row_test
+          pnpm db:migrate
+          pnpm --filter @akp/api exec vitest run             --config vitest.integration.config.ts             test/lexical-ranking.integration.test.ts             --no-file-parallelism
+      - name: Verify governed proposition shadow admission on an isolated database
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.ref == 'experiment/governed-proposition-shadow-admission'
+        env:
+          DATABASE_URL: postgres://akp:akp@localhost:55432/akp_governed_shadow_test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup_governed_shadow_database() {
+            docker compose exec -T postgres dropdb -U akp --if-exists akp_governed_shadow_test >/dev/null 2>&1 || true
+          }
+          trap cleanup_governed_shadow_database EXIT
+          cleanup_governed_shadow_database
+          docker compose exec -T postgres createdb -U akp akp_governed_shadow_test
+          pnpm db:migrate
+          pnpm --filter @akp/api exec vitest run \
+            --config vitest.integration.config.ts \
+            test/governed-proposition-shadow.integration.test.ts \
+            --no-file-parallelism
+      - name: Run PostgreSQL persistence integration on an isolated database
+        env:
+          DATABASE_URL: postgres://akp:akp@localhost:55432/akp_postgres_test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup_postgres_database() {
+            docker compose exec -T postgres dropdb -U akp --if-exists akp_postgres_test >/dev/null 2>&1 || true
+          }
+          trap cleanup_postgres_database EXIT
+          cleanup_postgres_database
+          docker compose exec -T postgres createdb -U akp akp_postgres_test
+          pnpm db:migrate
+          mkdir -p reports/ci
+          pnpm --filter @akp/postgres test:integration \
+            --reporter=default --reporter=junit \
+            --outputFile.junit=../../reports/ci/postgres-integration-junit.xml
+      - name: Verify imported source identity on a fresh disposable database
+        env:
+          DATABASE_URL: postgres://akp:akp@localhost:55432/akp_importer_test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup_importer_database() {
+            docker compose exec -T postgres dropdb -U akp --if-exists akp_importer_test >/dev/null 2>&1 || true
+          }
+          trap cleanup_importer_database EXIT
+          cleanup_importer_database
+          docker compose exec -T postgres createdb -U akp akp_importer_test
+          pnpm db:migrate
+          mkdir -p reports/ci
+          pnpm --filter @akp/vault-importer test:integration \
+            --reporter=default --reporter=junit \
+            --outputFile.junit=../../reports/ci/importer-identity-integration-junit.xml
+      - name: Verify raw Markdown source spans on a fresh disposable database
+        env:
+          DATABASE_URL: postgres://akp:akp@localhost:55432/akp_source_span_test
+          AKP_SOURCE_SPAN_DATABASE_URL: postgres://akp:akp@localhost:55432/akp_source_span_test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup_source_span_database() {
+            docker compose exec -T postgres dropdb -U akp --if-exists akp_source_span_test >/dev/null 2>&1 || true
+          }
+          trap cleanup_source_span_database EXIT
+          cleanup_source_span_database
+          docker compose exec -T postgres createdb -U akp akp_source_span_test
+          pnpm db:migrate
+          mkdir -p reports/ci
+          pnpm --filter @akp/indexing exec vitest run \
+            test/source-span-provenance.integration.test.ts \
+            --no-file-parallelism \
+            --reporter=default --reporter=junit \
+            --outputFile.junit=../../reports/ci/source-span-provenance-junit.xml
       - name: Run reasoning adversarial verification
         run: |
           pnpm --filter @akp/api exec vitest run test/reasoning-runtime.test.ts
@@ -129,6 +222,7 @@ jobs:
       - run: pnpm contracts:validate
       - run: pnpm docs:validate
       - run: pnpm hygiene:validate
+      - run: pnpm retrieval:generality:validate
       - run: pnpm build
       - run: pnpm security:secrets
       - name: Install pinned Chromium for browser E2E
@@ -373,13 +467,15 @@ jobs:
           enable-cache: true
           cache-dependency-glob: apps/extractor/uv.lock
       - name: Sync the locked opt-in Docling profile
-        run: uv sync --locked --extra docling
+        run: uv sync --locked --extra docling-cpu
+      - name: Verify the locked CPU runtime
+        run: uv run --locked --extra docling-cpu python -c "import torch; print(torch.__version__); assert torch.version.cuda is None"
       - name: Execute the real Docling provider against a structured fixture
         shell: bash
         run: |
           set -o pipefail
           mkdir -p ../../reports/ci
-          uv run --locked --extra docling pytest -p no:cacheprovider \
+          uv run --locked --extra docling-cpu pytest -p no:cacheprovider \
             tests/test_docling_runtime.py -q 2>&1 \
             | tee ../../reports/ci/python-docling.txt
       - name: Upload Docling diagnostics
@@ -429,12 +525,15 @@ jobs:
       - run: pnpm auth:provision
       - name: Install locked Docling provider
         working-directory: apps/extractor
-        run: uv sync --locked --extra docling
+        run: uv sync --locked --extra docling-cpu
+      - name: Verify the locked CPU runtime
+        working-directory: apps/extractor
+        run: uv run --locked --extra docling-cpu python -c "import torch; print(torch.__version__); assert torch.version.cuda is None"
       - name: Create a raster-only scanned PDF fixture
         working-directory: apps/extractor
         run: |
           mkdir -p "$AKP_INGEST_ROOTS" "${AKP_MANAGED_REPO}"
-          uv run --locked --extra docling python - <<'PY'
+          uv run --locked --extra docling-cpu python - <<'PY'
           import os
           from pathlib import Path
           from PIL import Image, ImageDraw, ImageFont
@@ -442,10 +541,7 @@ jobs:
           target = Path(os.environ["AKP_INGEST_ROOTS"]) / "scanned-ocr.pdf"
           image = Image.new("RGB", (1654, 2339), "white")
           draw = ImageDraw.Draw(image)
-          font = ImageFont.truetype(
-              "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-              64,
-          )
+          font = ImageFont.load_default(size=64)
           draw.multiline_text(
               (120, 260),
               "AKP OCR PROBE 739241\n"
@@ -463,7 +559,7 @@ jobs:
           mkdir -p reports/ci
           (
             cd apps/extractor
-            nohup uv run --locked --extra docling uvicorn app.main:app \
+            nohup uv run --locked --extra docling-cpu uvicorn app.main:app \
               --host 127.0.0.1 --port 8090 \
               > ../../reports/ci/document-ocr-extractor.log 2>&1 &
             echo $! > ../../reports/ci/document-ocr-extractor.pid

@@ -128,6 +128,32 @@ export interface TemporalTruthQuery {
   limit?: number;
 }
 
+export interface GovernedTemporalEvidenceReference {
+  id: string;
+  spaceId: string;
+  vaultId: string;
+  sourceId: string;
+  artifactId: string | null;
+  locator: unknown;
+  contentHash: string;
+  excerpt: string;
+}
+
+export interface GovernedTemporalFactEvidenceBundle {
+  fact: TemporalFactView;
+  supportSet: TruthSupportSet;
+  evidence: GovernedTemporalEvidenceReference[];
+}
+
+export interface GovernedTemporalFactEvidenceQuery {
+  spaceId: string;
+  vaultId: string;
+  documentId: string;
+  authorizationPathPrefixes: Array<string | null>;
+  validAt?: string;
+  limit?: number;
+}
+
 export type DerivedTruthStoreKind =
   | "VECTOR"
   | "GRAPH_SUMMARY"
@@ -1765,6 +1791,89 @@ export class PostgresTemporalTruthStore {
         ),
         queryRevisionHash: cutoff.hash,
         queryRevisionSeq: cutoff.seq,
+      });
+    }
+    return output;
+  }
+
+  async governedFactEvidenceForDocument(
+    rawQuery: GovernedTemporalFactEvidenceQuery,
+  ): Promise<GovernedTemporalFactEvidenceBundle[]> {
+    const spaceId = requiredUuid(rawQuery.spaceId, "TRUTH_SPACE_ID_INVALID");
+    const vaultId = requiredUuid(rawQuery.vaultId, "TRUTH_VAULT_ID_INVALID");
+    const documentId = requiredUuid(
+      rawQuery.documentId,
+      "TRUTH_DOCUMENT_ID_INVALID",
+    );
+    if (!Array.isArray(rawQuery.authorizationPathPrefixes)) {
+      throw new Error("TRUTH_AUTHORIZATION_SCOPE_REQUIRED");
+    }
+    if (rawQuery.authorizationPathPrefixes.length === 0) {
+      throw new Error("TRUTH_AUTHORIZATION_SCOPE_REQUIRED");
+    }
+    const facts = (
+      await this.listFacts({
+        spaceId,
+        vaultId,
+        mode: "CURRENT",
+        authorizationPathPrefixes: rawQuery.authorizationPathPrefixes,
+        ...(rawQuery.validAt ? { validAt: rawQuery.validAt } : {}),
+        limit: rawQuery.limit ?? 100,
+      })
+    ).filter(
+      (fact) =>
+        fact.lifecycle === "ACTIVE" &&
+        fact.supportState === "SUPPORTED" &&
+        fact.truthState === "SUPPORTED_CURRENT",
+    );
+    if (facts.length === 0) return [];
+
+    const output: GovernedTemporalFactEvidenceBundle[] = [];
+    for (const fact of facts) {
+      const history = await this.supportHistory(fact.id);
+      if (
+        history.supportSet.state !== "SUPPORTED" ||
+        history.supportSet.evidenceIds.length === 0
+      ) {
+        continue;
+      }
+      const evidence = await this.db.pool.query<{
+        id: string;
+        space_id: string;
+        vault_id: string;
+        source_id: string;
+        artifact_id: string | null;
+        locator: unknown;
+        content_hash: string;
+        excerpt: string;
+      }>(
+        `select distinct
+                e.id,e.space_id,e.vault_id,e.source_id,e.artifact_id,
+                e.locator,e.content_hash,e.excerpt
+           from document_evidence de
+           join evidence e
+             on e.id=de.evidence_id
+            and e.space_id=$2
+            and e.vault_id=$3
+          where de.document_id=$1
+            and e.id=any($4::uuid[])
+          order by e.id`,
+        [documentId, spaceId, vaultId, history.supportSet.evidenceIds],
+      );
+      if (evidence.rows.length === 0) continue;
+      output.push({
+        fact,
+        supportSet: history.supportSet,
+        evidence: evidence.rows.map((row) => ({
+          id: row.id,
+          spaceId: row.space_id,
+          vaultId: row.vault_id,
+          sourceId: row.source_id,
+          artifactId: row.artifact_id,
+          locator: row.locator,
+          contentHash: row.content_hash,
+          excerpt: row.excerpt,
+        })),
       });
     }
     return output;

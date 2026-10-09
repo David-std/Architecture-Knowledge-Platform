@@ -1,6 +1,13 @@
+import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import path from "node:path";
-import { VaultRegistration } from "@akp/contracts";
+import {
+  DocumentArtifact,
+  SOURCE_MARKDOWN_RENDERER_VERSION,
+  VaultRegistration,
+  canonicalSourceArtifactJson,
+  renderSourceArtifactMarkdown,
+} from "@akp/contracts";
 import {
   intersectVaultPathPrefixes,
   pathMatchesVaultPrefix,
@@ -18,6 +25,54 @@ import {
   spaceIdsForPermission,
   unrestrictedSpaceIdsForPermission,
 } from "../auth.js";
+
+interface SourceStructuredIntegrityRow {
+  source_id: string;
+  source_sha256: string;
+  source_media_type: string | null;
+  artifact_source_hash: string;
+  extractor: string;
+  extractor_version: string;
+  configuration_hash: string | null;
+  structured_content_hash: string | null;
+  document_artifact: unknown;
+}
+
+/** Deny source reads if the stored structured artifact has diverged. */
+function sourceStructuredIdentityValid(
+  row: SourceStructuredIntegrityRow,
+): boolean {
+  if (
+    row.artifact_source_hash !== row.source_sha256 ||
+    !row.configuration_hash ||
+    !row.structured_content_hash
+  ) {
+    return false;
+  }
+  const parsed = DocumentArtifact.safeParse(row.document_artifact);
+  if (!parsed.success) return false;
+  const artifact = parsed.data;
+  if (
+    artifact.source_id !== row.source_id ||
+    artifact.source_hash !== row.source_sha256 ||
+    artifact.extractor !== row.extractor ||
+    artifact.extractor_version !== row.extractor_version ||
+    (row.source_media_type !== null &&
+      artifact.media_type.toLowerCase() !== row.source_media_type.toLowerCase())
+  ) {
+    return false;
+  }
+  const structuredHash = createHash("sha256")
+    .update(canonicalSourceArtifactJson(artifact), "utf8")
+    .digest("hex");
+  const configurationHash = createHash("sha256")
+    .update(canonicalSourceArtifactJson(artifact.configuration), "utf8")
+    .digest("hex");
+  return (
+    structuredHash === row.structured_content_hash &&
+    configurationHash === row.configuration_hash
+  );
+}
 
 /** Keep raw source routing details out of ordinary source projections. */
 const RAW_SOURCE_KEY =
@@ -43,6 +98,9 @@ function sanitizeSourceRows(
 ): Array<Record<string, unknown>> {
   return sanitizeRawSourceFields(rows) as Array<Record<string, unknown>>;
 }
+
+const SOURCE_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const SOURCE_LOCATOR_ID =
   /^source:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -773,6 +831,288 @@ export function registerKnowledgeRoutes(
         [scope.spaces, scope.vaultIds],
       );
       return { sources: sanitizeSourceRows(result.rows) };
+    },
+  );
+
+  /**
+   * Return immutable machine-extracted Markdown bytes, not an approved rule.
+   * Unlike operational previews this authorized read must not alter the body:
+   * clients can verify its SHA and structural source identity independently.
+   */
+  app.get<{ Params: { id: string; artifactId: string } }>(
+    "/v1/sources/:id/artifacts/:artifactId/markdown",
+    { preHandler: requirePermission("source:read") },
+    async (request, reply) => {
+      const { id, artifactId } = request.params;
+      if (!SOURCE_UUID.test(id) || !SOURCE_UUID.test(artifactId)) {
+        return reply.code(400).send({ code: "SOURCE_ARTIFACT_ID_INVALID" });
+      }
+      const scope = await authorizedVaultIds(
+        db,
+        actorOf(request),
+        "source:read",
+        true,
+      );
+      if (!scope.vaultIds.length) {
+        return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
+      }
+      const result = await db.pool.query<
+        SourceStructuredIntegrityRow & {
+          artifact_id: string;
+          source_markdown: string | null;
+          source_markdown_hash: string | null;
+          source_markdown_renderer_version: string | null;
+        }
+      >(
+        `
+        select s.id source_id,s.sha256 source_sha256,
+               s.media_type source_media_type,
+               a.id artifact_id,a.source_hash artifact_source_hash,
+               a.extractor,a.extractor_version,a.configuration_hash,
+               a.structured_content_hash,a.document_artifact,a.source_markdown,
+               a.source_markdown_hash,a.source_markdown_renderer_version
+          from sources s join source_artifacts a on a.source_id=s.id
+          join vaults v on v.id=s.vault_id and v.enabled
+         where s.id=$1 and a.id=$2 and a.kind='document-artifact'
+           and s.status='ACTIVE'
+           and s.space_id=any($3::uuid[]) and s.vault_id=any($4::uuid[])
+        `,
+        [id, artifactId, scope.spaces, scope.vaultIds],
+      );
+      const row = result.rows[0];
+      if (!row) return reply.code(404).send({ code: "SOURCE_NOT_FOUND" });
+      if (!sourceStructuredIdentityValid(row)) {
+        return reply
+          .code(409)
+          .send({ code: "SOURCE_ARTIFACT_IDENTITY_MISMATCH" });
+      }
+      if (
+        row.source_markdown === null ||
+        row.source_markdown_hash === null ||
+        row.source_markdown_renderer_version === null
+      ) {
+        return reply
+          .code(409)
+          .send({ code: "SOURCE_MARKDOWN_NOT_MATERIALIZED" });
+      }
+      const actualHash = createHash("sha256")
+        .update(row.source_markdown, "utf8")
+        .digest("hex");
+      if (actualHash !== row.source_markdown_hash) {
+        return reply
+          .code(409)
+          .send({ code: "SOURCE_MARKDOWN_INTEGRITY_FAILED" });
+      }
+      if (
+        row.source_markdown_renderer_version !==
+          SOURCE_MARKDOWN_RENDERER_VERSION ||
+        row.source_markdown !==
+          renderSourceArtifactMarkdown(
+            DocumentArtifact.parse(row.document_artifact),
+          )
+      ) {
+        return reply
+          .code(409)
+          .send({ code: "SOURCE_MARKDOWN_ARTIFACT_MISMATCH" });
+      }
+      reply.header("Cache-Control", "no-store");
+      reply.header("X-Content-Type-Options", "nosniff");
+      return {
+        sourceId: row.source_id,
+        sourceSha256: row.source_sha256,
+        artifactId: row.artifact_id,
+        structuredContentHash: row.structured_content_hash,
+        content: row.source_markdown,
+        sha256: row.source_markdown_hash,
+        rendererVersion: row.source_markdown_renderer_version,
+        trustTier: "MACHINE_EXTRACTED",
+        canonicalKnowledge: false,
+      };
+    },
+  );
+
+  /**
+   * Noncanonical passages, revision-pinned to both the raw source and
+   * complete Markdown projection. Source permission is never inherited
+   * from permission to read reviewed knowledge.
+   */
+  app.get<{
+    Params: { id: string; artifactId: string };
+    Querystring: {
+      sourceSha256?: string;
+      markdownSha256?: string;
+      offset?: string;
+      limit?: string;
+    };
+  }>(
+    "/v1/sources/:id/artifacts/:artifactId/units",
+    { preHandler: requirePermission("source:read") },
+    async (request, reply) => {
+      const { id, artifactId } = request.params;
+      const { sourceSha256, markdownSha256 } = request.query;
+      const SHA256 = /^[a-f0-9]{64}$/;
+      if (!SOURCE_UUID.test(id) || !SOURCE_UUID.test(artifactId)) {
+        return reply.code(400).send({ code: "SOURCE_ARTIFACT_ID_INVALID" });
+      }
+      if (
+        !sourceSha256 ||
+        !markdownSha256 ||
+        !SHA256.test(sourceSha256) ||
+        !SHA256.test(markdownSha256)
+      ) {
+        return reply.code(400).send({ code: "SOURCE_UNIT_REVISION_REQUIRED" });
+      }
+      const offset = request.query.offset ?? "0";
+      const limit = request.query.limit ?? "50";
+      if (
+        !/^(0|[1-9][0-9]*)$/.test(offset) ||
+        !/^[1-9][0-9]*$/.test(limit) ||
+        Number(offset) > 50000 ||
+        Number(limit) > 100
+      ) {
+        return reply.code(400).send({ code: "SOURCE_UNIT_PAGE_INVALID" });
+      }
+      const scope = await authorizedVaultIds(
+        db,
+        actorOf(request),
+        "source:read",
+        true,
+      );
+      if (!scope.vaultIds.length) {
+        return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
+      }
+      const current = await db.pool.query<
+        SourceStructuredIntegrityRow & {
+          source_markdown: string | null;
+          source_markdown_hash: string | null;
+          source_markdown_renderer_version: string | null;
+        }
+      >(
+        "select s.id source_id,s.sha256 source_sha256," +
+          "s.media_type source_media_type,a.source_hash artifact_source_hash," +
+          "a.extractor,a.extractor_version,a.configuration_hash," +
+          "a.structured_content_hash,a.document_artifact," +
+          "a.source_markdown,a.source_markdown_hash," +
+          "a.source_markdown_renderer_version " +
+          "from sources s join source_artifacts a on a.source_id=s.id " +
+          "join vaults v on v.id=s.vault_id and v.enabled " +
+          "where s.id=$1 and a.id=$2 and a.kind='document-artifact' " +
+          "and s.status='ACTIVE' " +
+          "and s.space_id=any($3::uuid[]) and s.vault_id=any($4::uuid[])",
+        [id, artifactId, scope.spaces, scope.vaultIds],
+      );
+      const row = current.rows[0];
+      if (!row) return reply.code(404).send({ code: "SOURCE_NOT_FOUND" });
+      if (
+        !sourceStructuredIdentityValid(row) ||
+        row.source_markdown === null ||
+        row.source_markdown_hash === null ||
+        createHash("sha256")
+          .update(row.source_markdown, "utf8")
+          .digest("hex") !== row.source_markdown_hash ||
+        row.source_markdown_renderer_version !==
+          SOURCE_MARKDOWN_RENDERER_VERSION ||
+        row.source_markdown !==
+          renderSourceArtifactMarkdown(
+            DocumentArtifact.parse(row.document_artifact),
+          )
+      ) {
+        return reply.code(409).send({ code: "SOURCE_UNIT_PROJECTION_INVALID" });
+      }
+      if (
+        row.source_sha256 !== sourceSha256 ||
+        row.source_markdown_hash !== markdownSha256
+      ) {
+        return reply.code(409).send({ code: "SOURCE_UNIT_REVISION_CHANGED" });
+      }
+      const result = await db.pool.query<{
+        unit_key: string;
+        parent_unit_key: string | null;
+        unit_type: string;
+        heading_path: string[];
+        body: string;
+        body_sha256: string;
+        source_span_sha256: string;
+        locator: Record<string, unknown>;
+        structural_order: number;
+      }>(
+        "select u.unit_key,u.parent_unit_key,u.unit_type,u.heading_path," +
+          "u.body,u.body_sha256,u.source_span_sha256,u.locator,u.structural_order " +
+          "from source_projection_units u " +
+          "join source_artifacts a on a.id=u.source_artifact_id " +
+          "join sources s on s.id=a.source_id " +
+          "where u.source_artifact_id=$1 and u.source_id=$2 " +
+          "and u.source_sha256=$3 and u.markdown_sha256=$4 " +
+          "and a.source_hash=$3 and a.source_markdown_hash=$4 " +
+          "and s.sha256=$3 and s.status='ACTIVE' " +
+          "order by u.structural_order,u.unit_key limit $5 offset $6",
+        [
+          artifactId,
+          id,
+          sourceSha256,
+          markdownSha256,
+          Number(limit),
+          Number(offset),
+        ],
+      );
+      for (const unit of result.rows) {
+        const start = unit.locator.startChar;
+        const end = unit.locator.endChar;
+        if (
+          typeof start !== "number" ||
+          typeof end !== "number" ||
+          !Number.isSafeInteger(start) ||
+          !Number.isSafeInteger(end) ||
+          start < 0 ||
+          end <= start ||
+          end > row.source_markdown.length ||
+          createHash("sha256").update(unit.body, "utf8").digest("hex") !==
+            unit.body_sha256 ||
+          createHash("sha256")
+            .update(row.source_markdown.slice(start, end), "utf8")
+            .digest("hex") !== unit.source_span_sha256
+        ) {
+          return reply.code(409).send({ code: "SOURCE_UNIT_INTEGRITY_FAILED" });
+        }
+      }
+      const count = await db.pool.query<{ total: number }>(
+        "select count(*)::int total from source_projection_units u " +
+          "join source_artifacts a on a.id=u.source_artifact_id " +
+          "join sources s on s.id=a.source_id " +
+          "where u.source_artifact_id=$1 and u.source_id=$2 " +
+          "and u.source_sha256=$3 and u.markdown_sha256=$4 " +
+          "and a.source_hash=$3 and a.source_markdown_hash=$4 " +
+          "and s.sha256=$3 and s.status='ACTIVE'",
+        [artifactId, id, sourceSha256, markdownSha256],
+      );
+      const total = count.rows[0]?.total ?? 0;
+      if (!total) {
+        return reply.code(409).send({ code: "SOURCE_UNITS_NOT_INDEXED" });
+      }
+      reply.header("Cache-Control", "no-store");
+      reply.header("X-Content-Type-Options", "nosniff");
+      return {
+        sourceId: id,
+        artifactId,
+        sourceSha256,
+        markdownSha256,
+        trustTier: "MACHINE_EXTRACTED",
+        canonicalKnowledge: false,
+        offset: Number(offset),
+        limit: Number(limit),
+        total,
+        units: result.rows.map((unit) => ({
+          unitKey: unit.unit_key,
+          parentUnitKey: unit.parent_unit_key,
+          unitType: unit.unit_type,
+          headingPath: unit.heading_path,
+          body: unit.body,
+          bodySha256: unit.body_sha256,
+          sourceSpanSha256: unit.source_span_sha256,
+          structuralOrder: unit.structural_order,
+          locator: unit.locator,
+        })),
+      };
     },
   );
 

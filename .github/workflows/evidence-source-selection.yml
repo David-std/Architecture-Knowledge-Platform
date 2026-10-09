@@ -1,0 +1,142 @@
+name: evidence-source-selection
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evidence-source-selection-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepare-scores:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Preflight experiment formatting and types
+        run: |
+          pnpm exec prettier --check packages/retrieval/scripts/evidence-source-selection-*.ts .github/workflows/evidence-source-selection.yml
+          pnpm typecheck:evidence-benchmarks
+      - name: Generate fresh development-only BGE recording
+        run: pnpm --filter @akp/retrieval exec tsx scripts/evidence-source-selection-score.ts
+      - name: Validate recording cardinality
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(readFileSync("reports/ci/source-selection-scores.json", "utf8"));
+          if (report.schemaVersion !== 2 || report.split !== "development" || report.questions !== 133) {
+            throw new Error("Development score recording is incomplete.");
+          }
+          if (!Array.isArray(report.rows) || report.rows.length !== 1862) {
+            throw new Error("Expected 133 questions x 14 units in development recording.");
+          }
+          console.log(JSON.stringify({ verifier: report.verifier, questions: report.questions, rows: report.rows.length, elapsedMs: report.elapsedMs }, null, 2));
+          NODE
+      - uses: actions/upload-artifact@v7
+        with:
+          name: source-selection-scores-${{ github.run_id }}
+          path: reports/ci/source-selection-scores.json
+          if-no-files-found: error
+          retention-days: 7
+
+  compare-readers:
+    needs: prepare-scores
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: [0, 1, 2, 3]
+    env:
+      AKP_SOURCE_SELECTION_SHARD_INDEX: ${{ matrix.shard }}
+      AKP_SOURCE_SELECTION_SHARD_COUNT: "4"
+      AKP_SOURCE_SELECTION_SCORES: reports/ci/source-selection-scores.json
+      AKP_LOCAL_AGENT_MODEL: onnx-community/Qwen2.5-0.5B-Instruct
+      AKP_LOCAL_AGENT_MODEL_REVISION: cc5cc01a65cc3ff17bdb73a7de33d879f62599b0
+      AKP_LOCAL_AGENT_DTYPE: q4
+      AKP_LOCAL_AGENT_PORT: "18081"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - uses: actions/download-artifact@v7
+        with:
+          name: source-selection-scores-${{ github.run_id }}
+          path: reports/ci
+      - name: Start pinned local real-model provider
+        shell: bash
+        run: |
+          pnpm --filter @akp/retrieval exec tsx scripts/local-agent-provider.ts > "reports/ci/provider-${{ matrix.shard }}.log" 2>&1 &
+          echo $! > /tmp/source-selection-provider.pid
+          for attempt in $(seq 1 120); do
+            if curl --fail --silent http://127.0.0.1:18081/health > "reports/ci/provider-health-${{ matrix.shard }}.json"; then
+              cat "reports/ci/provider-health-${{ matrix.shard }}.json"
+              exit 0
+            fi
+            sleep 5
+          done
+          cat "reports/ci/provider-${{ matrix.shard }}.log" >&2
+          exit 1
+      - name: Compare quote generation with structural source selection
+        run: pnpm --filter @akp/retrieval exec tsx scripts/evidence-source-selection-compare.ts
+      - name: Upload shard evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: source-selection-shard-${{ github.run_id }}-${{ matrix.shard }}
+          path: |
+            reports/ci/source-selection-shard-${{ matrix.shard }}.json
+            reports/ci/provider-health-${{ matrix.shard }}.json
+            reports/ci/provider-${{ matrix.shard }}.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Stop provider
+        if: always()
+        shell: bash
+        run: |
+          if [ -f /tmp/source-selection-provider.pid ]; then kill "$(cat /tmp/source-selection-provider.pid)" 2>/dev/null || true; fi
+
+  aggregate:
+    needs: compare-readers
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: source-selection-shard-${{ github.run_id }}-*
+          path: reports/ci/shards
+          merge-multiple: true
+      - name: Aggregate development comparison without declaring a winner
+        run: pnpm --filter @akp/retrieval exec tsx scripts/evidence-source-selection-aggregate.ts
+      - uses: actions/upload-artifact@v7
+        with:
+          name: source-selection-development-${{ github.run_id }}
+          path: |
+            reports/ci/source-selection-development-ab.json
+            reports/ci/shards
+          if-no-files-found: error
+          retention-days: 14

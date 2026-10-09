@@ -33,6 +33,8 @@ def test_deterministic_artifact_preserves_structural_units_and_locators(tmp_path
     assert len(artifact.paragraphs) == 1
     assert len(artifact.lists) == 1
     assert len(artifact.tables) == 1
+    assert artifact.tables[0].locator.start_line == 7
+    assert artifact.tables[0].locator.end_line == 9
     assert len(artifact.code) == 1
     assert len(artifact.equations) == 1
     assert len(artifact.figures) == 1

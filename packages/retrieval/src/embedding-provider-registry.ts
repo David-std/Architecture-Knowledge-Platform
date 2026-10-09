@@ -13,11 +13,19 @@ import {
   type OpenAICompatibleInputStrategy,
 } from "./openai-compatible-embedding.js";
 
+import {
+  baseEmbeddingInputStrategy,
+  embeddingPassageContext,
+  TITLE_HEADING_INPUT_SUFFIX,
+  type EmbeddingPassageContext,
+} from "./embedding-input.js";
+
 export type ConfiguredEmbeddingProviderKind =
   "local-multilingual-e5" | "openai-compatible" | "deterministic-test";
 
 export interface EmbeddingProviderEnvironment {
   readonly AKP_EMBEDDING_PROVIDER?: string;
+  readonly AKP_EMBEDDING_PASSAGE_CONTEXT?: string;
   readonly AKP_EMBEDDING_BASE_URL?: string;
   readonly AKP_EMBEDDING_MODEL?: string;
   readonly AKP_EMBEDDING_MODEL_REVISION?: string;
@@ -126,6 +134,44 @@ export function configurationHashForEmbeddingDescriptor(
       ),
     )
     .digest("hex");
+}
+
+/** Passage assembly belongs to indexers; queries keep the base model's role/prefix. */
+export function withEmbeddingPassageContext(
+  provider: EmbeddingProvider,
+  context: EmbeddingPassageContext,
+): EmbeddingProvider {
+  if (context === "body-v1") return provider;
+  if (embeddingPassageContext(provider.descriptor.inputStrategy) === context)
+    return provider;
+  const configurationHash = createHash("sha256")
+    .update(
+      JSON.stringify([
+        context,
+        configurationHashForEmbeddingDescriptor(provider.descriptor),
+      ]),
+    )
+    .digest("hex");
+  return {
+    descriptor: {
+      ...provider.descriptor,
+      inputStrategy: `${provider.descriptor.inputStrategy}${TITLE_HEADING_INPUT_SUFFIX}`,
+      configurationHash,
+    },
+    embed: (texts, request) => provider.embed(texts, request),
+  };
+}
+
+function configuredPassageContext(
+  env: EmbeddingProviderEnvironment,
+): EmbeddingPassageContext {
+  const value = env.AKP_EMBEDDING_PASSAGE_CONTEXT?.trim() || "body-v1";
+  if (value !== "body-v1" && value !== "title-heading-v1") {
+    throw new EmbeddingProviderUnavailableError(
+      "AKP_EMBEDDING_PASSAGE_CONTEXT is unsupported",
+    );
+  }
+  return value;
 }
 
 function descriptorDifference(
@@ -276,18 +322,25 @@ export function createConfiguredEmbeddingProvider(
   const kind = env.AKP_EMBEDDING_PROVIDER?.trim() as
     ConfiguredEmbeddingProviderKind | undefined;
   if (!kind) return null;
+  const context = configuredPassageContext(env);
   if (kind === "local-multilingual-e5") {
-    return new LocalSemanticEmbeddingAdapter({
-      ...(env.AKP_MODEL_CACHE_DIR ? { cacheDir: env.AKP_MODEL_CACHE_DIR } : {}),
-      localFilesOnly: env.AKP_LOCAL_FILES_ONLY === "1",
-      maxBatchSize: positiveInteger(
-        env.AKP_EMBEDDING_MAX_BATCH_SIZE,
-        "AKP_EMBEDDING_MAX_BATCH_SIZE",
-        16,
-      ),
-    });
+    return withEmbeddingPassageContext(
+      new LocalSemanticEmbeddingAdapter({
+        ...(env.AKP_MODEL_CACHE_DIR
+          ? { cacheDir: env.AKP_MODEL_CACHE_DIR }
+          : {}),
+        localFilesOnly: env.AKP_LOCAL_FILES_ONLY === "1",
+        maxBatchSize: positiveInteger(
+          env.AKP_EMBEDDING_MAX_BATCH_SIZE,
+          "AKP_EMBEDDING_MAX_BATCH_SIZE",
+          16,
+        ),
+      }),
+      context,
+    );
   }
-  if (kind === "openai-compatible") return configuredOpenAIProvider(env);
+  if (kind === "openai-compatible")
+    return withEmbeddingPassageContext(configuredOpenAIProvider(env), context);
   if (kind === "deterministic-test") {
     if (
       env.NODE_ENV === "production" ||
@@ -298,7 +351,10 @@ export function createConfiguredEmbeddingProvider(
         "Deterministic embeddings are unavailable in production and require an explicit test/benchmark opt-in",
       );
     }
-    return new DeterministicEmbeddingAdapter();
+    return withEmbeddingPassageContext(
+      new DeterministicEmbeddingAdapter(),
+      context,
+    );
   }
   throw new EmbeddingProviderUnavailableError(
     `Unsupported AKP_EMBEDDING_PROVIDER: ${String(kind)}`,
@@ -322,7 +378,10 @@ export function createEmbeddingProviderForGeneration(
       ),
     });
   } else if (generation.provider === "openai-compatible-http") {
-    provider = configuredOpenAIProvider(env, generation);
+    provider = configuredOpenAIProvider(env, {
+      ...generation,
+      inputStrategy: baseEmbeddingInputStrategy(generation.inputStrategy),
+    });
   } else if (generation.provider === "local-deterministic") {
     if (
       env.NODE_ENV === "production" ||
@@ -339,6 +398,10 @@ export function createEmbeddingProviderForGeneration(
       `No embedding provider is registered for ${generation.provider}`,
     );
   }
+  provider = withEmbeddingPassageContext(
+    provider,
+    embeddingPassageContext(generation.inputStrategy),
+  );
   assertEmbeddingDescriptorCompatible(generation, provider.descriptor);
   return provider;
 }

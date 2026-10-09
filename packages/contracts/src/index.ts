@@ -597,11 +597,13 @@ export const SearchHit = z.object({
   parentUnitId: z.string().uuid().optional(),
   parentUnitType: z.string().optional(),
   headingPath: z.array(z.string()).optional(),
+  structuralOrder: z.number().int().nonnegative().optional(),
   parentContext: z.string().optional(),
   document: z.object({
     externalId: z.string().nullable(),
     path: z.string(),
     title: z.string(),
+    aliases: z.array(z.string()).optional(),
   }),
   revision: z.string(),
   title: z.string(),
@@ -1365,4 +1367,22 @@ export const DocumentArtifact = z
   });
 export type DocumentArtifact = z.infer<typeof DocumentArtifact>;
 
+/**
+ * Shared JSON canonicalization for persisted source-artifact content hashes.
+ * The worker and both source-read endpoints must use identical serialization.
+ */
+export function canonicalSourceArtifactJson(value: unknown): string {
+  const canonical = (item: unknown): unknown => {
+    if (Array.isArray(item)) return item.map(canonical);
+    if (!item || typeof item !== "object") return item;
+    return Object.fromEntries(
+      Object.entries(item as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, child]) => [key, canonical(child)]),
+    );
+  };
+  return JSON.stringify(canonical(value));
+}
+
 export * from "./federated-graph.js";
+export * from "./source-markdown-renderer.js";

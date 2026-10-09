@@ -1,0 +1,423 @@
+{
+  "id": "seguridad-alimentaria",
+  "split": "development",
+  "language": "es",
+  "description": "Higiene y seguridad alimentaria en la cocina de un restaurante: temperaturas, alérgenos, limpieza, plagas e incidencias.",
+  "units": [
+    {
+      "id": "sa-frio",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Conservación en frío",
+      "headingPath": ["Almacenamiento", "Conservación en frío"],
+      "text": "Los alimentos refrigerados se mantienen a 5 °C o menos y los congelados a −18 °C o menos. La temperatura de cada cámara se anota dos veces por turno en la hoja de registro."
+    },
+    {
+      "id": "sa-zona-peligro",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Zona de peligro",
+      "headingPath": ["Conceptos", "Zona de peligro"],
+      "text": "Intervalo de temperatura entre 5 °C y 65 °C en el que las bacterias se multiplican con rapidez. Un alimento cocinado no debe permanecer más de dos horas acumuladas dentro de ese intervalo."
+    },
+    {
+      "id": "sa-descongelacion",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Descongelación",
+      "headingPath": ["Preparación", "Descongelación"],
+      "text": "Los productos se descongelan dentro de la cámara de refrigeración, nunca sobre la encimera a temperatura ambiente. Un producto descongelado no se vuelve a congelar salvo que antes se haya cocinado."
+    },
+    {
+      "id": "sa-alergenos",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Información sobre alérgenos",
+      "headingPath": ["Servicio", "Información sobre alérgenos"],
+      "text": "La carta indica, para cada plato, cuáles de los 14 alérgenos de declaración obligatoria contiene. Si un cliente declara una alergia, el pedido se marca en la comanda y se prepara con utensilios limpios y separados."
+    },
+    {
+      "id": "sa-tablas-colores",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Las tablas de cortar se separan por colores",
+      "headingPath": [
+        "Preparación",
+        "Las tablas de cortar se separan por colores"
+      ],
+      "text": "Se usan tablas rojas para carne cruda, azules para pescado, verdes para verduras y blancas para pan y lácteos. Así se evita que un alimento crudo contamine otro que se servirá sin cocinar."
+    },
+    {
+      "id": "sa-recalentado",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Recalentar comidas",
+      "headingPath": ["Servicio", "Recalentar comidas"],
+      "text": "Las comidas preparadas se recalientan hasta que el centro del producto alcance al menos 75 °C, y solo una vez. Lo que sobra después de recalentarse se desecha."
+    },
+    {
+      "id": "sa-lavado-manos",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Lavado de manos",
+      "headingPath": ["Higiene personal", "Lavado de manos"],
+      "text": "Mojar las manos, aplicar jabón y frotar durante al menos 20 segundos, incluidas uñas y muñecas; después aclarar y secar con papel de un solo uso. Se repite al entrar en la cocina, después de tocar alimentos crudos y tras ir al baño."
+    },
+    {
+      "id": "sa-plagas",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Control de plagas",
+      "headingPath": ["Instalaciones", "Control de plagas"],
+      "text": "Una empresa autorizada revisa el local cada mes y deja un informe firmado. Si alguien del personal ve un roedor, se avisa a la empresa el mismo día y se revisa el producto almacenado en la zona."
+    },
+    {
+      "id": "sa-etiquetado",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Etiquetado de preparaciones",
+      "headingPath": ["Almacenamiento", "Etiquetado de preparaciones"],
+      "text": "Toda preparación que se guarda lleva una etiqueta con el nombre, la fecha de elaboración y la fecha límite de consumo. Una preparación sin etiqueta se desecha, porque no se puede saber cuánto tiempo lleva hecha."
+    },
+    {
+      "id": "sa-incidencias",
+      "documentType": "decision-rule",
+      "unitType": "TABLE",
+      "title": "Respuesta ante incidencias",
+      "headingPath": ["Incidencias", "Respuesta ante incidencias"],
+      "text": "| Incidencia | Respuesta |\n|---|---|\n| Un cliente informa de síntomas después de comer | Retener muestras del plato y avisar a la autoridad sanitaria |\n| Cuerpo extraño en un plato | Retirar el lote y revisar la línea de preparación |\n| Avería de una cámara | Trasladar el producto a otra cámara y registrar la temperatura alcanzada |"
+    },
+    {
+      "id": "sa-auditorias",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Resultados de auditorías",
+      "headingPath": ["Calidad", "Resultados de auditorías"],
+      "text": "| Auditoría | Fecha | Puntuación |\n|---|---|---|\n| Interna | marzo de 2025 | 92/100 |\n| Inspección sanitaria municipal | junio de 2025 | 88/100 |"
+    },
+    {
+      "id": "sa-formacion",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Formación del personal",
+      "headingPath": ["Personal", "Formación del personal"],
+      "text": "Todo el personal que manipula alimentos completa un curso de higiene antes de empezar y lo actualiza cada cuatro años. El certificado se guarda en el expediente de cada trabajador."
+    },
+    {
+      "id": "sa-aceite",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Aceite de fritura",
+      "headingPath": ["Preparación", "Aceite de fritura"],
+      "text": "El aceite se cambia cuando el medidor de compuestos polares supera el 25 % o cuando cambian su color y su olor, lo que ocurra primero."
+    },
+    {
+      "id": "sa-mayonesa",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Mayonesa casera",
+      "headingPath": ["Preparación", "Mayonesa casera"],
+      "text": "La mayonesa se elabora con huevo pasteurizado y no con huevo fresco, porque el huevo crudo puede transmitir salmonela."
+    }
+  ],
+  "questions": [
+    {
+      "id": "sa-q01",
+      "family": "descongelar-encimera",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Se puede descongelar carne encima de la encimera?",
+      "gold": ["sa-descongelacion"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "sa-q02",
+      "family": "recongelar",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Can thawed fish be frozen again?",
+      "gold": ["sa-descongelacion"],
+      "challenges": ["CROSS_LINGUAL", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "sa-q03",
+      "family": "recalentar-dos-veces",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Se puede recalentar un guiso dos veces?",
+      "gold": ["sa-recalentado"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "sa-q04",
+      "family": "etiquetar-obligatorio",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Es obligatorio etiquetar las preparaciones que se guardan?",
+      "gold": ["sa-etiquetado"],
+      "challenges": []
+    },
+    {
+      "id": "sa-q05",
+      "family": "mayonesa-huevo",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Is the homemade mayonnaise made with fresh eggs?",
+      "gold": ["sa-mayonesa"],
+      "challenges": ["CROSS_LINGUAL", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "sa-q06",
+      "family": "tabla-compartida",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Se usa la misma tabla para cortar pollo crudo y pan?",
+      "gold": ["sa-tablas-colores"],
+      "challenges": ["PARAPHRASE", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "sa-q07",
+      "family": "manos-bano",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Hay que lavarse las manos después de ir al baño?",
+      "gold": ["sa-lavado-manos"],
+      "challenges": []
+    },
+    {
+      "id": "sa-q08",
+      "family": "curso-renovacion",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Do kitchen staff need to retake the hygiene course every year?",
+      "gold": ["sa-formacion"],
+      "challenges": ["CROSS_LINGUAL", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "sa-q09",
+      "family": "zona-peligro-definicion",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué es la zona de peligro de temperatura?",
+      "gold": ["sa-zona-peligro"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "sa-q10",
+      "family": "zona-peligro-definicion",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is the temperature danger zone?",
+      "gold": ["sa-zona-peligro"],
+      "challenges": ["CROSS_LINGUAL", "TITLE_CONTEXT"]
+    },
+    {
+      "id": "sa-q11",
+      "family": "cambio-aceite",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Cuándo hay que cambiar el aceite de la freidora?",
+      "gold": ["sa-aceite"],
+      "challenges": []
+    },
+    {
+      "id": "sa-q12",
+      "family": "cliente-sintomas",
+      "intent": "PROCEDURE",
+      "language": "es",
+      "query": "¿Qué hay que hacer si un cliente dice que se encontró mal después de comer?",
+      "gold": ["sa-incidencias"],
+      "challenges": ["TABLE_ROW", "PARAPHRASE"]
+    },
+    {
+      "id": "sa-q13",
+      "family": "desechar-preparacion",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "When must a prepared dish be thrown away?",
+      "gold": ["sa-recalentado", "sa-etiquetado"],
+      "acceptable": ["sa-zona-peligro"],
+      "challenges": ["CROSS_LINGUAL", "COMPOUND"]
+    },
+    {
+      "id": "sa-q14",
+      "family": "momentos-lavado",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿En qué momentos hay que lavarse las manos?",
+      "gold": ["sa-lavado-manos"],
+      "challenges": []
+    },
+    {
+      "id": "sa-q15",
+      "family": "tablas-motivo",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se usan tablas de cortar de distintos colores?",
+      "gold": ["sa-tablas-colores"],
+      "challenges": []
+    },
+    {
+      "id": "sa-q16",
+      "family": "mayonesa-motivo",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why is pasteurised egg used for mayonnaise?",
+      "gold": ["sa-mayonesa"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "sa-q17",
+      "family": "sin-etiqueta-motivo",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se tira una preparación que no tiene etiqueta?",
+      "gold": ["sa-etiquetado"],
+      "challenges": []
+    },
+    {
+      "id": "sa-q18",
+      "family": "como-lavarse",
+      "intent": "PROCEDURE",
+      "language": "es",
+      "query": "¿Cómo hay que lavarse las manos en la cocina?",
+      "gold": ["sa-lavado-manos"],
+      "challenges": []
+    },
+    {
+      "id": "sa-q19",
+      "family": "averia-camara",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "What do we do if a cold room breaks down?",
+      "gold": ["sa-incidencias"],
+      "challenges": ["CROSS_LINGUAL", "TABLE_ROW"]
+    },
+    {
+      "id": "sa-q20",
+      "family": "ver-raton",
+      "intent": "PROCEDURE",
+      "language": "es",
+      "query": "¿Qué se hace si alguien ve un ratón en la cocina?",
+      "gold": ["sa-plagas"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "sa-q21",
+      "family": "temperatura-congelados",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿A qué temperatura tienen que estar los congelados?",
+      "gold": ["sa-frio"],
+      "challenges": []
+    },
+    {
+      "id": "sa-q22",
+      "family": "temperatura-recalentado",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Hasta qué temperatura hay que recalentar la comida?",
+      "gold": ["sa-recalentado"],
+      "challenges": []
+    },
+    {
+      "id": "sa-q23",
+      "family": "tiempo-frotado",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "For how long should hands be scrubbed with soap?",
+      "gold": ["sa-lavado-manos"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "sa-q24",
+      "family": "nota-inspeccion",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué puntuación sacó el local en la inspección sanitaria municipal?",
+      "gold": ["sa-auditorias"],
+      "challenges": ["TABLE_ROW"]
+    },
+    {
+      "id": "sa-q25",
+      "family": "numero-alergenos",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántos alérgenos de declaración obligatoria se indican en la carta?",
+      "gold": ["sa-alergenos"],
+      "challenges": []
+    },
+    {
+      "id": "sa-q26",
+      "family": "quien-plagas",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién revisa el local para el control de plagas?",
+      "gold": ["sa-plagas"],
+      "challenges": []
+    },
+    {
+      "id": "sa-q27",
+      "family": "nombre-empresa-plagas",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Cómo se llama la empresa de control de plagas?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "sa-q28",
+      "family": "coste-curso",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuánto cuesta el curso de higiene alimentaria?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "sa-q29",
+      "family": "temperatura-vino",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿A qué temperatura se debe servir el vino tinto?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "sa-q30",
+      "family": "auditoria-2024",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué puntuación obtuvo el local en la auditoría interna de 2024?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "TABLE_ROW"]
+    },
+    {
+      "id": "sa-q31",
+      "family": "agua-pasta",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Cada cuánto se cambia el agua de cocción de la pasta?",
+      "gold": [],
+      "challenges": ["SAME_VOCABULARY", "WRONG_SUBJECT"]
+    },
+    {
+      "id": "sa-q32",
+      "family": "cliente-obligado-alergia",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Are customers required to declare their allergies before ordering?",
+      "gold": [],
+      "challenges": ["SAME_VOCABULARY", "CROSS_LINGUAL"]
+    },
+    {
+      "id": "sa-q33",
+      "family": "empresa-avisa",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿La empresa de plagas tiene que avisar al restaurante cuando ve un roedor?",
+      "gold": [],
+      "challenges": ["INVERTED_RELATION"]
+    }
+  ]
+}

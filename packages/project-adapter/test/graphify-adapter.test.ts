@@ -11,12 +11,16 @@ import {
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   GraphifyCodeGraphAdapter,
   createCodeSnapshot,
   defaultCodeGraphOptions,
 } from "../src/index.js";
+
+// Real Git snapshots and provider-state filesystem fixtures need bounded
+// IO deadlines on Windows and under parallel workspace test execution.
+vi.setConfig({ testTimeout: 30_000 });
 
 const roots: string[] = [];
 

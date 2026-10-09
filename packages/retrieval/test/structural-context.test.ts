@@ -49,6 +49,31 @@ describe("rehydrateStructuralContext", () => {
     expect(result).toBe(`${body.slice(0, 119).trimEnd()}…`);
   });
 
+  it("rehydrates a table row from its structural table parent", () => {
+    const parent = [
+      "| Key | Action |",
+      "| --- | --- |",
+      "| item-1 | routine observation |",
+      "| item-20 | route to isolated recovery |",
+      "| item-21 | routine observation |",
+    ].join("\n");
+    const child = "| item-20 | route to isolated recovery |";
+    const result = rehydrateStructuralContext(
+      {
+        body: child,
+        unitType: "TABLE_ROW",
+        parentBody: parent,
+        parentUnitType: "TABLE",
+        focusText: "item-20 isolated recovery",
+      },
+      150,
+    );
+
+    expect(result).toContain("| Key | Action |");
+    expect(result).toContain(child);
+    expect(result.length).toBeLessThanOrEqual(150);
+  });
+
   it("never expands a DOCUMENT container into the packet", () => {
     const child = "Only this atomic table row is relevant.";
     const result = rehydrateStructuralContext({

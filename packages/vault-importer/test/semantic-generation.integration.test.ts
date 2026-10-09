@@ -1,10 +1,15 @@
 import { createServer, type Server } from "node:http";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import {
+  embeddingPassageInputHash,
+  embeddingPassageText,
+  deterministicEmbedding,
+} from "@akp/retrieval";
 import { Postgres } from "@akp/postgres";
 import { importVaultReadOnly } from "../src/index.js";
 
@@ -25,6 +30,7 @@ const environmentKeys = [
   "AKP_EMBEDDING_CONFIGURATION_VERSION",
   "AKP_EMBEDDING_TIMEOUT_MS",
   "AKP_EMBEDDING_MAX_RETRIES",
+  "AKP_EMBEDDING_PASSAGE_CONTEXT",
 ] as const;
 
 type EnvironmentKey = (typeof environmentKeys)[number];
@@ -892,4 +898,84 @@ integration("vault importer semantic generation integration", () => {
       );
     }
   });
+  it("uses contextual inputs on read-only import without changing source bytes or duplicating snapshots", async () => {
+    if (!db || !fixtureRoot)
+      throw new Error("integration fixture was not initialized");
+    const previous = rememberEnvironment();
+    try {
+      useDeterministicProvider();
+      process.env.AKP_EMBEDDING_PASSAGE_CONTEXT = "title-heading-v1";
+      const before = await readFile(path.join(fixtureRoot, "semantic-note.md"));
+      const imported = await importVaultReadOnly(db, fixtureRoot, {
+        spaceId,
+        vaultKey,
+      });
+      const rows = await db.pool.query<{ id: string; input_strategy: string }>(
+        "select id,input_strategy from embedding_generations where vault_id=$1 and status='ACTIVE'",
+        [imported.vaultId],
+      );
+      expect(rows.rows).toHaveLength(1);
+      const generation = rows.rows[0]!;
+      expect(generation.input_strategy).toBe(
+        "deterministic-token-hash-v1+title-heading-v1",
+      );
+      const vectors = await db.pool.query<{
+        input_hash: string;
+        body: string;
+        title: string;
+        heading_path: string[];
+        embedding: string;
+      }>(
+        "select e.input_hash,e.embedding::text embedding,u.body,u.heading_path,d.title from unit_embeddings e join knowledge_units u on u.id=e.unit_id join knowledge_documents d on d.id=u.document_id where e.generation_id=$1",
+        [generation.id],
+      );
+      expect(vectors.rows.length).toBeGreaterThan(0);
+      for (const row of vectors.rows) {
+        const input = {
+          body: row.body,
+          title: row.title,
+          headingPath: row.heading_path,
+        };
+        expect(row.input_hash).toBe(
+          embeddingPassageInputHash(input, generation.input_strategy),
+        );
+        const actual = JSON.parse(row.embedding) as number[];
+        const expected = deterministicEmbedding(
+          embeddingPassageText(input, generation.input_strategy),
+        );
+        expect(actual).toHaveLength(expected.length);
+        actual.forEach((value, index) =>
+          expect(value).toBeCloseTo(expected[index]!, 6),
+        );
+      }
+      const count = (
+        await db.pool.query(
+          "select count(*)::int count from knowledge_units where vault_id=$1",
+          [imported.vaultId],
+        )
+      ).rows[0]?.count;
+      await importVaultReadOnly(db, fixtureRoot, { spaceId, vaultKey });
+      expect(
+        (
+          await db.pool.query(
+            "select id from embedding_generations where vault_id=$1 and status='ACTIVE'",
+            [imported.vaultId],
+          )
+        ).rows.map((row) => row.id),
+      ).toEqual([generation.id]);
+      expect(
+        (
+          await db.pool.query(
+            "select count(*)::int count from knowledge_units where vault_id=$1",
+            [imported.vaultId],
+          )
+        ).rows[0]?.count,
+      ).toBe(count);
+      expect(
+        await readFile(path.join(fixtureRoot, "semantic-note.md")),
+      ).toEqual(before);
+    } finally {
+      restoreEnvironment(previous);
+    }
+  }, 30_000);
 });

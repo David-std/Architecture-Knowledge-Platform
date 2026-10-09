@@ -4,7 +4,6 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import {
-  aggregateBenchmarkRun,
   RETRIEVAL_BENCHMARK_MATRIX,
   V03_RETRIEVAL_BASELINE,
   type BenchmarkConfiguration,
@@ -27,8 +26,13 @@ import {
   QueryEmbeddingService,
   retrievalAnswerabilityCandidateKey,
   type ActiveEmbeddingGenerationDescriptor,
+  type EvidenceRetrievalStageSnapshot,
 } from "../packages/retrieval/src/index.js";
 import { queryKnowledge } from "../apps/api/src/routes/search.js";
+import {
+  aggregateObservedBenchmarkRun,
+  diagnoseSingleUnitCorpusCase,
+} from "./retrieval-stage-observation.js";
 
 type ManifestDocument = {
   id: string;
@@ -79,6 +83,7 @@ type Fixture = {
 type QueryHit = Awaited<ReturnType<typeof queryKnowledge>>[number];
 
 type RuntimeObservation = BenchmarkObservation & {
+  stageDiagnostics: ReturnType<typeof diagnoseSingleUnitCorpusCase>;
   warnings: string[];
   availableChannels: string[];
   rankedVaultIds: string[];
@@ -86,9 +91,15 @@ type RuntimeObservation = BenchmarkObservation & {
   candidateSignals: ReturnType<
     typeof assessRetrievalAnswerability
   >["candidateSignals"];
-  answerability: Omit<
+  answerability: Pick<
     ReturnType<typeof assessRetrievalAnswerability>,
-    "candidateSignals"
+    | "supported"
+    | "reason"
+    | "topVectorScore"
+    | "secondVectorScore"
+    | "thirdVectorScore"
+    | "vectorMargin"
+    | "vectorNeighborhoodMargin"
   >;
 };
 
@@ -108,8 +119,11 @@ type StorageSnapshot = {
   embeddingsBytes: number;
 };
 
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error("DATABASE_URL is required");
+const databaseUrl = (() => {
+  const value = process.env.DATABASE_URL;
+  if (!value) throw new Error("DATABASE_URL is required");
+  return value;
+})();
 assertSyntheticFixtureDatabaseSafety(databaseUrl);
 
 const fixtureRoot = path.resolve("evals/fixtures");
@@ -511,6 +525,7 @@ function benchmarkConfigurations(): BenchmarkConfiguration[] {
     "vector-only",
     "graph-only",
     "lexical+vector",
+    "exact+lexical+vector",
     "lexical+graph",
     "vector+graph",
     "context-pack+lexical+graph",
@@ -688,6 +703,7 @@ async function executeCase(
   >();
   const started = performance.now();
   let answerabilityCandidates: readonly QueryHit[] | undefined;
+  let candidateStages: EvidenceRetrievalStageSnapshot | undefined;
   const rawHits = await queryKnowledge(
     db,
     {
@@ -734,6 +750,9 @@ async function executeCase(
       answerabilityCandidateSink: (candidates) => {
         answerabilityCandidates = candidates;
       },
+      stageDiagnosticSink: (snapshot) => {
+        candidateStages = snapshot;
+      },
       graphScopes: [{ vaultId, pathPrefix: null }],
       graphPolicy: { maxHops: 3, directionPolicy: "both" },
     },
@@ -768,6 +787,18 @@ async function executeCase(
   );
   const retrievedCitations = hits.flatMap((hit) => hit.citations);
   return {
+    stageDiagnostics: diagnoseSingleUnitCorpusCase({
+      caseId: testCase.id,
+      goldDocuments: testCase.gold_documents,
+      expectNoAnswer: testCase.expect_no_answer === true,
+      documentIds: fixture.documentIds,
+      unitIds: fixture.unitIds,
+      candidateStages,
+      shortlist: rawHits,
+      shortlistLimit: 10,
+      admitted: hits,
+      assessment: answerability,
+    }),
     configurationName: configuration.name,
     caseId: testCase.id,
     slice: testCase.slice ?? testCase.category,
@@ -789,7 +820,7 @@ async function executeCase(
       (sum, hit) => sum + Math.ceil(hit.excerpt.length / 4),
       0,
     ),
-    critical: testCase.critical,
+    ...(testCase.critical !== undefined ? { critical: testCase.critical } : {}),
     warnings: [...new Set(warnings)],
     availableChannels: [...availableChannels].sort(),
     rankedVaultIds: [...new Set(hits.map((hit) => hit.vaultId))],
@@ -858,7 +889,9 @@ async function main(): Promise<void> {
     );
     const configurations = benchmarkConfigurations();
     const filteredAnnEvidence = await loadFilteredAnnEvidence();
-    const runs = [];
+    const runs: Array<
+      ReturnType<typeof aggregateObservedBenchmarkRun<RuntimeObservation>>
+    > = [];
     for (const configuration of configurations) {
       const observations: RuntimeObservation[] = [];
       for (const testCase of dataset.cases) {
@@ -872,7 +905,7 @@ async function main(): Promise<void> {
           ),
         );
       }
-      runs.push(aggregateBenchmarkRun(configuration, observations));
+      runs.push(aggregateObservedBenchmarkRun(configuration, observations));
     }
 
     const baselineRun = runs.find(

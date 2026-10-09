@@ -18,8 +18,16 @@ import {
   type ActiveTrace,
 } from "@akp/observability";
 import {
+  CONTEXTUAL_CROSS_ENCODER_DEFAULT_SUPPORT_SCORE,
+  ContextualCrossEncoderEvidenceVerifier,
   DeterministicQueryDecomposer,
+  LayeredEvidenceAdmissionPipeline,
   LocalMultilingualQaEvidenceVerifier,
+  OpenAICompatibleEvidenceReader,
+  OpenAICompatibleQueryTranslator,
+  QueryConditionedSemanticEvidenceReader,
+  ReaderEvidenceVerifier,
+  type LayeredEvidenceAdmissionEvaluator,
   type QueryConditionedEvidenceVerifier,
   type QueryConditionedEvidenceVerifierMode,
   type QueryTransformerPort,
@@ -67,6 +75,7 @@ export interface ApiServerDependencies {
   evidenceVerifier?: QueryConditionedEvidenceVerifier;
   evidenceVerifierMode?: QueryConditionedEvidenceVerifierMode;
   evidenceVerifierMaxCandidates?: number;
+  evidenceAdmissionPipeline?: LayeredEvidenceAdmissionEvaluator;
 }
 
 export function buildServer(dependencies: ApiServerDependencies = {}) {
@@ -79,10 +88,67 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
             runtimeConfig.evidenceVerifierMinimumSupportScore as number,
           localFilesOnly: runtimeConfig.evidenceVerifierLocalFilesOnly,
         })
+      : runtimeConfig.evidenceVerifierProvider === "contextual-cross-encoder"
+        ? new ContextualCrossEncoderEvidenceVerifier({
+            minimumSupportScore:
+              runtimeConfig.evidenceVerifierMinimumSupportScore ??
+              CONTEXTUAL_CROSS_ENCODER_DEFAULT_SUPPORT_SCORE,
+            localFilesOnly: runtimeConfig.evidenceVerifierLocalFilesOnly,
+          })
+        : runtimeConfig.evidenceReader
+          ? new ReaderEvidenceVerifier({
+              reader: new OpenAICompatibleEvidenceReader({
+                baseUrl: runtimeConfig.evidenceReader.baseUrl,
+                model: runtimeConfig.evidenceReader.model,
+                timeoutMs: runtimeConfig.evidenceReader.timeoutMs,
+                maxOutputTokens: runtimeConfig.evidenceReader.maxOutputTokens,
+                ...(runtimeConfig.evidenceReader.reasoningEffort
+                  ? {
+                      reasoningEffort:
+                        runtimeConfig.evidenceReader.reasoningEffort,
+                    }
+                  : {}),
+                jsonResponseFormat:
+                  runtimeConfig.evidenceReader.jsonResponseFormat,
+                ...(runtimeConfig.evidenceReader.apiKey
+                  ? { apiKey: runtimeConfig.evidenceReader.apiKey }
+                  : {}),
+              }),
+              shortlist: new ContextualCrossEncoderEvidenceVerifier({
+                minimumSupportScore:
+                  CONTEXTUAL_CROSS_ENCODER_DEFAULT_SUPPORT_SCORE,
+                localFilesOnly: runtimeConfig.evidenceVerifierLocalFilesOnly,
+              }),
+              shortlistSize: runtimeConfig.evidenceReader.shortlistSize,
+              adaptiveMaxCandidates:
+                runtimeConfig.evidenceReader.adaptiveMaxCandidates,
+              shortlistStrategy: runtimeConfig.evidenceReader.shortlistStrategy,
+              confirmQuoteSufficiency:
+                runtimeConfig.evidenceReader.confirmQuoteSufficiency,
+            })
+          : undefined);
+  // LAYERED admits only through the layered pipeline; the configured reader
+  // verifier becomes its semantic layer and fails closed on timeout/error.
+  const evidenceAdmissionPipeline =
+    dependencies.evidenceAdmissionPipeline ??
+    ((dependencies.evidenceVerifierMode ??
+      runtimeConfig.evidenceVerifierMode) === "LAYERED" &&
+    runtimeEvidenceVerifier
+      ? new LayeredEvidenceAdmissionPipeline({
+          semanticReader: new QueryConditionedSemanticEvidenceReader({
+            verifier: runtimeEvidenceVerifier,
+            timeoutMs: runtimeConfig.evidenceAdmissionTimeoutMs,
+          }),
+        })
       : undefined);
-  const ownsRuntimeEvidenceVerifier =
+  const ownedRuntimeEvidenceVerifier =
     dependencies.evidenceVerifier === undefined &&
-    runtimeEvidenceVerifier instanceof LocalMultilingualQaEvidenceVerifier;
+    (runtimeEvidenceVerifier instanceof LocalMultilingualQaEvidenceVerifier ||
+      runtimeEvidenceVerifier instanceof
+        ContextualCrossEncoderEvidenceVerifier ||
+      runtimeEvidenceVerifier instanceof ReaderEvidenceVerifier)
+      ? runtimeEvidenceVerifier
+      : null;
   const app = Fastify({
     logger: process.env.NODE_ENV !== "test",
     bodyLimit: 10 * 1024 * 1024,
@@ -259,11 +325,25 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   registerSourceConnectorRoutes(app, db);
   registerProviderTaskRoutes(app, db);
   registerOperatorRoutes(app, db);
+  // Translations only add lexical/vector retrieval variants; admission still
+  // judges every candidate against the original query.
   const queryTransformer =
     dependencies.queryTransformer ??
-    (process.env.AKP_QUERY_TRANSFORM_ENABLED === "true"
+    (runtimeConfig.queryTransformProvider === "deterministic-decomposer"
       ? new DeterministicQueryDecomposer()
-      : undefined);
+      : runtimeConfig.queryTranslation
+        ? new OpenAICompatibleQueryTranslator({
+            baseUrl: runtimeConfig.queryTranslation.baseUrl,
+            model: runtimeConfig.queryTranslation.model,
+            corpusLanguages: runtimeConfig.queryTranslation.corpusLanguages,
+            timeoutMs: runtimeConfig.queryTranslation.timeoutMs,
+            jsonResponseFormat:
+              runtimeConfig.queryTranslation.jsonResponseFormat,
+            ...(runtimeConfig.queryTranslation.apiKey
+              ? { apiKey: runtimeConfig.queryTranslation.apiKey }
+              : {}),
+          })
+        : undefined);
   registerSearchRoutes(app, db, {
     ...(dependencies.contextTokenizer
       ? { contextTokenizer: dependencies.contextTokenizer }
@@ -286,6 +366,15 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
             runtimeConfig.evidenceVerifierMaxCandidates,
         }
       : {}),
+    ...(evidenceAdmissionPipeline
+      ? {
+          evidenceAdmissionPipeline,
+          evidenceAdmissionMinDistinctDocuments:
+            runtimeConfig.evidenceAdmissionMinDistinctDocuments,
+          evidenceAdmissionAbstainOnConflict:
+            runtimeConfig.evidenceAdmissionAbstainOnConflict,
+        }
+      : {}),
   });
   registerIngestRoutes(app, db);
   registerKnowledgeRoutes(app, db);
@@ -299,12 +388,7 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   registerGovernanceRoutes(app, db);
 
   app.addHook("onClose", async () => {
-    if (
-      ownsRuntimeEvidenceVerifier &&
-      runtimeEvidenceVerifier instanceof LocalMultilingualQaEvidenceVerifier
-    ) {
-      await runtimeEvidenceVerifier.dispose();
-    }
+    await ownedRuntimeEvidenceVerifier?.dispose();
     await db.close();
   });
   return app;

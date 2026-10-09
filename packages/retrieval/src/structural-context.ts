@@ -1,3 +1,7 @@
+import {
+  markdownTableEvidence,
+  projectMarkdownTable,
+} from "./markdown-table-evidence.js";
 export interface StructuralContextUnit {
   body: string;
   unitType: string;
@@ -174,6 +178,45 @@ function boundedWindowAroundFocus(
   );
 }
 
+function boundedTableContext(
+  body: string,
+  focus: string | undefined,
+  maxChars: number,
+): string | null {
+  const tables = markdownTableEvidence(body);
+  const table = tables[0];
+  // A TABLE unit must actually be one table, not fenced source or prose with
+  // pipes. Structural parsing chooses a presentation; it never grants support.
+  if (
+    tables.length !== 1 ||
+    !table ||
+    body.slice(0, table.span.startOffset).trim() ||
+    body.slice(table.span.endOffset).trim()
+  )
+    return null;
+  const terms = focusTerms(focus ?? "");
+  const scores = table.rows.map((row, index) => {
+    const text = row.source.toLocaleLowerCase("en-US");
+    const matches = terms.filter((term) => text.includes(term));
+    return {
+      index,
+      count: matches.length,
+      characters: matches.reduce((sum, term) => sum + term.length, 0),
+    };
+  });
+  scores.sort(
+    (left, right) =>
+      right.count - left.count ||
+      right.characters - left.characters ||
+      left.index - right.index,
+  );
+  return projectMarkdownTable(
+    body,
+    table,
+    scores[0]?.index ?? 0,
+    Math.max(1, Math.trunc(maxChars)),
+  ).text;
+}
 /**
  * Rehydrates a matched atomic unit with only its bounded structural parent.
  * A DOCUMENT parent is deliberately ignored because it is the complete dossier
@@ -189,10 +232,18 @@ export function rehydrateStructuralContext(
   const child = unit.body.trim();
   if (!child) return "";
   const focus = unit.focusText?.trim();
+  if (unit.unitType === "TABLE") {
+    const table = boundedTableContext(child, focus, maxChars);
+    if (table !== null) return table;
+  }
+  const parent = unit.parentBody?.trim();
+  if (parent && unit.parentUnitType === "TABLE") {
+    const table = boundedTableContext(parent, focus || child, maxChars);
+    if (table !== null) return table;
+  }
   const boundedChild = focus
     ? boundedWindowAroundFocus(child, focus, Math.min(maxChars, 1600))
     : boundedWindow(child, child, Math.min(maxChars, 1600));
-  const parent = unit.parentBody?.trim();
   if (!parent || unit.parentUnitType === "DOCUMENT" || parent === child) {
     return boundedChild;
   }

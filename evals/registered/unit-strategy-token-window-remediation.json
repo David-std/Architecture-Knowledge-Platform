@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "akp.unit-strategy-token-window-remediation.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-04",
+  "baselineSha": "87cc0ad27733e9682179bab67b8e658397e467fe",
+  "singleIndependentVariable": "MAX_EMBEDDING_UNIT_CHARACTERS",
+  "baselineEvidence": {
+    "measurementManifestGitBlobSha": "c19ed30e256d3a84aa1a1bf9fc0114c6df001eb6",
+    "workflowRun": 37244053579,
+    "artifact": 11318008988,
+    "artifactSha256": "e54b2e82a9e601f971b28ebbf41cc8bd48526a46a0c92129bc0122489a52d155",
+    "maxEmbeddingUnitCharacters": 1200,
+    "modelMaxTokens": 512,
+    "maxObservedPrefixedTokens": 556,
+    "tokenWindowViolationCount": 3,
+    "violatingUnitType": "CODE_EVIDENCE"
+  },
+  "candidatePolicy": {
+    "parser": "parseKnowledgeUnits",
+    "maxEmbeddingUnitCharacters": 1024,
+    "embeddingModel": "intfloat/multilingual-e5-small",
+    "modelRevision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+    "modelMaxTokens": 512,
+    "passagePrefix": "passage: ",
+    "tokenCountIncludesRolePrefix": true
+  },
+  "cases": [
+    {
+      "id": "long-en-prose",
+      "family": "LONG_PROSE_EN",
+      "title": "Long English evidence",
+      "source": "# Long English\n\nNeutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. Neutral architecture context preserves source lineage, review boundaries, and retrieval provenance. The final English recovery marker is ORCHID-731 and must remain in a source-bound leaf.",
+      "requireSplit": true,
+      "requiredMarker": "ORCHID-731"
+    },
+    {
+      "id": "long-es-list",
+      "family": "LONG_LIST_ES",
+      "title": "Long Spanish list",
+      "source": "# Lista operativa\n\n- La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. La evidencia operativa conserva el origen, la revisión y el alcance autorizado sin convertir relevancia en verdad. El marcador final de recuperación es LIMA-842 y debe permanecer en una hoja trazable.",
+      "requireSplit": true,
+      "requiredMarker": "LIMA-842"
+    },
+    {
+      "id": "long-code",
+      "family": "LONG_CODE",
+      "title": "Long code evidence",
+      "source": "# Code evidence\n\n```ts\nconst route_01 = \"svc-01-7f3a9c1e-4b8d-42aa-9e61-01c0ffee9d21\"; // bounded source evidence\nconst route_02 = \"svc-02-7f3a9c1e-4b8d-42aa-9e61-02c0ffee9d21\"; // bounded source evidence\nconst route_03 = \"svc-03-7f3a9c1e-4b8d-42aa-9e61-03c0ffee9d21\"; // bounded source evidence\nconst route_04 = \"svc-04-7f3a9c1e-4b8d-42aa-9e61-04c0ffee9d21\"; // bounded source evidence\nconst route_05 = \"svc-05-7f3a9c1e-4b8d-42aa-9e61-05c0ffee9d21\"; // bounded source evidence\nconst route_06 = \"svc-06-7f3a9c1e-4b8d-42aa-9e61-06c0ffee9d21\"; // bounded source evidence\nconst route_07 = \"svc-07-7f3a9c1e-4b8d-42aa-9e61-07c0ffee9d21\"; // bounded source evidence\nconst route_08 = \"svc-08-7f3a9c1e-4b8d-42aa-9e61-08c0ffee9d21\"; // bounded source evidence\nconst route_09 = \"svc-09-7f3a9c1e-4b8d-42aa-9e61-09c0ffee9d21\"; // bounded source evidence\nconst route_10 = \"svc-10-7f3a9c1e-4b8d-42aa-9e61-10c0ffee9d21\"; // bounded source evidence\nconst route_11 = \"svc-11-7f3a9c1e-4b8d-42aa-9e61-11c0ffee9d21\"; // bounded source evidence\nconst route_12 = \"svc-12-7f3a9c1e-4b8d-42aa-9e61-12c0ffee9d21\"; // bounded source evidence\nconst route_13 = \"svc-13-7f3a9c1e-4b8d-42aa-9e61-13c0ffee9d21\"; // bounded source evidence\nconst route_14 = \"svc-14-7f3a9c1e-4b8d-42aa-9e61-14c0ffee9d21\"; // bounded source evidence\nconst route_15 = \"svc-15-7f3a9c1e-4b8d-42aa-9e61-15c0ffee9d21\"; // bounded source evidence\nconst route_16 = \"svc-16-7f3a9c1e-4b8d-42aa-9e61-16c0ffee9d21\"; // bounded source evidence\nconst route_17 = \"svc-17-7f3a9c1e-4b8d-42aa-9e61-17c0ffee9d21\"; // bounded source evidence\nconst route_18 = \"svc-18-7f3a9c1e-4b8d-42aa-9e61-18c0ffee9d21\"; // bounded source evidence\nconst route_19 = \"svc-19-7f3a9c1e-4b8d-42aa-9e61-19c0ffee9d21\"; // bounded source evidence\nconst route_20 = \"svc-20-7f3a9c1e-4b8d-42aa-9e61-20c0ffee9d21\"; // bounded source evidence\nconst route_21 = \"svc-21-7f3a9c1e-4b8d-42aa-9e61-21c0ffee9d21\"; // bounded source evidence\nconst route_22 = \"svc-22-7f3a9c1e-4b8d-42aa-9e61-22c0ffee9d21\"; // bounded source evidence\nconst route_23 = \"svc-23-7f3a9c1e-4b8d-42aa-9e61-23c0ffee9d21\"; // bounded source evidence\nconst route_24 = \"svc-24-7f3a9c1e-4b8d-42aa-9e61-24c0ffee9d21\"; // bounded source evidence\nconst route_25 = \"svc-25-7f3a9c1e-4b8d-42aa-9e61-25c0ffee9d21\"; // bounded source evidence\nconst route_26 = \"svc-26-7f3a9c1e-4b8d-42aa-9e61-26c0ffee9d21\"; // bounded source evidence\nconst route_27 = \"svc-27-7f3a9c1e-4b8d-42aa-9e61-27c0ffee9d21\"; // bounded source evidence\nconst route_28 = \"svc-28-7f3a9c1e-4b8d-42aa-9e61-28c0ffee9d21\"; // bounded source evidence\nconst route_29 = \"svc-29-7f3a9c1e-4b8d-42aa-9e61-29c0ffee9d21\"; // bounded source evidence\nconst route_30 = \"svc-30-7f3a9c1e-4b8d-42aa-9e61-30c0ffee9d21\"; // bounded source evidence\nconst route_31 = \"svc-31-7f3a9c1e-4b8d-42aa-9e61-31c0ffee9d21\"; // bounded source evidence\nconst route_32 = \"svc-32-7f3a9c1e-4b8d-42aa-9e61-32c0ffee9d21\"; // bounded source evidence\nconst route_33 = \"svc-33-7f3a9c1e-4b8d-42aa-9e61-33c0ffee9d21\"; // bounded source evidence\nconst route_34 = \"svc-34-7f3a9c1e-4b8d-42aa-9e61-34c0ffee9d21\"; // bounded source evidence\nconst route_35 = \"svc-35-7f3a9c1e-4b8d-42aa-9e61-35c0ffee9d21\"; // bounded source evidence\nconst route_36 = \"svc-36-7f3a9c1e-4b8d-42aa-9e61-36c0ffee9d21\"; // bounded source evidence\nconst route_37 = \"svc-37-7f3a9c1e-4b8d-42aa-9e61-37c0ffee9d21\"; // bounded source evidence\nconst route_38 = \"svc-38-7f3a9c1e-4b8d-42aa-9e61-38c0ffee9d21\"; // bounded source evidence\nconst route_39 = \"svc-39-7f3a9c1e-4b8d-42aa-9e61-39c0ffee9d21\"; // bounded source evidence\nconst route_40 = \"svc-40-7f3a9c1e-4b8d-42aa-9e61-40c0ffee9d21\"; // bounded source evidence\nconst route_41 = \"svc-41-7f3a9c1e-4b8d-42aa-9e61-41c0ffee9d21\"; // bounded source evidence\nconst route_42 = \"svc-42-7f3a9c1e-4b8d-42aa-9e61-42c0ffee9d21\"; // bounded source evidence\nconst route_43 = \"svc-43-7f3a9c1e-4b8d-42aa-9e61-43c0ffee9d21\"; // bounded source evidence\nconst route_44 = \"svc-44-7f3a9c1e-4b8d-42aa-9e61-44c0ffee9d21\"; // bounded source evidence\nconst decisive_code = \"CODE-MARKER-953\";\n```",
+      "requireSplit": true,
+      "requiredMarker": "CODE-MARKER-953"
+    },
+    {
+      "id": "duplicate-container",
+      "family": "DUPLICATE_CONTAINER",
+      "title": "Duplicate and container evidence",
+      "source": "# Duplicate evidence\n\nThe same source-bound assertion remains active.\n\nThe same source-bound assertion remains active.\n\n## Structured table\n\nA short paragraph keeps this section multi-block.\n\n| Key | Value |\n| --- | --- |\n| alpha | one |\n| beta | two |",
+      "requireSplit": false,
+      "requiredMarker": "same source-bound assertion"
+    }
+  ],
+  "requiredStructuralGates": {
+    "documentContainerIsNotEmbeddingEligible": true,
+    "sectionContainersAreNotEmbeddingEligible": true,
+    "splitParentsAreContainers": true,
+    "splitChildrenAreEmbeddingEligible": true,
+    "splitChildrenPreserveParentLineage": true,
+    "requiredMarkersRemainInEmbeddingEligibleLeaves": true,
+    "exactDuplicateLeavesRemainSourceDistinct": true,
+    "exactDuplicateLeavesRetainEqualContentHash": true,
+    "tableContainerIsNotEmbeddingEligible": true,
+    "tableRowsAreEmbeddingEligible": true,
+    "tableCellsAreNotEmbeddingEligible": true,
+    "oneVectorPerEmbeddingEligibleUnit": true
+  },
+  "requiredRemediationGates": {
+    "allStructuralGatesPass": true,
+    "oneVectorPerEmbeddingEligibleUnit": true,
+    "tokenWindowViolationCount": 0,
+    "maxObservedPrefixedTokensAtMostModelMaxTokens": true,
+    "requiredMarkersRemainSourceBound": true,
+    "exactDuplicateSourceIdentityPreserved": true,
+    "containerIsolationPreserved": true
+  },
+  "governedOutcomes": {
+    "promote": "PROMOTE_TOKEN_WINDOW_BUDGET",
+    "reject": "REJECT_TOKEN_WINDOW_OVERFLOW",
+    "invalid": "INVALID_REMEDIATION"
+  },
+  "decisionRule": {
+    "invalidIfAnyStructuralOrVectorGateFails": true,
+    "rejectIfAnyPrefixedEmbeddingEligibleUnitExceedsModelMaxTokens": true,
+    "promoteOtherwise": true,
+    "noRetuningAfterExecution": true,
+    "claimBoundary": "This worker changes only MAX_EMBEDDING_UNIT_CHARACTERS from 1200 to 1024. Promotion requires zero exact prefixed E5 token-window violations plus preserved structural/vector invariants. Retrieval/admission/ContextPacket/provider behavior is not modified here and remains subject to the complete same-SHA workflow matrix."
+  }
+}
