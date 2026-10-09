@@ -117,14 +117,6 @@ export interface BuildContextPacketInput {
   maxSectionsPerDocument?: number;
   /** An application tokenizer. Omitted means the labelled char/4 fallback. */
   tokenizer?: Tokenizer;
-  /**
-   * Deprecated compatibility aliases. `buildContextPacket` always returns a
-   * full packet; use `buildCompactAgentPacket` or `projectContextPacket` for
-   * the compact response shape.
-   */
-  packetMode?: ContextPacketMode;
-  outputMode?: ContextPacketMode;
-  projection?: ContextPacketMode;
   searchedChannels?: string[];
   requiredActions?: string[];
   recommendedActions?: string[];
@@ -1650,9 +1642,6 @@ export function projectContextPacket(
     }
   }
 }
-
-/** Alias for adapters that use projection terminology. */
-export const toCompactAgentPacket = projectContextPacket;
 
 /**
  * Build both packet representations from one source selection. The full

@@ -914,7 +914,6 @@ describe("buildContextPacket", () => {
       intent: packet.intent,
       corpusRevision: packet.corpusRevision,
       maxTokens: 20_000,
-      packetMode: "COMPACT_AGENT_PACKET",
       candidates: [],
     });
     expect(modeSelected.packetMode).toBe("FULL_CONTEXT_PACKET");
