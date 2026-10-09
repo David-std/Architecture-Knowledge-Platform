@@ -1385,3 +1385,4 @@ export function canonicalSourceArtifactJson(value: unknown): string {
 }
 
 export * from "./federated-graph.js";
+export * from "./source-markdown-renderer.js";

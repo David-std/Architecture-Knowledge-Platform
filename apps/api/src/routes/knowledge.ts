@@ -3,8 +3,10 @@ import type { FastifyInstance } from "fastify";
 import path from "node:path";
 import {
   DocumentArtifact,
+  SOURCE_MARKDOWN_RENDERER_VERSION,
   VaultRegistration,
   canonicalSourceArtifactJson,
+  renderSourceArtifactMarkdown,
 } from "@akp/contracts";
 import {
   intersectVaultPathPrefixes,
@@ -901,6 +903,16 @@ export function registerKnowledgeRoutes(
           .code(409)
           .send({ code: "SOURCE_MARKDOWN_INTEGRITY_FAILED" });
       }
+      if (
+        row.source_markdown_renderer_version !==
+          SOURCE_MARKDOWN_RENDERER_VERSION ||
+        row.source_markdown !==
+          renderSourceArtifactMarkdown(DocumentArtifact.parse(row.document_artifact))
+      ) {
+        return reply
+          .code(409)
+          .send({ code: "SOURCE_MARKDOWN_ARTIFACT_MISMATCH" });
+      }
       reply.header("Cache-Control", "no-store");
       reply.header("X-Content-Type-Options", "nosniff");
       return {
@@ -971,13 +983,15 @@ export function registerKnowledgeRoutes(
         SourceStructuredIntegrityRow & {
           source_markdown: string | null;
           source_markdown_hash: string | null;
+          source_markdown_renderer_version: string | null;
         }
       >(
         "select s.id source_id,s.sha256 source_sha256," +
           "s.media_type source_media_type,a.source_hash artifact_source_hash," +
           "a.extractor,a.extractor_version,a.configuration_hash," +
           "a.structured_content_hash,a.document_artifact," +
-          "a.source_markdown,a.source_markdown_hash " +
+          "a.source_markdown,a.source_markdown_hash," +
+          "a.source_markdown_renderer_version " +
           "from sources s join source_artifacts a on a.source_id=s.id " +
           "join vaults v on v.id=s.vault_id and v.enabled " +
           "where s.id=$1 and a.id=$2 and a.kind='document-artifact' " +
@@ -993,7 +1007,11 @@ export function registerKnowledgeRoutes(
         row.source_markdown_hash === null ||
         createHash("sha256")
           .update(row.source_markdown, "utf8")
-          .digest("hex") !== row.source_markdown_hash
+          .digest("hex") !== row.source_markdown_hash ||
+        row.source_markdown_renderer_version !==
+          SOURCE_MARKDOWN_RENDERER_VERSION ||
+        row.source_markdown !==
+          renderSourceArtifactMarkdown(DocumentArtifact.parse(row.document_artifact))
       ) {
         return reply.code(409).send({ code: "SOURCE_UNIT_PROJECTION_INVALID" });
       }

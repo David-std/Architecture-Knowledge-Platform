@@ -1115,6 +1115,46 @@ describe("product lifecycle E2E", () => {
           .digest("hex"),
       ).toBe(unit.sourceSpanSha256);
     }
+    // A forged Markdown/hash pair must not bypass the structured artifact.
+    const forgedMarkdown = sourceProjection!.source_markdown + "\n\nFabricated content";
+    const forgedHash = createHash("sha256")
+      .update(forgedMarkdown, "utf8")
+      .digest("hex");
+    await db.pool.query(
+      "update source_artifacts set source_markdown=$2,source_markdown_hash=$3 where id=$1",
+      [sourceProjection!.id, forgedMarkdown, forgedHash],
+    );
+    try {
+      const tamperedMarkdown = await app.inject({
+        method: "GET",
+        url: `/v1/sources/${indexed.rows[0]?.source_id}/artifacts/${sourceProjection!.id}/markdown`,
+        headers,
+      });
+      expect(tamperedMarkdown.statusCode).toBe(409);
+      expect(tamperedMarkdown.json()).toMatchObject({
+        code: "SOURCE_MARKDOWN_ARTIFACT_MISMATCH",
+      });
+      expect(tamperedMarkdown.body).not.toContain("Fabricated content");
+      const tamperedUnits = await app.inject({
+        method: "GET",
+        url: `${unitBase}?sourceSha256=${firstSourceHash}&markdownSha256=${forgedHash}`,
+        headers,
+      });
+      expect(tamperedUnits.statusCode).toBe(409);
+      expect(tamperedUnits.json()).toMatchObject({
+        code: "SOURCE_UNIT_PROJECTION_INVALID",
+      });
+      expect(tamperedUnits.body).not.toContain("Fabricated content");
+    } finally {
+      await db.pool.query(
+        "update source_artifacts set source_markdown=$2,source_markdown_hash=$3 where id=$1",
+        [
+          sourceProjection!.id,
+          sourceProjection!.source_markdown,
+          sourceProjection!.source_markdown_hash,
+        ],
+      );
+    }
     const missingRevision = await app.inject({
       method: "GET",
       url: unitBase,

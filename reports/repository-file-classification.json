@@ -2812,6 +2812,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/contracts/src/source-markdown-renderer.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/contracts/src/temporal-truth.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
