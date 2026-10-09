@@ -186,48 +186,35 @@ def test_real_docling_digital_pdf_preserves_visible_text_and_page_locator(
 
     pytest.importorskip("docling")
     source = tmp_path / "s1-digital-fidelity.pdf"
-    stream = b"BT\n/F1 24 Tf\n72 600 Td\n(S1 PDF PROVENANCE 3179) Tj\nET\n"
-    second_page = b"BT\n/F1 24 Tf\n72 600 Td\n(S1 SECOND PAGE 4281) Tj\nET\n"
-    objects = [
-        b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>",
-        (
-            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-            b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
-        ),
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-        b"<< /Length "
-        + str(len(stream)).encode("ascii")
-        + b" >>\nstream\n"
-        + stream
-        + b"endstream",
-        (
-            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-            b"/Resources << /Font << /F1 4 0 R >> >> /Contents 7 0 R >>"
-        ),
-        b"<< /Length "
-        + str(len(second_page)).encode("ascii")
-        + b" >>\nstream\n"
-        + second_page
-        + b"endstream",
-    ]
-    output = bytearray(b"%PDF-1.4\n")
-    offsets = [0]
-    for index, item in enumerate(objects, start=1):
-        offsets.append(len(output))
-        output.extend(
-            str(index).encode("ascii") + b" 0 obj\n" + item + b"\nendobj\n"
-        )
-    xref = len(output)
-    output.extend(b"xref\n0 8\n0000000000 65535 f \n")
-    for offset in offsets[1:]:
-        output.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
-    output.extend(
-        b"trailer\n<< /Size 8 /Root 1 0 R >>\nstartxref\n"
-        + str(xref).encode("ascii")
-        + b"\n%%EOF\n"
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+    writer = PdfWriter()
+    font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica"),
+        }
     )
-    source.write_bytes(output)
+    font_ref = writer._add_object(font)
+    for marker in ("S1 PDF PROVENANCE 3179", "S1 SECOND PAGE 4281"):
+        page = writer.add_blank_page(width=612, height=792)
+        page[NameObject("/Resources")] = DictionaryObject(
+            {
+                NameObject("/Font"): DictionaryObject(
+                    {NameObject("/F1"): font_ref}
+                )
+            }
+        )
+        stream = DecodedStreamObject()
+        stream.set_data(
+            f"BT /F1 24 Tf 72 600 Td ({marker}) Tj ET".encode("ascii")
+        )
+        page[NameObject("/Contents")] = writer._add_object(stream)
+    with source.open("wb") as stream:
+        writer.write(stream)
+
 
     artifact = DoclingAdapter().extract(
         DocumentExtractionRequest(
