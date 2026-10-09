@@ -804,6 +804,107 @@ describe("product lifecycle E2E", () => {
       expect((providerInputs[0]?.source as { sha256: string }).sha256).toBe(
         originalHash,
       );
+
+      // A corrupted historical structured digest cannot be served. The
+      // operator resubmits the original immutable bytes with their exact SHA
+      // through the same review-required worker path, not via a DB override.
+      const originalDigest = await db.pool.query<{
+        structured_content_hash: string;
+      }>(
+        "select structured_content_hash from source_artifacts where id=$1",
+        [off.artifact_id],
+      );
+      const expectedStructured = originalDigest.rows[0]?.structured_content_hash;
+      if (!expectedStructured) throw new Error("SOURCE_REEXTRACTION_DIGEST_MISSING");
+      await db.pool.query(
+        "update source_artifacts set structured_content_hash=$2 where id=$1",
+        [off.artifact_id, "f".repeat(64)],
+      );
+      const quarantinedRead = await app.inject({
+        method: "GET",
+        url:
+          "/v1/sources/" +
+          off.source_id +
+          "/artifacts/" +
+          off.artifact_id +
+          "/markdown",
+        headers,
+      });
+      expect(quarantinedRead.statusCode).toBe(409);
+      expect(quarantinedRead.body).not.toContain(marker);
+
+      const resubmit = await app.inject({
+        method: "POST",
+        url: "/v1/ingest",
+        headers,
+        payload: {
+          spaceId: defaultSpace,
+          vaultId: createdVaultIds[0],
+          sourceUri: files[0],
+          expectedSha256: originalHash,
+          title: name,
+          mediaType: "text/markdown",
+          policy: "REVIEW_REQUIRED",
+        },
+      });
+      expect(resubmit.statusCode, resubmit.body).toBe(202);
+      const resubmitJobId = (resubmit.json() as { jobId: string }).jobId;
+      await seedEventConsumerForJob(resubmitJobId);
+      await runWorkerDrain(false);
+      const recovered = await db.pool.query<{
+        state: string;
+        source_id: string;
+        artifact_id: string;
+        raw_hash: string;
+        structured_content_hash: string;
+        source_markdown: string;
+        source_markdown_hash: string;
+      }>(
+        "select j.state,s.id source_id,a.id artifact_id," +
+          "s.sha256 raw_hash,a.structured_content_hash," +
+          "a.source_markdown,a.source_markdown_hash " +
+          "from ingest_jobs j " +
+          "join sources s on s.id=(j.stage_outputs->>'sourceId')::uuid " +
+          "join source_artifacts a on a.id=" +
+          "(j.stage_outputs->'extracted'->>'source_artifact_id')::uuid " +
+          "where j.id=$1",
+        [resubmitJobId],
+      );
+      const verified = recovered.rows[0];
+      expect(verified).toBeDefined();
+      expect(verified?.state).toBe("REVIEW_REQUIRED");
+      expect(verified?.source_id).toBe(off.source_id);
+      expect(verified?.artifact_id).toBe(off.artifact_id);
+      expect(verified?.raw_hash).toBe(originalHash);
+      expect(verified?.structured_content_hash).toBe(expectedStructured);
+      expect(verified?.source_markdown).toBe(off.markdown);
+      expect(verified?.source_markdown_hash).toBe(off.markdown_hash);
+      const recoveredRead = await app.inject({
+        method: "GET",
+        url:
+          "/v1/sources/" +
+          off.source_id +
+          "/artifacts/" +
+          off.artifact_id +
+          "/markdown",
+        headers,
+      });
+      expect(recoveredRead.statusCode, recoveredRead.body).toBe(200);
+      const recoveredUnits = await app.inject({
+        method: "GET",
+        url:
+          "/v1/sources/" +
+          off.source_id +
+          "/artifacts/" +
+          off.artifact_id +
+          "/units?sourceSha256=" +
+          originalHash +
+          "&markdownSha256=" +
+          off.markdown_hash,
+        headers,
+      });
+      expect(recoveredUnits.statusCode, recoveredUnits.body).toBe(200);
+
       const published = await db.pool.query<{ count: number }>(
         "select count(*)::int count from knowledge_documents where vault_id=any($1::uuid[])",
         [createdVaultIds],
