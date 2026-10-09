@@ -373,18 +373,43 @@ export function renderDocumentArtifactMarkdown(
   return artifactItems(artifact).map(renderItem).filter(Boolean).join("\n\n");
 }
 
-/** Deterministic, complete derived projection of the sanitized source artifact. */
-export function buildFaithfulSourceMarkdown(artifact: DocumentArtifact): {
+export interface FaithfulSourceMarkdown {
   content: string;
   sha256: string;
   rendererVersion: string;
-} {
+}
+
+/** Deterministic, complete derived projection of the sanitized source artifact. */
+export function buildFaithfulSourceMarkdown(
+  artifact: DocumentArtifact,
+): FaithfulSourceMarkdown {
   const content = renderDocumentArtifactMarkdown(artifact);
   return {
     content,
     sha256: createHash("sha256").update(content, "utf8").digest("hex"),
     rendererVersion: SOURCE_MARKDOWN_RENDERER_VERSION,
   };
+}
+
+/**
+ * Reject a stale, altered or separately rendered source projection before it
+ * can enter either compilation mode. The database SHA constraint verifies
+ * stored bytes; this check additionally binds them to the structured artifact.
+ */
+export function assertFaithfulSourceMarkdown(
+  artifact: DocumentArtifact,
+  projection: FaithfulSourceMarkdown,
+): void {
+  if (projection.rendererVersion !== SOURCE_MARKDOWN_RENDERER_VERSION) {
+    throw new Error("SOURCE_MARKDOWN_RENDERER_VERSION_MISMATCH");
+  }
+  const expected = buildFaithfulSourceMarkdown(artifact);
+  if (projection.sha256 !== expected.sha256) {
+    throw new Error("SOURCE_MARKDOWN_ARTIFACT_HASH_MISMATCH");
+  }
+  if (projection.content !== expected.content) {
+    throw new Error("SOURCE_MARKDOWN_ARTIFACT_CONTENT_MISMATCH");
+  }
 }
 
 export function renderDocumentArtifactPreview(
@@ -413,7 +438,7 @@ export interface DocumentArtifactDraftInput {
   mediaType: string;
   extractor: string;
   extractorVersion: string;
-  artifact: DocumentArtifact;
+  sourceMarkdown: FaithfulSourceMarkdown;
 }
 
 /**
@@ -424,7 +449,7 @@ export interface DocumentArtifactDraftInput {
 export function renderDocumentArtifactDraft(
   input: DocumentArtifactDraftInput,
 ): string {
-  const markdown = renderDocumentArtifactMarkdown(input.artifact);
+  const markdown = input.sourceMarkdown.content;
   const yamlString = (value: string): string =>
     `'${value.replaceAll("'", "''")}'`;
   return `---

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { parseKnowledgeUnits } from "../../../packages/retrieval/src/chunking.js";
 import {
+  assertFaithfulSourceMarkdown,
   buildFaithfulSourceMarkdown,
   canonicalJson,
   documentArtifactConfigurationHash,
@@ -190,7 +191,7 @@ describe("canonical document artifact consumption", () => {
       mediaType: "text/markdown",
       extractor: parsed.extractor,
       extractorVersion: parsed.extractorVersion,
-      artifact: parsed.artifact,
+      sourceMarkdown: buildFaithfulSourceMarkdown(parsed.artifact),
     });
     expect(draft).toContain(`source_id: ${sourceId}`);
     expect(draft).toContain(
@@ -200,6 +201,37 @@ describe("canonical document artifact consumption", () => {
     expect(draft).toContain("## Uncertainty");
     expect(draft).not.toContain("file:///captured");
     expect(draft).not.toContain("C:\\\\private");
+  });
+});
+
+describe("source projection integrity", () => {
+  it("rejects mismatched hashes, versions and same-hash altered content", () => {
+    const parsed = parseCanonicalExtractionResponse(response(), {
+      sourceId,
+      sourceHash,
+    });
+    const projection = buildFaithfulSourceMarkdown(parsed.artifact);
+    expect(() =>
+      assertFaithfulSourceMarkdown(parsed.artifact, projection),
+    ).not.toThrow();
+    expect(() =>
+      assertFaithfulSourceMarkdown(parsed.artifact, {
+        ...projection,
+        rendererVersion: "0.1",
+      }),
+    ).toThrow("SOURCE_MARKDOWN_RENDERER_VERSION_MISMATCH");
+    expect(() =>
+      assertFaithfulSourceMarkdown(parsed.artifact, {
+        ...projection,
+        sha256: "0".repeat(64),
+      }),
+    ).toThrow("SOURCE_MARKDOWN_ARTIFACT_HASH_MISMATCH");
+    expect(() =>
+      assertFaithfulSourceMarkdown(parsed.artifact, {
+        ...projection,
+        content: projection.content.slice(0, 20),
+      }),
+    ).toThrow("SOURCE_MARKDOWN_ARTIFACT_CONTENT_MISMATCH");
   });
 });
 
@@ -535,7 +567,7 @@ describe("complete extraction material", () => {
       mediaType: "text/plain",
       extractor: parsed.extractor,
       extractorVersion: parsed.extractorVersion,
-      artifact,
+      sourceMarkdown,
     });
     expect(draft).toContain("The recovery window is 47 minutes.");
     expect(draft).not.toContain("Preview truncated");

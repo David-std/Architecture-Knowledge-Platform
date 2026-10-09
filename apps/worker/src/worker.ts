@@ -49,6 +49,7 @@ import {
   DOCUMENT_ARTIFACT_SCHEMA_VERSION,
   buildFaithfulSourceMarkdown,
   parseCanonicalExtractionResponse,
+  type FaithfulSourceMarkdown,
   renderDocumentArtifactPreview,
 } from "./document-artifact.js";
 import { buildCompilationStage } from "./compilation-stage.js";
@@ -603,6 +604,9 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       evidence_id?: string;
       extractor?: string;
       extractor_version?: string;
+      structured_content_hash?: string;
+      source_markdown_hash?: string;
+      source_markdown_renderer_version?: string;
     };
     if (
       !extracted?.document_artifact ||
@@ -659,6 +663,52 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       return;
     }
 
+    const projection = await db.pool.query<{
+      source_markdown: string | null;
+      source_markdown_hash: string | null;
+      source_markdown_renderer_version: string | null;
+    }>(
+      `
+      select a.source_markdown,a.source_markdown_hash,
+             a.source_markdown_renderer_version
+        from source_artifacts a
+        join sources s on s.id=a.source_id
+       where a.id=$1 and a.source_id=$2
+         and s.space_id=$3 and s.vault_id is not distinct from $4::uuid
+         and a.kind='document-artifact' and a.source_hash=$5
+         and s.sha256=$5 and a.structured_content_hash=$6
+      `,
+      [
+        extracted.source_artifact_id,
+        outputs.sourceId,
+        spaceId,
+        vaultId,
+        raw.sha256,
+        extracted.structured_content_hash,
+      ],
+    );
+    const persisted = projection.rows[0];
+    if (
+      !persisted ||
+      persisted.source_markdown === null ||
+      persisted.source_markdown_hash === null ||
+      persisted.source_markdown_renderer_version === null
+    ) {
+      throw new Error("SOURCE_MARKDOWN_PROJECTION_UNAVAILABLE");
+    }
+    if (
+      extracted.source_markdown_hash !== persisted.source_markdown_hash ||
+      extracted.source_markdown_renderer_version !==
+        persisted.source_markdown_renderer_version
+    ) {
+      throw new Error("SOURCE_MARKDOWN_PROJECTION_REVISION_MISMATCH");
+    }
+    const sourceMarkdown: FaithfulSourceMarkdown = {
+      content: persisted.source_markdown,
+      sha256: persisted.source_markdown_hash,
+      rendererVersion: persisted.source_markdown_renderer_version,
+    };
+
     const title = String(
       payload.title ?? outputs.originalName ?? basename(sourceUri),
     );
@@ -676,6 +726,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       extractor: artifactResult.extractor,
       extractorVersion: artifactResult.extractorVersion,
       artifact: artifactResult.artifact,
+      sourceMarkdown,
       vectorEnabled: process.env.AKP_VECTOR_ENABLED === "true",
     });
     const plan = CompilationPlan.parse(compilationStage.plan);

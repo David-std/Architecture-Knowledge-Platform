@@ -689,8 +689,13 @@ describe("product lifecycle E2E", () => {
     const artifact = await db.pool.query<{
       document_artifact: Record<string, unknown>;
       object_key: string;
+      source_markdown: string;
+      source_markdown_hash: string;
+      source_markdown_renderer_version: string;
     }>(
-      `select a.document_artifact,a.object_key from source_artifacts a
+      `select a.document_artifact,a.object_key,a.source_markdown,
+              a.source_markdown_hash,a.source_markdown_renderer_version
+         from source_artifacts a
            join sources s on s.id=a.source_id
           where s.vault_id=$1 and s.sha256=$2`,
       [vaultId, firstSourceHash],
@@ -700,6 +705,14 @@ describe("product lifecycle E2E", () => {
       media_type: "text/markdown",
     });
     expect(String(artifact.rows[0]?.object_key)).toContain("sha256/");
+    const sourceProjection = artifact.rows[0];
+    expect(sourceProjection?.source_markdown).toContain(firstMarker);
+    expect(sourceProjection?.source_markdown_renderer_version).toBe("1.0");
+    expect(sourceProjection?.source_markdown_hash).toBe(
+      createHash("sha256")
+        .update(sourceProjection!.source_markdown, "utf8")
+        .digest("hex"),
+    );
 
     const search = await app.inject({
       method: "POST",
