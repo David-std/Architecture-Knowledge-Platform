@@ -4577,6 +4577,11 @@
       "reason": "portable test or evaluation fixture"
     },
     {
+      "path": "test/fixtures/document-intelligence/s1-digital-two-page.pdf",
+      "category": "FIXTURE_GENERIC",
+      "reason": "portable test or evaluation fixture"
+    },
+    {
       "path": "test/fixtures/document-intelligence/scanned-pdf.json",
       "category": "FIXTURE_GENERIC",
       "reason": "portable test or evaluation fixture"

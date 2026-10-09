@@ -179,42 +179,18 @@ def test_real_docling_docx_preserves_tables_headings_and_native_locators(
     assert artifact.quality_metrics["structured_units"] > 0
 
 @pytest.mark.provider_runtime
-def test_real_docling_digital_pdf_preserves_visible_text_and_page_locator(
-    tmp_path: Path,
-) -> None:
+def test_real_docling_digital_pdf_preserves_visible_text_and_page_locator() -> None:
     """Digital PDF provenance is independent from the forced-OCR pipeline."""
 
     pytest.importorskip("docling")
-    source = tmp_path / "s1-digital-fidelity.pdf"
-    from pypdf import PdfWriter
-    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
-
-    writer = PdfWriter()
-    font = DictionaryObject(
-        {
-            NameObject("/Type"): NameObject("/Font"),
-            NameObject("/Subtype"): NameObject("/Type1"),
-            NameObject("/BaseFont"): NameObject("/Helvetica"),
-        }
+    source = (
+        Path(__file__).resolve().parents[3]
+        / "test"
+        / "fixtures"
+        / "document-intelligence"
+        / "s1-digital-two-page.pdf"
     )
-    font_ref = writer._add_object(font)
-    for marker in ("S1 PDF PROVENANCE 3179", "S1 SECOND PAGE 4281"):
-        page = writer.add_blank_page(width=612, height=792)
-        page[NameObject("/Resources")] = DictionaryObject(
-            {
-                NameObject("/Font"): DictionaryObject(
-                    {NameObject("/F1"): font_ref}
-                )
-            }
-        )
-        stream = DecodedStreamObject()
-        stream.set_data(
-            f"BT /F1 24 Tf 72 600 Td ({marker}) Tj ET".encode("ascii")
-        )
-        page[NameObject("/Contents")] = writer._add_object(stream)
-    with source.open("wb") as stream:
-        writer.write(stream)
-
+    assert source.is_file()
 
     artifact = DoclingAdapter().extract(
         DocumentExtractionRequest(
