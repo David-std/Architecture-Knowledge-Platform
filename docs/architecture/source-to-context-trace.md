@@ -71,7 +71,7 @@ pnpm backfill:source-markdown --space-id <space-uuid> --vault-id <vault-uuid> --
 
 The CLI deliberately logs only identifiers, computed digest, version, length and status. Existing correct projections produce `ALREADY_MATERIALIZED` without rewrite. Corrupt, redaction-unsafe or stale representations fail closed: use controlled original-source re-extraction after investigation, not an automatic parser fallback. Migration 091 allows legacy NULL records; no schema edit or mutable knowledge publication is necessary. A verified source projection is still machine-extracted evidence, not an approved Git document.
 
-### S1.6 source-unit projection (pending same-SHA CI)
+### S1.6 source-unit projection (validated in CI)
 
 Migration `092_source_projection_units.sql` creates a physically separate noncanonical store: `source_projection_units`, not `knowledge_units`. The worker rebuilds only atomic structural Markdown units during its fenced NORMALIZING → ANALYZING SQL transaction; source Markdown, unit hashes and source-unit membership commit or roll back together. Controlled historical backfill also rebuilds this derived index with explicit `--apply`.
 
@@ -79,7 +79,7 @@ Migration `092_source_projection_units.sql` creates a physically separate noncan
 
 The E2E lifecycle and PostgreSQL backfill suites now assert unit spans, revision mismatch and restricted-read denial. They do not certify OCR/table extraction fidelity on every document class nor full dual-file compiler ON/OFF end-to-end parity.
 
-### S1.10 raw-file dual-route parity (full process; CI pending)
+### S1.10 raw-file dual-route parity (full process; validated in CI)
 
 `apps/api/test/product-lifecycle.integration.test.ts` now contains an independent end-to-end comparison using **two disposable vaults** and two byte-identical Markdown uploads. Both traverse HTTP ingestion, the actual worker, content-addressed MinIO, the actual extractor, normalized `DocumentArtifact` persistence and the independent source-unit index. The first route has the compiler explicitly disabled and produces a review-required machine source draft; the second configures a loopback OpenAI-compatible HTTP endpoint that receives a real bounded compiler input but intentionally returns `NO_MATERIAL`. Assertions compare the immutable raw SHA and MinIO key, byte-for-byte full Markdown and its SHA, renderer version, normalized original locators and structural passage rows. The source UUIDs and artifact UUIDs must differ between vaults; they are deliberately **not** compared for equality. No knowledge document is published from either route without review. The mocked provider verifies mode routing and source fidelity, not semantic generation quality. The normal provider configuration remains unchanged.
 
@@ -90,3 +90,18 @@ An exact-target backfill rejects an altered structured-content digest before any
 ### Full read-path quarantine for corrupted historical structured artifacts
 
 The API now verifies the parsed stored DocumentArtifact identity, extractor/version, configuration digest and canonical structured-content hash on both faithful Markdown and source-unit reads. These checks use the exact same canonical JSON serializer as the ingestion worker. Any mismatch returns 409 before exposing private source bytes or fragments. The real dual-ingest E2E deliberately changes the stored structured digest and checks both reads deny content; restoring the original digest is test-only cleanup. Corruption is not silently accepted or overwritten through a read operation.
+
+### S1.9 representative fidelity regression matrix
+
+The following **synthetic, nonprivate** documents exercise distinct extraction mechanisms. Passing the tests is not a claim of universal OCR or document reconstruction accuracy.
+
+| Fixture / test | Real extraction | Source-to-context fidelity gate | Known limit |
+| --- | --- | --- | --- |
+| Digital PDF (`test_real_docling_digital_pdf_preserves_visible_text_and_page_locator`) | Native Docling with selectable PDF text | Source marker, page-1 locator, native blocks and reading order, OCR not requested | One-page fixture, not a broad PDF benchmark |
+| DOCX (`test_real_docling_docx_preserves_tables_headings_and_native_locators`) | Native Docling over a real generated DOCX | Heading, paragraph, terminal marker, table value `47 minutes`, original block IDs and source hashes | Merged-cell layouts, images and arbitrary pagination remain unmeasured |
+| OCR PDF (`document-intelligence.integration.test.ts`) | Real Tesseract through API, worker, extractor and MinIO | OCR provenance, page/region, full authorized Markdown replay, structural units and span SHA, no automatic knowledge promotion | High-contrast fixture; degraded-scan error rate unmeasured |
+| Same-file compiler OFF/ON (`product-lifecycle.integration.test.ts`) | Two real worker ingests, one local HTTP provider mock | Byte-identical raw-source hashes, Markdown, locators and derived passages | The model mock tests routing, not semantic generation quality |
+
+The baseline commit `a1bcdf7` passed all 14 required workflows including forged artifact and Markdown read quarantine. Candidate `b2164545` passed Python, native Docling, Graphify and OCR E2E; its TypeScript formatting check failed, and the exact correction was applied in `8d0ca8f`. The final combined SHA must pass CI before these new fixture checks are declared fully validated.
+
+An operator-verified original is still necessary for damaged-source re-extraction. No test here permits guessing the original hash, silently replacing corrupted bytes, or publishing machine-extracted content without the existing review gate.
