@@ -115,3 +115,66 @@ def test_real_docling_provider_ocr_preserves_scanned_pdf_provenance(
     assert artifact.pages
     assert any(item.locator.page == 1 for item in artifact.blocks)
     assert any(item.locator.region is not None for item in artifact.blocks)
+
+@pytest.mark.provider_runtime
+def test_real_docling_docx_preserves_tables_headings_and_native_locators(
+    tmp_path: Path,
+) -> None:
+    """Native DOCX extraction must not flatten evidence or fabricate page spans."""
+
+    pytest.importorskip("docling")
+    from docx import Document
+
+    source = tmp_path / "s1-document-fidelity.docx"
+    document = Document()
+    document.add_heading("S1 DOCX SOURCE 3157", level=1)
+    document.add_paragraph(
+        "Preserve structured evidence from a controlled enterprise document."
+    )
+    table = document.add_table(rows=1, cols=2)
+    table.rows[0].cells[0].text = "control"
+    table.rows[0].cells[1].text = "timeout"
+    cells = table.add_row().cells
+    cells[0].text = "rollback"
+    cells[1].text = "47 minutes"
+    document.add_paragraph("End of DOCX evidence 3157")
+    document.save(source)
+
+    artifact = DoclingAdapter().extract(
+        DocumentExtractionRequest(
+            source_path=source,
+            source_id="s1-docx-fidelity-3157",
+            source_uri="fixture://document-intelligence/s1-docx-fidelity.docx",
+            media_type=(
+                "application/vnd.openxmlformats-officedocument."
+                "wordprocessingml.document"
+            ),
+            complexity="table-heavy",
+            privacy_policy="LOCAL_ONLY",
+        )
+    )
+    assert artifact.extractor == "docling"
+    assert artifact.configuration["mapping"] == "native-docling-document"
+    assert artifact.configuration["flattened_before_mapping"] is False
+    assert artifact.configuration["native_structure"] is True
+    assert artifact.configuration["ocr_requested"] is False
+    assert artifact.quality == "PROVIDER_STRUCTURED"
+
+    normalized = " ".join(artifact.text_content().split())
+    assert "S1 DOCX SOURCE 3157" in normalized
+    assert "controlled enterprise document" in normalized
+    assert "End of DOCX evidence 3157" in normalized
+    assert artifact.headings
+    assert artifact.tables
+    assert any(
+        "47 minutes" in cell
+        for table in artifact.tables
+        for row in table.rows
+        for cell in row
+    )
+    assert artifact.reading_order
+    identifiers = {item.id for item in artifact.blocks if item.id}
+    assert set(artifact.reading_order).issubset(identifiers)
+    assert all(item.locator.source_hash for item in artifact.blocks)
+    assert artifact.quality_metrics["structured_units"] > 0
+
