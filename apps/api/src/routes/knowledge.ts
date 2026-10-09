@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import path from "node:path";
 import { VaultRegistration } from "@akp/contracts";
@@ -43,6 +44,9 @@ function sanitizeSourceRows(
 ): Array<Record<string, unknown>> {
   return sanitizeRawSourceFields(rows) as Array<Record<string, unknown>>;
 }
+
+const SOURCE_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const SOURCE_LOCATOR_ID =
   /^source:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -773,6 +777,86 @@ export function registerKnowledgeRoutes(
         [scope.spaces, scope.vaultIds],
       );
       return { sources: sanitizeSourceRows(result.rows) };
+    },
+  );
+
+  /**
+   * Return immutable machine-extracted Markdown bytes, not an approved rule.
+   * Unlike operational previews this authorized read must not alter the body:
+   * clients can verify its SHA and structural source identity independently.
+   */
+  app.get<{ Params: { id: string; artifactId: string } }>(
+    "/v1/sources/:id/artifacts/:artifactId/markdown",
+    { preHandler: requirePermission("source:read") },
+    async (request, reply) => {
+      const { id, artifactId } = request.params;
+      if (!SOURCE_UUID.test(id) || !SOURCE_UUID.test(artifactId)) {
+        return reply.code(400).send({ code: "SOURCE_ARTIFACT_ID_INVALID" });
+      }
+      const scope = await authorizedVaultIds(
+        db,
+        actorOf(request),
+        "source:read",
+        true,
+      );
+      if (!scope.vaultIds.length) {
+        return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
+      }
+      const result = await db.pool.query<{
+        source_id: string;
+        source_sha256: string;
+        artifact_id: string;
+        artifact_source_hash: string;
+        structured_content_hash: string | null;
+        source_markdown: string | null;
+        source_markdown_hash: string | null;
+        source_markdown_renderer_version: string | null;
+      }>(
+        `
+        select s.id source_id,s.sha256 source_sha256,
+               a.id artifact_id,a.source_hash artifact_source_hash,
+               a.structured_content_hash,a.source_markdown,
+               a.source_markdown_hash,a.source_markdown_renderer_version
+          from sources s join source_artifacts a on a.source_id=s.id
+         where s.id=$1 and a.id=$2 and a.kind='document-artifact'
+           and s.space_id=any($3::uuid[]) and s.vault_id=any($4::uuid[])
+        `,
+        [id, artifactId, scope.spaces, scope.vaultIds],
+      );
+      const row = result.rows[0];
+      if (!row) return reply.code(404).send({ code: "SOURCE_NOT_FOUND" });
+      if (
+        row.artifact_source_hash !== row.source_sha256 ||
+        !row.structured_content_hash
+      ) {
+        return reply.code(409).send({ code: "SOURCE_ARTIFACT_IDENTITY_MISMATCH" });
+      }
+      if (
+        row.source_markdown === null ||
+        row.source_markdown_hash === null ||
+        row.source_markdown_renderer_version === null
+      ) {
+        return reply.code(409).send({ code: "SOURCE_MARKDOWN_NOT_MATERIALIZED" });
+      }
+      const actualHash = createHash("sha256")
+        .update(row.source_markdown, "utf8")
+        .digest("hex");
+      if (actualHash !== row.source_markdown_hash) {
+        return reply.code(409).send({ code: "SOURCE_MARKDOWN_INTEGRITY_FAILED" });
+      }
+      reply.header("Cache-Control", "no-store");
+      reply.header("X-Content-Type-Options", "nosniff");
+      return {
+        sourceId: row.source_id,
+        sourceSha256: row.source_sha256,
+        artifactId: row.artifact_id,
+        structuredContentHash: row.structured_content_hash,
+        content: row.source_markdown,
+        sha256: row.source_markdown_hash,
+        rendererVersion: row.source_markdown_renderer_version,
+        trustTier: "MACHINE_EXTRACTED",
+        canonicalKnowledge: false,
+      };
     },
   );
 

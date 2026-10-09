@@ -957,7 +957,7 @@ export function registerOperatorRoutes(
           `
           select id,kind,source_hash,extractor,extractor_version,quality,metadata,
                  document_artifact,artifact_schema_version,structured_content_hash,
-                 source_markdown,source_markdown_hash,source_markdown_renderer_version,
+                 source_markdown_hash,source_markdown_renderer_version,
                  case when source_markdown_hash is null then 'UNAVAILABLE_LEGACY'
                       else 'AVAILABLE' end as source_markdown_status,
                  created_at

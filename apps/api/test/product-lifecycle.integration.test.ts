@@ -689,11 +689,12 @@ describe("product lifecycle E2E", () => {
     const artifact = await db.pool.query<{
       document_artifact: Record<string, unknown>;
       object_key: string;
+      id: string;
       source_markdown: string;
       source_markdown_hash: string;
       source_markdown_renderer_version: string;
     }>(
-      `select a.document_artifact,a.object_key,a.source_markdown,
+      `select a.id,a.document_artifact,a.object_key,a.source_markdown,
               a.source_markdown_hash,a.source_markdown_renderer_version
          from source_artifacts a
            join sources s on s.id=a.source_id
@@ -713,6 +714,58 @@ describe("product lifecycle E2E", () => {
         .update(sourceProjection!.source_markdown, "utf8")
         .digest("hex"),
     );
+
+    const sourceMarkdownResponse = await app.inject({
+      method: "GET",
+      url: `/v1/sources/${indexed.rows[0]?.source_id}/artifacts/${sourceProjection!.id}/markdown`,
+      headers,
+    });
+    expect(sourceMarkdownResponse.statusCode, sourceMarkdownResponse.body).toBe(
+      200,
+    );
+    expect(sourceMarkdownResponse.headers["cache-control"]).toBe("no-store");
+    const sourceMarkdownBody = sourceMarkdownResponse.json() as {
+      sourceId: string;
+      artifactId: string;
+      sourceSha256: string;
+      content: string;
+      sha256: string;
+      rendererVersion: string;
+      trustTier: string;
+      canonicalKnowledge: boolean;
+    };
+    expect(sourceMarkdownBody).toMatchObject({
+      sourceId: indexed.rows[0]?.source_id,
+      artifactId: sourceProjection!.id,
+      sourceSha256: firstSourceHash,
+      content: sourceProjection!.source_markdown,
+      sha256: sourceProjection!.source_markdown_hash,
+      rendererVersion: "1.0",
+      trustTier: "MACHINE_EXTRACTED",
+      canonicalKnowledge: false,
+    });
+    expect(
+      createHash("sha256")
+        .update(sourceMarkdownBody.content, "utf8")
+        .digest("hex"),
+    ).toBe(sourceMarkdownBody.sha256);
+    const wrongArtifact = await app.inject({
+      method: "GET",
+      url: `/v1/sources/${indexed.rows[0]?.source_id}/artifacts/${randomUUID()}/markdown`,
+      headers,
+    });
+    expect(wrongArtifact.statusCode).toBe(404);
+    const invalidArtifact = await app.inject({
+      method: "GET",
+      url: `/v1/sources/${indexed.rows[0]?.source_id}/artifacts/not-a-uuid/markdown`,
+      headers,
+    });
+    expect(invalidArtifact.statusCode).toBe(400);
+    const anonymousSource = await app.inject({
+      method: "GET",
+      url: `/v1/sources/${indexed.rows[0]?.source_id}/artifacts/${sourceProjection!.id}/markdown`,
+    });
+    expect(anonymousSource.statusCode).toBe(401);
 
     const search = await app.inject({
       method: "POST",
