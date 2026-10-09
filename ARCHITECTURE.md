@@ -45,6 +45,8 @@ Approved Markdown in managed Git is canonical knowledge. Immutable source bytes 
 
 The target is one governed context workspace over several explicit representations, not one universal graph. Every derived path still terminates in an evidence-aware, revision-bearing ContextPacket.
 
+The maintainability contract and staged reduction plan are documented in [repository standards](docs/architecture/repository-standards.md), [ADR 0004](docs/adr/0004-core-product-scope-and-simplification.md) and the [core redesign roadmap](docs/architecture/core-redesign-roadmap.md). The priority is shared team/agent workflow and accurate, fresh evidence; token savings and optional graph/LLM providers are separate measured capabilities, not product goals by themselves.
+
 ## Product planes
 
 ```text

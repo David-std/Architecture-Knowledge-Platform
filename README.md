@@ -13,6 +13,8 @@ Approved Markdown in managed Git is canonical knowledge. PostgreSQL, lexical/vec
 
 > **AKP is the context workspace between systems of record and AI agents.** It connects authorized work activity to approved knowledge, code structure, runtime evidence and decisions without turning retrieval output into authority.
 
+The current [core redesign roadmap](docs/architecture/core-redesign-roadmap.md) prioritizes the shared engineering knowledge and agent-coordination workflow, a smaller supported provider surface and enforceable [repository architecture standards](docs/architecture/repository-standards.md). Optional graph/RAG integrations are not evidence of superior retrieval until evaluated against a plain vault baseline.
+
 ## Architecture at a glance
 
 ```text
