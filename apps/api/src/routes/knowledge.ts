@@ -829,20 +829,26 @@ export function registerKnowledgeRoutes(
         row.artifact_source_hash !== row.source_sha256 ||
         !row.structured_content_hash
       ) {
-        return reply.code(409).send({ code: "SOURCE_ARTIFACT_IDENTITY_MISMATCH" });
+        return reply
+          .code(409)
+          .send({ code: "SOURCE_ARTIFACT_IDENTITY_MISMATCH" });
       }
       if (
         row.source_markdown === null ||
         row.source_markdown_hash === null ||
         row.source_markdown_renderer_version === null
       ) {
-        return reply.code(409).send({ code: "SOURCE_MARKDOWN_NOT_MATERIALIZED" });
+        return reply
+          .code(409)
+          .send({ code: "SOURCE_MARKDOWN_NOT_MATERIALIZED" });
       }
       const actualHash = createHash("sha256")
         .update(row.source_markdown, "utf8")
         .digest("hex");
       if (actualHash !== row.source_markdown_hash) {
-        return reply.code(409).send({ code: "SOURCE_MARKDOWN_INTEGRITY_FAILED" });
+        return reply
+          .code(409)
+          .send({ code: "SOURCE_MARKDOWN_INTEGRITY_FAILED" });
       }
       reply.header("Cache-Control", "no-store");
       reply.header("X-Content-Type-Options", "nosniff");

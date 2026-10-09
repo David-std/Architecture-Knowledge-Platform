@@ -1467,12 +1467,23 @@ paths:
                 type: object
                 additionalProperties: false
                 required:
-                  [sourceId, sourceSha256, artifactId, structuredContentHash, content, sha256, rendererVersion, trustTier, canonicalKnowledge]
+                  [
+                    sourceId,
+                    sourceSha256,
+                    artifactId,
+                    structuredContentHash,
+                    content,
+                    sha256,
+                    rendererVersion,
+                    trustTier,
+                    canonicalKnowledge,
+                  ]
                 properties:
                   sourceId: { type: string, format: uuid }
                   sourceSha256: { type: string, pattern: "^[a-f0-9]{64}$" }
                   artifactId: { type: string, format: uuid }
-                  structuredContentHash: { type: string, pattern: "^[a-f0-9]{64}$" }
+                  structuredContentHash:
+                    { type: string, pattern: "^[a-f0-9]{64}$" }
                   content: { type: string }
                   sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
                   rendererVersion: { type: string }
