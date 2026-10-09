@@ -1495,6 +1495,47 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /v1/sources/{id}/artifacts/{artifactId}/units:
+    get:
+      tags: [Sources]
+      operationId: listRevisionPinnedSourceUnits
+      x-akp-permission: source:read
+      description: >
+        Lists noncanonical, revision-pinned machine-extracted source units
+        with replayable UTF-16 coordinates into exact source Markdown.
+        Requires source and Markdown SHA-256 pins; does not confer knowledge approval.
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: artifactId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: sourceSha256
+          in: query
+          required: true
+          schema: { type: string, pattern: "^[a-f0-9]{64}$" }
+        - name: markdownSha256
+          in: query
+          required: true
+          schema: { type: string, pattern: "^[a-f0-9]{64}$" }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 50000, default: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Source units with hashes, source spans and noncanonical trust marker.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /v1/sources/{id}/retire:
     post:
       tags: [Governance, Sources]
