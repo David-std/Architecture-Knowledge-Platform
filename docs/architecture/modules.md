@@ -23,7 +23,7 @@ flowchart BT
 
 The diagram is a **selected subset** of actual import dependencies, not a complete ownership or execution map. The MCP runtime communicates with the API via HTTP while importing application/contracts modules locally. The CLI currently imports PostgreSQL and vault-importer directly for operational tasks; its status as a "thin API client" is a **known architectural mismatch** to be migrated rather than hidden in diagrams. The Web communicates with the API over HTTP.
 
-`dependency-cruiser.cjs` checks source imports; `scripts/validate-module-boundaries.mjs` checks declared internal package graph, cycles, missing packages and pure-module restrictions. Both are called by `pnpm boundaries`. Package checks cannot independently prove source-level business ownership.
+`dependency-cruiser.cjs` checks source imports; `scripts/validate-module-boundaries.mjs` checks declared internal package graph, cycles, missing packages and pure-module restrictions; `scripts/validate-import-surfaces.mjs` checks declared public subpath exports and prohibits relative cross-module production imports. All run via `pnpm boundaries`. The [S0 inventory](s0-architecture-inventory.md) records known large modules and possible dead exports; gates do not prove semantic business ownership.
 
 A Python extractor is an external document-intelligence boundary; it must not duplicate publication authority. Splitting the monolith into extra microservices is not a design goal.
 

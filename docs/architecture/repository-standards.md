@@ -25,7 +25,7 @@ AKP is a **modular monolith** with API, worker, extractor, Web and operational M
 ## Dependencies and enforceable gates
 
 - Pure modules depend only on declared contracts/domain. No package imports an app. Declared internal package graph must have no cycles or missing targets.
-- `dependency-cruiser.cjs` validates source-level imports; `scripts/validate-module-boundaries.mjs` validates package manifests and pure-module boundaries. Both run via `pnpm boundaries`, including targeted mutation tests.
+- `dependency-cruiser.cjs` validates source-level dependencies; `scripts/validate-module-boundaries.mjs` checks manifests, cycles and pure-core package boundaries; `scripts/validate-import-surfaces.mjs` parses TS/JS imports, enforces declared package subpath exports and bans cross-module relative production imports. All run under `pnpm boundaries`, including failure-injection tests. The [S0 audit](s0-architecture-inventory.md) documents the baseline and limitations.
 - Manifest checks are **not** proof of every implementation-level layering rule. Tighten as callers migrate; never add blanket permanent exceptions for historical violations.
 - Use intentional package exports, not arbitrary cross-package deep source imports. New external dependencies require a user journey, measured need, code/model-weight license, deployment/credential residency, test and removal plan.
 

@@ -61,8 +61,9 @@ Previously measured F3 evidence precision **AI 51/72 = 70.83%** (Wilson simple l
 - [x] Define module ownership/naming/cutover guidance.
 - [x] Make package manifest dependency graph and pure-module dependency boundaries executable; enforce in `pnpm boundaries` with failure tests.
 - [ ] Confirm CI on exact pushed SHA.
-- [ ] Inventory source-level deep imports, large cross-domain files, exported symbols with no consumers; classify, do not delete by static guess.
-- **Done when:** architecture constraints are testable in CI and no existing production behavior/default changed.
+- [x] Inventory source-level deep imports, large cross-domain files and exported symbols with no visible consumers; classify without automatic deletion. See [S0 architecture inventory](s0-architecture-inventory.md) and the reproducible report script.
+- [x] Publish [the multi-agent execution specification](core-redesign-execution-spec.md), with stage-level acceptance, migrations, tests and handoffs.
+- **Done when:** the boundary and import-surface gates pass on the exact final CI SHA, the source inventory is repeatable and no production defaults changed.
 
 ### S1 — One reliable source-to-context path
 
