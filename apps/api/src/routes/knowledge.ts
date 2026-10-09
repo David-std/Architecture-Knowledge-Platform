@@ -907,7 +907,9 @@ export function registerKnowledgeRoutes(
         row.source_markdown_renderer_version !==
           SOURCE_MARKDOWN_RENDERER_VERSION ||
         row.source_markdown !==
-          renderSourceArtifactMarkdown(DocumentArtifact.parse(row.document_artifact))
+          renderSourceArtifactMarkdown(
+            DocumentArtifact.parse(row.document_artifact),
+          )
       ) {
         return reply
           .code(409)
@@ -1011,7 +1013,9 @@ export function registerKnowledgeRoutes(
         row.source_markdown_renderer_version !==
           SOURCE_MARKDOWN_RENDERER_VERSION ||
         row.source_markdown !==
-          renderSourceArtifactMarkdown(DocumentArtifact.parse(row.document_artifact))
+          renderSourceArtifactMarkdown(
+            DocumentArtifact.parse(row.document_artifact),
+          )
       ) {
         return reply.code(409).send({ code: "SOURCE_UNIT_PROJECTION_INVALID" });
       }

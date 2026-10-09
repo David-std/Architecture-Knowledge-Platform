@@ -1116,7 +1116,8 @@ describe("product lifecycle E2E", () => {
       ).toBe(unit.sourceSpanSha256);
     }
     // A forged Markdown/hash pair must not bypass the structured artifact.
-    const forgedMarkdown = sourceProjection!.source_markdown + "\n\nFabricated content";
+    const forgedMarkdown =
+      sourceProjection!.source_markdown + "\n\nFabricated content";
     const forgedHash = createHash("sha256")
       .update(forgedMarkdown, "utf8")
       .digest("hex");

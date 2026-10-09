@@ -136,4 +136,3 @@ export function renderSourceArtifactMarkdown(
 ): string {
   return artifactItems(artifact).map(renderItem).filter(Boolean).join("\n\n");
 }
-
