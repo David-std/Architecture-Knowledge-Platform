@@ -60,9 +60,10 @@ Previously measured F3 evidence precision **AI 51/72 = 70.83%** (Wilson simple l
 - [x] Reconstruct primary user journeys from first-party project docs; ADR 0004 and this roadmap.
 - [x] Define module ownership/naming/cutover guidance.
 - [x] Make package manifest dependency graph and pure-module dependency boundaries executable; enforce in `pnpm boundaries` with failure tests.
-- [ ] Confirm CI on exact pushed SHA.
+- [x] Confirm CI on exact pushed SHA `6b54e2b38d6e117c4a7751d3fdde193ce52d5309`.
 - [x] Inventory source-level deep imports, large cross-domain files and exported symbols with no visible consumers; classify without automatic deletion. See [S0 architecture inventory](s0-architecture-inventory.md) and the reproducible report script.
 - [x] Publish [the multi-agent execution specification](core-redesign-execution-spec.md), with stage-level acceptance, migrations, tests and handoffs.
+- **Verified CI evidence (2026-10-08):** On exact SHA `6b54e2b38d6e117c4a7751d3fdde193ce52d5309`, GitHub Actions `ci` run `37869858647` concluded `success`; its `typescript` job passed `pnpm check`, formatting, docs validation, hygiene, build and integration. All triggered required workflows concluded `success`; opt-in skipped workflows do not count as executed validations. This records S0 implementation evidence, not S1 source fidelity or retrieval precision. Any later SHA needs fresh same-SHA validation.
 - **Done when:** the boundary and import-surface gates pass on the exact final CI SHA, the source inventory is repeatable and no production defaults changed.
 
 ### S1 — One reliable source-to-context path
