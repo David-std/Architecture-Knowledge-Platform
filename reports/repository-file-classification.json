@@ -1557,6 +1557,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/worker/test/source-markdown-parity.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/worker/test/source-model-residency.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
