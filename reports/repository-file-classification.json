@@ -2107,12 +2107,22 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/adr/0004-core-product-scope-and-simplification.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/audit-export.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
     },
     {
       "path": "docs/architecture/c4.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
+      "path": "docs/architecture/core-redesign-roadmap.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
     },
@@ -2138,6 +2148,11 @@
     },
     {
       "path": "docs/architecture/modules.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
+      "path": "docs/architecture/repository-standards.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
     },
@@ -4405,6 +4420,16 @@
       "path": "scripts/validate-docs.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/validate-module-boundaries.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/validate-module-boundaries.test.mjs",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
     },
     {
       "path": "scripts/validate-repository-hygiene.mjs",
