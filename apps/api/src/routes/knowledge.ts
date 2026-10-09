@@ -24,7 +24,6 @@ import {
   unrestrictedSpaceIdsForPermission,
 } from "../auth.js";
 
-
 interface SourceStructuredIntegrityRow {
   source_id: string;
   source_sha256: string;
@@ -38,7 +37,9 @@ interface SourceStructuredIntegrityRow {
 }
 
 /** Deny source reads if the stored structured artifact has diverged. */
-function sourceStructuredIdentityValid(row: SourceStructuredIntegrityRow): boolean {
+function sourceStructuredIdentityValid(
+  row: SourceStructuredIntegrityRow,
+): boolean {
   if (
     row.artifact_source_hash !== row.source_sha256 ||
     !row.configuration_hash ||
@@ -857,8 +858,8 @@ export function registerKnowledgeRoutes(
         SourceStructuredIntegrityRow & {
           artifact_id: string;
           source_markdown: string | null;
-        source_markdown_hash: string | null;
-        source_markdown_renderer_version: string | null;
+          source_markdown_hash: string | null;
+          source_markdown_renderer_version: string | null;
         }
       >(
         `

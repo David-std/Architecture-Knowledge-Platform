@@ -727,10 +727,9 @@ describe("product lifecycle E2E", () => {
       expect(off.markdown_hash).toBe(on.markdown_hash);
       const integrityBefore = await db.pool.query<{
         structured_content_hash: string;
-      }>(
-        "select structured_content_hash from source_artifacts where id=$1",
-        [on.artifact_id],
-      );
+      }>("select structured_content_hash from source_artifacts where id=$1", [
+        on.artifact_id,
+      ]);
       const storedHash = integrityBefore.rows[0]?.structured_content_hash;
       if (!storedHash) throw new Error("DUAL_ROUTE_STRUCTURED_HASH_REQUIRED");
       await db.pool.query(
@@ -740,15 +739,27 @@ describe("product lifecycle E2E", () => {
       try {
         const checkMarkdown = await app.inject({
           method: "GET",
-          url: "/v1/sources/" + on.source_id + "/artifacts/" + on.artifact_id + "/markdown",
+          url:
+            "/v1/sources/" +
+            on.source_id +
+            "/artifacts/" +
+            on.artifact_id +
+            "/markdown",
           headers,
         });
         expect(checkMarkdown.statusCode).toBe(409);
         expect(checkMarkdown.body).not.toContain(marker);
         const checkUnits = await app.inject({
           method: "GET",
-          url: "/v1/sources/" + on.source_id + "/artifacts/" + on.artifact_id +
-            "/units?sourceSha256=" + originalHash + "&markdownSha256=" + on.markdown_hash,
+          url:
+            "/v1/sources/" +
+            on.source_id +
+            "/artifacts/" +
+            on.artifact_id +
+            "/units?sourceSha256=" +
+            originalHash +
+            "&markdownSha256=" +
+            on.markdown_hash,
           headers,
         });
         expect(checkUnits.statusCode).toBe(409);
