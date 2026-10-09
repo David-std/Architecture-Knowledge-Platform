@@ -749,6 +749,51 @@ describe("product lifecycle E2E", () => {
         .update(sourceMarkdownBody.content, "utf8")
         .digest("hex"),
     ).toBe(sourceMarkdownBody.sha256);
+    const knowledgeOnlyToken = `e2e-knowledge-only-${randomUUID()}`;
+    const knowledgeOnlyTokenHash = createHash("sha256")
+      .update(knowledgeOnlyToken)
+      .digest("hex");
+    await db.pool.query(
+      `insert into api_tokens(user_id,token_hash,label,scopes)
+       values($1,$2,$3,$4::jsonb)`,
+      [
+        admin,
+        knowledgeOnlyTokenHash,
+        "source-read denied E2E",
+        JSON.stringify({
+          spaces: [
+            {
+              spaceId: defaultSpace,
+              pathPrefix: null,
+              permissions: ["knowledge:read"],
+            },
+          ],
+        }),
+      ],
+    );
+    try {
+      const denied = await app.inject({
+        method: "GET",
+        url: `/v1/sources/${indexed.rows[0]?.source_id}/artifacts/${sourceProjection!.id}/markdown`,
+        headers: {
+          authorization: `Bearer ${knowledgeOnlyToken}`,
+        },
+      });
+      expect(denied.statusCode).toBe(403);
+      expect(denied.body).not.toContain(firstMarker);
+    } finally {
+      await db.pool.query("delete from api_tokens where token_hash=$1", [
+        knowledgeOnlyTokenHash,
+      ]);
+    }
+    const wrongSource = await app.inject({
+      method: "GET",
+      url: `/v1/sources/${randomUUID()}/artifacts/${sourceProjection!.id}/markdown`,
+      headers,
+    });
+    expect(wrongSource.statusCode).toBe(404);
+    expect(wrongSource.body).not.toContain(firstMarker);
+
     const wrongArtifact = await app.inject({
       method: "GET",
       url: `/v1/sources/${indexed.rows[0]?.source_id}/artifacts/${randomUUID()}/markdown`,
