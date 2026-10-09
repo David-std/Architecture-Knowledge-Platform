@@ -178,3 +178,68 @@ def test_real_docling_docx_preserves_tables_headings_and_native_locators(
     assert all(item.locator.source_hash for item in artifact.blocks)
     assert artifact.quality_metrics["structured_units"] > 0
 
+@pytest.mark.provider_runtime
+def test_real_docling_digital_pdf_preserves_visible_text_and_page_locator(
+    tmp_path: Path,
+) -> None:
+    """Digital PDF provenance is independent from the forced-OCR pipeline."""
+
+    pytest.importorskip("docling")
+    source = tmp_path / "s1-digital-fidelity.pdf"
+    stream = b"BT\n/F1 24 Tf\n72 600 Td\n(S1 PDF PROVENANCE 3179) Tj\nET\n"
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+        (
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
+        ),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        b"<< /Length "
+        + str(len(stream)).encode("ascii")
+        + b" >>\nstream\n"
+        + stream
+        + b"endstream",
+    ]
+    output = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for index, item in enumerate(objects, start=1):
+        offsets.append(len(output))
+        output.extend(
+            str(index).encode("ascii") + b" 0 obj\n" + item + b"\nendobj\n"
+        )
+    xref = len(output)
+    output.extend(b"xref\n0 6\n0000000000 65535 f \n")
+    for offset in offsets[1:]:
+        output.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    output.extend(
+        b"trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n"
+        + str(xref).encode("ascii")
+        + b"\n%%EOF\n"
+    )
+    source.write_bytes(output)
+
+    artifact = DoclingAdapter().extract(
+        DocumentExtractionRequest(
+            source_path=source,
+            source_id="s1-digital-pdf-3179",
+            source_uri="fixture://document-intelligence/s1-digital-fidelity.pdf",
+            media_type="application/pdf",
+            complexity="simple",
+            privacy_policy="LOCAL_ONLY",
+        )
+    )
+    assert artifact.extractor == "docling"
+    assert artifact.configuration["mapping"] == "native-docling-document"
+    assert artifact.configuration["flattened_before_mapping"] is False
+    assert artifact.configuration["ocr_requested"] is False
+    assert artifact.quality == "PROVIDER_STRUCTURED"
+    assert "S1 PDF PROVENANCE 3179" in " ".join(
+        artifact.text_content().split()
+    )
+    assert artifact.pages
+    assert artifact.blocks
+    assert artifact.reading_order
+    assert any(item.locator.page == 1 for item in artifact.blocks)
+    assert all(item.locator.source_hash for item in artifact.blocks)
+
