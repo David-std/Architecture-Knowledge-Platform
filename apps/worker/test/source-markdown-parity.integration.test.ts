@@ -16,6 +16,7 @@ import {
   renderDocumentArtifactPreview,
 } from "../src/document-artifact.js";
 import { selectEvidenceFragment } from "../src/evidence-fragment.js";
+import { backfillHistoricalSourceProjection } from "../src/source-projection-backfill.js";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const SPACE_ID = "00000000-0000-0000-0000-000000000003";
@@ -154,7 +155,7 @@ integration("S1 faithful source projection compiler parity", () => {
 
       const structuredHash = sha256(canonicalJson(artifact));
       const stored = await db.pool.query<{ id: string }>(
-        "insert into source_artifacts(source_id,kind,object_key,source_hash,extractor,extractor_version,quality,metadata,document_artifact,artifact_schema_version,configuration_hash,structured_content_hash,source_markdown,source_markdown_hash,source_markdown_renderer_version) values($1,'document-artifact',$2,$3,$4,$5,$6,'{}'::jsonb,$7::jsonb,$8,$9,$10,$11,$12,$13) returning id",
+        "insert into source_artifacts(source_id,kind,object_key,source_hash,extractor,extractor_version,quality,metadata,document_artifact,artifact_schema_version,configuration_hash,structured_content_hash) values($1,'document-artifact',$2,$3,$4,$5,$6,'{}'::jsonb,$7::jsonb,$8,$9,$10) returning id",
         [
           sourceId,
           "sha256/" + rawHash,
@@ -166,13 +167,48 @@ integration("S1 faithful source projection compiler parity", () => {
           DOCUMENT_ARTIFACT_SCHEMA_VERSION,
           documentArtifactConfigurationHash({}),
           structuredHash,
-          markdown.content,
-          markdown.sha256,
-          markdown.rendererVersion,
         ],
       );
       const artifactId = stored.rows[0]?.id;
       if (!artifactId) throw new Error("PARITY_ARTIFACT_INSERT_FAILED");
+      const target = {
+        spaceId: SPACE_ID,
+        vaultId: vault.id,
+        sourceId,
+        sourceArtifactId: artifactId,
+        sourceSha256: rawHash,
+      };
+      await expect(
+        backfillHistoricalSourceProjection(db, {
+          ...target,
+          sourceSha256: "b".repeat(64),
+        }, true),
+      ).rejects.toThrow("SOURCE_PROJECTION_BACKFILL_TARGET_NOT_FOUND");
+      const dryRun = await backfillHistoricalSourceProjection(db, target);
+      expect(dryRun).toMatchObject({
+        status: "DRY_RUN",
+        sourceArtifactId: artifactId,
+        markdownSha256: markdown.sha256,
+        rendererVersion: "1.0",
+      });
+      const beforeApply = await db.pool.query<{
+        source_markdown: string | null;
+      }>(
+        "select source_markdown from source_artifacts where id=$1",
+        [artifactId],
+      );
+      expect(beforeApply.rows[0]?.source_markdown).toBeNull();
+      const applied = await backfillHistoricalSourceProjection(db, target, true);
+      expect(applied.status).toBe("MATERIALIZED");
+      expect(applied.markdownSha256).toBe(markdown.sha256);
+      const repeated = await backfillHistoricalSourceProjection(
+        db,
+        target,
+        true,
+      );
+      expect(repeated.status).toBe("ALREADY_MATERIALIZED");
+      expect(repeated.markdownSha256).toBe(markdown.sha256);
+
       const fragment = selectEvidenceFragment(artifact, markdown.content);
       const evidence = await db.pool.query<{ id: string }>(
         "insert into evidence(space_id,vault_id,source_id,artifact_id,locator,content_hash,excerpt,review_status) values($1,$2,$3,$4,$5::jsonb,$6,$7,'MACHINE_EXTRACTED') returning id",
