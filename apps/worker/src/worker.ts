@@ -47,6 +47,7 @@ import {
 } from "./assurance-worker.js";
 import {
   DOCUMENT_ARTIFACT_SCHEMA_VERSION,
+  buildFaithfulSourceMarkdown,
   parseCanonicalExtractionResponse,
   renderDocumentArtifactPreview,
 } from "./document-artifact.js";
@@ -461,6 +462,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         warnings: canonical.warnings,
       });
 
+      const sourceMarkdown = buildFaithfulSourceMarkdown(canonical.artifact);
       const preview = renderDocumentArtifactPreview(canonical.artifact, 4_000);
       const evidenceFragment = selectEvidenceFragment(
         canonical.artifact,
@@ -473,6 +475,8 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         artifact_schema_version: DOCUMENT_ARTIFACT_SCHEMA_VERSION,
         configuration_hash: canonical.configurationHash,
         structured_content_hash: canonical.contentHash,
+        source_markdown_hash: sourceMarkdown.sha256,
+        source_markdown_renderer_version: sourceMarkdown.rendererVersion,
         routing: canonical.routing,
         warnings: canonical.warnings,
         source_artifact_id: "",
@@ -493,9 +497,10 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
             insert into source_artifacts(
               source_id,kind,object_key,source_hash,extractor,extractor_version,
               quality,metadata,document_artifact,artifact_schema_version,
-              configuration_hash,structured_content_hash
+              configuration_hash,structured_content_hash,
+              source_markdown,source_markdown_hash,source_markdown_renderer_version
             )
-            values($1,'document-artifact',$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11)
+            values($1,'document-artifact',$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12,$13,$14)
             on conflict (source_id,extractor,extractor_version,configuration_hash)
               where kind='document-artifact'
             do update set
@@ -505,7 +510,10 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
               metadata=excluded.metadata,
               document_artifact=excluded.document_artifact,
               artifact_schema_version=excluded.artifact_schema_version,
-              structured_content_hash=excluded.structured_content_hash
+              structured_content_hash=excluded.structured_content_hash,
+              source_markdown=excluded.source_markdown,
+              source_markdown_hash=excluded.source_markdown_hash,
+              source_markdown_renderer_version=excluded.source_markdown_renderer_version
             returning id
             `,
             [
@@ -524,6 +532,9 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
               DOCUMENT_ARTIFACT_SCHEMA_VERSION,
               canonical.configurationHash,
               canonical.contentHash,
+              sourceMarkdown.content,
+              sourceMarkdown.sha256,
+              sourceMarkdown.rendererVersion,
             ],
           );
           const artifactId =

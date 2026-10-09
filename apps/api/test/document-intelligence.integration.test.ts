@@ -266,6 +266,9 @@ describe("document intelligence E2E", () => {
       extractor: string;
       quality: string;
       document_artifact: Record<string, unknown>;
+      source_markdown: string;
+      source_markdown_hash: string;
+      source_markdown_renderer_version: string;
       metadata: Record<string, unknown>;
       evidence_id: string;
       locator: Record<string, unknown>;
@@ -274,7 +277,8 @@ describe("document intelligence E2E", () => {
       review_status: string;
     }>(
       `select j.state,j.stage_outputs,a.extractor,a.quality,
-              a.document_artifact,a.metadata,
+              a.document_artifact,a.source_markdown,a.source_markdown_hash,
+              a.source_markdown_renderer_version,a.metadata,
               e.id evidence_id,e.locator,e.excerpt,e.content_hash,
               r.status review_status
          from ingest_jobs j
@@ -292,6 +296,11 @@ describe("document intelligence E2E", () => {
     expect(row.review_status).toBe("PENDING");
     expect(row.extractor).toBe("tesseract-ocr");
     expect(row.quality).toBe("OCR_EXECUTED");
+    expect(row.source_markdown).toContain("481516");
+    expect(row.source_markdown_renderer_version).toBe("1.0");
+    expect(row.source_markdown_hash).toBe(
+      createHash("sha256").update(row.source_markdown, "utf8").digest("hex"),
+    );
 
     const artifact = row.document_artifact as {
       source_hash?: string;
@@ -339,5 +348,9 @@ describe("document intelligence E2E", () => {
     expect(extracted.evidence_id).toBe(row.evidence_id);
     expect(extracted.evidence_precision).toBe("STRUCTURAL");
     expect(extracted.structured_content_hash).toMatch(/^[a-f0-9]{64}$/);
+    expect(extracted.source_markdown_hash).toBe(row.source_markdown_hash);
+    expect(extracted.source_markdown_renderer_version).toBe(
+      row.source_markdown_renderer_version,
+    );
   }, 180_000);
 });

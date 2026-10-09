@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { parseKnowledgeUnits } from "../../../packages/retrieval/src/chunking.js";
 import {
+  buildFaithfulSourceMarkdown,
   canonicalJson,
   documentArtifactConfigurationHash,
   parseCanonicalExtractionResponse,
@@ -516,6 +518,12 @@ describe("complete extraction material", () => {
       reading_order: [block.id],
     };
     expect(renderDocumentArtifactPreview(artifact, 6000).truncated).toBe(true);
+    const sourceMarkdown = buildFaithfulSourceMarkdown(artifact);
+    expect(sourceMarkdown.content).toContain("The recovery window is 47 minutes.");
+    expect(sourceMarkdown.content).not.toContain("Preview truncated");
+    expect(sourceMarkdown.sha256).toBe(
+      createHash("sha256").update(sourceMarkdown.content, "utf8").digest("hex"),
+    );
     const draft = renderDocumentArtifactDraft({
       externalId: "SRC-LONG",
       title: "Long material",

@@ -5,6 +5,7 @@ import {
 } from "@akp/contracts";
 
 export const DOCUMENT_ARTIFACT_SCHEMA_VERSION = "1.0";
+export const SOURCE_MARKDOWN_RENDERER_VERSION = "1.0";
 
 export interface ExpectedDocumentArtifactIdentity {
   sourceId: string;
@@ -370,6 +371,18 @@ export function renderDocumentArtifactMarkdown(
   artifact: DocumentArtifact,
 ): string {
   return artifactItems(artifact).map(renderItem).filter(Boolean).join("\n\n");
+}
+
+/** Deterministic, complete derived projection of the sanitized source artifact. */
+export function buildFaithfulSourceMarkdown(
+  artifact: DocumentArtifact,
+): { content: string; sha256: string; rendererVersion: string } {
+  const content = renderDocumentArtifactMarkdown(artifact);
+  return {
+    content,
+    sha256: createHash("sha256").update(content, "utf8").digest("hex"),
+    rendererVersion: SOURCE_MARKDOWN_RENDERER_VERSION,
+  };
 }
 
 export function renderDocumentArtifactPreview(
