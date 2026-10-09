@@ -519,7 +519,9 @@ describe("complete extraction material", () => {
     };
     expect(renderDocumentArtifactPreview(artifact, 6000).truncated).toBe(true);
     const sourceMarkdown = buildFaithfulSourceMarkdown(artifact);
-    expect(sourceMarkdown.content).toContain("The recovery window is 47 minutes.");
+    expect(sourceMarkdown.content).toContain(
+      "The recovery window is 47 minutes.",
+    );
     expect(sourceMarkdown.content).not.toContain("Preview truncated");
     expect(sourceMarkdown.sha256).toBe(
       createHash("sha256").update(sourceMarkdown.content, "utf8").digest("hex"),

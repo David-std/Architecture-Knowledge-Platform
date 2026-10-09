@@ -374,9 +374,11 @@ export function renderDocumentArtifactMarkdown(
 }
 
 /** Deterministic, complete derived projection of the sanitized source artifact. */
-export function buildFaithfulSourceMarkdown(
-  artifact: DocumentArtifact,
-): { content: string; sha256: string; rendererVersion: string } {
+export function buildFaithfulSourceMarkdown(artifact: DocumentArtifact): {
+  content: string;
+  sha256: string;
+  rendererVersion: string;
+} {
   const content = renderDocumentArtifactMarkdown(artifact);
   return {
     content,
