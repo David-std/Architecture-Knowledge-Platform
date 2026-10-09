@@ -188,18 +188,24 @@ async function purgeMutableFixtures(targetVaultId = vaultId): Promise<void> {
   await db.pool.query("delete from context_packets where vault_id=$1", [
     targetVaultId,
   ]);
-  await db.pool.query("delete from eval_runs where vault_id=$1", [targetVaultId]);
+  await db.pool.query("delete from eval_runs where vault_id=$1", [
+    targetVaultId,
+  ]);
   await db.pool.query("delete from knowledge_lint_runs where vault_id=$1", [
     targetVaultId,
   ]);
-  await db.pool.query("delete from error_book where vault_id=$1", [targetVaultId]);
+  await db.pool.query("delete from error_book where vault_id=$1", [
+    targetVaultId,
+  ]);
   await db.pool.query("delete from schema_dry_runs where vault_id=$1", [
     targetVaultId,
   ]);
   await db.pool.query("delete from agent_sessions where vault_id=$1", [
     targetVaultId,
   ]);
-  await db.pool.query("delete from projects where vault_id=$1", [targetVaultId]);
+  await db.pool.query("delete from projects where vault_id=$1", [
+    targetVaultId,
+  ]);
   await db.pool.query("delete from incremental_index_runs where vault_id=$1", [
     targetVaultId,
   ]);
@@ -267,7 +273,9 @@ async function purgeMutableFixtures(targetVaultId = vaultId): Promise<void> {
     );
   }
   await db.pool.query("delete from reviews where vault_id=$1", [targetVaultId]);
-  await db.pool.query("delete from ingest_jobs where vault_id=$1", [targetVaultId]);
+  await db.pool.query("delete from ingest_jobs where vault_id=$1", [
+    targetVaultId,
+  ]);
   const sourceIds = (
     await db.pool.query<{ id: string }>(
       "select id from sources where vault_id=$1",
@@ -289,7 +297,9 @@ async function purgeMutableFixtures(targetVaultId = vaultId): Promise<void> {
     );
   }
   await db.pool.query("delete from sources where vault_id=$1", [targetVaultId]);
-  await db.pool.query("delete from audit_events where vault_id=$1", [targetVaultId]);
+  await db.pool.query("delete from audit_events where vault_id=$1", [
+    targetVaultId,
+  ]);
   if (targetVaultId === vaultId) {
     await db.pool.query("delete from api_tokens where token_hash=$1", [
       tokenHash,
@@ -298,7 +308,9 @@ async function purgeMutableFixtures(targetVaultId = vaultId): Promise<void> {
   await db.pool.query("delete from vault_memberships where vault_id=$1", [
     targetVaultId,
   ]);
-  await db.pool.query("update vaults set enabled=false where id=$1", [targetVaultId]);
+  await db.pool.query("update vaults set enabled=false where id=$1", [
+    targetVaultId,
+  ]);
   await removeRawObjects(sourceObjectKeys);
 }
 
@@ -530,7 +542,7 @@ describe("product lifecycle E2E", () => {
       "const recoveryDeadline = 47;",
       fence,
       "",
-      ("Historical passage: verify immutable recovery provenance. ").repeat(165),
+      "Historical passage: verify immutable recovery provenance. ".repeat(165),
       "",
       "End-of-file evidence marker: " + marker,
     ].join("\n");
@@ -587,14 +599,18 @@ describe("product lifecycle E2E", () => {
       }
       provider = createServer(async (request, response) => {
         try {
-          if (request.method !== "POST" ||
-              request.url !== "/v1/chat/completions") {
+          if (
+            request.method !== "POST" ||
+            request.url !== "/v1/chat/completions"
+          ) {
             response.writeHead(404).end();
             return;
           }
           const chunks: Buffer[] = [];
           for await (const chunk of request) chunks.push(Buffer.from(chunk));
-          const payload = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+          const payload = JSON.parse(
+            Buffer.concat(chunks).toString("utf8"),
+          ) as {
             messages: Array<{ role: string; content: string }>;
           };
           const message = payload.messages.find((item) => item.role === "user");
@@ -616,12 +632,22 @@ describe("product lifecycle E2E", () => {
             impactedDocumentIds: [],
             probes: [],
             warnings: [],
-            summary: "No material proposal; raw source remains independently retrievable.",
+            summary:
+              "No material proposal; raw source remains independently retrievable.",
           };
           response.writeHead(200, { "content-type": "application/json" });
-          response.end(JSON.stringify({
-            choices: [{ message: { role: "assistant", content: JSON.stringify(generated) } }],
-          }));
+          response.end(
+            JSON.stringify({
+              choices: [
+                {
+                  message: {
+                    role: "assistant",
+                    content: JSON.stringify(generated),
+                  },
+                },
+              ],
+            }),
+          );
         } catch {
           response.writeHead(400).end();
         }
@@ -671,13 +697,13 @@ describe("product lifecycle E2E", () => {
         compilation: { mode: string; sourceMarkdownHash: string };
       }>(
         "select j.id job_id,j.state,s.id source_id,s.object_key," +
-        "s.sha256 raw_hash,a.id artifact_id," +
-        "a.source_markdown markdown,a.source_markdown_hash markdown_hash," +
-        "a.source_markdown_renderer_version renderer_version," +
-        "a.document_artifact,j.stage_outputs->'compilation' compilation " +
-        "from ingest_jobs j join sources s on s.id=j.stage_outputs->>'sourceId' " +
-        "join source_artifacts a on a.source_id=s.id and a.kind='document-artifact' " +
-        "where j.id=any($1::uuid[]) order by array_position($1::uuid[],j.id)",
+          "s.sha256 raw_hash,a.id artifact_id," +
+          "a.source_markdown markdown,a.source_markdown_hash markdown_hash," +
+          "a.source_markdown_renderer_version renderer_version," +
+          "a.document_artifact,j.stage_outputs->'compilation' compilation " +
+          "from ingest_jobs j join sources s on s.id=j.stage_outputs->>'sourceId' " +
+          "join source_artifacts a on a.source_id=s.id and a.kind='document-artifact' " +
+          "where j.id=any($1::uuid[]) order by array_position($1::uuid[],j.id)",
         [jobs],
       );
       expect(artifacts.rowCount).toBe(2);
@@ -718,8 +744,8 @@ describe("product lifecycle E2E", () => {
         source_span_sha256: string;
       }>(
         "select source_id,unit_type,heading_path,body,source_span_sha256 " +
-        "from source_projection_units where source_id=any($1::uuid[]) " +
-        "order by source_id,structural_order",
+          "from source_projection_units where source_id=any($1::uuid[]) " +
+          "order by source_id,structural_order",
         [[off.source_id, on.source_id]],
       );
       const unitsFor = (sourceId: string) =>
@@ -729,8 +755,9 @@ describe("product lifecycle E2E", () => {
       expect(unitsFor(off.source_id).length).toBeGreaterThan(0);
       expect(unitsFor(off.source_id)).toEqual(unitsFor(on.source_id));
       expect(providerInputs).toHaveLength(1);
-      expect((providerInputs[0]?.source as { sha256: string }).sha256)
-        .toBe(originalHash);
+      expect((providerInputs[0]?.source as { sha256: string }).sha256).toBe(
+        originalHash,
+      );
       const published = await db.pool.query<{ count: number }>(
         "select count(*)::int count from knowledge_documents where vault_id=any($1::uuid[])",
         [createdVaultIds],
