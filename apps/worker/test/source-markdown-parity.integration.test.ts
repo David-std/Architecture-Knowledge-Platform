@@ -114,7 +114,10 @@ integration("S1 faithful source projection compiler parity", () => {
       const table = {
         id: "t-1",
         kind: "table" as const,
-        rows: [["mode", "local"], ["recovery", "47 minutes"]],
+        rows: [
+          ["mode", "local"],
+          ["recovery", "47 minutes"],
+        ],
         locator: tableLocator,
       };
       const lateParagraph = {
@@ -253,7 +256,8 @@ integration("S1 faithful source projection compiler parity", () => {
             operation: "CREATE" as const,
             content:
               "---\nid: S1-PARITY\ntype: rule\nstatus: draft\n---\n\n" +
-              statement + "\n",
+              statement +
+              "\n",
             reasons: ["Grounded only in the source evidence."],
             evidenceIds: [evidenceId],
           },
@@ -329,9 +333,12 @@ integration("S1 faithful source projection compiler parity", () => {
       );
       expect(after.rows[0]?.source_markdown_hash).toBe(markdown.sha256);
       expect(after.rows[0]?.source_markdown).toBe(markdown.content);
-      expect(DocumentArtifact.parse(after.rows[0]?.document_artifact).locators)
-        .toEqual(persistedArtifact.locators);
-      expect(after.rows[0]?.source_markdown_hash).toBe(sha256(markdown.content));
+      expect(
+        DocumentArtifact.parse(after.rows[0]?.document_artifact).locators,
+      ).toEqual(persistedArtifact.locators);
+      expect(after.rows[0]?.source_markdown_hash).toBe(
+        sha256(markdown.content),
+      );
       const premature = await db.pool.query<{ count: number }>(
         "select count(*)::int count from knowledge_documents where vault_id=$1",
         [vault.id],
@@ -339,7 +346,9 @@ integration("S1 faithful source projection compiler parity", () => {
       expect(premature.rows[0]?.count).toBe(0);
     } finally {
       if (sourceId) {
-        await db.pool.query("delete from evidence where source_id=$1", [sourceId]);
+        await db.pool.query("delete from evidence where source_id=$1", [
+          sourceId,
+        ]);
         await db.pool.query("delete from source_artifacts where source_id=$1", [
           sourceId,
         ]);
