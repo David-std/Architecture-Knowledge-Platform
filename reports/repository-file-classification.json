@@ -2122,6 +2122,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/core-redesign-execution-spec.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/core-redesign-roadmap.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
@@ -2163,6 +2168,11 @@
     },
     {
       "path": "docs/architecture/runtime-flows.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
+      "path": "docs/architecture/s0-architecture-inventory.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
     },
@@ -4347,6 +4357,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/report-architecture-inventory.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/requested-answer-followup-shadow-experiment.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -4420,6 +4435,16 @@
       "path": "scripts/validate-docs.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/validate-import-surfaces.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/validate-import-surfaces.test.mjs",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
     },
     {
       "path": "scripts/validate-module-boundaries.mjs",

@@ -26,7 +26,7 @@
     "check": "npm run lint && npm run typecheck && npm run boundaries && npm run test",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "boundaries": "depcruise --config dependency-cruiser.cjs apps packages && node scripts/validate-module-boundaries.mjs && node --test scripts/validate-module-boundaries.test.mjs",
+    "boundaries": "depcruise --config dependency-cruiser.cjs apps packages && node scripts/validate-module-boundaries.mjs && node --test scripts/validate-module-boundaries.test.mjs && node scripts/validate-import-surfaces.mjs && node --test scripts/validate-import-surfaces.test.mjs",
     "security:secrets": "node scripts/scan-secrets.mjs",
     "contracts:validate": "node scripts/validate-contracts.mjs",
     "docs:validate": "node scripts/validate-docs.mjs",
