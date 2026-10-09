@@ -107,6 +107,24 @@ function stageInput() {
 }
 
 describe("compilation stage", () => {
+  it("rejects absent projections before routing or any database access", async () => {
+    const query = vi.fn();
+    const db = { pool: { query } } as unknown as Postgres;
+    await expect(
+      buildCompilationStage(
+        db,
+        {
+          ...stageInput(),
+          sourceMarkdown: undefined as unknown as ReturnType<
+            typeof buildFaithfulSourceMarkdown
+          >,
+        },
+        null,
+      ),
+    ).rejects.toThrow("SOURCE_MARKDOWN_PROJECTION_INVALID");
+    expect(query).not.toHaveBeenCalled();
+  });
+
   it("fails before model routing if the source Markdown is not the persisted artifact projection", async () => {
     const input = stageInput();
     const query = vi.fn();

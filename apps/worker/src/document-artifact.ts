@@ -400,6 +400,14 @@ export function assertFaithfulSourceMarkdown(
   artifact: DocumentArtifact,
   projection: FaithfulSourceMarkdown,
 ): void {
+  if (
+    !projection ||
+    typeof projection.content !== "string" ||
+    typeof projection.sha256 !== "string" ||
+    typeof projection.rendererVersion !== "string"
+  ) {
+    throw new Error("SOURCE_MARKDOWN_PROJECTION_INVALID");
+  }
   if (projection.rendererVersion !== SOURCE_MARKDOWN_RENDERER_VERSION) {
     throw new Error("SOURCE_MARKDOWN_RENDERER_VERSION_MISMATCH");
   }

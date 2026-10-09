@@ -15,6 +15,7 @@ import {
 } from "@akp/contracts/knowledge-profile";
 import type { Postgres } from "@akp/postgres";
 import { buildCompilationStage } from "../src/compilation-stage.js";
+import { buildFaithfulSourceMarkdown } from "../src/document-artifact.js";
 
 const SPACE_ID = "11111111-1111-4111-8111-111111111111";
 const VAULT_ID = "22222222-2222-4222-8222-222222222222";
@@ -59,6 +60,7 @@ function artifact() {
 }
 
 function stageInput() {
+  const sourceArtifact = artifact();
   return {
     spaceId: SPACE_ID,
     vaultId: VAULT_ID,
@@ -70,7 +72,8 @@ function stageInput() {
     mediaType: "text/markdown",
     extractor: "fixture",
     extractorVersion: "1",
-    artifact: artifact(),
+    artifact: sourceArtifact,
+    sourceMarkdown: buildFaithfulSourceMarkdown(sourceArtifact),
     vectorEnabled: false,
   };
 }
@@ -229,6 +232,11 @@ describe("active profile compiler integration", () => {
     const output = await buildCompilationStage(db, stageInput(), [candidate]);
 
     expect(output.plan.disposition).toBe("NEW");
+    expect(output.metadata).toMatchObject({
+      mode: "GENERATIVE",
+      sourceMarkdownHash: stageInput().sourceMarkdown.sha256,
+      sourceMarkdownRendererVersion: "1.0",
+    });
     expect(compile).toHaveBeenCalledOnce();
     expect(compile.mock.calls[0]?.[0]).toMatchObject({
       knowledgeProfile: {
