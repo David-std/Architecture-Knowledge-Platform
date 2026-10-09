@@ -781,9 +781,9 @@ describe("product lifecycle E2E", () => {
       indexedSourceUnits.units.some((unit) => unit.body.includes(firstMarker)),
     ).toBe(true);
     for (const unit of indexedSourceUnits.units) {
-      expect(
-        createHash("sha256").update(unit.body, "utf8").digest("hex"),
-      ).toBe(unit.bodySha256);
+      expect(createHash("sha256").update(unit.body, "utf8").digest("hex")).toBe(
+        unit.bodySha256,
+      );
       expect(
         createHash("sha256")
           .update(

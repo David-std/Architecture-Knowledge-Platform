@@ -72,15 +72,15 @@ export async function replaceSourceProjectionUnits(
     const batch = units.slice(offset, offset + 200);
     await client.query(
       "insert into source_projection_units(" +
-      "source_artifact_id,source_id,source_sha256,markdown_sha256," +
-      "unit_key,parent_unit_key,unit_type,heading_path,body,body_sha256," +
-      "source_span_sha256,locator,structural_order) " +
-      "select $1,$2,$3,$4,unit_key,parent_unit_key,unit_type,heading_path," +
-      "body,body_sha256,source_span_sha256,locator,structural_order " +
-      "from jsonb_to_recordset($5::jsonb) as unit(" +
-      "unit_key text,parent_unit_key text,unit_type text," +
-      "heading_path text[],body text,body_sha256 text," +
-      "source_span_sha256 text,locator jsonb,structural_order int)",
+        "source_artifact_id,source_id,source_sha256,markdown_sha256," +
+        "unit_key,parent_unit_key,unit_type,heading_path,body,body_sha256," +
+        "source_span_sha256,locator,structural_order) " +
+        "select $1,$2,$3,$4,unit_key,parent_unit_key,unit_type,heading_path," +
+        "body,body_sha256,source_span_sha256,locator,structural_order " +
+        "from jsonb_to_recordset($5::jsonb) as unit(" +
+        "unit_key text,parent_unit_key text,unit_type text," +
+        "heading_path text[],body text,body_sha256 text," +
+        "source_span_sha256 text,locator jsonb,structural_order int)",
       [
         input.sourceArtifactId,
         input.sourceId,

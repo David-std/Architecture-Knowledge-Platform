@@ -230,7 +230,11 @@ integration("S1 faithful source projection compiler parity", () => {
       expect(
         sourceUnits.rows.some((unit) => unit.body.includes("47 minutes")),
       ).toBe(true);
-      expect(sourceUnits.rows.every((unit) => unit.markdown_sha256 === markdown.sha256)).toBe(true);
+      expect(
+        sourceUnits.rows.every(
+          (unit) => unit.markdown_sha256 === markdown.sha256,
+        ),
+      ).toBe(true);
       for (const unit of sourceUnits.rows) {
         expect(sha256(unit.body)).toBe(unit.body_sha256);
         expect(

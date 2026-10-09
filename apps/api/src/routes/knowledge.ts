@@ -866,7 +866,6 @@ export function registerKnowledgeRoutes(
     },
   );
 
-
   /**
    * Noncanonical passages, revision-pinned to both the raw source and
    * complete Markdown projection. Source permission is never inherited
