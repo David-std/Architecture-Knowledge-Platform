@@ -810,12 +810,13 @@ describe("product lifecycle E2E", () => {
       // through the same review-required worker path, not via a DB override.
       const originalDigest = await db.pool.query<{
         structured_content_hash: string;
-      }>(
-        "select structured_content_hash from source_artifacts where id=$1",
-        [off.artifact_id],
-      );
-      const expectedStructured = originalDigest.rows[0]?.structured_content_hash;
-      if (!expectedStructured) throw new Error("SOURCE_REEXTRACTION_DIGEST_MISSING");
+      }>("select structured_content_hash from source_artifacts where id=$1", [
+        off.artifact_id,
+      ]);
+      const expectedStructured =
+        originalDigest.rows[0]?.structured_content_hash;
+      if (!expectedStructured)
+        throw new Error("SOURCE_REEXTRACTION_DIGEST_MISSING");
       await db.pool.query(
         "update source_artifacts set structured_content_hash=$2 where id=$1",
         [off.artifact_id, "f".repeat(64)],
