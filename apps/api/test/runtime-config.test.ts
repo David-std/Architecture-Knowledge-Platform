@@ -28,6 +28,8 @@ describe("API runtime configuration", () => {
       evidenceVerifierMaxCandidates: 16,
       evidenceVerifierLocalFilesOnly: false,
       evidenceAdmissionTimeoutMs: 25000,
+      evidenceAdmissionMinDistinctDocuments: 1,
+      evidenceAdmissionAbstainOnConflict: false,
       evidenceReader: null,
       queryTransformProvider: "disabled",
       queryTranslation: null,
@@ -255,6 +257,32 @@ describe("API runtime configuration", () => {
       ).toThrow(/AKP_EVIDENCE_ADMISSION_TIMEOUT_MS/);
     },
   );
+
+  it("validates selective admission document diversity and conflict policy", () => {
+    expect(
+      loadApiRuntimeConfig({
+        AKP_EVIDENCE_ADMISSION_MIN_DISTINCT_DOCUMENTS: "3",
+        AKP_EVIDENCE_ADMISSION_ABSTAIN_ON_CONFLICT: "true",
+      }),
+    ).toMatchObject({
+      evidenceAdmissionMinDistinctDocuments: 3,
+      evidenceAdmissionAbstainOnConflict: true,
+    });
+    for (const value of ["", "0", "17", "1.5", "abc"]) {
+      expect(() =>
+        loadApiRuntimeConfig({
+          AKP_EVIDENCE_ADMISSION_MIN_DISTINCT_DOCUMENTS: value,
+        }),
+      ).toThrow(/AKP_EVIDENCE_ADMISSION_MIN_DISTINCT_DOCUMENTS/);
+    }
+    for (const value of ["yes", "1", "TRUE", ""]) {
+      expect(() =>
+        loadApiRuntimeConfig({
+          AKP_EVIDENCE_ADMISSION_ABSTAIN_ON_CONFLICT: value,
+        }),
+      ).toThrow(/AKP_EVIDENCE_ADMISSION_ABSTAIN_ON_CONFLICT/);
+    }
+  });
 
   it.each(["", "0", "-0.1", "1.1", "abc"])(
     "rejects invalid AKP_EVIDENCE_VERIFIER_MIN_SCORE=%j",
