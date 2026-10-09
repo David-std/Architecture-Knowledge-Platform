@@ -2087,6 +2087,11 @@
       "reason": "append-only database migration"
     },
     {
+      "path": "db/migrations/092_source_projection_units.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
       "path": "dependency-cruiser.cjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3088,6 +3093,11 @@
     },
     {
       "path": "packages/indexing/src/index.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/indexing/src/source-projection-units.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
