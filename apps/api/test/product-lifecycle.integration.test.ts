@@ -701,7 +701,7 @@ describe("product lifecycle E2E", () => {
           "a.source_markdown markdown,a.source_markdown_hash markdown_hash," +
           "a.source_markdown_renderer_version renderer_version," +
           "a.document_artifact,j.stage_outputs->'compilation' compilation " +
-          "from ingest_jobs j join sources s on s.id=j.stage_outputs->>'sourceId' " +
+          "from ingest_jobs j join sources s on s.id=(j.stage_outputs->>'sourceId')::uuid " +
           "join source_artifacts a on a.source_id=s.id and a.kind='document-artifact' " +
           "where j.id=any($1::uuid[]) order by array_position($1::uuid[],j.id)",
         [jobs],
