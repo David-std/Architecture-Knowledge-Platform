@@ -2072,6 +2072,11 @@
       "reason": "append-only database migration"
     },
     {
+      "path": "db/migrations/091_faithful_source_markdown_projection.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
       "path": "dependency-cruiser.cjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -2178,6 +2183,11 @@
     },
     {
       "path": "docs/architecture/selective-semantic-admission.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
+      "path": "docs/architecture/source-to-context-trace.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
     },
