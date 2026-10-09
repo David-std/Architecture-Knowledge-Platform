@@ -86,3 +86,7 @@ The E2E lifecycle and PostgreSQL backfill suites now assert unit spans, revision
 ### Historical corruption quarantine and verified re-extraction
 
 An exact-target backfill rejects an altered structured-content digest before any writes. The PostgreSQL regression now verifies that rejecting a corrupted artifact does not rebuild or silently delete its source units. Runbooks require operator inspection of the source ID, space/vault membership, immutable SHA and stored blob before any explicit new ingest of an operator-verified original. A mismatch is quarantined from source-unit reads by revision/hash fences; no tool silently asserts a different hash or marks an extracted document as approved. Re-extraction from the original is a new auditable ingest job with the existing review gate, **not** an unchecked backfill repair.
+
+### Full read-path quarantine for corrupted historical structured artifacts
+
+The API now verifies the parsed stored DocumentArtifact identity, extractor/version, configuration digest and canonical structured-content hash on both faithful Markdown and source-unit reads. These checks use the exact same canonical JSON serializer as the ingestion worker. Any mismatch returns 409 before exposing private source bytes or fragments. The real dual-ingest E2E deliberately changes the stored structured digest and checks both reads deny content; restoring the original digest is test-only cleanup. Corruption is not silently accepted or overwritten through a read operation.

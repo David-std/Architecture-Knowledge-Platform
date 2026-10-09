@@ -1,7 +1,11 @@
 import { createHash } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import path from "node:path";
-import { VaultRegistration } from "@akp/contracts";
+import {
+  DocumentArtifact,
+  VaultRegistration,
+  canonicalSourceArtifactJson,
+} from "@akp/contracts";
 import {
   intersectVaultPathPrefixes,
   pathMatchesVaultPrefix,
@@ -19,6 +23,53 @@ import {
   spaceIdsForPermission,
   unrestrictedSpaceIdsForPermission,
 } from "../auth.js";
+
+
+interface SourceStructuredIntegrityRow {
+  source_id: string;
+  source_sha256: string;
+  source_media_type: string | null;
+  artifact_source_hash: string;
+  extractor: string;
+  extractor_version: string;
+  configuration_hash: string | null;
+  structured_content_hash: string | null;
+  document_artifact: unknown;
+}
+
+/** Deny source reads if the stored structured artifact has diverged. */
+function sourceStructuredIdentityValid(row: SourceStructuredIntegrityRow): boolean {
+  if (
+    row.artifact_source_hash !== row.source_sha256 ||
+    !row.configuration_hash ||
+    !row.structured_content_hash
+  ) {
+    return false;
+  }
+  const parsed = DocumentArtifact.safeParse(row.document_artifact);
+  if (!parsed.success) return false;
+  const artifact = parsed.data;
+  if (
+    artifact.source_id !== row.source_id ||
+    artifact.source_hash !== row.source_sha256 ||
+    artifact.extractor !== row.extractor ||
+    artifact.extractor_version !== row.extractor_version ||
+    (row.source_media_type !== null &&
+      artifact.media_type.toLowerCase() !== row.source_media_type.toLowerCase())
+  ) {
+    return false;
+  }
+  const structuredHash = createHash("sha256")
+    .update(canonicalSourceArtifactJson(artifact), "utf8")
+    .digest("hex");
+  const configurationHash = createHash("sha256")
+    .update(canonicalSourceArtifactJson(artifact.configuration), "utf8")
+    .digest("hex");
+  return (
+    structuredHash === row.structured_content_hash &&
+    configurationHash === row.configuration_hash
+  );
+}
 
 /** Keep raw source routing details out of ordinary source projections. */
 const RAW_SOURCE_KEY =
@@ -802,33 +853,32 @@ export function registerKnowledgeRoutes(
       if (!scope.vaultIds.length) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
-      const result = await db.pool.query<{
-        source_id: string;
-        source_sha256: string;
-        artifact_id: string;
-        artifact_source_hash: string;
-        structured_content_hash: string | null;
-        source_markdown: string | null;
+      const result = await db.pool.query<
+        SourceStructuredIntegrityRow & {
+          artifact_id: string;
+          source_markdown: string | null;
         source_markdown_hash: string | null;
         source_markdown_renderer_version: string | null;
-      }>(
+        }
+      >(
         `
         select s.id source_id,s.sha256 source_sha256,
+               s.media_type source_media_type,
                a.id artifact_id,a.source_hash artifact_source_hash,
-               a.structured_content_hash,a.source_markdown,
+               a.extractor,a.extractor_version,a.configuration_hash,
+               a.structured_content_hash,a.document_artifact,a.source_markdown,
                a.source_markdown_hash,a.source_markdown_renderer_version
           from sources s join source_artifacts a on a.source_id=s.id
+          join vaults v on v.id=s.vault_id and v.enabled
          where s.id=$1 and a.id=$2 and a.kind='document-artifact'
+           and s.status='ACTIVE'
            and s.space_id=any($3::uuid[]) and s.vault_id=any($4::uuid[])
         `,
         [id, artifactId, scope.spaces, scope.vaultIds],
       );
       const row = result.rows[0];
       if (!row) return reply.code(404).send({ code: "SOURCE_NOT_FOUND" });
-      if (
-        row.artifact_source_hash !== row.source_sha256 ||
-        !row.structured_content_hash
-      ) {
+      if (!sourceStructuredIdentityValid(row)) {
         return reply
           .code(409)
           .send({ code: "SOURCE_ARTIFACT_IDENTITY_MISMATCH" });
@@ -916,13 +966,16 @@ export function registerKnowledgeRoutes(
       if (!scope.vaultIds.length) {
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
-      const current = await db.pool.query<{
-        source_sha256: string;
-        artifact_source_hash: string;
-        source_markdown: string | null;
-        source_markdown_hash: string | null;
-      }>(
-        "select s.sha256 source_sha256,a.source_hash artifact_source_hash," +
+      const current = await db.pool.query<
+        SourceStructuredIntegrityRow & {
+          source_markdown: string | null;
+          source_markdown_hash: string | null;
+        }
+      >(
+        "select s.id source_id,s.sha256 source_sha256," +
+          "s.media_type source_media_type,a.source_hash artifact_source_hash," +
+          "a.extractor,a.extractor_version,a.configuration_hash," +
+          "a.structured_content_hash,a.document_artifact," +
           "a.source_markdown,a.source_markdown_hash " +
           "from sources s join source_artifacts a on a.source_id=s.id " +
           "join vaults v on v.id=s.vault_id and v.enabled " +
@@ -934,7 +987,7 @@ export function registerKnowledgeRoutes(
       const row = current.rows[0];
       if (!row) return reply.code(404).send({ code: "SOURCE_NOT_FOUND" });
       if (
-        row.artifact_source_hash !== row.source_sha256 ||
+        !sourceStructuredIdentityValid(row) ||
         row.source_markdown === null ||
         row.source_markdown_hash === null ||
         createHash("sha256")

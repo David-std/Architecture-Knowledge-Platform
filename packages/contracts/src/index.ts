@@ -1367,4 +1367,21 @@ export const DocumentArtifact = z
   });
 export type DocumentArtifact = z.infer<typeof DocumentArtifact>;
 
+/**
+ * Shared JSON canonicalization for persisted source-artifact content hashes.
+ * The worker and both source-read endpoints must use identical serialization.
+ */
+export function canonicalSourceArtifactJson(value: unknown): string {
+  const canonical = (item: unknown): unknown => {
+    if (Array.isArray(item)) return item.map(canonical);
+    if (!item || typeof item !== "object") return item;
+    return Object.fromEntries(
+      Object.entries(item as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, child]) => [key, canonical(child)]),
+    );
+  };
+  return JSON.stringify(canonical(value));
+}
+
 export * from "./federated-graph.js";
