@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { createServer } from "node:http";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -76,7 +77,10 @@ async function waitFor<T>(
   throw new Error(`Timed out waiting for ${label}: ${JSON.stringify(last)}`);
 }
 
-async function runWorkerDrain(vectorEnabled = false): Promise<void> {
+async function runWorkerDrain(
+  vectorEnabled = false,
+  compiler?: { baseUrl: string },
+): Promise<void> {
   const root = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../../..",
@@ -105,6 +109,13 @@ async function runWorkerDrain(vectorEnabled = false): Promise<void> {
       AKP_EXTRACTOR_TOKEN:
         process.env.AKP_EXTRACTOR_TOKEN ?? "local-extractor-development-token",
       AKP_VECTOR_ENABLED: vectorEnabled ? "true" : "false",
+      AKP_MODEL_ROLE_POLICIES_JSON: "",
+      AKP_MODEL_ENDPOINTS_JSON: "",
+      AKP_LLM_PROVIDER: compiler ? "openai-compatible" : "disabled",
+      AKP_LLM_BASE_URL: compiler?.baseUrl ?? "",
+      AKP_LLM_MODEL: compiler ? "e2e-local-grounded-compiler" : "",
+      AKP_LLM_DATA_RESIDENCY: "LOCAL_ONLY",
+      AKP_LLM_MAX_RETRIES: "0",
     },
   });
   if (result.stderr.trim()) {
@@ -138,27 +149,27 @@ async function removeRawObjects(keys: readonly string[]): Promise<void> {
  * intentionally retained: the platform makes them append-only evidence and
  * their foreign key keeps the vault registry row addressable after cleanup.
  */
-async function purgeMutableFixtures(): Promise<void> {
-  if (!db || !vaultId) return;
+async function purgeMutableFixtures(targetVaultId = vaultId): Promise<void> {
+  if (!db || !targetVaultId) return;
   const sourceRows = await db.pool.query<{ object_key: string }>(
     "select object_key from sources where vault_id=$1",
-    [vaultId],
+    [targetVaultId],
   );
   sourceObjectKeys.push(...sourceRows.rows.map((row) => row.object_key));
 
   const documentRows = await db.pool.query<{ id: string }>(
     "select id from knowledge_documents where vault_id=$1",
-    [vaultId],
+    [targetVaultId],
   );
   const documentIds = documentRows.rows.map((row) => row.id);
   const jobRows = await db.pool.query<{ id: string }>(
     "select id from ingest_jobs where vault_id=$1",
-    [vaultId],
+    [targetVaultId],
   );
   const jobIds = jobRows.rows.map((row) => row.id);
   const reviewRows = await db.pool.query<{ id: string }>(
     "select id from reviews where vault_id=$1",
-    [vaultId],
+    [targetVaultId],
   );
   const reviewIds = reviewRows.rows.map((row) => row.id);
 
@@ -175,25 +186,25 @@ async function purgeMutableFixtures(): Promise<void> {
     [repositoryPublicationKey(managedRepository)],
   );
   await db.pool.query("delete from context_packets where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
-  await db.pool.query("delete from eval_runs where vault_id=$1", [vaultId]);
+  await db.pool.query("delete from eval_runs where vault_id=$1", [targetVaultId]);
   await db.pool.query("delete from knowledge_lint_runs where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
-  await db.pool.query("delete from error_book where vault_id=$1", [vaultId]);
+  await db.pool.query("delete from error_book where vault_id=$1", [targetVaultId]);
   await db.pool.query("delete from schema_dry_runs where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
   await db.pool.query("delete from agent_sessions where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
-  await db.pool.query("delete from projects where vault_id=$1", [vaultId]);
+  await db.pool.query("delete from projects where vault_id=$1", [targetVaultId]);
   await db.pool.query("delete from incremental_index_runs where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
   await db.pool.query("delete from vault_index_revisions where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
   if (reviewIds.length) {
     await db.pool.query(
@@ -240,10 +251,10 @@ async function purgeMutableFixtures(): Promise<void> {
     );
   }
   await db.pool.query("delete from contradiction_clusters where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
   await db.pool.query("delete from embedding_generations where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
   if (jobIds.length) {
     await db.pool.query(
@@ -255,12 +266,12 @@ async function purgeMutableFixtures(): Promise<void> {
       [jobIds],
     );
   }
-  await db.pool.query("delete from reviews where vault_id=$1", [vaultId]);
-  await db.pool.query("delete from ingest_jobs where vault_id=$1", [vaultId]);
+  await db.pool.query("delete from reviews where vault_id=$1", [targetVaultId]);
+  await db.pool.query("delete from ingest_jobs where vault_id=$1", [targetVaultId]);
   const sourceIds = (
     await db.pool.query<{ id: string }>(
       "select id from sources where vault_id=$1",
-      [vaultId],
+      [targetVaultId],
     )
   ).rows.map((row) => row.id);
   if (sourceIds.length) {
@@ -277,15 +288,17 @@ async function purgeMutableFixtures(): Promise<void> {
       [sourceIds],
     );
   }
-  await db.pool.query("delete from sources where vault_id=$1", [vaultId]);
-  await db.pool.query("delete from audit_events where vault_id=$1", [vaultId]);
-  await db.pool.query("delete from api_tokens where token_hash=$1", [
-    tokenHash,
-  ]);
+  await db.pool.query("delete from sources where vault_id=$1", [targetVaultId]);
+  await db.pool.query("delete from audit_events where vault_id=$1", [targetVaultId]);
+  if (targetVaultId === vaultId) {
+    await db.pool.query("delete from api_tokens where token_hash=$1", [
+      tokenHash,
+    ]);
+  }
   await db.pool.query("delete from vault_memberships where vault_id=$1", [
-    vaultId,
+    targetVaultId,
   ]);
-  await db.pool.query("update vaults set enabled=false where id=$1", [vaultId]);
+  await db.pool.query("update vaults set enabled=false where id=$1", [targetVaultId]);
   await removeRawObjects(sourceObjectKeys);
 }
 
@@ -500,6 +513,239 @@ afterAll(async () => {
 });
 
 describe("product lifecycle E2E", () => {
+  it("ingests identical bytes with compiler OFF and local mock ON without publishing", async () => {
+    const marker = "s1-dual-" + randomUUID().replaceAll("-", "");
+    const name = "Identical source under two compiler modes";
+    const fence = String.fromCharCode(96).repeat(3);
+    const original = [
+      "# " + name,
+      "",
+      "Exact source marker: " + marker,
+      "",
+      "| condition | timeout |",
+      "| --- | --- |",
+      "| recovery | 47 minutes |",
+      "",
+      fence + "typescript",
+      "const recoveryDeadline = 47;",
+      fence,
+      "",
+      ("Historical passage: verify immutable recovery provenance. ").repeat(165),
+      "",
+      "End-of-file evidence marker: " + marker,
+    ].join("\n");
+    const originalHash = createHash("sha256").update(original).digest("hex");
+    const files = ["off", "on"].map((mode) =>
+      path.join(sourceRoot, "s1-dual-" + mode + "-" + randomUUID() + ".md"),
+    );
+    await Promise.all(files.map((file) => writeFile(file, original, "utf8")));
+    const createdVaultIds: string[] = [];
+    let provider: ReturnType<typeof createServer> | undefined;
+    const providerInputs: Array<Record<string, unknown>> = [];
+    try {
+      for (const mode of ["off", "on"]) {
+        const vault = await registerVault(
+          db,
+          {
+            vaultKey: "s1-dual-" + mode + "-" + randomUUID().slice(0, 12),
+            name: "S1 dual-route " + mode,
+            spaceId: defaultSpace,
+            gitRepository: null,
+            defaultBranch: "main",
+            localPath: path.join(fixtureRoot, "s1-dual-vault-" + mode),
+            contentRoots: ["."],
+            sourceRoots: [sourceRoot],
+            schemaProfile: {},
+            evalPack: {
+              name: "generic",
+              version: "1",
+              enabled: true,
+              criticalCases: [],
+            },
+            retrievalConfig: {},
+            permissions: {},
+            visibility: "PRIVATE",
+            enabled: true,
+          },
+          { ownerUserId: admin },
+        );
+        createdVaultIds.push(vault.id);
+        await grantVaultMembership(db, {
+          userId: admin,
+          vaultId: vault.id,
+          role: "ADMIN",
+          permissions: [
+            "knowledge:read",
+            "source:read",
+            "source:write",
+            "knowledge:propose",
+            "knowledge:review",
+            "eval:run",
+            "admin",
+          ],
+        });
+      }
+      provider = createServer(async (request, response) => {
+        try {
+          if (request.method !== "POST" ||
+              request.url !== "/v1/chat/completions") {
+            response.writeHead(404).end();
+            return;
+          }
+          const chunks: Buffer[] = [];
+          for await (const chunk of request) chunks.push(Buffer.from(chunk));
+          const payload = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+            messages: Array<{ role: string; content: string }>;
+          };
+          const message = payload.messages.find((item) => item.role === "user");
+          if (!message) throw new Error("PROVIDER_TEST_INPUT_MISSING");
+          const input = JSON.parse(
+            message.content.slice(message.content.indexOf("\n") + 1),
+          ) as Record<string, unknown>;
+          providerInputs.push(input);
+          const generated = {
+            identity: {
+              classification: "DISTINCT",
+              candidates: [],
+              reason: "No sufficiently grounded material to propose.",
+            },
+            evidenceCandidates: [],
+            knowledgeCandidates: [],
+            contradictions: [],
+            proposedFileChanges: [],
+            impactedDocumentIds: [],
+            probes: [],
+            warnings: [],
+            summary: "No material proposal; raw source remains independently retrievable.",
+          };
+          response.writeHead(200, { "content-type": "application/json" });
+          response.end(JSON.stringify({
+            choices: [{ message: { role: "assistant", content: JSON.stringify(generated) } }],
+          }));
+        } catch {
+          response.writeHead(400).end();
+        }
+      });
+      await new Promise<void>((resolve, reject) => {
+        provider!.once("error", reject);
+        provider!.listen(0, "127.0.0.1", resolve);
+      });
+      const address = provider.address();
+      if (!address || typeof address === "string") {
+        throw new Error("TEST_COMPILER_LISTENER_UNAVAILABLE");
+      }
+      const baseUrl = "http://127.0.0.1:" + address.port + "/v1";
+      const jobs: string[] = [];
+      for (const [index, vaultId] of createdVaultIds.entries()) {
+        const response = await app.inject({
+          method: "POST",
+          url: "/v1/ingest",
+          headers,
+          payload: {
+            spaceId: defaultSpace,
+            vaultId,
+            sourceUri: files[index],
+            expectedSha256: originalHash,
+            title: name,
+            mediaType: "text/markdown",
+            policy: "REVIEW_REQUIRED",
+          },
+        });
+        expect(response.statusCode, response.body).toBe(202);
+        const jobId = (response.json() as { jobId: string }).jobId;
+        jobs.push(jobId);
+        await seedEventConsumerForJob(jobId);
+        await runWorkerDrain(false, index === 1 ? { baseUrl } : undefined);
+      }
+      const artifacts = await db.pool.query<{
+        job_id: string;
+        state: string;
+        source_id: string;
+        object_key: string;
+        raw_hash: string;
+        artifact_id: string;
+        markdown: string;
+        markdown_hash: string;
+        renderer_version: string;
+        document_artifact: { locators: Array<Record<string, unknown>> };
+        compilation: { mode: string; sourceMarkdownHash: string };
+      }>(
+        "select j.id job_id,j.state,s.id source_id,s.object_key," +
+        "s.sha256 raw_hash,a.id artifact_id," +
+        "a.source_markdown markdown,a.source_markdown_hash markdown_hash," +
+        "a.source_markdown_renderer_version renderer_version," +
+        "a.document_artifact,j.stage_outputs->'compilation' compilation " +
+        "from ingest_jobs j join sources s on s.id=j.stage_outputs->>'sourceId' " +
+        "join source_artifacts a on a.source_id=s.id and a.kind='document-artifact' " +
+        "where j.id=any($1::uuid[]) order by array_position($1::uuid[],j.id)",
+        [jobs],
+      );
+      expect(artifacts.rowCount).toBe(2);
+      const [off, on] = artifacts.rows;
+      if (!off || !on) throw new Error("DUAL_ROUTE_ARTIFACT_MISSING");
+      expect(off.job_id).toBe(jobs[0]);
+      expect(on.job_id).toBe(jobs[1]);
+      expect(off.state).toBe("REVIEW_REQUIRED");
+      expect(on.state).toBe("NO_MATERIAL");
+      expect(off.compilation.mode).toBe("SOURCE_SUMMARY_FALLBACK");
+      expect(on.compilation.mode).toBe("GENERATIVE");
+      expect(off.source_id).not.toBe(on.source_id);
+      expect(off.artifact_id).not.toBe(on.artifact_id);
+      expect(off.raw_hash).toBe(originalHash);
+      expect(on.raw_hash).toBe(originalHash);
+      expect(off.object_key).toBe(on.object_key);
+      expect(off.markdown).toBe(on.markdown);
+      expect(off.markdown).toContain("47 minutes");
+      expect(off.markdown).toContain("const recoveryDeadline = 47");
+      expect(off.markdown).toContain("End-of-file evidence marker");
+      expect(off.markdown_hash).toBe(on.markdown_hash);
+      expect(off.markdown_hash).toBe(
+        createHash("sha256").update(off.markdown).digest("hex"),
+      );
+      expect(off.compilation.sourceMarkdownHash).toBe(off.markdown_hash);
+      expect(on.compilation.sourceMarkdownHash).toBe(on.markdown_hash);
+      expect(off.renderer_version).toBe(on.renderer_version);
+      const locatorsWithoutIdentity = (items: Array<Record<string, unknown>>) =>
+        items.map(({ path: _path, ...locator }) => locator);
+      expect(locatorsWithoutIdentity(off.document_artifact.locators)).toEqual(
+        locatorsWithoutIdentity(on.document_artifact.locators),
+      );
+      const storedUnits = await db.pool.query<{
+        source_id: string;
+        unit_type: string;
+        heading_path: string[];
+        body: string;
+        source_span_sha256: string;
+      }>(
+        "select source_id,unit_type,heading_path,body,source_span_sha256 " +
+        "from source_projection_units where source_id=any($1::uuid[]) " +
+        "order by source_id,structural_order",
+        [[off.source_id, on.source_id]],
+      );
+      const unitsFor = (sourceId: string) =>
+        storedUnits.rows
+          .filter((unit) => unit.source_id === sourceId)
+          .map(({ source_id: _sourceId, ...unit }) => unit);
+      expect(unitsFor(off.source_id).length).toBeGreaterThan(0);
+      expect(unitsFor(off.source_id)).toEqual(unitsFor(on.source_id));
+      expect(providerInputs).toHaveLength(1);
+      expect((providerInputs[0]?.source as { sha256: string }).sha256)
+        .toBe(originalHash);
+      const published = await db.pool.query<{ count: number }>(
+        "select count(*)::int count from knowledge_documents where vault_id=any($1::uuid[])",
+        [createdVaultIds],
+      );
+      expect(published.rows[0]?.count).toBe(0);
+    } finally {
+      if (provider) {
+        await new Promise<void>((resolve) => provider!.close(() => resolve()));
+      }
+      for (const createdVaultId of createdVaultIds) {
+        await purgeMutableFixtures(createdVaultId);
+      }
+    }
+  }, 180_000);
+
   it("ingests, reviews, publishes, indexes with the real worker, searches, rejects, and rolls back", async () => {
     const firstMarker = `publication-marker-${randomUUID().replaceAll("-", "").slice(0, 12)}`;
     const first = await submitIngest("published-product-source", firstMarker);
