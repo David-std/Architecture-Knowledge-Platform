@@ -19,6 +19,7 @@ import { buildEmbeddingIndex } from "./embedding-index.js";
 export * from "./embedding-generation.js";
 export * from "./embedding-index.js";
 export * from "./community-index.js";
+export * from "./source-projection-units.js";
 
 export interface ManagedChange {
   path: string;

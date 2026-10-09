@@ -25,6 +25,7 @@ import {
   type RawObjectRef,
 } from "@akp/object-store";
 import { CompilationPlan } from "@akp/compiler";
+import { replaceSourceProjectionUnits } from "@akp/indexing";
 import { ModelResidency } from "@akp/contracts";
 import { GitKnowledgeStore } from "@akp/git-store";
 import { validateMarkdownDocument } from "@akp/validation";
@@ -561,6 +562,14 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
             throw new Error("Could not persist document artifact.");
           }
           extracted.source_artifact_id = artifactId;
+          await replaceSourceProjectionUnits(client, {
+            sourceId: String(outputs.sourceId),
+            sourceArtifactId: artifactId,
+            sourceSha256: raw.sha256,
+            markdown: sourceMarkdown.content,
+            markdownSha256: sourceMarkdown.sha256,
+            title: String(outputs.title ?? payload.title ?? "Source"),
+          });
 
           const storedEvidence = await client.query<{ id: string }>(
             `

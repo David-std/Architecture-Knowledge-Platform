@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { DocumentArtifact } from "@akp/contracts";
 import type { Postgres } from "@akp/postgres";
+import { replaceSourceProjectionUnits } from "@akp/indexing";
 import {
   assertFaithfulSourceMarkdown,
   buildFaithfulSourceMarkdown,
@@ -31,6 +32,7 @@ interface LegacyProjectionRow {
   source_id: string;
   source_sha256: string;
   source_media_type: string | null;
+  source_title: string;
   artifact_id: string;
   artifact_source_hash: string;
   extractor: string;
@@ -66,6 +68,7 @@ export async function backfillHistoricalSourceProjection(
     const result = await client.query<LegacyProjectionRow>(
       `
       select s.id source_id,s.sha256 source_sha256,s.media_type source_media_type,
+             s.title source_title,
              a.id artifact_id,a.source_hash artifact_source_hash,
              a.extractor,a.extractor_version,a.configuration_hash,
              a.structured_content_hash,a.document_artifact,
@@ -146,6 +149,16 @@ export async function backfillHistoricalSourceProjection(
         sha256: row.source_markdown_hash!,
         rendererVersion: row.source_markdown_renderer_version!,
       });
+      if (apply) {
+        await replaceSourceProjectionUnits(client, {
+          sourceId: row.source_id,
+          sourceArtifactId: row.artifact_id,
+          sourceSha256: row.source_sha256,
+          markdown: projected.content,
+          markdownSha256: projected.sha256,
+          title: row.source_title,
+        });
+      }
       await client.query("commit");
       return {
         status: "ALREADY_MATERIALIZED",
@@ -179,6 +192,16 @@ export async function backfillHistoricalSourceProjection(
       if (update.rowCount !== 1) {
         throw new Error("SOURCE_PROJECTION_BACKFILL_CONCURRENT_CHANGE");
       }
+    }
+    if (apply) {
+      await replaceSourceProjectionUnits(client, {
+        sourceId: row.source_id,
+        sourceArtifactId: row.artifact_id,
+        sourceSha256: row.source_sha256,
+        markdown: projected.content,
+        markdownSha256: projected.sha256,
+        title: row.source_title,
+      });
     }
     await client.query("commit");
     return {
