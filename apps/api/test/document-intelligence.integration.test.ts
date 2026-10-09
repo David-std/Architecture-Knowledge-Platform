@@ -352,5 +352,79 @@ describe("document intelligence E2E", () => {
     expect(extracted.source_markdown_renderer_version).toBe(
       row.source_markdown_renderer_version,
     );
+
+    const sourceId = row.stage_outputs.sourceId as string;
+    const artifactId = extracted.source_artifact_id as string;
+    expect(sourceId).toMatch(/^[a-f0-9-]{36}$/);
+    expect(artifactId).toMatch(/^[a-f0-9-]{36}$/);
+
+    const markdownResponse = await app.inject({
+      method: "GET",
+      url:
+        "/v1/sources/" + sourceId + "/artifacts/" + artifactId + "/markdown",
+      headers,
+    });
+    expect(markdownResponse.statusCode, markdownResponse.body).toBe(200);
+    const projection = markdownResponse.json() as {
+      content: string;
+      sha256: string;
+      sourceSha256: string;
+      trustTier: string;
+      canonicalKnowledge: boolean;
+    };
+    expect(projection.content).toBe(row.source_markdown);
+    expect(projection.sha256).toBe(row.source_markdown_hash);
+    expect(projection.sourceSha256).toBe(sha256);
+    expect(projection.trustTier).toBe("MACHINE_EXTRACTED");
+    expect(projection.canonicalKnowledge).toBe(false);
+    expect(projection.content).toContain("481516");
+
+    const unitResponse = await app.inject({
+      method: "GET",
+      url:
+        "/v1/sources/" + sourceId + "/artifacts/" + artifactId + "/units" +
+        "?sourceSha256=" + sha256 +
+        "&markdownSha256=" + row.source_markdown_hash,
+      headers,
+    });
+    expect(unitResponse.statusCode, unitResponse.body).toBe(200);
+    const indexed = unitResponse.json() as {
+      sourceSha256: string;
+      markdownSha256: string;
+      canonicalKnowledge: boolean;
+      total: number;
+      units: Array<{
+        body: string;
+        bodySha256: string;
+        sourceSpanSha256: string;
+        locator: { startChar: number; endChar: number; page?: number };
+      }>;
+    };
+    expect(indexed.sourceSha256).toBe(sha256);
+    expect(indexed.markdownSha256).toBe(row.source_markdown_hash);
+    expect(indexed.canonicalKnowledge).toBe(false);
+    expect(indexed.total).toBeGreaterThan(0);
+    expect(indexed.units.some((unit) => unit.body.includes("481516"))).toBe(
+      true,
+    );
+    for (const unit of indexed.units) {
+      expect(
+        createHash("sha256").update(unit.body, "utf8").digest("hex"),
+      ).toBe(unit.bodySha256);
+      expect(
+        createHash("sha256")
+          .update(
+            projection.content.slice(
+              unit.locator.startChar,
+              unit.locator.endChar,
+            ),
+            "utf8",
+          )
+          .digest("hex"),
+      ).toBe(unit.sourceSpanSha256);
+      expect(unit.locator.endChar).toBeGreaterThan(unit.locator.startChar);
+    }
+    expect(unitResponse.headers["cache-control"]).toBe("no-store");
+
   }, 180_000);
 });
