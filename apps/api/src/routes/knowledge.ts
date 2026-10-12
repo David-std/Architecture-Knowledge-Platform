@@ -875,6 +875,9 @@ export function registerKnowledgeRoutes(
           join vaults v on v.id=s.vault_id and v.enabled
          where s.id=$1 and a.id=$2 and a.kind='document-artifact'
            and s.status='ACTIVE'
+           and a.id=(select recent.id from source_artifacts recent
+                     where recent.source_id=s.id and recent.kind='document-artifact'
+                     order by recent.created_at desc,recent.id desc limit 1)
            and s.space_id=any($3::uuid[]) and s.vault_id=any($4::uuid[])
         `,
         [id, artifactId, scope.spaces, scope.vaultIds],
@@ -998,6 +1001,9 @@ export function registerKnowledgeRoutes(
           "join vaults v on v.id=s.vault_id and v.enabled " +
           "where s.id=$1 and a.id=$2 and a.kind='document-artifact' " +
           "and s.status='ACTIVE' " +
+          "and a.id=(select recent.id from source_artifacts recent " +
+          "where recent.source_id=s.id and recent.kind='document-artifact' " +
+          "order by recent.created_at desc,recent.id desc limit 1) " +
           "and s.space_id=any($3::uuid[]) and s.vault_id=any($4::uuid[])",
         [id, artifactId, scope.spaces, scope.vaultIds],
       );
