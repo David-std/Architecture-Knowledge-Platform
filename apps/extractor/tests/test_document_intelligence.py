@@ -7,6 +7,8 @@ from docx import Document as WordDocument
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from pydantic import ValidationError
+from pypdf import PdfReader, PdfWriter
+from pypdf.errors import PdfReadError
 
 from app.adapters.deterministic import DeterministicTextAdapter
 from app.models import DocumentArtifact, StructuralLocator
@@ -59,6 +61,48 @@ def test_canonical_text_extractor_replaces_flattened_legacy_path(
     assert [item.kind for item in artifact.blocks] == ["heading", "paragraph"]
     assert artifact.reading_order == [item.id for item in artifact.blocks]
     assert all(locator.source_hash == artifact.source_hash for locator in artifact.locators)
+
+
+def test_digital_pdf_reports_partial_blank_page_without_hiding_valid_pages(
+    tmp_path: Path,
+) -> None:
+    original = (
+        Path(__file__).resolve().parents[3]
+        / "test"
+        / "fixtures"
+        / "document-intelligence"
+        / "s1-digital-two-page.pdf"
+    )
+    assert original.is_file()
+    reader = PdfReader(str(original))
+    assert len(reader.pages) == 2
+    writer = PdfWriter()
+    for page in reader.pages:
+        writer.add_page(page)
+    writer.add_blank_page(width=612, height=792)
+    source = tmp_path / "partial-digital.pdf"
+    with source.open("wb") as output:
+        writer.write(output)
+
+    artifact = DeterministicTextAdapter().extract(_request(source, "application/pdf"))
+    assert len(artifact.pages) == 3
+    assert "S1 PDF PROVENANCE 3179" in (artifact.pages[0].text or "")
+    assert "S1 SECOND PAGE 4281" in (artifact.pages[1].text or "")
+    assert not (artifact.pages[2].text or "").strip()
+    assert "PAGE_3_NO_TEXT_EXTRACTED" in artifact.warnings
+    assert "LAYOUT_AND_OCR_LIMITED_TO_DETERMINISTIC_BASELINE" in artifact.warnings
+    assert artifact.quality == "MACHINE_EXTRACTED"
+    assert {item.locator.page for item in artifact.blocks} >= {1, 2}
+    assert all(locator.source_hash == artifact.source_hash for locator in artifact.locators)
+
+
+def test_corrupt_pdf_cannot_be_emitted_as_successful_source(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "corrupt.pdf"
+    source.write_bytes(b"not a valid PDF")
+    with pytest.raises(PdfReadError):
+        DeterministicTextAdapter().extract(_request(source, "application/pdf"))
 
 
 def test_docx_baseline_preserves_interleaved_tables_paragraphs_and_locators(
