@@ -580,6 +580,23 @@ describe("product lifecycle E2E", () => {
     const oldJob = await submit(firstContent);
     const old = await findSource(oldJob);
     expect(old).toMatchObject({ status: "ACTIVE", sha256: hash(firstContent) });
+    const cachedPacketId = randomUUID();
+    await db.pool.query(
+      `insert into context_packets(
+        id,space_id,vault_id,actor_id,corpus_revision,query_hash,packet_hash,
+        request,packet,scope
+      ) values ($1,$2,$3,null,'source-revision-test',$4,$5,$6::jsonb,$7::jsonb,$8::jsonb)`,
+      [
+        cachedPacketId,
+        defaultSpace,
+        vaultId,
+        hash("query-" + cachedPacketId),
+        hash("packet-" + cachedPacketId),
+        JSON.stringify({ query: markerOld }),
+        JSON.stringify({ sections: [{ content: markerOld }] }),
+        JSON.stringify({ spaceId: defaultSpace, vaultIds: [vaultId], federated: false }),
+      ],
+    );
 
     const nextContent = sourceContent("Source revision", markerNew);
     const newJob = await submit(nextContent);
@@ -595,6 +612,11 @@ describe("product lifecycle E2E", () => {
       [old.source_id],
     );
     expect(previous.rows[0]?.status).toBe("SUPERSEDED");
+    const derivedCache = await db.pool.query<{ total: number }>(
+      "select count(*)::int total from context_packets where id=$1",
+      [cachedPacketId],
+    );
+    expect(derivedCache.rows[0]?.total).toBe(0);
     const oldMarkdown = await app.inject({
       method: "GET",
       url:
