@@ -286,7 +286,8 @@ async function activateExtractedSourceRevision(
     // derived/rebuildable data, unlike approved Git or immutable source bytes.
     if (input.vaultId) {
       await client.query(
-        "delete from context_packets where space_id=$1 and vault_id=$2",
+        "delete from context_packets where space_id=$1 " +
+          "and (vault_id=$2 or (scope->'vaultIds') ? $2)",
         [input.spaceId, input.vaultId],
       );
     }
