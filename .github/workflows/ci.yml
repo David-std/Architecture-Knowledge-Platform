@@ -490,6 +490,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
+      # server.ts auto-listens unless NODE_ENV=test; without this the
+      # imported module creates a second, unowned HTTP server on port 8080.
+      NODE_ENV: test
       DATABASE_URL: postgres://akp:akp@localhost:55432/akp
       AKP_API_TOKEN: akp-ci-integration-token-not-for-production
       AKP_API_TOKEN_SCOPES: >-
@@ -609,7 +612,6 @@ jobs:
           const sourceHash = createHash("sha256").update(content).digest("hex");
           const db = new Postgres(process.env.DATABASE_URL!);
           let app: Awaited<ReturnType<typeof import("../src/server.js")["buildServer"]>> | undefined;
-          let proofPassed = false;
 
           function assert(condition: unknown, message: string): asserts condition {
             if (!condition) throw new Error(message);
@@ -853,40 +855,21 @@ jobs:
                 providerEvents: providerEvents.rows.map((row) => row.event_type),
               })}\n`,
             );
-            proofPassed = true;
           } finally {
-            // This generated integration fixture runs in an ephemeral CI
-            // container. After the source/locator assertions succeed, no
-            // unrelated Node resource may hold the runner for 15 minutes.
-            // Make each teardown boundary visible and preserve nonzero exit
-            // on *every* pre-proof failure, including a stuck cleanup.
-            const cleanupWatchdog = setTimeout(() => {
-              process.stderr.write(
-                "OCR_E2E phase=cleanup-timeout " +
-                JSON.stringify({ proofPassed, resources: process.getActiveResourcesInfo() }) +
-                "\n",
-              );
-              process.exit(proofPassed ? 0 : 1);
-            }, 15_000);
-            try {
-              process.stderr.write("OCR_E2E phase=app-close-start\n");
-              if (app) await app.close();
-              process.stderr.write("OCR_E2E phase=app-close-finished\n");
-              await db.close();
-              process.stderr.write("OCR_E2E phase=db-close-finished\n");
-            } finally {
-              clearTimeout(cleanupWatchdog);
-            }
+            process.stderr.write("OCR_E2E phase=app-close-start\n");
+            if (app) await app.close();
+            process.stderr.write("OCR_E2E phase=app-close-finished\n");
+            await db.close();
+            process.stderr.write("OCR_E2E phase=db-close-finished\n");
           }
-          // All success and error paths are terminal here; the actual
-          // disposable Postgres/MinIO processes are owned by the next CI
-          // workflow cleanup step, not by this short-lived assertion CLI.
+          // NODE_ENV=test prevents server.ts from spawning another API
+          // listener. A real test assertion/cleanup failure must propagate
+          // as nonzero, rather than being hidden by process.exit(0).
           process.stderr.write(
             "OCR_E2E phase=completed " +
             JSON.stringify({ resources: process.getActiveResourcesInfo() }) +
             "\n",
           );
-          process.exit(0);
           TS
           timeout --signal=TERM --kill-after=10s 900s \
             pnpm exec tsx apps/api/test/.document-ocr-e2e.runtime.ts \
