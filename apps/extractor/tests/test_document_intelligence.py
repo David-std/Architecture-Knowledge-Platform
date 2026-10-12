@@ -92,7 +92,7 @@ def test_invalid_utf8_is_explicitly_lossy_and_raw_hash_remains_authoritative(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "invalid.md"
-    original = b"Policy before \\xff after"
+    original = b"Policy before \xff after"
     source.write_bytes(original)
     artifact = DeterministicTextAdapter().extract(_request(source))
 
@@ -100,7 +100,7 @@ def test_invalid_utf8_is_explicitly_lossy_and_raw_hash_remains_authoritative(
     assert artifact.quality == "MACHINE_EXTRACTED"
     assert "INVALID_UTF8_REPLACED" in artifact.warnings
     assert artifact.paragraphs[0].text is not None
-    assert "\\ufffd" in artifact.paragraphs[0].text
+    assert "\ufffd" in artifact.paragraphs[0].text
     assert all(locator.source_hash == artifact.source_hash for locator in artifact.locators)
 
     valid = tmp_path / "valid.md"
