@@ -215,6 +215,50 @@ def test_docx_without_declared_header_keeps_first_and_every_data_row(
     assert all(locator.source_hash == artifact.source_hash for locator in artifact.locators)
 
 
+def test_merged_docx_table_reports_ambiguous_cell_spans(
+    tmp_path: Path,
+) -> None:
+    document = WordDocument()
+    document.add_heading("Cell layout", level=1)
+    table = document.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "Recovery spans columns"
+    table.cell(0, 0).merge(table.cell(0, 1))
+    table.cell(1, 0).text = "deadline"
+    table.cell(1, 1).text = "47 minutes"
+    source = tmp_path / "merged.docx"
+    document.save(source)
+    artifact = DeterministicTextAdapter().extract(
+        _request(
+            source,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+    )
+    assert artifact.quality == "MACHINE_EXTRACTED"
+    assert "DOCX_TABLE_1_MERGED_CELL_UNCERTAIN" in artifact.warnings
+    assert artifact.tables[0].headers == []
+    assert artifact.tables[0].rows[1] == ["deadline", "47 minutes"]
+    assert "Recovery spans columns" in artifact.tables[0].text_content() if hasattr(artifact.tables[0], "text_content") else "Recovery spans columns" in artifact.tables[0].rows[0]
+    assert artifact.tables[0].locator.heading_path == ["Cell layout"]
+    assert artifact.reading_order == [block.id for block in artifact.blocks]
+
+
+def test_ragged_markdown_table_preserves_extra_cells(tmp_path: Path) -> None:
+    source = tmp_path / "ragged.md"
+    source.write_text(
+        "# Recovery\n\n| key | value |\n| --- | --- |\n"
+        "| latency | 125 ms |\n| restore | 47 minutes | manual |\n",
+        encoding="utf-8",
+    )
+    artifact = DeterministicTextAdapter().extract(_request(source))
+    assert artifact.tables[0].headers == ["key", "value"]
+    assert artifact.tables[0].rows == [
+        ["latency", "125 ms"],
+        ["restore", "47 minutes", "manual"],
+    ]
+    assert artifact.tables[0].locator.heading_path == ["Recovery"]
+    assert artifact.reading_order == [block.id for block in artifact.blocks]
+
+
 def test_invalid_utf8_is_explicitly_lossy_and_raw_hash_remains_authoritative(
     tmp_path: Path,
 ) -> None:

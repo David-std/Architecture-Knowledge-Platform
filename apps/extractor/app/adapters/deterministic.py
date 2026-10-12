@@ -657,6 +657,7 @@ class DeterministicTextAdapter(DocumentIntelligencePort):
         heading_stack: list[str] = []
         paragraph_number = 0
         table_number = 0
+        warnings: list[str] = []
         # python-docx's separate paragraphs/tables lists lose their original
         # interleaving. Body-order iteration is required for quote replay.
         for block in document.iter_inner_content():
@@ -665,6 +666,14 @@ class DeterministicTextAdapter(DocumentIntelligencePort):
                 rows = [[cell.text.strip() for cell in row.cells] for row in block.rows]
                 if not rows:
                     continue
+                # A merged Word cell may appear in multiple grid slots.
+                # Preserve text but mark the reconstructed grid as uncertain.
+                if any(
+                    cell._tc.grid_span != 1 or cell._tc.vMerge is not None
+                    for row in block.rows
+                    for cell in row.cells
+                ):
+                    warnings.append(f"DOCX_TABLE_{table_number}_MERGED_CELL_UNCERTAIN")
                 locator = _new_locator(
                     digest,
                     request.source_uri or request.source_id,
@@ -744,7 +753,8 @@ class DeterministicTextAdapter(DocumentIntelligencePort):
             version=self.version,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             units=[units],
-            quality="EXACT_TEXT",
+            warnings=warnings,
+            quality="MACHINE_EXTRACTED" if warnings else "EXACT_TEXT",
         )
 
     def _extract_pptx(self, request: DocumentExtractionRequest) -> DocumentArtifact:
