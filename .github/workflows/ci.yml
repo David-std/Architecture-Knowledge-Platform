@@ -790,7 +790,7 @@ jobs:
             const routing = metadata.routing as Record<string, unknown>;
             assert(routing?.selected_adapter === "docling", "routing did not select Docling");
             assert(
-              routing?.selection_reason === "explicit-configuration",
+              routing?.selection_reason === "explicit-or-benchmark-selection",
               "routing was not explicit",
             );
             assert(routing?.fallback === false, "OCR ingest unexpectedly used fallback");
