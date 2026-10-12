@@ -525,6 +525,104 @@ afterAll(async () => {
 });
 
 describe("product lifecycle E2E", () => {
+  it("serves only the latest fully extracted revision when a source path changes", async () => {
+    const sourcePath = path.join(sourceRoot, "source-revision-" + randomUUID() + ".md");
+    const markerOld = "old-" + randomUUID().replaceAll("-", "");
+    const markerNew = "new-" + randomUUID().replaceAll("-", "");
+    const hash = (text: string) => createHash("sha256").update(text).digest("hex");
+    const submit = async (content: string): Promise<string> => {
+      await writeFile(sourcePath, content, "utf8");
+      const accepted = await app.inject({
+        method: "POST",
+        url: "/v1/ingest",
+        headers,
+        payload: {
+          spaceId: defaultSpace,
+          vaultId,
+          sourceUri: sourcePath,
+          expectedSha256: hash(content),
+          title: "Source revision",
+          mediaType: "text/markdown",
+          policy: "REVIEW_REQUIRED",
+        },
+      });
+      expect(accepted.statusCode, accepted.body).toBe(202);
+      const jobId = (accepted.json() as { jobId: string }).jobId;
+      await seedEventConsumerForJob(jobId);
+      await runWorkerDrain(false);
+      await reviewIdForJob(jobId);
+      return jobId;
+    };
+    const findSource = async (jobId: string) => {
+      const result = await db.pool.query<{
+        source_id: string;
+        status: string;
+        sha256: string;
+        artifact_id: string;
+        markdown_hash: string;
+      }>(
+        "select s.id source_id,s.status,s.sha256," +
+          "a.id artifact_id,a.source_markdown_hash markdown_hash " +
+          "from ingest_jobs j join sources s on s.id=(j.stage_outputs->>'sourceId')::uuid " +
+          "join source_artifacts a on a.id=(j.stage_outputs->'extracted'->>'source_artifact_id')::uuid " +
+          "where j.id=$1",
+        [jobId],
+      );
+      const row = result.rows[0];
+      if (!row) throw new Error("SOURCE_REVISION_FIXTURE_MISSING");
+      return row;
+    };
+    const firstContent = sourceContent("Source revision", markerOld);
+    const oldJob = await submit(firstContent);
+    const old = await findSource(oldJob);
+    expect(old).toMatchObject({ status: "ACTIVE", sha256: hash(firstContent) });
+
+    const nextContent = sourceContent("Source revision", markerNew);
+    const newJob = await submit(nextContent);
+    const current = await findSource(newJob);
+    expect(current).toMatchObject({ status: "ACTIVE", sha256: hash(nextContent) });
+    expect(current.source_id).not.toBe(old.source_id);
+    expect(current.artifact_id).not.toBe(old.artifact_id);
+    const previous = await db.pool.query<{ status: string }>(
+      "select status from sources where id=$1",
+      [old.source_id],
+    );
+    expect(previous.rows[0]?.status).toBe("SUPERSEDED");
+    const oldMarkdown = await app.inject({
+      method: "GET",
+      url: "/v1/sources/" + old.source_id + "/artifacts/" + old.artifact_id + "/markdown",
+      headers,
+    });
+    expect(oldMarkdown.statusCode).toBe(404);
+    expect(oldMarkdown.body).not.toContain(markerOld);
+    const oldUnits = await app.inject({
+      method: "GET",
+      url:
+        "/v1/sources/" + old.source_id + "/artifacts/" + old.artifact_id +
+        "/units?sourceSha256=" + old.sha256 + "&markdownSha256=" + old.markdown_hash,
+      headers,
+    });
+    expect(oldUnits.statusCode).toBe(404);
+    const newMarkdown = await app.inject({
+      method: "GET",
+      url: "/v1/sources/" + current.source_id + "/artifacts/" + current.artifact_id + "/markdown",
+      headers,
+    });
+    expect(newMarkdown.statusCode, newMarkdown.body).toBe(200);
+    expect(newMarkdown.body).toContain(markerNew);
+    expect(newMarkdown.body).not.toContain(markerOld);
+    const indexed = await db.pool.query<{ total: number }>(
+      "select count(*)::int total from source_projection_units where source_artifact_id=$1",
+      [current.artifact_id],
+    );
+    expect(indexed.rows[0]?.total).toBeGreaterThan(0);
+    const autoPublished = await db.pool.query<{ total: number }>(
+      "select count(*)::int total from knowledge_documents where vault_id=$1",
+      [vaultId],
+    );
+    expect(autoPublished.rows[0]?.total).toBe(0);
+  }, 180_000);
+
   it("ingests identical bytes with compiler OFF and local mock ON without publishing", async () => {
     const marker = "s1-dual-" + randomUUID().replaceAll("-", "");
     const name = "Identical source under two compiler modes";
