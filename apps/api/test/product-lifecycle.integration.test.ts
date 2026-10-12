@@ -618,6 +618,28 @@ describe("product lifecycle E2E", () => {
         }),
       ],
     );
+    // Federated packets deliberately have no single vault_id, but their
+    // scope still contains this source's vault and must also be invalidated.
+    const federatedPacketId = randomUUID();
+    await db.pool.query(
+      `insert into context_packets(
+        id,space_id,vault_id,actor_id,corpus_revision,query_hash,packet_hash,
+        request,packet,scope
+      ) values ($1,$2,null,null,'source-revision-test',$3,$4,$5::jsonb,$6::jsonb,$7::jsonb)`,
+      [
+        federatedPacketId,
+        defaultSpace,
+        hash("query-" + federatedPacketId),
+        hash("packet-" + federatedPacketId),
+        JSON.stringify({ query: markerOld }),
+        JSON.stringify({ sections: [{ content: markerOld }] }),
+        JSON.stringify({
+          spaceId: defaultSpace,
+          vaultIds: [vaultId, randomUUID()],
+          federated: true,
+        }),
+      ],
+    );
 
     const nextContent = sourceContent("Source revision", markerNew);
     const newJob = await submit(nextContent);
@@ -649,6 +671,11 @@ describe("product lifecycle E2E", () => {
       [cachedPacketId],
     );
     expect(derivedCache.rows[0]?.total).toBe(0);
+    const federatedCache = await db.pool.query<{ total: number }>(
+      "select count(*)::int total from context_packets where id=$1",
+      [federatedPacketId],
+    );
+    expect(federatedCache.rows[0]?.total).toBe(0);
     const oldMarkdown = await app.inject({
       method: "GET",
       url:
