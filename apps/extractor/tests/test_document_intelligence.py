@@ -237,7 +237,7 @@ def test_merged_docx_table_reports_ambiguous_cell_spans(
     assert "DOCX_TABLE_1_MERGED_CELL_UNCERTAIN" in artifact.warnings
     assert artifact.tables[0].headers == []
     assert artifact.tables[0].rows[1] == ["deadline", "47 minutes"]
-    assert "Recovery spans columns" in artifact.tables[0].text_content() if hasattr(artifact.tables[0], "text_content") else "Recovery spans columns" in artifact.tables[0].rows[0]
+    assert any("Recovery spans columns" in cell for cell in artifact.tables[0].rows[0])
     assert artifact.tables[0].locator.heading_path == ["Cell layout"]
     assert artifact.reading_order == [block.id for block in artifact.blocks]
 
