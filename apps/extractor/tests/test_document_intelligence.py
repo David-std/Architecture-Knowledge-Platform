@@ -51,10 +51,10 @@ def test_canonical_text_extractor_replaces_flattened_legacy_path(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "source.md"
-    source.write_text("# Evidence\\nhello", encoding="utf-8")
+    source.write_text("# Evidence\nhello", encoding="utf-8")
     artifact = DeterministicTextAdapter().extract(_request(source))
 
-    assert artifact.pages[0].text == "# Evidence\\nhello"
+    assert artifact.pages[0].text == "# Evidence\nhello"
     assert artifact.quality == "EXACT_TEXT"
     assert [item.kind for item in artifact.blocks] == ["heading", "paragraph"]
     assert artifact.reading_order == [item.id for item in artifact.blocks]
