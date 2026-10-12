@@ -488,7 +488,7 @@ jobs:
           retention-days: 14
   document-intelligence-ocr-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     env:
       DATABASE_URL: postgres://akp:akp@localhost:55432/akp
       AKP_API_TOKEN: akp-ci-integration-token-not-for-production
@@ -526,6 +526,12 @@ jobs:
       - name: Install locked Docling provider
         working-directory: apps/extractor
         run: uv sync --locked --extra docling-cpu
+      - name: Install and verify local Tesseract CLI OCR
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng
+          tesseract --version
+          tesseract --list-langs | grep -qx eng
       - name: Verify the locked CPU runtime
         working-directory: apps/extractor
         run: uv run --locked --extra docling-cpu python -c "import torch; print(torch.__version__); assert torch.version.cuda is None"
@@ -539,17 +545,17 @@ jobs:
           from PIL import Image, ImageDraw, ImageFont
 
           target = Path(os.environ["AKP_INGEST_ROOTS"]) / "scanned-ocr.pdf"
-          image = Image.new("RGB", (1654, 2339), "white")
+          image = Image.new("RGB", (1240, 1754), "white")
           draw = ImageDraw.Draw(image)
-          font = ImageFont.load_default(size=64)
+          font = ImageFont.load_default(size=48)
           draw.multiline_text(
-              (120, 260),
+              (90, 200),
               "AKP OCR PROBE 739241\n"
               "Durable document intelligence\n"
               "Native provenance must survive extraction.",
               fill="black",
               font=font,
-              spacing=36,
+              spacing=26,
           )
           image.save(target, "PDF", resolution=150.0)
           print(target)
@@ -677,6 +683,7 @@ jobs:
 
             const { buildServer } = await import("../src/server.js");
             app = buildServer();
+            process.stderr.write("OCR_E2E phase=api-ingest-start\n");
             const response = await app.inject({
               method: "POST",
               url: "/v1/ingest",
@@ -692,6 +699,8 @@ jobs:
                   complexity: "scanned",
                   extractor: "docling",
                   ocr: true,
+                  ocrEngine: "tesseract_cli",
+                  forceFullPageOcr: true,
                   timeoutSeconds: 300,
                 },
                 policy: "REVIEW_REQUIRED",
@@ -701,6 +710,7 @@ jobs:
             const body = response.json() as { jobId?: string; state?: string };
             assert(body.jobId && body.state === "RECEIVED", "ingest was not accepted");
             const jobId = body.jobId;
+            process.stderr.write("OCR_E2E phase=api-ingest-accepted\n");
 
             await db.pool.query(
               `insert into event_consumers(consumer_name,enabled,max_attempts,lease_seconds)
@@ -729,6 +739,7 @@ jobs:
 
             const tsx = path.join(root, "node_modules", "tsx", "dist", "cli.mjs");
             const worker = path.join(root, "apps", "worker", "src", "worker.ts");
+            process.stderr.write("OCR_E2E phase=worker-drain-start\n");
             const workerResult = await execFileAsync(process.execPath, [tsx, worker], {
               cwd: root,
               timeout: 300_000,
@@ -740,6 +751,7 @@ jobs:
                 AKP_EVENT_CONSUMER: eventConsumer,
               },
             });
+            process.stderr.write("OCR_E2E phase=worker-drain-finished\n");
             assert(
               !workerResult.stderr.includes("UnhandledPromiseRejection"),
               workerResult.stderr,
@@ -781,6 +793,10 @@ jobs:
             const configuration = artifact.configuration as Record<string, unknown>;
             assert(configuration?.native_structure === true, "native structure was not preserved");
             assert(configuration?.ocr_requested === true, "OCR was not requested by Docling");
+            assert(
+              configuration?.ocr_engine === "tesseract_cli",
+              "Docling did not use the requested local Tesseract CLI",
+            );
             const artifactText = JSON.stringify(artifact).toUpperCase();
             assert(
               artifactText.includes("AKP OCR PROBE 739241"),
@@ -841,7 +857,9 @@ jobs:
             await db.close();
           }
           TS
-          pnpm exec tsx apps/api/test/.document-ocr-e2e.runtime.ts | tee reports/ci/document-ocr-e2e.json
+          timeout --signal=TERM --kill-after=10s 900s \
+            pnpm exec tsx apps/api/test/.document-ocr-e2e.runtime.ts \
+            | tee reports/ci/document-ocr-e2e.json
           rm -f apps/api/test/.document-ocr-e2e.runtime.ts
       - name: Capture document OCR diagnostics
         if: always()

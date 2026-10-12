@@ -30,6 +30,7 @@ class DoclingAdapter(_NativeDoclingAdapter):
             from docling.datamodel.base_models import InputFormat  # type: ignore[import-not-found]
             from docling.datamodel.pipeline_options import (  # type: ignore[import-not-found]
                 PdfPipelineOptions,
+                TesseractCliOcrOptions,
             )
             from docling.document_converter import (  # type: ignore[import-not-found]
                 DocumentConverter,
@@ -47,8 +48,19 @@ class DoclingAdapter(_NativeDoclingAdapter):
         if media_type != "application/pdf":
             return DocumentConverter(), ocr_requested
 
+        selected_engine = request.configuration.get("ocr_engine") or "provider-default"
+        if selected_engine not in ("provider-default", "tesseract_cli"):
+            raise DocumentIntelligenceError("DOCLING_OCR_ENGINE_UNSUPPORTED")
+
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_ocr = ocr_requested
+        if ocr_requested and selected_engine == "tesseract_cli":
+            # Explicit, locally installed CLI OCR; never silently switch
+            # engines when the caller requested a specific implementation.
+            pipeline_options.ocr_options = TesseractCliOcrOptions(
+                lang=["eng"],
+                scale=2.0,
+            )
         pipeline_options.do_table_structure = True
         timeout = float(request.configuration.get("timeout_seconds", 300))
         if timeout <= 0 or timeout > 900:
@@ -87,7 +99,11 @@ class DoclingAdapter(_NativeDoclingAdapter):
                 {
                     "native_structure": True,
                     "ocr_requested": ocr_requested,
-                    "ocr_engine": "provider-default" if ocr_requested else None,
+                    "ocr_engine": (
+                        request.configuration.get("ocr_engine") or "provider-default"
+                    )
+                    if ocr_requested
+                    else None,
                 }
             )
             return artifact

@@ -106,3 +106,67 @@ def test_both_adapters_fail_closed_without_exposing_provider_text(
     expected = "DOCLING_EXTRACTION_FAILED" if provider_throws else "DOCLING_CONVERSION_INCOMPLETE"
     with pytest.raises(DocumentIntelligenceError, match=f"^{expected}$"):
         adapter_type().extract(request)
+
+def test_explicit_tesseract_cli_ocr_is_passed_to_docling_pdf_pipeline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The selected CLI OCR must be wired, not merely recorded in metadata."""
+    from types import ModuleType
+
+    class Pipeline:
+        def __init__(self) -> None:
+            self.ocr_options = SimpleNamespace(force_full_page_ocr=False)
+            self.do_ocr = False
+            self.do_table_structure = False
+            self.document_timeout = 0.0
+
+    class CliOptions:
+        def __init__(self, *, lang: list[str], scale: float) -> None:
+            self.lang = lang
+            self.scale = scale
+            self.force_full_page_ocr = False
+
+    def module(name: str) -> ModuleType:
+        result = ModuleType(name)
+        result.__path__ = []  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, name, result)
+        return result
+
+    module("docling")
+    module("docling.datamodel")
+    base_models = module("docling.datamodel.base_models")
+    pipeline_options = module("docling.datamodel.pipeline_options")
+    converter_module = module("docling.document_converter")
+    base_models.InputFormat = SimpleNamespace(PDF="pdf")  # type: ignore[attr-defined]
+    pipeline_options.PdfPipelineOptions = Pipeline  # type: ignore[attr-defined]
+    pipeline_options.TesseractCliOcrOptions = CliOptions  # type: ignore[attr-defined]
+    converter_module.PdfFormatOption = lambda *, pipeline_options: pipeline_options  # type: ignore[attr-defined]
+    converter_module.DocumentConverter = lambda **kwargs: kwargs  # type: ignore[attr-defined]
+    source = tmp_path / "scanned.pdf"
+    source.write_bytes(b"%PDF-synthetic-test-only")
+    request = DocumentExtractionRequest(
+        source_path=source,
+        source_id="tesseract-cli-test",
+        media_type="application/pdf",
+        complexity="scanned",
+        ocr_required=True,
+        configuration={
+            "ocr_engine": "tesseract_cli",
+            "force_full_page_ocr": True,
+            "timeout_seconds": 300,
+        },
+    )
+    converter, selected = DoclingAdapter()._converter(request)
+    assert selected is True
+    configured = converter["format_options"]["pdf"]
+    assert configured.do_ocr is True
+    assert configured.document_timeout == 300
+    assert isinstance(configured.ocr_options, CliOptions)
+    assert configured.ocr_options.lang == ["eng"]
+    assert configured.ocr_options.force_full_page_ocr is True
+
+    request.configuration["ocr_engine"] = "unsupported-engine"
+    with pytest.raises(DocumentIntelligenceError, match="DOCLING_OCR_ENGINE_UNSUPPORTED"):
+        DoclingAdapter()._converter(request)
+
