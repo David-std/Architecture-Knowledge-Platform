@@ -17,6 +17,7 @@ from typing import Any, ClassVar
 
 from bs4 import BeautifulSoup
 from docx import Document
+from docx.table import Table
 from PIL import Image
 from pptx import Presentation
 from pypdf import PdfReader
@@ -634,7 +635,41 @@ class DeterministicTextAdapter(DocumentIntelligencePort):
         document = Document(str(request.source_path))
         units = _ParsedUnits()
         heading_stack: list[str] = []
-        for paragraph_number, paragraph in enumerate(document.paragraphs, start=1):
+        paragraph_number = 0
+        table_number = 0
+        # python-docx's separate paragraphs/tables lists lose their original
+        # interleaving. Body-order iteration is required for quote replay.
+        for block in document.iter_inner_content():
+            if isinstance(block, Table):
+                table_number += 1
+                rows = [[cell.text.strip() for cell in row.cells] for row in block.rows]
+                if not rows:
+                    continue
+                locator = _new_locator(
+                    digest,
+                    request.source_uri or request.source_id,
+                    kind="docx-table",
+                    table=table_number,
+                    row=1,
+                    heading_path=heading_stack,
+                )
+                table_item = TableArtifact(
+                    id=f"table-{table_number}",
+                    kind="table",
+                    text=" | ".join(rows[0]),
+                    locator=locator,
+                    headers=rows[0],
+                    rows=rows[1:],
+                    metadata={"heading_path": [*heading_stack]},
+                )
+                units.blocks.append(table_item)
+                units.tables.append(table_item)
+                units.locators.append(locator)
+                units.reading_order.append(table_item.id or "")
+                continue
+
+            paragraph_number += 1
+            paragraph = block
             text = paragraph.text.strip()
             if not text:
                 continue
@@ -666,29 +701,6 @@ class DeterministicTextAdapter(DocumentIntelligencePort):
             units.locators.append(locator)
             units.reading_order.append(item.id or "")
             (units.headings if kind == "heading" else units.paragraphs).append(item)
-        for table_number, table in enumerate(document.tables, start=1):
-            rows = [[cell.text.strip() for cell in row.cells] for row in table.rows]
-            if not rows:
-                continue
-            locator = _new_locator(
-                digest,
-                request.source_uri or request.source_id,
-                kind="docx-table",
-                table=table_number,
-                row=1,
-            )
-            table_item = TableArtifact(
-                id=f"table-{table_number}",
-                kind="table",
-                text=" | ".join(rows[0]),
-                locator=locator,
-                headers=rows[0],
-                rows=rows[1:],
-            )
-            units.blocks.append(table_item)
-            units.tables.append(table_item)
-            units.locators.append(locator)
-            units.reading_order.append(table_item.id or "")
         return _artifact_from_units(
             request,
             digest,

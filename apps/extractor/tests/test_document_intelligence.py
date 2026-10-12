@@ -1,4 +1,6 @@
 from pathlib import Path
+
+from docx import Document as WordDocument
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
@@ -41,6 +43,49 @@ def test_deterministic_artifact_preserves_structural_units_and_locators(tmp_path
     assert artifact.reading_order
     assert all(locator.source_hash == artifact.source_hash for locator in artifact.locators)
     assert "A paragraph." in artifact.text_content()
+
+
+def test_docx_baseline_preserves_interleaved_tables_paragraphs_and_locators(
+    tmp_path: Path,
+) -> None:
+    document = WordDocument()
+    document.add_heading("Operations", level=1)
+    document.add_paragraph("Before the first table.")
+    first = document.add_table(rows=2, cols=2)
+    first.cell(0, 0).text = "metric"
+    first.cell(0, 1).text = "value"
+    first.cell(1, 0).text = "recovery"
+    first.cell(1, 1).text = "47 minutes"
+    document.add_paragraph("")  # Empty body elements must not shift block order.
+    document.add_paragraph("Between the two tables.")
+    second = document.add_table(rows=2, cols=2)
+    second.cell(0, 0).text = "mode"
+    second.cell(0, 1).text = "status"
+    second.cell(1, 0).text = "local"
+    second.cell(1, 1).text = "enabled"
+    document.add_paragraph("After the second table.")
+    source = tmp_path / "interleaved.docx"
+    document.save(source)
+
+    artifact = DeterministicTextAdapter().extract(
+        _request(
+            source,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+    )
+
+    assert [block.kind for block in artifact.blocks] == [
+        "heading", "paragraph", "table", "paragraph", "table", "paragraph"
+    ]
+    assert artifact.reading_order == [block.id for block in artifact.blocks]
+    assert artifact.tables[0].headers == ["metric", "value"]
+    assert artifact.tables[0].rows == [["recovery", "47 minutes"]]
+    assert artifact.tables[1].rows == [["local", "enabled"]]
+    assert [table.locator.table for table in artifact.tables] == [1, 2]
+    assert all(
+        table.locator.heading_path == ["Operations"] for table in artifact.tables
+    )
+    assert all(locator.source_hash == artifact.source_hash for locator in artifact.locators)
 
 
 def test_html_extraction_discards_active_content_and_keeps_visible_text(tmp_path: Path) -> None:
