@@ -12,7 +12,7 @@ from pypdf.errors import PdfReadError
 
 from app.adapters.deterministic import DeterministicTextAdapter
 from app.models import DocumentArtifact, StructuralLocator
-from app.ports import DocumentExtractionRequest
+from app.ports import DocumentExtractionRequest, DocumentIntelligenceError
 from app.registry import build_default_registry
 
 
@@ -94,6 +94,31 @@ def test_digital_pdf_reports_partial_blank_page_without_hiding_valid_pages(
     assert artifact.quality == "MACHINE_EXTRACTED"
     assert {item.locator.page for item in artifact.blocks} >= {1, 2}
     assert all(locator.source_hash == artifact.source_hash for locator in artifact.locators)
+
+
+@pytest.mark.parametrize("format_name", ["markdown", "docx", "pdf"])
+def test_fully_empty_document_fails_closed_instead_of_exposing_empty_source(
+    tmp_path: Path,
+    format_name: str,
+) -> None:
+    if format_name == "markdown":
+        source = tmp_path / "empty.md"
+        source.write_text(" \\n", encoding="utf-8")
+        media_type = "text/markdown"
+    elif format_name == "docx":
+        source = tmp_path / "empty.docx"
+        WordDocument().save(source)
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    else:
+        source = tmp_path / "empty.pdf"
+        writer = PdfWriter()
+        writer.add_blank_page(width=612, height=792)
+        with source.open("wb") as output:
+            writer.write(output)
+        media_type = "application/pdf"
+
+    with pytest.raises(DocumentIntelligenceError, match="^DOCUMENT_EXTRACTION_EMPTY$"):
+        DeterministicTextAdapter().extract(_request(source, media_type))
 
 
 def test_corrupt_pdf_cannot_be_emitted_as_successful_source(

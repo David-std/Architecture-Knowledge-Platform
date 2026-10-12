@@ -97,6 +97,10 @@ Runtime inventory of all `apps/extractor/app/` Python entry points and adapter m
 
 The public/API-compatible `Artifact` model is **not** removed: `adapters/base.py` still uses it to serve existing compatibility response shapes. This cutover requires no data migration because no legacy flattened extractor persisted independent state; existing immutable originals and source projections remain untouched. Rollback restores the prior Git tree, not a dual parser. Downstream _unregistered_ Python imports cannot be proven absent outside this repository and are not advertised as supported API. Run the locked extractor suite, runtime API integration, docs and relevant release workflows on the final SHA before claiming full closure.
 
+### Completely empty source extraction must fail
+
+`_artifact_from_units` previously returned an otherwise valid DocumentArtifact with zero extracted structural blocks, including for blank Markdown, blank DOCX and a blank PDF. The renderer would have no faithful source Markdown to persist, making a nominal successful extractor response misleading. The shared deterministic adapter now rejects this with `DOCUMENT_EXTRACTION_EMPTY`, before durable source projection, instead of silently emitting an empty machine claim. A three-format negative regression checks the exact failure. This is intentionally different from **partially blank** digital PDFs, which retain usable page evidence plus page-specific warnings.
+
 ### Digital PDF partial-page and corrupt-input regressions
 
 The locked `pypdf` deterministic baseline now has a source-file test built from the existing genuine two-page PDF plus a blank third page. It must preserve the first two text pages and their SHA-bound locators while recording `PAGE_3_NO_TEXT_EXTRACTED` and baseline OCR/layout limitations; it must not claim the blank page was transcribed. A corrupt PDF triggers `PdfReadError` instead of yielding a successful artifact. These tests cover bounded failure transparency, not broad multi-column PDF recall or arbitrary damaged PDF repair.

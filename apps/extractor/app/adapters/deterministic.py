@@ -35,6 +35,7 @@ from ..ports import (
     AdapterAvailability,
     CapabilityStatus,
     DocumentExtractionRequest,
+    DocumentIntelligenceError,
     DocumentIntelligencePort,
     UnsupportedMediaType,
 )
@@ -394,8 +395,10 @@ def _artifact_from_units(
     merged.locators.insert(0, source_locator)
     all_pages = pages or []
     merged.locators.extend(page.locator for page in all_pages)
-    if not merged.blocks and not all_pages:
-        warnings = [*(warnings or []), "NO_TEXT_EXTRACTED"]
+    # No source blocks means no faithful Markdown can be emitted. An empty
+    # page-only result is not a successful extraction, regardless of format.
+    if not merged.blocks:
+        raise DocumentIntelligenceError("DOCUMENT_EXTRACTION_EMPTY")
     return DocumentArtifact(
         source_id=request.source_id,
         source_hash=source_hash,
