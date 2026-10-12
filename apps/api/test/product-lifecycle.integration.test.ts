@@ -611,7 +611,11 @@ describe("product lifecycle E2E", () => {
         hash("packet-" + cachedPacketId),
         JSON.stringify({ query: markerOld }),
         JSON.stringify({ sections: [{ content: markerOld }] }),
-        JSON.stringify({ spaceId: defaultSpace, vaultIds: [vaultId], federated: false }),
+        JSON.stringify({
+          spaceId: defaultSpace,
+          vaultIds: [vaultId],
+          federated: false,
+        }),
       ],
     );
 
