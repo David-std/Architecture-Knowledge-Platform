@@ -271,7 +271,8 @@ async function ingestReviewSourceIsCurrent(
       "and s.sha256=j.stage_outputs->'raw'->>'sha256' " +
       "and exists (select 1 from source_artifacts a " +
       "where a.id=(j.stage_outputs->'extracted'->>'source_artifact_id')::uuid " +
-      "and a.source_id=s.id and a.source_hash=s.sha256)",
+      "and a.source_id=s.id and a.source_hash=s.sha256) " +
+      "for share of s",
     [jobId],
   );
   return Boolean(result.rowCount);
