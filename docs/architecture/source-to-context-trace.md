@@ -91,6 +91,10 @@ An exact-target backfill rejects an altered structured-content digest before any
 
 The API now verifies the parsed stored DocumentArtifact identity, extractor/version, configuration digest and canonical structured-content hash on both faithful Markdown and source-unit reads. These checks use the exact same canonical JSON serializer as the ingestion worker. Any mismatch returns 409 before exposing private source bytes or fragments. The real dual-ingest E2E deliberately changes the stored structured digest and checks both reads deny content; restoring the original digest is test-only cleanup. Corruption is not silently accepted or overwritten through a read operation.
 
+### Headerless DOCX table fidelity
+
+The deterministic DOCX adapter must not interpret the first data row as a header merely because it occurs first. Native `w:tblHeader` (including explicit false) now controls whether the first row is a header. Otherwise `headers=[]` and every row survives in `rows`, including empty cells; the shared Markdown renderer already emits neutral positional column labels for headerless tables. A generated real DOCX fixture checks both declared headers (the interleaved-table case) and the explicit-false/headerless case. This does not yet certify nested/merged/ragged DOCX layouts or provider-independent accuracy.
+
 ### Lossy UTF-8 input quarantine
 
 The active deterministic Markdown/text adapter previously decoded with `errors="replace"` without a warning and retained `EXACT_TEXT` even when invalid UTF-8 bytes were replaced. It now preserves the immutable raw-byte SHA, emits `INVALID_UTF8_REPLACED` and downgrades the extracted artifact to `MACHINE_EXTRACTED`. The negative regression covers an invalid byte and a valid UTF-8 control. It does not rewrite the original or approve any derived claim.

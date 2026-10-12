@@ -17,6 +17,7 @@ from typing import Any, ClassVar
 
 from bs4 import BeautifulSoup
 from docx import Document
+from docx.oxml.ns import qn
 from docx.table import Table
 from PIL import Image
 from pptx import Presentation
@@ -665,14 +666,30 @@ class DeterministicTextAdapter(DocumentIntelligencePort):
                     row=1,
                     heading_path=heading_stack,
                 )
+                # DOCX has no implicit first-row header semantics. Only the
+                # native w:tblHeader marker may classify a row as a header.
+                first_row_properties = block.rows[0]._tr.trPr
+                header_flag = (
+                    first_row_properties.find(qn("w:tblHeader"))
+                    if first_row_properties is not None
+                    else None
+                )
+                has_header = (
+                    header_flag is not None
+                    and str(header_flag.get(qn("w:val"), "1")).lower()
+                    not in {"0", "false", "off"}
+                )
                 table_item = TableArtifact(
                     id=f"table-{table_number}",
                     kind="table",
                     text=" | ".join(rows[0]),
                     locator=locator,
-                    headers=rows[0],
-                    rows=rows[1:],
-                    metadata={"heading_path": [*heading_stack]},
+                    headers=rows[0] if has_header else [],
+                    rows=rows[1:] if has_header else rows,
+                    metadata={
+                        "heading_path": [*heading_stack],
+                        "header_row_declared": has_header,
+                    },
                 )
                 units.blocks.append(table_item)
                 units.tables.append(table_item)

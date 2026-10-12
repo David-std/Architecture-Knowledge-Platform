@@ -4,6 +4,8 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
 from docx import Document as WordDocument
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from pydantic import ValidationError
 
 from app.adapters.deterministic import DeterministicTextAdapter
@@ -56,6 +58,7 @@ def test_docx_baseline_preserves_interleaved_tables_paragraphs_and_locators(
     first.cell(0, 1).text = "value"
     first.cell(1, 0).text = "recovery"
     first.cell(1, 1).text = "47 minutes"
+    first.rows[0]._tr.get_or_add_trPr().append(OxmlElement("w:tblHeader"))
     document.add_paragraph("")  # Empty body elements must not shift block order.
     document.add_paragraph("Between the two tables.")
     second = document.add_table(rows=2, cols=2)
@@ -63,6 +66,7 @@ def test_docx_baseline_preserves_interleaved_tables_paragraphs_and_locators(
     second.cell(0, 1).text = "status"
     second.cell(1, 0).text = "local"
     second.cell(1, 1).text = "enabled"
+    second.rows[0]._tr.get_or_add_trPr().append(OxmlElement("w:tblHeader"))
     document.add_paragraph("After the second table.")
     source = tmp_path / "interleaved.docx"
     document.save(source)
@@ -81,10 +85,48 @@ def test_docx_baseline_preserves_interleaved_tables_paragraphs_and_locators(
     assert artifact.tables[0].headers == ["metric", "value"]
     assert artifact.tables[0].rows == [["recovery", "47 minutes"]]
     assert artifact.tables[1].rows == [["local", "enabled"]]
+    assert all(table.metadata["header_row_declared"] is True for table in artifact.tables)
     assert [table.locator.table for table in artifact.tables] == [1, 2]
     assert all(
         table.locator.heading_path == ["Operations"] for table in artifact.tables
     )
+    assert all(locator.source_hash == artifact.source_hash for locator in artifact.locators)
+
+
+def test_docx_without_declared_header_keeps_first_and_every_data_row(
+    tmp_path: Path,
+) -> None:
+    document = WordDocument()
+    document.add_heading("Unlabelled measures", level=1)
+    table = document.add_table(rows=3, cols=2)
+    for row, cells in enumerate(
+        [("recovery", "47 minutes"), ("latency", "125 ms"), ("owner", "")]
+    ):
+        table.cell(row, 0).text = cells[0]
+        table.cell(row, 1).text = cells[1]
+    # Explicit false must not become a header either.
+    disabled_header = OxmlElement("w:tblHeader")
+    disabled_header.set(qn("w:val"), "0")
+    table.rows[0]._tr.get_or_add_trPr().append(disabled_header)
+    source = tmp_path / "headerless.docx"
+    document.save(source)
+
+    artifact = DeterministicTextAdapter().extract(
+        _request(
+            source,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+    )
+    assert len(artifact.tables) == 1
+    parsed_table = artifact.tables[0]
+    assert parsed_table.headers == []
+    assert parsed_table.rows == [
+        ["recovery", "47 minutes"], ["latency", "125 ms"], ["owner", ""]
+    ]
+    assert parsed_table.locator.table == 1
+    assert parsed_table.locator.heading_path == ["Unlabelled measures"]
+    assert parsed_table.metadata["header_row_declared"] is False
+    assert artifact.reading_order == [block.id for block in artifact.blocks]
     assert all(locator.source_hash == artifact.source_hash for locator in artifact.locators)
 
 
