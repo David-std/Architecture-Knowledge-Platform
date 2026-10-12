@@ -258,11 +258,34 @@ async function appendPublicationLifecycle(
   }
 }
 
+async function ingestReviewSourceIsCurrent(
+  client: { query: PublicationClient["query"] },
+  manifest: Record<string, unknown>,
+): Promise<boolean> {
+  const jobId = manifest.jobId;
+  if (typeof jobId !== "string") return true;
+  const result = await client.query(
+    "select s.id from ingest_jobs j " +
+      "join sources s on s.id=(j.stage_outputs->>'sourceId')::uuid " +
+      "where j.id=$1 and s.status='ACTIVE' " +
+      "and s.sha256=j.stage_outputs->'raw'->>'sha256' " +
+      "and exists (select 1 from source_artifacts a " +
+      "where a.id=(j.stage_outputs->'extracted'->>'source_artifact_id')::uuid " +
+      "and a.source_id=s.id and a.source_hash=s.sha256)",
+    [jobId],
+  );
+  return Boolean(result.rowCount);
+}
+
 async function finalizePublicationTransaction(
   client: PublicationClient,
   review: Record<string, unknown>,
   revision: string,
 ): Promise<boolean> {
+  const manifest = (review.impact_manifest ?? {}) as Record<string, unknown>;
+  if (!(await ingestReviewSourceIsCurrent(client, manifest))) {
+    throw new Error("SOURCE_REVISION_SUPERSEDED");
+  }
   const approved = await client.query(
     `
     update reviews
@@ -274,7 +297,6 @@ async function finalizePublicationTransaction(
     [review.id, revision],
   );
   if (!approved.rowCount) return false;
-  const manifest = (review.impact_manifest ?? {}) as Record<string, unknown>;
   await finalizeDecisionCandidatePublicationInTransaction(client, {
     reviewId: String(review.id),
     revision,
@@ -1597,6 +1619,14 @@ export function registerReviewRoutes(app: FastifyInstance, db: Postgres): void {
         }
         if (!actor)
           return reply.code(401).send({ code: "AUTHENTICATION_REQUIRED" });
+        if (
+          !(await ingestReviewSourceIsCurrent(
+            db.pool,
+            (review.impact_manifest ?? {}) as Record<string, unknown>,
+          ))
+        ) {
+          return reply.code(409).send({ code: "SOURCE_REVISION_SUPERSEDED" });
+        }
         let approval: Awaited<ReturnType<typeof recordReviewApproval>>;
         try {
           approval = await recordReviewApproval(db, {
