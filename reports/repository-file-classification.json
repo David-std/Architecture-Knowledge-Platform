@@ -787,41 +787,6 @@
       "reason": "runtime, build or operational code"
     },
     {
-      "path": "apps/extractor/app/extractors/__init__.py",
-      "category": "PRODUCT_CODE",
-      "reason": "runtime, build or operational code"
-    },
-    {
-      "path": "apps/extractor/app/extractors/docx.py",
-      "category": "PRODUCT_CODE",
-      "reason": "runtime, build or operational code"
-    },
-    {
-      "path": "apps/extractor/app/extractors/html.py",
-      "category": "PRODUCT_CODE",
-      "reason": "runtime, build or operational code"
-    },
-    {
-      "path": "apps/extractor/app/extractors/image.py",
-      "category": "PRODUCT_CODE",
-      "reason": "runtime, build or operational code"
-    },
-    {
-      "path": "apps/extractor/app/extractors/pdf.py",
-      "category": "PRODUCT_CODE",
-      "reason": "runtime, build or operational code"
-    },
-    {
-      "path": "apps/extractor/app/extractors/pptx.py",
-      "category": "PRODUCT_CODE",
-      "reason": "runtime, build or operational code"
-    },
-    {
-      "path": "apps/extractor/app/extractors/text.py",
-      "category": "PRODUCT_CODE",
-      "reason": "runtime, build or operational code"
-    },
-    {
       "path": "apps/extractor/app/main.py",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -908,11 +873,6 @@
     },
     {
       "path": "apps/extractor/tests/test_routing_policies.py",
-      "category": "PRODUCT_TEST",
-      "reason": "executable product test"
-    },
-    {
-      "path": "apps/extractor/tests/test_text.py",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
