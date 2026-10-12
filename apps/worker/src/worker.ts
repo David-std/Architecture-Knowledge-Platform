@@ -287,7 +287,7 @@ async function activateExtractedSourceRevision(
     if (input.vaultId) {
       await client.query(
         "delete from context_packets where space_id=$1 " +
-          "and (vault_id=$2 or (scope->'vaultIds') ? $2)",
+          "and (vault_id=$2::uuid or (scope->'vaultIds') ? $2::text)",
         [input.spaceId, input.vaultId],
       );
     }
