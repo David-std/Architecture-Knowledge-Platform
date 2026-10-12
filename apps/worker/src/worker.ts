@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { pipeline } from "node:stream/promises";
 import {
   Postgres,
+  type PostgresPoolClient,
   applyNextSourceConnectorEvent,
   claimContextFabricNode,
   claimNextAssuranceRun,
@@ -208,6 +209,76 @@ async function updateState(
   );
 }
 
+/**
+ * Source readers accept only a complete, latest extracted revision. Raw bytes
+ * are immutable; currentness is a mutable scoped pointer, not Git approval.
+ */
+async function activateExtractedSourceRevision(
+  client: PostgresPoolClient,
+  input: {
+    jobId: string;
+    sourceId: string;
+    sourceHash: string;
+    sourceUri: string;
+    spaceId: string;
+    vaultId: string | null;
+  },
+): Promise<void> {
+  await client.query("select pg_advisory_xact_lock(hashtextextended($1,0))", [
+    JSON.stringify([input.spaceId, input.vaultId, input.sourceUri]),
+  ]);
+  // A later requested revision with an already persisted artifact wins even
+  // when an earlier worker finishes its extraction out of order.
+  const newer = await client.query(
+    "select j.id from ingest_jobs j " +
+      "join ingest_jobs current_job on current_job.id=$1 " +
+      "where j.space_id=$2 and j.vault_id is not distinct from $3 " +
+      "and j.source_uri=$4 and j.id<>$1 and j.cancelled_at is null " +
+      "and (j.created_at,j.id)>(current_job.created_at,current_job.id) " +
+      "and j.stage_outputs->'extracted'->>'source_artifact_id' is not null " +
+      "and j.stage_outputs->'raw'->>'sha256'<>$5 limit 1",
+    [input.jobId, input.spaceId, input.vaultId, input.sourceUri, input.sourceHash],
+  );
+  if (newer.rowCount) {
+    await client.query(
+      "update sources set status='SUPERSEDED' " +
+        "where id=$1 and space_id=$2 and vault_id is not distinct from $3 and sha256=$4",
+      [input.sourceId, input.spaceId, input.vaultId, input.sourceHash],
+    );
+    return;
+  }
+  const old = await client.query<{ id: string }>(
+    "update sources set status='SUPERSEDED' " +
+      "where space_id=$1 and vault_id is not distinct from $2 " +
+      "and source_uri=$3 and id<>$4 and status='ACTIVE' returning id",
+    [input.spaceId, input.vaultId, input.sourceUri, input.sourceId],
+  );
+  const activated = await client.query(
+    "update sources set status='ACTIVE' " +
+      "where id=$1 and space_id=$2 and vault_id is not distinct from $3 " +
+      "and sha256=$4 returning id",
+    [input.sourceId, input.spaceId, input.vaultId, input.sourceHash],
+  );
+  if (activated.rowCount !== 1) {
+    throw new Error("SOURCE_REVISION_ACTIVATION_IDENTITY_MISMATCH");
+  }
+  if (old.rows.length) {
+    // Git remains authoritative; a cited superseded source requires renewed
+    // human review, not a silent machine rewrite or auto-publication.
+    await client.query(
+      "update knowledge_documents k " +
+        "set refresh_status='STALE_PENDING_REVIEW', " +
+        "stale_reason='Cited raw source revision superseded',updated_at=now() " +
+        "where k.space_id=$1 and k.vault_id is not distinct from $2 " +
+        "and k.refresh_status='CURRENT' and exists (" +
+        "select 1 from document_evidence de " +
+        "join evidence e on e.id=de.evidence_id " +
+        "where de.document_id=k.id and e.source_id=any($3::uuid[]))",
+      [input.spaceId, input.vaultId, old.rows.map((row) => row.id)],
+    );
+  }
+}
+
 type ProviderTaskEvent =
   "PROVIDER_TASK_STARTED" | "PROVIDER_TASK_SUCCEEDED" | "PROVIDER_TASK_FAILED";
 
@@ -297,9 +368,9 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
               `
               insert into sources(
                 space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
-                object_key,created_by,metadata,model_residency
+                object_key,created_by,metadata,model_residency,status
               )
-              values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
+              values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,'STAGED')
               on conflict (vault_id,sha256) where vault_id is not null
                 do update set
                   source_uri=excluded.source_uri,
@@ -318,9 +389,9 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
               `
               insert into sources(
                 space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
-                object_key,created_by,metadata,model_residency
+                object_key,created_by,metadata,model_residency,status
               )
-              values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
+              values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,'STAGED')
               on conflict (space_id,sha256) where vault_id is null
                 do update set
                   source_uri=excluded.source_uri,
@@ -599,6 +670,14 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
           const evidenceId = storedEvidence.rows[0]?.id;
           if (!evidenceId) throw new Error("Could not persist evidence.");
           extracted.evidence_id = evidenceId;
+          await activateExtractedSourceRevision(client, {
+            jobId: id,
+            sourceId: String(outputs.sourceId),
+            sourceHash: raw.sha256,
+            sourceUri,
+            spaceId,
+            vaultId,
+          });
         },
       );
     } finally {
