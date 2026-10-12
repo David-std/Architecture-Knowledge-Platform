@@ -528,8 +528,14 @@ def document_from_docling_conversion(conversion: Any) -> Any:
     messages are provider-controlled and must not expose paths or source bytes.
     """
     if hasattr(conversion, "status"):
-        status = getattr(conversion.status, "value", conversion.status)
-        if str(status).lower() != "success" or getattr(conversion, "errors", []):
+        status = conversion.status
+        # The installed Docling version may encode ConversionStatus as a
+        # numeric Enum rather than a string Enum. Compare its symbolic name
+        # before the value, while rejecting unknown/partial statuses.
+        status_label = getattr(status, "name", None)
+        if status_label is None:
+            status_label = getattr(status, "value", status)
+        if str(status_label).strip().lower() != "success" or getattr(conversion, "errors", []):
             raise DocumentIntelligenceError("DOCLING_CONVERSION_INCOMPLETE")
     return getattr(conversion, "document", conversion)
 

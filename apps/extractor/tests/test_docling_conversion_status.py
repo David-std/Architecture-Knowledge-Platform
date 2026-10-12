@@ -22,19 +22,37 @@ class Status(str, Enum):
     PARTIAL_SUCCESS = "partial_success"
 
 
-def test_accepts_a_complete_conversion_and_direct_native_document() -> None:
+class NumericStatus(Enum):
+    SUCCESS = 1
+    PARTIAL_SUCCESS = 2
+    FAILURE = 3
+
+
+@pytest.mark.parametrize("status", [Status.SUCCESS, NumericStatus.SUCCESS, "success"])
+def test_accepts_a_complete_conversion_and_direct_native_document(status: object) -> None:
     document = SimpleNamespace(pages={})
     assert document_from_docling_conversion(document) is document
     assert (
         document_from_docling_conversion(
-            SimpleNamespace(status=Status.SUCCESS, errors=[], document=document)
+            SimpleNamespace(status=status, errors=[], document=document)
         )
         is document
     )
 
 
 @pytest.mark.parametrize(
-    "status", [Status.PARTIAL_SUCCESS, "failure", "skipped", "started", "pending", "unknown", None]
+    "status",
+    [
+        Status.PARTIAL_SUCCESS,
+        NumericStatus.PARTIAL_SUCCESS,
+        NumericStatus.FAILURE,
+        "failure",
+        "skipped",
+        "started",
+        "pending",
+        "unknown",
+        None,
+    ]
 )
 def test_rejects_incomplete_or_unknown_conversion_status(status: object) -> None:
     conversion = SimpleNamespace(status=status, document=SimpleNamespace(pages={}))
