@@ -526,10 +526,14 @@ afterAll(async () => {
 
 describe("product lifecycle E2E", () => {
   it("serves only the latest fully extracted revision when a source path changes", async () => {
-    const sourcePath = path.join(sourceRoot, "source-revision-" + randomUUID() + ".md");
+    const sourcePath = path.join(
+      sourceRoot,
+      "source-revision-" + randomUUID() + ".md",
+    );
     const markerOld = "old-" + randomUUID().replaceAll("-", "");
     const markerNew = "new-" + randomUUID().replaceAll("-", "");
-    const hash = (text: string) => createHash("sha256").update(text).digest("hex");
+    const hash = (text: string) =>
+      createHash("sha256").update(text).digest("hex");
     const submit = async (content: string): Promise<string> => {
       await writeFile(sourcePath, content, "utf8");
       const accepted = await app.inject({
@@ -580,7 +584,10 @@ describe("product lifecycle E2E", () => {
     const nextContent = sourceContent("Source revision", markerNew);
     const newJob = await submit(nextContent);
     const current = await findSource(newJob);
-    expect(current).toMatchObject({ status: "ACTIVE", sha256: hash(nextContent) });
+    expect(current).toMatchObject({
+      status: "ACTIVE",
+      sha256: hash(nextContent),
+    });
     expect(current.source_id).not.toBe(old.source_id);
     expect(current.artifact_id).not.toBe(old.artifact_id);
     const previous = await db.pool.query<{ status: string }>(
@@ -590,7 +597,12 @@ describe("product lifecycle E2E", () => {
     expect(previous.rows[0]?.status).toBe("SUPERSEDED");
     const oldMarkdown = await app.inject({
       method: "GET",
-      url: "/v1/sources/" + old.source_id + "/artifacts/" + old.artifact_id + "/markdown",
+      url:
+        "/v1/sources/" +
+        old.source_id +
+        "/artifacts/" +
+        old.artifact_id +
+        "/markdown",
       headers,
     });
     expect(oldMarkdown.statusCode).toBe(404);
@@ -598,14 +610,25 @@ describe("product lifecycle E2E", () => {
     const oldUnits = await app.inject({
       method: "GET",
       url:
-        "/v1/sources/" + old.source_id + "/artifacts/" + old.artifact_id +
-        "/units?sourceSha256=" + old.sha256 + "&markdownSha256=" + old.markdown_hash,
+        "/v1/sources/" +
+        old.source_id +
+        "/artifacts/" +
+        old.artifact_id +
+        "/units?sourceSha256=" +
+        old.sha256 +
+        "&markdownSha256=" +
+        old.markdown_hash,
       headers,
     });
     expect(oldUnits.statusCode).toBe(404);
     const newMarkdown = await app.inject({
       method: "GET",
-      url: "/v1/sources/" + current.source_id + "/artifacts/" + current.artifact_id + "/markdown",
+      url:
+        "/v1/sources/" +
+        current.source_id +
+        "/artifacts/" +
+        current.artifact_id +
+        "/markdown",
       headers,
     });
     expect(newMarkdown.statusCode, newMarkdown.body).toBe(200);

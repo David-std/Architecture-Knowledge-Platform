@@ -237,7 +237,13 @@ async function activateExtractedSourceRevision(
       "and (j.created_at,j.id)>(current_job.created_at,current_job.id) " +
       "and j.stage_outputs->'extracted'->>'source_artifact_id' is not null " +
       "and j.stage_outputs->'raw'->>'sha256'<>$5 limit 1",
-    [input.jobId, input.spaceId, input.vaultId, input.sourceUri, input.sourceHash],
+    [
+      input.jobId,
+      input.spaceId,
+      input.vaultId,
+      input.sourceUri,
+      input.sourceHash,
+    ],
   );
   if (newer.rowCount) {
     await client.query(
