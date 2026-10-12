@@ -273,7 +273,7 @@ async function activateExtractedSourceRevision(
     // human review, not a silent machine rewrite or auto-publication.
     await client.query(
       "update knowledge_documents k " +
-        "set refresh_status='STALE_PENDING_REVIEW', " +
+        "set refresh_status='STALE_BLOCKED', " +
         "stale_reason='Cited raw source revision superseded',updated_at=now() " +
         "where k.space_id=$1 and k.vault_id is not distinct from $2 " +
         "and k.refresh_status='CURRENT' and exists (" +
@@ -282,6 +282,14 @@ async function activateExtractedSourceRevision(
         "where de.document_id=k.id and e.source_id=any($3::uuid[]))",
       [input.spaceId, input.vaultId, old.rows.map((row) => row.id)],
     );
+    // A cached packet may embed the previous source-backed assertion. It is
+    // derived/rebuildable data, unlike approved Git or immutable source bytes.
+    if (input.vaultId) {
+      await client.query(
+        "delete from context_packets where space_id=$1 and vault_id=$2",
+        [input.spaceId, input.vaultId],
+      );
+    }
   }
 }
 
