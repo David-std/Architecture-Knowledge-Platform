@@ -545,7 +545,7 @@ describe("product lifecycle E2E", () => {
           vaultId,
           sourceUri: sourcePath,
           expectedSha256: hash(content),
-          title: "Source revision",
+          title: "Inaccurate metadata title, not the source heading",
           mediaType: "text/markdown",
           policy: "REVIEW_REQUIRED",
         },
@@ -621,6 +621,20 @@ describe("product lifecycle E2E", () => {
       headers,
     });
     expect(oldUnits.statusCode).toBe(404);
+    const oldReviewId = await reviewIdForJob(oldJob);
+    const staleApproval = await app.inject({
+      method: "POST",
+      url: "/v1/reviews/" + oldReviewId + "/decision",
+      headers,
+      payload: {
+        decision: "APPROVE",
+        reason: "A superseded source must never be approved after its replacement.",
+      },
+    });
+    expect(staleApproval.statusCode, staleApproval.body).toBe(409);
+    expect(staleApproval.json()).toMatchObject({
+      code: "SOURCE_REVISION_SUPERSEDED",
+    });
     const newMarkdown = await app.inject({
       method: "GET",
       url:
@@ -634,6 +648,8 @@ describe("product lifecycle E2E", () => {
     expect(newMarkdown.statusCode, newMarkdown.body).toBe(200);
     expect(newMarkdown.body).toContain(markerNew);
     expect(newMarkdown.body).not.toContain(markerOld);
+    expect(newMarkdown.body).toContain("Source revision");
+    expect(newMarkdown.body).not.toContain("Inaccurate metadata title");
     const indexed = await db.pool.query<{ total: number }>(
       "select count(*)::int total from source_projection_units where source_artifact_id=$1",
       [current.artifact_id],
