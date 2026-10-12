@@ -35,6 +35,7 @@ def test_deterministic_artifact_preserves_structural_units_and_locators(tmp_path
     artifact = DeterministicTextAdapter().extract(_request(source))
 
     assert artifact.extractor == "deterministic-text"
+    assert artifact.extractor_version == "0.3.1"
     assert len(artifact.headings) == 1
     assert len(artifact.paragraphs) == 1
     assert len(artifact.lists) == 1
@@ -165,6 +166,7 @@ def test_docx_baseline_preserves_interleaved_tables_paragraphs_and_locators(
         "heading", "paragraph", "table", "paragraph", "table", "paragraph"
     ]
     assert artifact.reading_order == [block.id for block in artifact.blocks]
+    assert artifact.extractor_version == "0.3.1"
     assert artifact.tables[0].headers == ["metric", "value"]
     assert artifact.tables[0].rows == [["recovery", "47 minutes"]]
     assert artifact.tables[1].rows == [["local", "enabled"]]

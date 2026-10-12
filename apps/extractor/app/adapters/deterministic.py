@@ -45,6 +45,10 @@ _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _LIST = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)(.+?)\s*$")
 _IMAGE = re.compile(r"!\[([^]]*)\]\(([^)]+)\)")
 _EQUATION = re.compile(r"^(?:\${1,2}|\\\[|\\\(|\\begin\{).*(?:\${1,2}|\\\]|\\\)|\\end\{.*\})?$")
+# Extraction-semantic changes must not overwrite an older derived projection
+# under the same (source, extractor, version, configuration) persistence key.
+DETERMINISTIC_EXTRACTOR_VERSION = "0.3.1"
+
 _TABLE_SEPARATOR = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$")
 
 
@@ -451,7 +455,7 @@ def artifact_from_text(
         request,
         digest,
         extractor=extractor,
-        version="0.3.0",
+        version=DETERMINISTIC_EXTRACTOR_VERSION,
         media_type=media,
         units=[units],
         pages=[page],
@@ -462,7 +466,7 @@ def artifact_from_text(
 
 class DeterministicTextAdapter(DocumentIntelligencePort):
     name = "deterministic-baseline"
-    version = "0.3.0"
+    version = DETERMINISTIC_EXTRACTOR_VERSION
     media_suffixes: ClassVar[set[str]] = {
         ".md",
         ".markdown",
