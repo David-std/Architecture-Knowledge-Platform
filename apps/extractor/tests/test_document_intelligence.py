@@ -103,7 +103,7 @@ def test_fully_empty_document_fails_closed_instead_of_exposing_empty_source(
 ) -> None:
     if format_name == "markdown":
         source = tmp_path / "empty.md"
-        source.write_text(" \\n", encoding="utf-8")
+        source.write_text(" \n", encoding="utf-8")
         media_type = "text/markdown"
     elif format_name == "docx":
         source = tmp_path / "empty.docx"
