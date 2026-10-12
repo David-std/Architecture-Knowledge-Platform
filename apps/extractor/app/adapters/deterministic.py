@@ -431,6 +431,7 @@ def artifact_from_text(
     media_type: str | None = None,
     source_hash: str | None = None,
     warnings: list[str] | None = None,
+    quality: str = "EXACT_TEXT",
 ) -> DocumentArtifact:
     digest = source_hash or sha256_path(request.source_path)
     media = media_type or infer_media_type(request.source_path, request.media_type)
@@ -451,6 +452,7 @@ def artifact_from_text(
         units=[units],
         pages=[page],
         warnings=warnings,
+        quality=quality,
     )
 
 
@@ -538,11 +540,21 @@ class DeterministicTextAdapter(DocumentIntelligencePort):
             "application/x-yaml",
             "application/yaml",
         }:
+            raw = path.read_bytes()
+            try:
+                content = raw.decode("utf-8")
+                decode_warnings: list[str] = []
+            except UnicodeDecodeError:
+                # Replacing invalid bytes is a lossy extraction, never EXACT_TEXT.
+                content = raw.decode("utf-8", errors="replace")
+                decode_warnings = ["INVALID_UTF8_REPLACED"]
             return artifact_from_text(
                 request,
-                path.read_text(encoding="utf-8", errors="replace"),
+                content,
                 extractor="deterministic-text",
                 media_type=media,
+                warnings=decode_warnings,
+                quality="MACHINE_EXTRACTED" if decode_warnings else "EXACT_TEXT",
             )
         if suffix == ".pdf" or media == "application/pdf":
             return self._extract_pdf(request)

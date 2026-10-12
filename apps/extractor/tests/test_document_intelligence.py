@@ -1,3 +1,4 @@
+from hashlib import sha256
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
@@ -85,6 +86,28 @@ def test_docx_baseline_preserves_interleaved_tables_paragraphs_and_locators(
         table.locator.heading_path == ["Operations"] for table in artifact.tables
     )
     assert all(locator.source_hash == artifact.source_hash for locator in artifact.locators)
+
+
+def test_invalid_utf8_is_explicitly_lossy_and_raw_hash_remains_authoritative(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "invalid.md"
+    original = b"Policy before \\xff after"
+    source.write_bytes(original)
+    artifact = DeterministicTextAdapter().extract(_request(source))
+
+    assert artifact.source_hash == sha256(original).hexdigest()
+    assert artifact.quality == "MACHINE_EXTRACTED"
+    assert "INVALID_UTF8_REPLACED" in artifact.warnings
+    assert artifact.paragraphs[0].text is not None
+    assert "\\ufffd" in artifact.paragraphs[0].text
+    assert all(locator.source_hash == artifact.source_hash for locator in artifact.locators)
+
+    valid = tmp_path / "valid.md"
+    valid.write_text("Policy before and after", encoding="utf-8")
+    intact = DeterministicTextAdapter().extract(_request(valid))
+    assert intact.quality == "EXACT_TEXT"
+    assert "INVALID_UTF8_REPLACED" not in intact.warnings
 
 
 def test_html_extraction_discards_active_content_and_keeps_visible_text(tmp_path: Path) -> None:
