@@ -628,7 +628,8 @@ describe("product lifecycle E2E", () => {
       headers,
       payload: {
         decision: "APPROVE",
-        reason: "A superseded source must never be approved after its replacement.",
+        reason:
+          "A superseded source must never be approved after its replacement.",
       },
     });
     expect(staleApproval.statusCode, staleApproval.body).toBe(409);
