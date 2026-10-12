@@ -580,6 +580,23 @@ describe("product lifecycle E2E", () => {
     const oldJob = await submit(firstContent);
     const old = await findSource(oldJob);
     expect(old).toMatchObject({ status: "ACTIVE", sha256: hash(firstContent) });
+    // A synthetic already-reviewed projection is used only to exercise its
+    // source-dependency freshness fence; it never touches managed Git.
+    const staleDocumentId = randomUUID();
+    const stalePath = "source-revision-evidence/" + staleDocumentId + ".md";
+    await db.pool.query(
+      `insert into knowledge_documents(
+        id,space_id,vault_id,path,title,type,lifecycle,trust_tier,
+        current_revision,body_cache,frontmatter,aliases,layer,raw_links
+      ) values ($1,$2,$3,$4,'Historical source claim','concept','ACTIVE',
+                'HUMAN_REVIEWED','fixture:r1',$5,'{}','{}','compiled','[]')`,
+      [staleDocumentId, defaultSpace, vaultId, stalePath, markerOld],
+    );
+    await db.pool.query(
+      `insert into document_evidence(document_id,evidence_id)
+       select $1,e.id from evidence e where e.source_id=$2`,
+      [staleDocumentId, old.source_id],
+    );
     const cachedPacketId = randomUUID();
     await db.pool.query(
       `insert into context_packets(
@@ -612,6 +629,17 @@ describe("product lifecycle E2E", () => {
       [old.source_id],
     );
     expect(previous.rows[0]?.status).toBe("SUPERSEDED");
+    const staleClaim = await db.pool.query<{
+      refresh_status: string;
+      body_cache: string;
+    }>(
+      "select refresh_status,body_cache from knowledge_documents where id=$1",
+      [staleDocumentId],
+    );
+    expect(staleClaim.rows[0]).toMatchObject({
+      refresh_status: "STALE_BLOCKED",
+      body_cache: markerOld,
+    });
     const derivedCache = await db.pool.query<{ total: number }>(
       "select count(*)::int total from context_packets where id=$1",
       [cachedPacketId],
@@ -682,7 +710,14 @@ describe("product lifecycle E2E", () => {
       "select count(*)::int total from knowledge_documents where vault_id=$1",
       [vaultId],
     );
-    expect(autoPublished.rows[0]?.total).toBe(0);
+    expect(autoPublished.rows[0]?.total).toBe(1);
+    // The single row was explicitly seeded above; no compilation published.
+    await db.pool.query("delete from document_evidence where document_id=$1", [
+      staleDocumentId,
+    ]);
+    await db.pool.query("delete from knowledge_documents where id=$1", [
+      staleDocumentId,
+    ]);
   }, 180_000);
 
   it("ingests identical bytes with compiler OFF and local mock ON without publishing", async () => {
