@@ -74,6 +74,23 @@ Previously measured F3 evidence precision **AI 51/72 = 70.83%** (Wilson simple l
 - [ ] Integrate real PDF/MD/DOCX/scanned fixture tests: page/table preservation, corrupt PDF, unconfigured OCR, source revision changes.
 - **Done when:** no source facts lost silently, no duplicate source authority and both compiler modes have equivalent source completeness.
 
+### S1.1–S1.10 implementation audit (2026-10-11)
+
+This reconciliation is an **implementation and coverage audit, not S1 acceptance**. The unmodified baseline `6756b9c99bb7428c9330376ff7eb40189ebc34c9` passed the five CI jobs and all 14 required same-SHA workflows, including the real Docling/Tesseract OCR E2E with natural API/database closure. The next S1 fidelity change (`afb19e564f476322ef1d9efc71edc53870698b69`) repairs an independently reproduced deterministic-DOCX reading-order defect. Its own checks must be evaluated on a subsequent exact final SHA.
+
+- **S1.1 (trace):** source ID, raw digest, MinIO key, structured artifact, human review and source read paths are recorded in the source-to-context trace and integration tests.
+- **S1.2 (compiler independence):** the single verified faithful Markdown projection precedes the optional compiler. Two isolated real raw-file ingests prove OFF versus loopback-mocked ON equivalence; this does not measure semantic generation quality.
+- **S1.3 (typed source):** source artifact identity, extractor/configuration and structural digest, persisted Markdown hash, locator replay and separate `source_projection_units` are implemented. Neither machine extracts nor these units are approved Git knowledge.
+- **S1.4 (explicit failures):** OCR-required routing fails when unavailable, partial/no-text PDF warnings exist, and corrupt stored structured digests make reads fail closed. General OCR accuracy and all degraded page layouts remain unmeasured.
+- **S1.5 (tables and order):** a real generated interleaved DOCX exposed a defect: the deterministic extractor moved every table after every paragraph. The patch iterates actual body order and tests two interleaved tables, heading-scoped locators and cell preservation. Headerless/merged/ragged tables still require broader format-stratified acceptance evidence.
+- **S1.6 (passages):** revision-scoped source units preserve exact UTF-16 character spans and SHA, including content past the operator preview. `source:read`, wrong-source and stale-revision denials have PostgreSQL/API coverage.
+- **S1.7 (revisions):** re-ingestion of a verified immutable original, read-time digest quarantine and pinned source-unit reads are tested. Comprehensive changed-source-to-reindex/invalidation equivalence is not yet certified.
+- **S1.8 (migration/removal):** migrations 091/092 and guarded one-artifact dry-run/apply backfill are tested, including idempotency and corrupt artifact refusal. Remaining duplicate or unused extraction paths still require caller inventory before removal.
+- **S1.9 (fixture diversity):** synthetic digital two-page PDF, real DOCX, raster OCR, long Markdown, bad identity/hash and damaged projection cases exist. Complex real-world documents, partial-provider failures and exhaustive page/table quality are not proven by the sample.
+- **S1.10 (ON/OFF):** persisted-stage and real ingest parity tests verify Markdown bytes/hash and locators with a mocked loopback model; no claim that the mock proves generation quality.
+
+**Open S1 exit gate:** complete format-stratified fidelity and negative-case proof, demonstrate changed-source revision/reindex behavior, inventory superseded code paths and obtain all required CI workflows on the final implementation SHA. S2 remains blocked until these source-integrity criteria are met. No model/provider/production default is promoted.
+
 ### S2 — Evidence precision and compact context, not new heuristics
 
 - [ ] Use exact answer-bearing source spans on new independent positive/negative multilingual holdouts (not F3 tuning).

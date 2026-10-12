@@ -91,6 +91,12 @@ An exact-target backfill rejects an altered structured-content digest before any
 
 The API now verifies the parsed stored DocumentArtifact identity, extractor/version, configuration digest and canonical structured-content hash on both faithful Markdown and source-unit reads. These checks use the exact same canonical JSON serializer as the ingestion worker. Any mismatch returns 409 before exposing private source bytes or fragments. The real dual-ingest E2E deliberately changes the stored structured digest and checks both reads deny content; restoring the original digest is test-only cleanup. Corruption is not silently accepted or overwritten through a read operation.
 
+### Deterministic DOCX reading-order correction
+
+The configured base extractor `apps/extractor/app/adapters/deterministic.py` previously iterated `document.paragraphs` and then `document.tables`, moving a table located between two paragraphs to the end of the output. The DOCX source still had its bytes and table cells but the `DocumentArtifact.reading_order` contradicted the original body order. This is a **source-fidelity defect**, not a generative model issue. A minimal generated DOCX reproduced it with the repository's locked `python-docx 1.2.0`.
+
+Implementation `afb19e564f476322ef1d9efc71edc53870698b69` uses `iter_inner_content()` in the existing deterministic adapter, retains paragraph/table locators, propagates the active heading path to tables, and adds `test_docx_baseline_preserves_interleaved_tables_paragraphs_and_locators` with real DOCX bytes and negative positional assertions. This keeps extraction as SOURCE and adds neither a second writer nor an optional provider. The implementation is not a global DOCX quality benchmark: nested/merged tables, pagination and headerless-table semantics require separate tests.
+
 ### S1.9 representative fidelity regression matrix
 
 The following **synthetic, nonprivate** documents exercise distinct extraction mechanisms. Passing the tests is not a claim of universal OCR or document reconstruction accuracy.
