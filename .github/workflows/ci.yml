@@ -572,8 +572,11 @@ jobs:
           done
           cat reports/ci/document-ocr-extractor.log
           exit 1
+      - name: Build API and worker dependencies for OCR E2E
+        run: pnpm build
       - name: Prove durable OCR ingest through API, worker, artifact and evidence
         run: |
+          set -euo pipefail
           cat > apps/api/test/.document-ocr-e2e.runtime.ts <<'TS'
           import { createHash, randomUUID } from "node:crypto";
           import { execFile } from "node:child_process";
