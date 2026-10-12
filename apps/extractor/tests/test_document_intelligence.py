@@ -1,9 +1,8 @@
 from pathlib import Path
-
-from docx import Document as WordDocument
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
+from docx import Document as WordDocument
 from pydantic import ValidationError
 
 from app.adapters.deterministic import DeterministicTextAdapter
