@@ -227,6 +227,14 @@ jobs:
             --outputFile.junit=../../reports/ci/s2-multilingual-shadow-junit.xml \
             2>&1 | tee reports/ci/s2-multilingual-shadow.log
           test -s reports/ci/s2-multilingual-shadow-baseline.json
+      - name: Validate source-bound S2 reviewer packet (no adjudication)
+        shell: bash
+        run: |
+          set -o pipefail
+          node scripts/validate-s2-adjudications.mjs --self-test
+          node scripts/validate-s2-adjudications.mjs \
+            --packet reports/ci/s2-adjudication-review-packet.json \
+            --output reports/ci/s2-adjudication-integrity.json
       - name: Execute retrieval matrix through the real runtime pipeline
         shell: bash
         run: |
