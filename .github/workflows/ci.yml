@@ -133,6 +133,7 @@ jobs:
         env:
           DATABASE_URL: postgres://akp:akp@localhost:55432/akp_s2_baseline_test
           AKP_S2_SPAN_BASELINE: "1"
+          AKP_S2_BRANCH_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         shell: bash
         run: |
           set -euo pipefail

@@ -181,8 +181,47 @@ describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
       );
       const observations: S2SpanObservation[] = [];
       const caseDiagnostics = [];
+      const controlDiagnostics: Array<{
+        query: string;
+        sourceId: string;
+        returnedHits: number;
+      }> = [];
       try {
         await seed(db, f);
+        // A zero-recall result is not interpretable unless the fixture is
+        // demonstrably queryable using known positive exact/lexical probes.
+        for (const control of [
+          { sourceId: "marine-beacon", query: "marine-beacon" },
+          { sourceId: "marine-beacon", query: "battery" },
+          { sourceId: "optical-observatory", query: "camera" },
+        ]) {
+          const vaultId = f.vaultIds.get(control.sourceId)!;
+          const hits = await queryKnowledge(
+            db,
+            {
+              query: control.query,
+              spaceId: f.spaceId,
+              vaultId,
+              vaultIds: [],
+              federated: false,
+              types: [],
+              minimumTrust: "MACHINE_SUPPORTED",
+              mode: "SOURCE_BACKED",
+              limit: 10,
+            },
+            { vaultIds: [vaultId], channels: ["exact", "lexical"] },
+          );
+          expect(
+            hits.length,
+            "S2 fixture positive control failed: " + control.query,
+          ).toBeGreaterThan(0);
+          expect(hits.every((hit) => hit.vaultId === vaultId)).toBe(true);
+          controlDiagnostics.push({
+            sourceId: control.sourceId,
+            query: control.query,
+            returnedHits: hits.length,
+          });
+        }
         for (const q of dataset.cases) {
           const vaultId = f.vaultIds.get(q.sourceId)!;
           const warnings: string[] = [];
@@ -255,7 +294,9 @@ describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
         const report = {
           schemaVersion: "akp.s2.postgres-retrieval-baseline.v1",
           evidenceLevel: "LIVE_POSTGRES_SCOPED_SQL_ON_SYNTHETIC_PROJECTION",
-          executedGitSha: process.env.GITHUB_SHA ?? "LOCAL_UNPINNED",
+          headGitSha:
+            process.env.AKP_S2_BRANCH_HEAD_SHA ?? "LOCAL_UNPINNED",
+          workflowCheckoutGitSha: process.env.GITHUB_SHA ?? "LOCAL_UNPINNED",
           frozenGitBlobSha1: blob,
           sourceSha256: Object.fromEntries(
             dataset.sourceDocuments.map((source) => [
@@ -276,6 +317,7 @@ describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
           finalAnswerMeasured: false,
           exactModelTokensMeasured: false,
           gateAccepted: false,
+          fixturePositiveControls: controlDiagnostics,
           score,
           caseDiagnostics,
         };
