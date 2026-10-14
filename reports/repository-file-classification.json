@@ -3003,8 +3003,8 @@
     },
     {
       "path": "packages/evaluation/test/s2-source-span.test.ts",
-      "category": "PRODUCT_CODE",
-      "reason": "runtime, build or operational code"
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
     },
     {
       "path": "packages/evaluation/test/tool-ergonomics.test.ts",
