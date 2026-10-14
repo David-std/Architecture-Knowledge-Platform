@@ -245,9 +245,7 @@ const rows = hybrid.diagnostics.map((diagnostic) => {
     ? packetPair.compact.citations.includes(goldCitation)
     : null;
   const publishedContinuationHandles = new Set(
-    packetPair.compact.continuations.map((continuation) =>
-      continuation.handle,
-    ),
+    packetPair.compact.continuations.map((continuation) => continuation.handle),
   );
   const linkedPayloads = continuationPayloads.filter((payload) =>
     publishedContinuationHandles.has(payload.continuation.handle),
