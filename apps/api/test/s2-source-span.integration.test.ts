@@ -548,7 +548,13 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
             const vaultId = fixture.vaultIds.get(question.sourceId)!;
             const warnings: string[] = [];
             const availableChannels = new Set<
-              "context-pack" | "exact" | "lexical" | "vector" | "graph" | "raw" | "code"
+              | "context-pack"
+              | "exact"
+              | "lexical"
+              | "vector"
+              | "graph"
+              | "raw"
+              | "code"
             >();
             let candidateRanks: string[] | undefined;
             let candidateCount = 0;
@@ -575,7 +581,9 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
                 answerabilityCandidateSink: (candidates) => {
                   candidateCount = candidates.length;
                   expect(
-                    candidates.every((candidate) => candidate.vaultId === vaultId),
+                    candidates.every(
+                      (candidate) => candidate.vaultId === vaultId,
+                    ),
                   ).toBe(true);
                   candidateRanks = candidates.map((candidate) => {
                     const unitId = logicalByUuid.get(candidate.unitId ?? "");
@@ -667,7 +675,8 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
         const hybrid = measuredArms[1]!;
         const report = {
           schemaVersion: "akp.s2.real-multilingual-shadow.v1",
-          evidenceLevel: "REAL_PINNED_E5_WITH_POSTGRES_SCOPED_SYNTHETIC_HOLDOUT",
+          evidenceLevel:
+            "REAL_PINNED_E5_WITH_POSTGRES_SCOPED_SYNTHETIC_HOLDOUT",
           frozenGitBlobSha1: frozenBlob,
           sourceSha256: sourceDigests,
           branchHeadSha: process.env.AKP_S2_BRANCH_HEAD_SHA ?? "LOCAL_UNPINNED",
@@ -684,7 +693,8 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
           generationEvidence,
           arms: measuredArms,
           pairedRecallAt10Delta:
-            hybrid.score.recallAt10 === null || baseline.score.recallAt10 === null
+            hybrid.score.recallAt10 === null ||
+            baseline.score.recallAt10 === null
               ? null
               : hybrid.score.recallAt10 - baseline.score.recallAt10,
           performanceCaveat:
