@@ -262,6 +262,11 @@ jobs:
             report.quoteTransport.lostWithoutContinuation !== 0 ||
             report.quoteTransport.byLanguage?.en?.positives !== 12 ||
             report.quoteTransport.byLanguage?.es?.positives !== 12 ||
+            report.sourceUnitTransport?.status !== "EXACT_SOURCE_UNIT_OR_PUBLISHED_CONTINUATION" ||
+            report.sourceUnitTransport.sourceUnitCount !== 288 ||
+            report.sourceUnitTransport.lostWithoutContinuation !== 0 ||
+            report.sourceUnitTransport.carriedExactInCompact +
+              report.sourceUnitTransport.recoverableOnContinuation !== 288 ||
             report.productionDefaultsChanged !== false ||
             report.gateAccepted !== false
           ) {
