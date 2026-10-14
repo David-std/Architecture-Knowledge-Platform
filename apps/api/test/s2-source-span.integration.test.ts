@@ -294,8 +294,7 @@ describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
         const report = {
           schemaVersion: "akp.s2.postgres-retrieval-baseline.v1",
           evidenceLevel: "LIVE_POSTGRES_SCOPED_SQL_ON_SYNTHETIC_PROJECTION",
-          headGitSha:
-            process.env.AKP_S2_BRANCH_HEAD_SHA ?? "LOCAL_UNPINNED",
+          headGitSha: process.env.AKP_S2_BRANCH_HEAD_SHA ?? "LOCAL_UNPINNED",
           workflowCheckoutGitSha: process.env.GITHUB_SHA ?? "LOCAL_UNPINNED",
           frozenGitBlobSha1: blob,
           sourceSha256: Object.fromEntries(
