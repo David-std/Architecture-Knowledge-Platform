@@ -298,6 +298,7 @@ describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
           expect(indexProbe.goldUnitsPresent).toBe(q.gold.length);
           const warnings: string[] = [];
           let candidatePoolSize = 0;
+          let candidateUnitRanks: string[] | undefined;
           const started = performance.now();
           const hits = await queryKnowledge(
             db,
@@ -318,14 +319,20 @@ describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
               warningSink: warnings,
               answerabilityCandidateSink: (candidates) => {
                 candidatePoolSize = candidates.length;
+                candidateUnitRanks = candidates
+                  .map((hit) => logicalByUuid.get(hit.unitId ?? ""))
+                  .filter((value): value is string => Boolean(value));
               },
             },
           );
           const elapsedMs = performance.now() - started;
           expect(hits.every((hit) => hit.vaultId === vaultId)).toBe(true);
-          const rankedUnitIds = hits
+          const returnedUnitRanks = hits
             .map((hit) => logicalByUuid.get(hit.unitId ?? ""))
             .filter((value): value is string => Boolean(value));
+          // Recall@k is measured at the post-authorization candidate
+          // boundary BEFORE input.limit and before answer admission.
+          const rankedUnitIds = candidateUnitRanks ?? returnedUnitRanks;
           const goldUnits = new Set(q.gold.map((item) => item.unitId));
           const rank = rankedUnitIds.findIndex((unitId) =>
             goldUnits.has(unitId),
@@ -345,7 +352,9 @@ describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
             sourceId: q.sourceId,
             candidatePoolSize,
             returnedHits: hits.length,
-            unmappedHits: hits.length - rankedUnitIds.length,
+            unmappedHits: hits.length - returnedUnitRanks.length,
+            candidateMappedUnitCount: rankedUnitIds.length,
+            presentedMappedUnitCount: returnedUnitRanks.length,
             firstGoldUnitRank: rank < 0 ? null : rank + 1,
             lexicalIndexProbe: indexProbe,
             diagnosis:
@@ -389,6 +398,8 @@ describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
             ]),
           ),
           method: "CONTROLLED_EXACT_LEXICAL_ONLY",
+          recallBoundary: "AUTHORIZED_POST_RERANK_PRE_PRESENTATION_LIMIT",
+          presentedHitLimit: 10,
           queryFunction: "apps/api/src/routes/search.ts#queryKnowledge",
           scope: "ONE_FROZEN_SOURCE_VAULT_PER_QUERY",
           fixture: "DIRECT_SYNTHETIC_APPROVED_PROJECTION_NOT_RAW_INGEST",
