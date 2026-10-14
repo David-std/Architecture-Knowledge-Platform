@@ -47,16 +47,23 @@ function makeFixture(): Fixture {
   };
 }
 async function seed(db: Postgres, f: Fixture): Promise<void> {
-  await db.pool.query("insert into organizations(id,slug,name) values($1,$2,$3)", [
-    f.organizationId,
-    "s2-baseline-" + f.organizationId.slice(0, 8),
-    "Disposable synthetic S2 baseline",
-  ]);
+  await db.pool.query(
+    "insert into organizations(id,slug,name) values($1,$2,$3)",
+    [
+      f.organizationId,
+      "s2-baseline-" + f.organizationId.slice(0, 8),
+      "Disposable synthetic S2 baseline",
+    ],
+  );
   await db.pool.query(
     "insert into spaces(id,organization_id,slug,name,visibility,knowledge_repo_path) " +
       "values($1,$2,$3,'S2 baseline','PRIVATE',$4)",
-    [f.spaceId, f.organizationId, "s2-baseline-" + f.spaceId.slice(0, 8),
-     "test/s2/" + f.spaceId],
+    [
+      f.spaceId,
+      f.organizationId,
+      "s2-baseline-" + f.spaceId.slice(0, 8),
+      "test/s2/" + f.spaceId,
+    ],
   );
   for (const source of dataset.sourceDocuments) {
     const vaultId = f.vaultIds.get(source.id)!;
@@ -68,8 +75,14 @@ async function seed(db: Postgres, f: Fixture): Promise<void> {
       "insert into vaults(id,space_id,canonical_path,name,read_only," +
         "current_revision,vault_key,local_path,visibility,enabled) " +
         "values($1,$2,$3,$4,true,$5,$6,$3,'PRIVATE',true)",
-      [vaultId, f.spaceId, "test/s2/" + vaultId, title, f.revision,
-       "s2-" + vaultId.slice(0, 8)],
+      [
+        vaultId,
+        f.spaceId,
+        "test/s2/" + vaultId,
+        title,
+        f.revision,
+        "s2-" + vaultId.slice(0, 8),
+      ],
     );
     await db.pool.query(
       "insert into vault_index_revisions(space_id,vault_id,corpus_revision," +
@@ -83,12 +96,23 @@ async function seed(db: Postgres, f: Fixture): Promise<void> {
         "frontmatter,aliases,layer,content_hash,token_estimate,raw_links) " +
         "values($1,$2,$3,$4,$5,$6,'concept','ACTIVE','HUMAN_REVIEWED'," +
         "$7,$8,$9::jsonb,'{}','concept',$10,$11,'[]'::jsonb)",
-      [documentId, f.spaceId, vaultId, sourcePath, source.id, title,
-       f.revision, body, JSON.stringify({
-         id: source.id,
-         title,
-         synthetic_approval_for_isolated_fixture: true,
-       }), digest(body), Math.max(1, body.split(/\s+/u).length)],
+      [
+        documentId,
+        f.spaceId,
+        vaultId,
+        sourcePath,
+        source.id,
+        title,
+        f.revision,
+        body,
+        JSON.stringify({
+          id: source.id,
+          title,
+          synthetic_approval_for_isolated_fixture: true,
+        }),
+        digest(body),
+        Math.max(1, body.split(/\s+/u).length),
+      ],
     );
     for (const [index, unit] of source.units.entries()) {
       await db.pool.query(
@@ -99,10 +123,20 @@ async function seed(db: Postgres, f: Fixture): Promise<void> {
           "embedding_eligible) values($1,$2,$3,$4,$5,'PARAGRAPH',$6,$7,$8," +
           "$9,$9,'ACTIVE','HUMAN_REVIEWED','{}',$10,null,'{}'::jsonb," +
           "$11::jsonb,$12,false,true)",
-        [f.unitIds.get(unit.id), documentId, f.spaceId, vaultId, unit.id,
-         [title], unit.text, digest(unit.text), f.revision,
-         Math.max(1, unit.text.split(/\s+/u).length),
-         JSON.stringify({sourcePath, logicalUnitId: unit.id}), index + 1],
+        [
+          f.unitIds.get(unit.id),
+          documentId,
+          f.spaceId,
+          vaultId,
+          unit.id,
+          [title],
+          unit.text,
+          digest(unit.text),
+          f.revision,
+          Math.max(1, unit.text.split(/\s+/u).length),
+          JSON.stringify({ sourcePath, logicalUnitId: unit.id }),
+          index + 1,
+        ],
       );
     }
   }
@@ -110,21 +144,24 @@ async function seed(db: Postgres, f: Fixture): Promise<void> {
 async function cleanup(db: Postgres, f: Fixture): Promise<void> {
   const vaultIds = [...f.vaultIds.values()];
   await db.pool.query(
-    "delete from knowledge_units where vault_id=any($1::uuid[])", [vaultIds],
+    "delete from knowledge_units where vault_id=any($1::uuid[])",
+    [vaultIds],
   );
   await db.pool.query(
-    "delete from knowledge_documents where vault_id=any($1::uuid[])", [vaultIds],
+    "delete from knowledge_documents where vault_id=any($1::uuid[])",
+    [vaultIds],
   );
   await db.pool.query(
-    "delete from vault_index_revisions where vault_id=any($1::uuid[])", [vaultIds],
+    "delete from vault_index_revisions where vault_id=any($1::uuid[])",
+    [vaultIds],
   );
-  await db.pool.query(
-    "delete from vaults where id=any($1::uuid[])", [vaultIds],
-  );
+  await db.pool.query("delete from vaults where id=any($1::uuid[])", [
+    vaultIds,
+  ]);
   await db.pool.query("delete from spaces where id=$1", [f.spaceId]);
-  await db.pool.query(
-    "delete from organizations where id=$1", [f.organizationId],
-  );
+  await db.pool.query("delete from organizations where id=$1", [
+    f.organizationId,
+  ]);
 }
 describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
   it.skipIf(!databaseUrl || !enabled)(
@@ -179,7 +216,9 @@ describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
             .map((hit) => logicalByUuid.get(hit.unitId ?? ""))
             .filter((value): value is string => Boolean(value));
           const goldUnits = new Set(q.gold.map((item) => item.unitId));
-          const rank = rankedUnitIds.findIndex((unitId) => goldUnits.has(unitId));
+          const rank = rankedUnitIds.findIndex((unitId) =>
+            goldUnits.has(unitId),
+          );
           observations.push({
             caseId: q.id,
             rankedUnitIds,
@@ -222,7 +261,9 @@ describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
             dataset.sourceDocuments.map((source) => [
               source.id,
               digest(
-                source.units.map((unit) => unit.id + "\n" + unit.text).join("\n\n"),
+                source.units
+                  .map((unit) => unit.id + "\n" + unit.text)
+                  .join("\n\n"),
               ),
             ]),
           ),
@@ -240,12 +281,15 @@ describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
         };
         await mkdir(path.dirname(output), { recursive: true });
         await writeFile(output, JSON.stringify(report, null, 2) + "\n", "utf8");
-        console.log("S2_POSTGRES_BASELINE " + JSON.stringify({
-          observed: score.observedCases,
-          recallAt10: score.recallAt10,
-          falseAdmissionRate: null,
-          gateAccepted: false,
-        }));
+        console.log(
+          "S2_POSTGRES_BASELINE " +
+            JSON.stringify({
+              observed: score.observedCases,
+              recallAt10: score.recallAt10,
+              falseAdmissionRate: null,
+              gateAccepted: false,
+            }),
+        );
       } finally {
         try {
           await cleanup(db, f);
