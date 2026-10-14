@@ -215,6 +215,7 @@ jobs:
         shell: bash
         env:
           AKP_S2_SPAN_MULTILINGUAL: "1"
+          AKP_S2_BRANCH_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -o pipefail
           mkdir -p reports/ci

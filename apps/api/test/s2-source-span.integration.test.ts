@@ -5,8 +5,10 @@ import { performance } from "node:perf_hooks";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { Postgres } from "@akp/postgres";
+import type { SearchHit } from "@akp/contracts";
 import { buildEmbeddingIndex } from "@akp/indexing";
 import {
+  assessRetrievalAnswerability,
   LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
   LocalSemanticEmbeddingAdapter,
   QueryEmbeddingService,
@@ -557,6 +559,7 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
               | "code"
             >();
             let candidateRanks: string[] | undefined;
+            let candidateHits: readonly SearchHit[] | undefined;
             let candidateCount = 0;
             const start = performance.now();
             const hits = await queryKnowledge(
@@ -580,6 +583,7 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
                 availableChannelSink: availableChannels,
                 answerabilityCandidateSink: (candidates) => {
                   candidateCount = candidates.length;
+                  candidateHits = candidates;
                   expect(
                     candidates.every(
                       (candidate) => candidate.vaultId === vaultId,
@@ -608,6 +612,41 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
             const firstGoldRank = rankedUnitIds.findIndex((unitId) =>
               goldIds.has(unitId),
             );
+            // Experimental deterministic support probe only. This is NOT
+            // query-conditioned reader admission or an answer decision.
+            const assessed = assessRetrievalAnswerability(
+              candidateHits ?? hits,
+              question.query,
+              {},
+              { comparisonHits: candidateHits ?? hits },
+            );
+            const assessedSupport = assessed.candidateSignals.map((signal) => {
+              const unitId = logicalByUuid.get(signal.unitId ?? "");
+              if (!unitId) throw new Error("S2_VERIFIER_UNIT_OUT_OF_SCOPE");
+              return {
+                unitId,
+                supported: signal.passageSupport.supported,
+                reason: signal.passageSupport.reason,
+                queryCoverage: signal.textualSupport.queryCoverage,
+                answerCueCoverage: signal.passageSupport.answerCueCoverage,
+                passageSource: signal.passageSupport.passageSource,
+              };
+            });
+            const supportedUnits = assessedSupport
+              .filter((signal) => signal.supported)
+              .map((signal) => signal.unitId);
+            const verifierProbe = {
+              status: "DETERMINISTIC_CANDIDATE_SUPPORT_ONLY",
+              supportedCandidateCount: supportedUnits.length,
+              supportedGoldUnit:
+                question.answerable
+                  ? supportedUnits.some((unitId) => goldIds.has(unitId))
+                  : null,
+              anySupportedForNoAnswer:
+                question.answerable ? null : supportedUnits.length > 0,
+              assessmentReason: assessed.reason,
+              candidateSignals: assessedSupport,
+            };
             observations.push({
               caseId: question.id,
               rankedUnitIds,
@@ -627,6 +666,7 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
               rankedUnitIds,
               presentedUnitIds: displayed,
               firstGoldRank: firstGoldRank < 0 ? null : firstGoldRank + 1,
+              verifierProbe,
               availableChannels: [...availableChannels].sort(),
               warnings,
               elapsedMs,
@@ -668,6 +708,21 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
             channels: configuration.channels,
             score,
             byLanguage,
+            deterministicSupportProbe: {
+              positiveQuestionsWithGoldCandidateSupported: diagnostics.filter(
+                (item) =>
+                  item.answerable && item.verifierProbe.supportedGoldUnit === true,
+              ).length,
+              positiveQuestionCount: 24,
+              negativeQuestionsWithAnyCandidateSupported: diagnostics.filter(
+                (item) =>
+                  !item.answerable &&
+                  item.verifierProbe.anySupportedForNoAnswer === true,
+              ).length,
+              negativeQuestionCount: 24,
+              isProductionAdmittedEvidencePrecision: false,
+              isFinalAnswerFalseAdmissionRate: false,
+            },
             diagnostics,
           });
         }
@@ -701,6 +756,7 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
             "Sequential arms with warm model cache; duration not controlled for query order. No production default change.",
           independentAdjudication: false,
           admissionMeasured: false,
+          deterministicSupportProbeMeasured: true,
           generatedAnswerCorrectnessMeasured: false,
           exactModelTokensMeasured: false,
           manualObsidianComparisonMeasured: false,
