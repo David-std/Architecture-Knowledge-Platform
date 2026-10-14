@@ -2157,6 +2157,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/s2-evaluation-protocol.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/selective-semantic-admission.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
@@ -2558,6 +2563,11 @@
     },
     {
       "path": "evals/registered/README.md",
+      "category": "PRODUCT_EVAL",
+      "reason": "versioned registered product evaluation"
+    },
+    {
+      "path": "evals/registered/s2-source-span-holdout.json",
       "category": "PRODUCT_EVAL",
       "reason": "versioned registered product evaluation"
     },
@@ -4463,6 +4473,11 @@
     },
     {
       "path": "scripts/validate-retrieval-generality.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/validate-s2-span-holdout.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
