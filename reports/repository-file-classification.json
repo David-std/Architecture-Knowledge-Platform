@@ -557,6 +557,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/api/test/s2-source-span.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/api/test/schema-profile-governance.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
