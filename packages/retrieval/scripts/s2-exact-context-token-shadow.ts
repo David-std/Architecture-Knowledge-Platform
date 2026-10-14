@@ -220,9 +220,9 @@ const rows = hybrid.diagnostics.map((diagnostic) => {
     fullContextPacketWireTokens: fullPacketTokens,
     compactContextPacketWireTokens: compactPacketTokens,
     fullPacketSectionCount: packetPair.full.sections.length,
-    compactPacketSectionCount: packetPair.compact.sections.length,
+    compactPacketSectionCount: packetPair.compact.content.length,
     fullPacketStatus: packetPair.full.status,
-    compactPacketStatus: packetPair.compact.status,
+    compactPacketStatus: packetPair.compact.identity.status,
     compactHasContinuations: packetPair.compact.continuations.length > 0,
   };
 });
