@@ -638,12 +638,12 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
             const verifierProbe = {
               status: "DETERMINISTIC_CANDIDATE_SUPPORT_ONLY",
               supportedCandidateCount: supportedUnits.length,
-              supportedGoldUnit:
-                question.answerable
-                  ? supportedUnits.some((unitId) => goldIds.has(unitId))
-                  : null,
-              anySupportedForNoAnswer:
-                question.answerable ? null : supportedUnits.length > 0,
+              supportedGoldUnit: question.answerable
+                ? supportedUnits.some((unitId) => goldIds.has(unitId))
+                : null,
+              anySupportedForNoAnswer: question.answerable
+                ? null
+                : supportedUnits.length > 0,
               assessmentReason: assessed.reason,
               candidateSignals: assessedSupport,
             };
@@ -711,7 +711,8 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
             deterministicSupportProbe: {
               positiveQuestionsWithGoldCandidateSupported: diagnostics.filter(
                 (item) =>
-                  item.answerable && item.verifierProbe.supportedGoldUnit === true,
+                  item.answerable &&
+                  item.verifierProbe.supportedGoldUnit === true,
               ).length,
               positiveQuestionCount: 24,
               negativeQuestionsWithAnyCandidateSupported: diagnostics.filter(
