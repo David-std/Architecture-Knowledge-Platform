@@ -22,7 +22,10 @@ const reportFile = path.resolve(
   process.env.AKP_S2_MULTILINGUAL_REPORT ??
     "reports/ci/s2-multilingual-shadow-baseline.json",
 );
-const fixtureFile = path.join(root, "evals/registered/s2-source-span-holdout.json");
+const fixtureFile = path.join(
+  root,
+  "evals/registered/s2-source-span-holdout.json",
+);
 const outputFile = path.resolve(
   root,
   process.env.AKP_S2_TOKEN_CONTEXT_REPORT ??
@@ -35,8 +38,13 @@ const sha256 = (value: string | Buffer): string =>
   createHash("sha256").update(value).digest("hex");
 const uuid = (key: string): string => {
   const h = sha256(key).slice(0, 32);
-  return [h.slice(0, 8), h.slice(8, 12), "4" + h.slice(13, 16),
-    "8" + h.slice(17, 20), h.slice(20, 32)].join("-");
+  return [
+    h.slice(0, 8),
+    h.slice(8, 12),
+    "4" + h.slice(13, 16),
+    "8" + h.slice(17, 20),
+    h.slice(20, 32),
+  ].join("-");
 };
 
 interface SourceUnit {
@@ -73,11 +81,15 @@ interface Report {
   arms: { configuration: string; diagnostics: Diagnostic[] }[];
 }
 const [fixtureBytes, reportBytes] = await Promise.all([
-  readFile(fixtureFile), readFile(reportFile),
+  readFile(fixtureFile),
+  readFile(reportFile),
 ]);
 const computedBlob = createHash("sha1")
-  .update("blob " + fixtureBytes.length + "\0").update(fixtureBytes).digest("hex");
-if (computedBlob !== frozenBlob) throw new Error("S2_TOKEN_SOURCE_FREEZE_MISMATCH");
+  .update("blob " + fixtureBytes.length + "\0")
+  .update(fixtureBytes)
+  .digest("hex");
+if (computedBlob !== frozenBlob)
+  throw new Error("S2_TOKEN_SOURCE_FREEZE_MISMATCH");
 const fixture = JSON.parse(fixtureBytes.toString("utf8")) as Fixture;
 const recorded = JSON.parse(reportBytes.toString("utf8")) as Report;
 if (
@@ -85,7 +97,8 @@ if (
   recorded.admissionMeasured !== false ||
   recorded.gateAccepted !== false ||
   recorded.branchHeadSha !== process.env.AKP_S2_BRANCH_HEAD_SHA
-) throw new Error("S2_TOKEN_RECORDING_NOT_CURRENT_SHADOW");
+)
+  throw new Error("S2_TOKEN_RECORDING_NOT_CURRENT_SHADOW");
 const sourceById = new Map(fixture.sourceDocuments.map((s) => [s.id, s]));
 const caseById = new Map(fixture.cases.map((c) => [c.id, c]));
 if (sourceById.size !== 4 || caseById.size !== 48) {
@@ -118,9 +131,11 @@ const tokenizerPort: Tokenizer = {
 const rows = hybrid.diagnostics.map((diagnostic) => {
   const question = caseById.get(diagnostic.caseId);
   if (
-    !question || diagnostic.sourceId !== question.sourceId ||
+    !question ||
+    diagnostic.sourceId !== question.sourceId ||
     diagnostic.language !== question.language
-  ) throw new Error("S2_TOKEN_CASE_IDENTITY_MISMATCH");
+  )
+    throw new Error("S2_TOKEN_CASE_IDENTITY_MISMATCH");
   const source = sourceById.get(question.sourceId);
   if (!source) throw new Error("S2_TOKEN_SOURCE_UNKNOWN");
   const byId = new Map(source.units.map((u) => [u.id, u]));
@@ -130,7 +145,8 @@ const rows = hybrid.diagnostics.map((diagnostic) => {
     diagnostic.rankedUnitIds.length !== 6 ||
     new Set(diagnostic.rankedUnitIds).size !== 6 ||
     diagnostic.rankedUnitIds.some((id) => !byId.has(id))
-  ) throw new Error("S2_TOKEN_AUTHORIZED_RANKS_INVALID");
+  )
+    throw new Error("S2_TOKEN_AUTHORIZED_RANKS_INVALID");
   const units = diagnostic.rankedUnitIds.map((id) => byId.get(id)!);
   const fullSourceText = source.units.map((u) => u.text).join("\n\n");
   const rankedSourceText = units.map((u) => u.text).join("\n\n");
@@ -183,8 +199,10 @@ const rows = hybrid.diagnostics.map((diagnostic) => {
     packetPair.compact.budget.tokenizer.quality !== "EXACT" ||
     packetPair.full.budget.serializedTokens !== fullPacketTokens ||
     packetPair.compact.budget.serializedTokens !== compactPacketTokens ||
-    fullPacketTokens > 32_000 || compactPacketTokens > 2048
-  ) throw new Error("S2_TOKEN_PACKET_NOT_EXACT_OR_OUT_OF_BUDGET");
+    fullPacketTokens > 32_000 ||
+    compactPacketTokens > 2048
+  )
+    throw new Error("S2_TOKEN_PACKET_NOT_EXACT_OR_OUT_OF_BUDGET");
   return {
     caseId: diagnostic.caseId,
     language: diagnostic.language,
@@ -192,7 +210,12 @@ const rows = hybrid.diagnostics.map((diagnostic) => {
     candidateCount: units.length,
     fullSourceTokens: tokens(fullSourceText),
     rankedSixSourceTokens: tokens(rankedSourceText),
-    topThreeSourceTokens: tokens(units.slice(0, 3).map((u) => u.text).join("\n\n")),
+    topThreeSourceTokens: tokens(
+      units
+        .slice(0, 3)
+        .map((u) => u.text)
+        .join("\n\n"),
+    ),
     topOneSourceTokens: tokens(units[0]!.text),
     fullContextPacketWireTokens: fullPacketTokens,
     compactContextPacketWireTokens: compactPacketTokens,
@@ -217,9 +240,12 @@ function distribution(values: number[]) {
   };
 }
 const metrics = [
-  "fullSourceTokens", "rankedSixSourceTokens",
-  "topThreeSourceTokens", "topOneSourceTokens",
-  "fullContextPacketWireTokens", "compactContextPacketWireTokens",
+  "fullSourceTokens",
+  "rankedSixSourceTokens",
+  "topThreeSourceTokens",
+  "topOneSourceTokens",
+  "fullContextPacketWireTokens",
+  "compactContextPacketWireTokens",
 ] as const;
 const distributions = Object.fromEntries(
   metrics.map((field) => [field, distribution(rows.map((r) => r[field]))]),
@@ -248,10 +274,13 @@ const report = {
 };
 await mkdir(path.dirname(outputFile), { recursive: true });
 await writeFile(outputFile, JSON.stringify(report, null, 2) + "\n", "utf8");
-console.log(JSON.stringify({
-  status: "MEASURED_PRE_ADMISSION_ONLY",
-  observations: rows.length,
-  fullMedian: distributions.fullContextPacketWireTokens?.median,
-  compactMedian: distributions.compactContextPacketWireTokens?.median,
-  output: outputFile, gateAccepted: false,
-}));
+console.log(
+  JSON.stringify({
+    status: "MEASURED_PRE_ADMISSION_ONLY",
+    observations: rows.length,
+    fullMedian: distributions.fullContextPacketWireTokens?.median,
+    compactMedian: distributions.compactContextPacketWireTokens?.median,
+    output: outputFile,
+    gateAccepted: false,
+  }),
+);
