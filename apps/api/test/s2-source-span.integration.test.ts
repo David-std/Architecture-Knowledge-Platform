@@ -5,6 +5,12 @@ import { performance } from "node:perf_hooks";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { Postgres } from "@akp/postgres";
+import { buildEmbeddingIndex } from "@akp/indexing";
+import {
+  LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
+  LocalSemanticEmbeddingAdapter,
+  QueryEmbeddingService,
+} from "@akp/retrieval";
 import {
   scoreS2SpanObservations,
   type S2SpanFixture,
@@ -447,6 +453,284 @@ describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
           await cleanup(db, f);
         } finally {
           await db.close();
+        }
+      }
+    },
+    360_000,
+  );
+});
+
+/**
+ * S2.5 measured shadow comparison: no reranking policy or production default
+ * changes. Uses the already-pinned local E5 provider and the same 48 questions.
+ * A nearest vector neighbor is NOT evidence admission or answer correctness.
+ */
+describe("S2 pinned multilingual E5 shadow comparison", () => {
+  it.skipIf(!databaseUrl || process.env.AKP_S2_SPAN_MULTILINGUAL !== "1")(
+    "compares lexical-only and current hybrid on identical authorized source units",
+    async () => {
+      const frozenBlob = createHash("sha1")
+        .update("blob " + datasetBytes.byteLength + "\0")
+        .update(datasetBytes)
+        .digest("hex");
+      expect(frozenBlob).toBe(frozenBlobSha1);
+      const db = new Postgres(databaseUrl!);
+      const fixture = makeFixture();
+      const logicalByUuid = new Map(
+        [...fixture.unitIds].map(([logical, uuid]) => [uuid, logical]),
+      );
+      const beforeVectorEnabled = process.env.AKP_VECTOR_ENABLED;
+      process.env.AKP_VECTOR_ENABLED = "true";
+      const adapter = new LocalSemanticEmbeddingAdapter({
+        ...(process.env.AKP_MODEL_CACHE_DIR?.trim()
+          ? { cacheDir: process.env.AKP_MODEL_CACHE_DIR }
+          : {}),
+        localFilesOnly: process.env.AKP_LOCAL_FILES_ONLY === "1",
+        maxBatchSize: 4,
+      });
+      const configurations = [
+        { name: "CONTROLLED_EXACT_LEXICAL", channels: ["exact", "lexical"] },
+        {
+          name: "EXISTING_E5_MULTILINGUAL_HYBRID",
+          channels: ["exact", "lexical", "vector"],
+        },
+      ] as const;
+      const sourceDigests = Object.fromEntries(
+        dataset.sourceDocuments.map((source) => [
+          source.id,
+          digest(
+            source.units.map((unit) => unit.id + "\n" + unit.text).join("\n\n"),
+          ),
+        ]),
+      );
+      const generationEvidence = [];
+      const measuredArms = [];
+      try {
+        await seed(db, fixture);
+        await adapter.load();
+        for (const source of dataset.sourceDocuments) {
+          const vaultId = fixture.vaultIds.get(source.id)!;
+          const built = await buildEmbeddingIndex(db, {
+            spaceId: fixture.spaceId,
+            vaultId,
+            corpusRevision: fixture.revision,
+            provider: adapter,
+            activate: true,
+            batchSize: 6,
+          });
+          expect(built.activated).toBe(true);
+          expect(built.unitCount).toBe(6);
+          expect(built.generation.status).toBe("ACTIVE");
+          expect(built.generation.model).toBe(
+            LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR.model,
+          );
+          expect(built.generation.modelRevision).toBe(
+            LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR.modelRevision,
+          );
+          generationEvidence.push({
+            sourceId: source.id,
+            generationId: built.generation.generationId,
+            model: built.generation.model,
+            modelRevision: built.generation.modelRevision,
+            dimensions: built.generation.dimensions,
+            inputStrategy: built.generation.inputStrategy,
+            runtime: built.generation.runtime,
+            embeddingCount: built.unitCount,
+          });
+        }
+        const queryEmbeddingService = new QueryEmbeddingService(
+          async () => adapter,
+        );
+        for (const configuration of configurations) {
+          const observations: S2SpanObservation[] = [];
+          const diagnostics = [];
+          for (const question of dataset.cases) {
+            const vaultId = fixture.vaultIds.get(question.sourceId)!;
+            const warnings: string[] = [];
+            const availableChannels = new Set<
+              "context-pack" | "exact" | "lexical" | "vector" | "graph" | "raw" | "code"
+            >();
+            let candidateRanks: string[] | undefined;
+            let candidateCount = 0;
+            const start = performance.now();
+            const hits = await queryKnowledge(
+              db,
+              {
+                query: question.query,
+                spaceId: fixture.spaceId,
+                vaultId,
+                vaultIds: [],
+                federated: false,
+                types: [],
+                minimumTrust: "MACHINE_SUPPORTED",
+                mode: "SOURCE_BACKED",
+                limit: 10,
+              },
+              {
+                vaultIds: [vaultId],
+                channels: [...configuration.channels],
+                queryEmbeddingService,
+                warningSink: warnings,
+                availableChannelSink: availableChannels,
+                answerabilityCandidateSink: (candidates) => {
+                  candidateCount = candidates.length;
+                  expect(
+                    candidates.every((candidate) => candidate.vaultId === vaultId),
+                  ).toBe(true);
+                  candidateRanks = candidates.map((candidate) => {
+                    const unitId = logicalByUuid.get(candidate.unitId ?? "");
+                    if (!unitId) throw new Error("S2_UNMAPPED_CANDIDATE_UNIT");
+                    return unitId;
+                  });
+                },
+              },
+            );
+            const elapsedMs = performance.now() - start;
+            expect(hits.every((hit) => hit.vaultId === vaultId)).toBe(true);
+            if (configuration.name === "EXISTING_E5_MULTILINGUAL_HYBRID") {
+              expect(availableChannels.has("vector")).toBe(true);
+            }
+            const displayed = hits.map((hit) => {
+              const unitId = logicalByUuid.get(hit.unitId ?? "");
+              if (!unitId) throw new Error("S2_UNMAPPED_DISPLAYED_UNIT");
+              return unitId;
+            });
+            const rankedUnitIds = candidateRanks ?? displayed;
+            const goldIds = new Set(question.gold.map((gold) => gold.unitId));
+            const firstGoldRank = rankedUnitIds.findIndex((unitId) =>
+              goldIds.has(unitId),
+            );
+            observations.push({
+              caseId: question.id,
+              rankedUnitIds,
+              admissionMeasured: false,
+              admitted: [],
+              elapsedMs,
+              degraded: warnings.some((warning) =>
+                /(?:ERROR|UNAVAILABLE|TIMEOUT|DEGRADED)/u.test(warning),
+              ),
+            });
+            diagnostics.push({
+              caseId: question.id,
+              sourceId: question.sourceId,
+              language: question.language,
+              answerable: question.answerable,
+              candidateCount,
+              rankedUnitIds,
+              presentedUnitIds: displayed,
+              firstGoldRank: firstGoldRank < 0 ? null : firstGoldRank + 1,
+              availableChannels: [...availableChannels].sort(),
+              warnings,
+              elapsedMs,
+            });
+          }
+          const score = scoreS2SpanObservations(dataset, observations);
+          expect(score.observedCases).toBe(48);
+          expect(score.admissionObservedCases).toBe(0);
+          expect(score.falseAdmissionRate).toBeNull();
+          expect(score.exactGoldQuoteCoverage).toBeNull();
+          expect(score.finalAnswerCorrectRate).toBeNull();
+          const byLanguage = Object.fromEntries(
+            (["en", "es"] as const).map((language) => {
+              const langCases = new Set(
+                dataset.cases
+                  .filter((item) => item.language === language)
+                  .map((item) => item.id),
+              );
+              const langScore = scoreS2SpanObservations(
+                {
+                  sourceDocuments: dataset.sourceDocuments,
+                  cases: dataset.cases.filter((item) => langCases.has(item.id)),
+                },
+                observations.filter((item) => langCases.has(item.caseId)),
+              );
+              return [
+                language,
+                {
+                  positiveCount: langScore.positiveObserved,
+                  recallAt1: langScore.recallAt1,
+                  recallAt5: langScore.recallAt5,
+                  recallAt10: langScore.recallAt10,
+                },
+              ];
+            }),
+          );
+          measuredArms.push({
+            configuration: configuration.name,
+            channels: configuration.channels,
+            score,
+            byLanguage,
+            diagnostics,
+          });
+        }
+        const baseline = measuredArms[0]!;
+        const hybrid = measuredArms[1]!;
+        const report = {
+          schemaVersion: "akp.s2.real-multilingual-shadow.v1",
+          evidenceLevel: "REAL_PINNED_E5_WITH_POSTGRES_SCOPED_SYNTHETIC_HOLDOUT",
+          frozenGitBlobSha1: frozenBlob,
+          sourceSha256: sourceDigests,
+          branchHeadSha: process.env.AKP_S2_BRANCH_HEAD_SHA ?? "LOCAL_UNPINNED",
+          workflowCheckoutSha: process.env.GITHUB_SHA ?? "LOCAL_UNPINNED",
+          actor: "SYNTHETIC_TEST_PRINCIPAL",
+          queryCountPerConfiguration: dataset.cases.length,
+          questionOrder: "FROZEN_FILE_ORDER",
+          presentedLimit: 10,
+          scope: "ONE_SOURCE_VAULT_PER_QUESTION",
+          fixtureProjection: "SYNTHETIC_APPROVED_TEST_ROWS_NOT_RAW_INGEST",
+          baselineProfile: "EXACT_PLUS_LEXICAL",
+          challengerProfile: "EXISTING_EXACT_PLUS_LEXICAL_PLUS_E5",
+          model: LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
+          generationEvidence,
+          arms: measuredArms,
+          pairedRecallAt10Delta:
+            hybrid.score.recallAt10 === null || baseline.score.recallAt10 === null
+              ? null
+              : hybrid.score.recallAt10 - baseline.score.recallAt10,
+          performanceCaveat:
+            "Sequential arms with warm model cache; duration not controlled for query order. No production default change.",
+          independentAdjudication: false,
+          admissionMeasured: false,
+          generatedAnswerCorrectnessMeasured: false,
+          exactModelTokensMeasured: false,
+          manualObsidianComparisonMeasured: false,
+          gateAccepted: false,
+        };
+        const file = path.resolve(
+          import.meta.dirname,
+          "../../../reports/ci/s2-multilingual-shadow-baseline.json",
+        );
+        await mkdir(path.dirname(file), { recursive: true });
+        await writeFile(file, JSON.stringify(report, null, 2) + "\n", "utf8");
+        console.log(
+          "S2_MULTILINGUAL_SHADOW " +
+            JSON.stringify({
+              casesPerArm: 48,
+              baselineRecallAt10: baseline.score.recallAt10,
+              hybridRecallAt10: hybrid.score.recallAt10,
+              pairedRecallAt10Delta: report.pairedRecallAt10Delta,
+              gateAccepted: false,
+            }),
+        );
+      } finally {
+        try {
+          await db.pool.query(
+            "delete from unit_embeddings where generation_id in " +
+              "(select id from embedding_generations where vault_id=any($1::uuid[]))",
+            [[...fixture.vaultIds.values()]],
+          );
+          await db.pool.query(
+            "delete from embedding_generations where vault_id=any($1::uuid[])",
+            [[...fixture.vaultIds.values()]],
+          );
+          await cleanup(db, fixture);
+        } finally {
+          await db.close();
+          if (beforeVectorEnabled === undefined) {
+            delete process.env.AKP_VECTOR_ENABLED;
+          } else {
+            process.env.AKP_VECTOR_ENABLED = beforeVectorEnabled;
+          }
         }
       }
     },

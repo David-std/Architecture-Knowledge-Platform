@@ -211,6 +211,21 @@ jobs:
             --reporter=default --reporter=junit \
             --outputFile.junit=../../reports/ci/semantic-retrieval-junit.xml \
             2>&1 | tee reports/ci/semantic-retrieval.log
+      - name: Compare frozen S2 lexical and pinned E5 hybrid shadow profiles
+        shell: bash
+        env:
+          AKP_S2_SPAN_MULTILINGUAL: "1"
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci
+          pnpm --filter @akp/api exec vitest run \
+            --config vitest.integration.config.ts \
+            test/s2-source-span.integration.test.ts \
+            --no-file-parallelism \
+            --reporter=default --reporter=junit \
+            --outputFile.junit=../../reports/ci/s2-multilingual-shadow-junit.xml \
+            2>&1 | tee reports/ci/s2-multilingual-shadow.log
+          test -s reports/ci/s2-multilingual-shadow-baseline.json
       - name: Execute retrieval matrix through the real runtime pipeline
         shell: bash
         run: |
