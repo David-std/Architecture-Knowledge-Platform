@@ -630,11 +630,13 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
                 queryCoverage: signal.textualSupport.queryCoverage,
                 salientCoverage: signal.textualSupport.salientCoverage,
                 salientQueryTokens: signal.textualSupport.salientQueryTokens,
-                salientOverlapTokens: signal.textualSupport.salientOverlapTokens,
+                salientOverlapTokens:
+                  signal.textualSupport.salientOverlapTokens,
                 requiredAnswerCues: signal.passageSupport.requiredAnswerCues,
                 matchedAnswerCues: signal.passageSupport.matchedAnswerCues,
                 answerCueCoverage: signal.passageSupport.answerCueCoverage,
-                boundedAnchorCoverage: signal.passageSupport.boundedAnchorCoverage,
+                boundedAnchorCoverage:
+                  signal.passageSupport.boundedAnchorCoverage,
                 boundedRelationRoleMatched:
                   signal.passageSupport.boundedRelationRoleMatched,
                 claimRelationDiagnostics:
