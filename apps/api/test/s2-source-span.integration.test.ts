@@ -507,6 +507,7 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
       );
       const generationEvidence = [];
       const measuredArms = [];
+      const adjudicationCases: Record<string, unknown>[] = [];
       try {
         await seed(db, fixture);
         await adapter.load();
@@ -601,6 +602,48 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
             expect(hits.every((hit) => hit.vaultId === vaultId)).toBe(true);
             if (configuration.name === "EXISTING_E5_MULTILINGUAL_HYBRID") {
               expect(availableChannels.has("vector")).toBe(true);
+            }
+            // Reviewer input is derived exclusively from the authorized
+            // pre-presentation candidate pool. It contains no gold labels,
+            // deterministic-support verdicts, or generated answers.
+            if (configuration.name === "EXISTING_E5_MULTILINGUAL_HYBRID") {
+              if (!candidateHits) throw new Error("S2_AUTHORIZED_POOL_MISSING");
+              const source = dataset.sourceDocuments.find(
+                (item) => item.id === question.sourceId,
+              );
+              if (!source) throw new Error("S2_REVIEW_SOURCE_UNKNOWN");
+              const candidates = candidateHits.map((candidate) => {
+                const unitId = logicalByUuid.get(candidate.unitId ?? "");
+                const unit = source.units.find((item) => item.id === unitId);
+                if (!unit) throw new Error("S2_REVIEW_UNIT_OUT_OF_SCOPE");
+                const sourceStartOffset = unit.text.indexOf(candidate.excerpt);
+                if (sourceStartOffset < 0) {
+                  throw new Error("S2_REVIEW_EXCERPT_NOT_SOURCE_BOUND");
+                }
+                return {
+                  candidateKey: digest(
+                    question.query + "\0" + question.sourceId + "\0" + unit.id,
+                  ),
+                  passage: candidate.excerpt,
+                  passageSha256: digest(candidate.excerpt),
+                  sourceUnitSha256: digest(unit.text),
+                  sourceStartOffsetUtf16: sourceStartOffset,
+                  sourceEndOffsetUtf16:
+                    sourceStartOffset + candidate.excerpt.length,
+                  annotation: {
+                    verdict: null,
+                    quoteStartOffsetUtf16: null,
+                    quoteEndOffsetUtf16: null,
+                  },
+                };
+              });
+              adjudicationCases.push({
+                questionKey: digest(question.query),
+                query: question.query,
+                candidates: candidates.sort((left, right) =>
+                  left.candidateKey.localeCompare(right.candidateKey),
+                ),
+              });
             }
             const displayed = hits.map((hit) => {
               const unitId = logicalByUuid.get(hit.unitId ?? "");
@@ -741,6 +784,37 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
         }
         const baseline = measuredArms[0]!;
         const hybrid = measuredArms[1]!;
+        // Public, author-constructed fixtures cannot be turned into a
+        // blind holdout by withholding labels in this export.
+        expect(adjudicationCases).toHaveLength(dataset.cases.length);
+        const reviewPacket = {
+          schemaVersion: "akp.s2.adjudication-request.v1",
+          status: "UNADJUDICATED_PUBLIC_NONBLIND",
+          sourceOfCandidates: "AUTHORIZED_E5_QUERY_KNOWLEDGE_CANDIDATE_SINK",
+          fixtureProjection: "SYNTHETIC_APPROVED_TEST_ROWS_NOT_RAW_INGEST",
+          frozenGitBlobSha1: frozenBlob,
+          sourceSha256: sourceDigests,
+          branchHeadSha:
+            process.env.AKP_S2_BRANCH_HEAD_SHA ?? "LOCAL_UNPINNED",
+          readerDecisionsMeasured: false,
+          independentAdjudication: false,
+          sourceSpansAdmitted: false,
+          goldLabelsIncluded: false,
+          deterministicSupportPredictionsIncluded: false,
+          candidateOrder: "SORTED_BY_STABLE_KEY_NOT_RETRIEVAL_RANK",
+          quoteOffsetConvention: "UTF16_OFFSETS_IN_EXACT_PASSAGE",
+          cases: adjudicationCases,
+        };
+        const reviewPacketFile = path.resolve(
+          import.meta.dirname,
+          "../../../reports/ci/s2-adjudication-review-packet.json",
+        );
+        await mkdir(path.dirname(reviewPacketFile), { recursive: true });
+        await writeFile(
+          reviewPacketFile,
+          JSON.stringify(reviewPacket, null, 2) + "\n",
+          "utf8",
+        );
         const report = {
           schemaVersion: "akp.s2.real-multilingual-shadow.v1",
           evidenceLevel:
