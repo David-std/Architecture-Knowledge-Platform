@@ -252,6 +252,53 @@ const rows = hybrid.diagnostics.map((diagnostic) => {
   const linkedPayloads = continuationPayloads.filter((payload) =>
     publishedContinuationHandles.has(payload.continuation.handle),
   );
+  if (
+    new Set(linkedPayloads.map((payload) => payload.continuation.handle))
+      .size !== publishedContinuationHandles.size
+  ) {
+    throw new Error("S2_TOKEN_PUBLISHED_CONTINUATION_UNRESOLVED");
+  }
+  // Every full source section must survive either intact in compact content
+  // or byte-exact in an addressable continuation. This tests all 288 units,
+  // including negative questions without a gold span.
+  const compactUnitIds = new Set(
+    packetPair.compact.content.map((section) => section.identity.unitId),
+  );
+  if (
+    compactUnitIds.size !== packetPair.compact.content.length ||
+    packetPair.compact.content.some((section) => {
+      const full = packetPair.full.sections.find(
+        (candidate) => candidate.unitId === section.identity.unitId,
+      );
+      return !full || !full.content.includes(section.content);
+    })
+  )
+    throw new Error("S2_TOKEN_COMPACT_UNIT_ID_OR_CONTENT_UNBOUND");
+  let exactFullUnitsInCompact = 0;
+  let exactFullUnitsOnContinuation = 0;
+  for (const fullSection of packetPair.full.sections) {
+    if (
+      packetPair.compact.content.some(
+        (section) =>
+          section.identity.unitId === fullSection.unitId &&
+          section.content === fullSection.content,
+      )
+    ) {
+      exactFullUnitsInCompact += 1;
+    } else if (
+      linkedPayloads.some((payload) =>
+        payload.sections.some(
+          (section) =>
+            section.unitId === fullSection.unitId &&
+            section.content === fullSection.content,
+        ),
+      )
+    ) {
+      exactFullUnitsOnContinuation += 1;
+    } else {
+      throw new Error("S2_TOKEN_SOURCE_UNIT_LOST_WITHOUT_CONTINUATION");
+    }
+  }
   const goldQuoteInContinuation = gold
     ? linkedPayloads.some((payload) =>
         payload.sections.some(
@@ -311,6 +358,12 @@ const rows = hybrid.diagnostics.map((diagnostic) => {
     goldQuoteInContinuation,
     metadataOnlyCitations,
     continuationPayloadCount: linkedPayloads.length,
+    exactFullUnitsInCompact,
+    exactFullUnitsOnContinuation,
+    sourceUnitTransportLossCount:
+      packetPair.full.sections.length -
+      exactFullUnitsInCompact -
+      exactFullUnitsOnContinuation,
   };
 });
 if (new Set(rows.map((row) => row.caseId)).size !== 48) {
@@ -337,6 +390,25 @@ const metrics = [
 const distributions = Object.fromEntries(
   metrics.map((field) => [field, distribution(rows.map((r) => r[field]))]),
 );
+const sourceUnitTransport = {
+  status: "EXACT_SOURCE_UNIT_OR_PUBLISHED_CONTINUATION",
+  sourceUnitCount: rows.reduce(
+    (sum, row) => sum + row.fullPacketSectionCount,
+    0,
+  ),
+  carriedExactInCompact: rows.reduce(
+    (sum, row) => sum + row.exactFullUnitsInCompact,
+    0,
+  ),
+  recoverableOnContinuation: rows.reduce(
+    (sum, row) => sum + row.exactFullUnitsOnContinuation,
+    0,
+  ),
+  lostWithoutContinuation: rows.reduce(
+    (sum, row) => sum + row.sourceUnitTransportLossCount,
+    0,
+  ),
+};
 const quoteTransportRows = rows.filter((row) => row.sourceAnswerable);
 if (quoteTransportRows.length !== 24)
   throw new Error("S2_QUOTE_TRANSPORT_POSITIVE_COUNT_INVALID");
@@ -406,6 +478,7 @@ const report = {
     "Token counts describe pre-admission synthetic source transport and test-only ContextPacket projections. Top-k is not sufficient evidence; no admitted citation precision, task success, Obsidian comparison, or production latency has been measured.",
   distributions,
   quoteTransport,
+  sourceUnitTransport,
   rows,
 };
 await mkdir(path.dirname(outputFile), { recursive: true });
