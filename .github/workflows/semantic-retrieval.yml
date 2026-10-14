@@ -256,6 +256,12 @@ jobs:
             report.modelChatTemplateApplied !== false ||
             report.evidenceAdmissionMeasured !== false ||
             report.independentAdjudication !== false ||
+            report.quoteTransport?.status !== "AUTHOR_ORACLE_LITERAL_TRANSPORT_NOT_SEMANTIC_ADMISSION" ||
+            report.quoteTransport.positiveCases !== 24 ||
+            report.quoteTransport.fullQuoteVisible !== 24 ||
+            report.quoteTransport.lostWithoutContinuation !== 0 ||
+            report.quoteTransport.byLanguage?.en?.positives !== 12 ||
+            report.quoteTransport.byLanguage?.es?.positives !== 12 ||
             report.productionDefaultsChanged !== false ||
             report.gateAccepted !== false
           ) {
