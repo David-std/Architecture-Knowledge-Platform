@@ -628,7 +628,17 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
                 supported: signal.passageSupport.supported,
                 reason: signal.passageSupport.reason,
                 queryCoverage: signal.textualSupport.queryCoverage,
+                salientCoverage: signal.textualSupport.salientCoverage,
+                salientQueryTokens: signal.textualSupport.salientQueryTokens,
+                salientOverlapTokens: signal.textualSupport.salientOverlapTokens,
+                requiredAnswerCues: signal.passageSupport.requiredAnswerCues,
+                matchedAnswerCues: signal.passageSupport.matchedAnswerCues,
                 answerCueCoverage: signal.passageSupport.answerCueCoverage,
+                boundedAnchorCoverage: signal.passageSupport.boundedAnchorCoverage,
+                boundedRelationRoleMatched:
+                  signal.passageSupport.boundedRelationRoleMatched,
+                claimRelationDiagnostics:
+                  signal.passageSupport.claimRelationDiagnostics,
                 passageSource: signal.passageSupport.passageSource,
               };
             });
