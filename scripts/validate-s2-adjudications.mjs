@@ -11,12 +11,22 @@ import path from "node:path";
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const hex = /^[a-f0-9]{64}$/u;
 const verdicts = new Set([
-  "ANSWERS", "CONTRADICTS", "RELATED_NOT_ANSWERING", "INSUFFICIENT",
+  "ANSWERS",
+  "CONTRADICTS",
+  "RELATED_NOT_ANSWERING",
+  "INSUFFICIENT",
 ]);
 const columns = [
-  "questionKey", "query", "candidateKey", "passage", "passageSha256",
-  "sourceUnitSha256", "verdict", "quoteStartOffsetUtf16",
-  "quoteEndOffsetUtf16", "reviewerNote",
+  "questionKey",
+  "query",
+  "candidateKey",
+  "passage",
+  "passageSha256",
+  "sourceUnitSha256",
+  "verdict",
+  "quoteStartOffsetUtf16",
+  "quoteEndOffsetUtf16",
+  "reviewerNote",
 ];
 function fail(code) {
   throw new Error("S2_ADJUDICATION_" + code);
@@ -29,15 +39,27 @@ function validSpan(passage, start, end) {
     passage.charCodeAt(index - 1) <= 0xdbff &&
     passage.charCodeAt(index) >= 0xdc00 &&
     passage.charCodeAt(index) <= 0xdfff;
-  return Number.isSafeInteger(start) && Number.isSafeInteger(end) &&
-    start >= 0 && end > start && end <= passage.length &&
-    !split(start) && !split(end) && passage.slice(start, end).trim().length > 0;
+  return (
+    Number.isSafeInteger(start) &&
+    Number.isSafeInteger(end) &&
+    start >= 0 &&
+    end > start &&
+    end <= passage.length &&
+    !split(start) &&
+    !split(end) &&
+    passage.slice(start, end).trim().length > 0
+  );
 }
-export function inspectPacket(packet, expectedCases = 48, expectedCandidates = 288) {
+export function inspectPacket(
+  packet,
+  expectedCases = 48,
+  expectedCandidates = 288,
+) {
   if (
     packet?.schemaVersion !== "akp.s2.adjudication-request.v1" ||
     packet.status !== "UNADJUDICATED_PUBLIC_NONBLIND" ||
-    packet.sourceOfCandidates !== "AUTHORIZED_E5_QUERY_KNOWLEDGE_CANDIDATE_SINK" ||
+    packet.sourceOfCandidates !==
+      "AUTHORIZED_E5_QUERY_KNOWLEDGE_CANDIDATE_SINK" ||
     packet.quoteOffsetConvention !== "UTF16_OFFSETS_IN_EXACT_PASSAGE" ||
     packet.readerDecisionsMeasured !== false ||
     packet.independentAdjudication !== false ||
@@ -48,18 +70,23 @@ export function inspectPacket(packet, expectedCases = 48, expectedCandidates = 2
     !/^[a-f0-9]{40}$/u.test(packet.branchHeadSha ?? "") ||
     !Array.isArray(packet.cases) ||
     packet.cases.length !== expectedCases
-  ) fail("PACKET_HEADER_INVALID");
+  )
+    fail("PACKET_HEADER_INVALID");
   const questions = new Map();
   let count = 0;
   for (const question of packet.cases) {
-    if (typeof question.query !== "string" ||
+    if (
+      typeof question.query !== "string" ||
       question.questionKey !== hash(question.query) ||
       questions.has(question.questionKey) ||
-      !Array.isArray(question.candidates)) fail("QUESTION_IDENTITY_CHANGED");
+      !Array.isArray(question.candidates)
+    )
+      fail("QUESTION_IDENTITY_CHANGED");
     const candidates = new Map();
     for (const item of question.candidates) {
       count += 1;
-      if (!hex.test(item.candidateKey ?? "") ||
+      if (
+        !hex.test(item.candidateKey ?? "") ||
         candidates.has(item.candidateKey) ||
         typeof item.passage !== "string" ||
         !item.passage.trim() ||
@@ -71,7 +98,8 @@ export function inspectPacket(packet, expectedCases = 48, expectedCandidates = 2
           item.passage.length ||
         item.annotation?.verdict !== null ||
         item.annotation?.quoteStartOffsetUtf16 !== null ||
-        item.annotation?.quoteEndOffsetUtf16 !== null) {
+        item.annotation?.quoteEndOffsetUtf16 !== null
+      ) {
         fail("CANDIDATE_SOURCE_OR_LABEL_CHANGED");
       }
       candidates.set(item.candidateKey, item);
@@ -127,18 +155,24 @@ export function inspectAnnotations(packetIndex, raw) {
     const question = packetIndex.questions.get(row.questionKey);
     const candidate = question?.candidates.get(row.candidateKey);
     const key = row.questionKey + ":" + row.candidateKey;
-    if (!candidate || annotations.has(key)) fail("FOREIGN_OR_DUPLICATE_CANDIDATE");
-    if (row.query !== question.query ||
+    if (!candidate || annotations.has(key))
+      fail("FOREIGN_OR_DUPLICATE_CANDIDATE");
+    if (
+      row.query !== question.query ||
       row.passage !== candidate.passage ||
       row.passageSha256 !== candidate.passageSha256 ||
       row.sourceUnitSha256 !== candidate.sourceUnitSha256 ||
-      !verdicts.has(row.verdict)) fail("REVIEW_SOURCE_OR_VERDICT_INVALID");
+      !verdicts.has(row.verdict)
+    )
+      fail("REVIEW_SOURCE_OR_VERDICT_INVALID");
     const hasQuote = row.verdict === "ANSWERS" || row.verdict === "CONTRADICTS";
     let start = null;
     let end = null;
     if (hasQuote) {
-      if (!/^(0|[1-9]\d*)$/u.test(row.quoteStartOffsetUtf16) ||
-        !/^(0|[1-9]\d*)$/u.test(row.quoteEndOffsetUtf16)) {
+      if (
+        !/^(0|[1-9]\d*)$/u.test(row.quoteStartOffsetUtf16) ||
+        !/^(0|[1-9]\d*)$/u.test(row.quoteEndOffsetUtf16)
+      ) {
         fail("ANSWER_QUOTE_NOT_EXACT_SOURCE_SPAN");
       }
       start = Number(row.quoteStartOffsetUtf16);
@@ -151,7 +185,8 @@ export function inspectAnnotations(packetIndex, raw) {
     }
     annotations.set(key, { verdict: row.verdict, start, end });
   }
-  if (annotations.size !== packetIndex.candidateCount) fail("REVIEW_INCOMPLETE");
+  if (annotations.size !== packetIndex.candidateCount)
+    fail("REVIEW_INCOMPLETE");
   return annotations;
 }
 export function compareAnnotations(a, b) {
@@ -181,14 +216,21 @@ export function compareAnnotations(a, b) {
     labelAgreementRate: matchingLabels / a.size,
     comparableQuotes,
     matchingQuotes,
-    quoteAgreementRate: comparableQuotes ? matchingQuotes / comparableQuotes : null,
+    quoteAgreementRate: comparableQuotes
+      ? matchingQuotes / comparableQuotes
+      : null,
     disagreements,
   };
 }
 function encodeCsv(rows) {
-  const quote = (value) => '"' + String(value ?? "").replaceAll('"', '""') + '"';
-  return [columns.join(","), ...rows.map((row) =>
-    columns.map((name) => quote(row[name])).join(","))].join("\r\n") + "\r\n";
+  const quote = (value) =>
+    '"' + String(value ?? "").replaceAll('"', '""') + '"';
+  return (
+    [
+      columns.join(","),
+      ...rows.map((row) => columns.map((name) => quote(row[name])).join(",")),
+    ].join("\r\n") + "\r\n"
+  );
 }
 function selfTest() {
   const query = "Who recorded this?";
@@ -200,7 +242,11 @@ function selfTest() {
     sourceUnitSha256: hash(passage),
     sourceStartOffsetUtf16: 0,
     sourceEndOffsetUtf16: passage.length,
-    annotation: { verdict: null, quoteStartOffsetUtf16: null, quoteEndOffsetUtf16: null },
+    annotation: {
+      verdict: null,
+      quoteStartOffsetUtf16: null,
+      quoteEndOffsetUtf16: null,
+    },
   };
   const packet = {
     schemaVersion: "akp.s2.adjudication-request.v1",
@@ -218,8 +264,11 @@ function selfTest() {
   };
   const index = inspectPacket(packet, 1, 1);
   const row = {
-    questionKey: hash(query), query, candidateKey: source.candidateKey,
-    passage, passageSha256: source.passageSha256,
+    questionKey: hash(query),
+    query,
+    candidateKey: source.candidateKey,
+    passage,
+    passageSha256: source.passageSha256,
     sourceUnitSha256: source.sourceUnitSha256,
     verdict: "ANSWERS",
     quoteStartOffsetUtf16: String(passage.indexOf("😎")),
@@ -231,12 +280,36 @@ function selfTest() {
   const reject = (test) => assert.throws(test, /S2_ADJUDICATION_/u);
   reject(() => inspectAnnotations(index, encodeCsv([])));
   reject(() => inspectAnnotations(index, encodeCsv([row, row])));
-  reject(() => inspectAnnotations(index, encodeCsv([{ ...row, passage: "tampered" }])));
+  reject(() =>
+    inspectAnnotations(index, encodeCsv([{ ...row, passage: "tampered" }])),
+  );
   reject(() => inspectAnnotations(index, encodeCsv([{ ...row, verdict: "" }])));
-  reject(() => inspectAnnotations(index, encodeCsv([{ ...row, quoteStartOffsetUtf16: String(passage.indexOf("😎") + 1) }])));
-  reject(() => inspectAnnotations(index, encodeCsv([{ ...row, verdict: "INSUFFICIENT" }])));
-  reject(() => inspectPacket({ ...packet, cases: [{ ...packet.cases[0],
-    candidates: [{ ...source, passageSha256: "0".repeat(64) }] }] }, 1, 1));
+  reject(() =>
+    inspectAnnotations(
+      index,
+      encodeCsv([
+        { ...row, quoteStartOffsetUtf16: String(passage.indexOf("😎") + 1) },
+      ]),
+    ),
+  );
+  reject(() =>
+    inspectAnnotations(index, encodeCsv([{ ...row, verdict: "INSUFFICIENT" }])),
+  );
+  reject(() =>
+    inspectPacket(
+      {
+        ...packet,
+        cases: [
+          {
+            ...packet.cases[0],
+            candidates: [{ ...source, passageSha256: "0".repeat(64) }],
+          },
+        ],
+      },
+      1,
+      1,
+    ),
+  );
   return { mutationCases: 7, status: "PASSED" };
 }
 const args = new Map();
@@ -257,8 +330,10 @@ if (args.has("--self-test")) {
   if (!args.has("--packet")) fail("PACKET_REQUIRED");
   const bytes = await readFile(path.resolve(args.get("--packet")));
   const packetSha256 = hash(bytes);
-  if (args.has("--packet-sha256") &&
-    args.get("--packet-sha256") !== packetSha256) {
+  if (
+    args.has("--packet-sha256") &&
+    args.get("--packet-sha256") !== packetSha256
+  ) {
     fail("PACKET_SHA256_MISMATCH");
   }
   const packet = inspectPacket(JSON.parse(bytes.toString("utf8")));
@@ -270,8 +345,9 @@ if (args.has("--self-test")) {
   }
   const report = {
     schemaVersion: "akp.s2.adjudication-integrity.v1",
-    status: reviewerA ? "TWO_SUBMISSIONS_VALIDATED_HUMAN_ORIGIN_UNVERIFIED" :
-      "UNADJUDICATED_PACKET_VALIDATED",
+    status: reviewerA
+      ? "TWO_SUBMISSIONS_VALIDATED_HUMAN_ORIGIN_UNVERIFIED"
+      : "UNADJUDICATED_PACKET_VALIDATED",
     packetSha256,
     questionCount: packet.questions.size,
     candidateCount: packet.candidateCount,
@@ -287,11 +363,14 @@ if (args.has("--self-test")) {
     const idB = args.get("--reviewer-b-id");
     if (!idA || !idB || idA === idB) fail("DISTINCT_REVIEWER_IDS_REQUIRED");
     const [bytesA, bytesB] = await Promise.all([
-      readFile(path.resolve(reviewerA)), readFile(path.resolve(reviewerB)),
+      readFile(path.resolve(reviewerA)),
+      readFile(path.resolve(reviewerB)),
     ]);
     report.reviewerSubmission = {
-      firstId: idA, firstCsvSha256: hash(bytesA),
-      secondId: idB, secondCsvSha256: hash(bytesB),
+      firstId: idA,
+      firstCsvSha256: hash(bytesA),
+      secondId: idB,
+      secondCsvSha256: hash(bytesB),
     };
     report.agreement = compareAnnotations(
       inspectAnnotations(packet, bytesA.toString("utf8")),
