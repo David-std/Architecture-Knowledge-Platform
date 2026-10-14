@@ -183,6 +183,22 @@ export function scoreS2SpanObservations(
     ) {
       throw new Error("S2_OBSERVATION_TOKENIZER_NOT_PINNED");
     }
+    // This frozen study authorizes one source vault per question. A
+    // foreign/unknown ranked unit or duplicate rank is an invalid recorded
+    // execution, not a legitimate Recall@k miss to average into the score.
+    const scopedCase = cases.get(item.caseId)!;
+    const seenRanks = new Set<string>();
+    for (const unitId of item.rankedUnitIds) {
+      const sourceUnit = units.get(unitId);
+      if (
+        !sourceUnit ||
+        sourceUnit.sourceId !== scopedCase.sourceId ||
+        seenRanks.has(unitId)
+      ) {
+        throw new Error("S2_OBSERVATION_UNSCOPED_OR_DUPLICATE_RANK");
+      }
+      seenRanks.add(unitId);
+    }
     observationsById.set(item.caseId, item);
     if (item.failureKind) {
       failureKinds[item.failureKind] =

@@ -142,6 +142,35 @@ describe("S2 exact source-span measurement (not a live retrieval test)", () => {
     );
   });
 
+  it("rejects unscoped, unknown and duplicate ranked units before scoring", () => {
+    expect(() =>
+      scoreS2SpanObservations(fixture, [
+        observation("q1", { rankedUnitIds: ["unit-a", "unit-a"] }),
+      ]),
+    ).toThrow("S2_OBSERVATION_UNSCOPED_OR_DUPLICATE_RANK");
+    expect(() =>
+      scoreS2SpanObservations(fixture, [
+        observation("q1", { rankedUnitIds: ["other-vault-unit"] }),
+      ]),
+    ).toThrow("S2_OBSERVATION_UNSCOPED_OR_DUPLICATE_RANK");
+    const otherVault: S2SpanFixture = {
+      sourceDocuments: [
+        ...fixture.sourceDocuments,
+        {
+          id: "synthetic-other",
+          domain: "other-domain",
+          units: [{ id: "unit-foreign", text: "Secret foreign source content." }],
+        },
+      ],
+      cases: fixture.cases,
+    };
+    expect(() =>
+      scoreS2SpanObservations(otherVault, [
+        observation("q1", { rankedUnitIds: ["unit-foreign"] }),
+      ]),
+    ).toThrow("S2_OBSERVATION_UNSCOPED_OR_DUPLICATE_RANK");
+  });
+
   it("never infers exact model tokens from missing tokenizer evidence", () => {
     const observations = [observation("q1", { exactInputTokens: 42 })];
     expect(() => scoreS2SpanObservations(fixture, observations)).toThrow(
