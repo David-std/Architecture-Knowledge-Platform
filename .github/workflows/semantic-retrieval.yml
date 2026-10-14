@@ -235,6 +235,33 @@ jobs:
           node scripts/validate-s2-adjudications.mjs \
             --packet reports/ci/s2-adjudication-review-packet.json \
             --output reports/ci/s2-adjudication-integrity.json
+      - name: Measure S2 pre-admission ContextPacket tokens with pinned agent tokenizer
+        shell: bash
+        env:
+          AKP_S2_BRANCH_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -o pipefail
+          pnpm --filter @akp/retrieval exec tsx scripts/s2-exact-context-token-shadow.ts \
+            2>&1 | tee reports/ci/s2-exact-context-token-shadow.log
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(
+            readFileSync("reports/ci/s2-exact-context-token-shadow.json", "utf8"),
+          );
+          if (
+            report.evidenceLevel !== "PINNED_TARGET_TOKENIZER_AUTHORIZED_E5_SYNTHETIC_SHADOW" ||
+            report.assessment !== "PRE_ADMISSION_CONTEXT_FOOTPRINT_ONLY" ||
+            report.queryCount !== 48 ||
+            report.targetModelTokenizer.quality !== "EXACT" ||
+            report.modelChatTemplateApplied !== false ||
+            report.evidenceAdmissionMeasured !== false ||
+            report.independentAdjudication !== false ||
+            report.productionDefaultsChanged !== false ||
+            report.gateAccepted !== false
+          ) {
+            throw new Error("S2 exact-token shadow measurement was mislabelled or incomplete");
+          }
+          NODE
       - name: Execute retrieval matrix through the real runtime pipeline
         shell: bash
         run: |
