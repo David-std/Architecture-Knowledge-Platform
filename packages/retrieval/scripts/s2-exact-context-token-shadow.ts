@@ -12,6 +12,7 @@ import path from "node:path";
 import { AutoTokenizer } from "@huggingface/transformers";
 import {
   buildContextPacketPair,
+  type ContextContinuationPayload,
   type PacketCandidate,
   type Tokenizer,
 } from "../src/index.js";
@@ -60,6 +61,8 @@ interface Question {
   sourceId: string;
   query: string;
   language: "en" | "es";
+  answerable: boolean;
+  gold: { unitId: string; quote: string }[];
 }
 interface Fixture {
   sourceDocuments: SourceDocument[];
@@ -147,6 +150,16 @@ const rows = hybrid.diagnostics.map((diagnostic) => {
     diagnostic.rankedUnitIds.some((id) => !byId.has(id))
   )
     throw new Error("S2_TOKEN_AUTHORIZED_RANKS_INVALID");
+  // Gold is used exclusively after ranking for literal transport auditing.
+  // It never changes the candidate order, projection budget or source content.
+  if (
+    typeof question.answerable !== "boolean" ||
+    question.gold.length !== (question.answerable ? 1 : 0) ||
+    question.gold.some(
+      (gold) => !byId.get(gold.unitId)?.text.includes(gold.quote),
+    )
+  )
+    throw new Error("S2_TOKEN_ORACLE_NOT_SOURCE_BOUND");
   const units = diagnostic.rankedUnitIds.map((id) => byId.get(id)!);
   const fullSourceText = source.units.map((u) => u.text).join("\n\n");
   const rankedSourceText = units.map((u) => u.text).join("\n\n");
@@ -173,6 +186,7 @@ const rows = hybrid.diagnostics.map((diagnostic) => {
       citations: ["s2-test-only:" + unit.id],
     },
   }));
+  const continuationPayloads: ContextContinuationPayload[] = [];
   const packetPair = buildContextPacketPair({
     request: {
       query: question.query,
@@ -191,6 +205,7 @@ const rows = hybrid.diagnostics.map((diagnostic) => {
     maxSectionsPerDocument: 6,
     candidates,
     tokenizer: tokenizerPort,
+    continuationSink: (payload) => continuationPayloads.push(payload),
   });
   const fullPacketTokens = tokens(JSON.stringify(packetPair.full));
   const compactPacketTokens = tokens(JSON.stringify(packetPair.compact));
@@ -203,6 +218,66 @@ const rows = hybrid.diagnostics.map((diagnostic) => {
     compactPacketTokens > 2048
   )
     throw new Error("S2_TOKEN_PACKET_NOT_EXACT_OR_OUT_OF_BUDGET");
+
+  const gold = question.gold[0];
+  const goldIdentity = gold ? uuid("unit:" + gold.unitId) : null;
+  const goldCitation = gold ? "s2-test-only:" + gold.unitId : null;
+  const fullGoldQuotePresent = gold
+    ? packetPair.full.sections.some(
+        (section) =>
+          section.unitId === goldIdentity &&
+          section.content.includes(gold.quote),
+      )
+    : null;
+  const compactGoldUnitPresent = gold
+    ? packetPair.compact.content.some(
+        (section) => section.identity.unitId === goldIdentity,
+      )
+    : null;
+  const compactGoldQuotePresent = gold
+    ? packetPair.compact.content.some(
+        (section) =>
+          section.identity.unitId === goldIdentity &&
+          section.content.includes(gold.quote),
+      )
+    : null;
+  const compactGoldCitationListed = goldCitation
+    ? packetPair.compact.citations.includes(goldCitation)
+    : null;
+  const publishedContinuationHandles = new Set(
+    packetPair.compact.continuations.map((continuation) =>
+      continuation.handle,
+    ),
+  );
+  const linkedPayloads = continuationPayloads.filter((payload) =>
+    publishedContinuationHandles.has(payload.continuation.handle),
+  );
+  const goldQuoteInContinuation = gold
+    ? linkedPayloads.some((payload) =>
+        payload.sections.some(
+          (section) =>
+            section.unitId === goldIdentity &&
+            section.content.includes(gold.quote),
+        ),
+      )
+    : null;
+  if (gold && fullGoldQuotePresent !== true) {
+    throw new Error("S2_TOKEN_FULL_PACKET_GOLD_SOURCE_LOST");
+  }
+  // Test the continuation ledger; a lost literal quote cannot be silently
+  // counted as transport success simply because packet-level citations exist.
+  if (
+    gold &&
+    compactGoldQuotePresent !== true &&
+    goldQuoteInContinuation !== true
+  )
+    throw new Error("S2_TOKEN_GOLD_QUOTE_LOST_WITHOUT_CONTINUATION");
+  const visibleCompactCitations = new Set(
+    packetPair.compact.content.flatMap((section) => section.citations),
+  );
+  const metadataOnlyCitations = packetPair.compact.citations.filter(
+    (citation) => !visibleCompactCitations.has(citation),
+  ).length;
   return {
     caseId: diagnostic.caseId,
     language: diagnostic.language,
@@ -224,6 +299,18 @@ const rows = hybrid.diagnostics.map((diagnostic) => {
     fullPacketStatus: packetPair.full.status,
     compactPacketStatus: packetPair.compact.identity.status,
     compactHasContinuations: packetPair.compact.continuations.length > 0,
+    sourceAnswerable: question.answerable,
+    // Author-constructed oracle audit, NEVER independently adjudicated.
+    goldUnitRetrievalRank: gold
+      ? diagnostic.rankedUnitIds.indexOf(gold.unitId) + 1
+      : null,
+    fullGoldQuotePresent,
+    compactGoldUnitPresent,
+    compactGoldQuotePresent,
+    compactGoldCitationListed,
+    goldQuoteInContinuation,
+    metadataOnlyCitations,
+    continuationPayloadCount: linkedPayloads.length,
   };
 });
 if (new Set(rows.map((row) => row.caseId)).size !== 48) {
@@ -250,6 +337,54 @@ const metrics = [
 const distributions = Object.fromEntries(
   metrics.map((field) => [field, distribution(rows.map((r) => r[field]))]),
 );
+const quoteTransportRows = rows.filter((row) => row.sourceAnswerable);
+if (quoteTransportRows.length !== 24)
+  throw new Error("S2_QUOTE_TRANSPORT_POSITIVE_COUNT_INVALID");
+const quoteTransport = {
+  status: "AUTHOR_ORACLE_LITERAL_TRANSPORT_NOT_SEMANTIC_ADMISSION",
+  positiveCases: quoteTransportRows.length,
+  fullQuoteVisible: quoteTransportRows.filter(
+    (row) => row.fullGoldQuotePresent === true,
+  ).length,
+  compactQuoteVisible: quoteTransportRows.filter(
+    (row) => row.compactGoldQuotePresent === true,
+  ).length,
+  compactUnitVisible: quoteTransportRows.filter(
+    (row) => row.compactGoldUnitPresent === true,
+  ).length,
+  compactCitationMetadataOnly: quoteTransportRows.filter(
+    (row) =>
+      row.compactGoldCitationListed === true &&
+      row.compactGoldQuotePresent !== true,
+  ).length,
+  quoteOnPublishedContinuation: quoteTransportRows.filter(
+    (row) => row.goldQuoteInContinuation === true,
+  ).length,
+  lostWithoutContinuation: quoteTransportRows.filter(
+    (row) =>
+      row.compactGoldQuotePresent !== true &&
+      row.goldQuoteInContinuation !== true,
+  ).length,
+  byLanguage: Object.fromEntries(
+    (["en", "es"] as const).map((language) => {
+      const subset = quoteTransportRows.filter(
+        (row) => row.language === language,
+      );
+      return [
+        language,
+        {
+          positives: subset.length,
+          compactLiteralQuoteVisible: subset.filter(
+            (row) => row.compactGoldQuotePresent === true,
+          ).length,
+          continuationLiteralQuoteVisible: subset.filter(
+            (row) => row.goldQuoteInContinuation === true,
+          ).length,
+        },
+      ];
+    }),
+  ),
+};
 const report = {
   schemaVersion: "akp.s2.pre-admission-context-tokens.v1",
   evidenceLevel: "PINNED_TARGET_TOKENIZER_AUTHORIZED_E5_SYNTHETIC_SHADOW",
@@ -270,6 +405,7 @@ const report = {
   interpretation:
     "Token counts describe pre-admission synthetic source transport and test-only ContextPacket projections. Top-k is not sufficient evidence; no admitted citation precision, task success, Obsidian comparison, or production latency has been measured.",
   distributions,
+  quoteTransport,
   rows,
 };
 await mkdir(path.dirname(outputFile), { recursive: true });
@@ -280,6 +416,7 @@ console.log(
     observations: rows.length,
     fullMedian: distributions.fullContextPacketWireTokens?.median,
     compactMedian: distributions.compactContextPacketWireTokens?.median,
+    compactLiteralQuoteVisible: quoteTransport.compactQuoteVisible,
     output: outputFile,
     gateAccepted: false,
   }),
