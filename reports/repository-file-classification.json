@@ -3592,6 +3592,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/scripts/s2-exact-context-token-shadow.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/scripts/shadow-evidence-metrics.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
