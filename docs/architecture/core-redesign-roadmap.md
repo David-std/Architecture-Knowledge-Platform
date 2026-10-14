@@ -99,6 +99,17 @@ This implementation and coverage audit is now supported by a **bounded S1 accept
 - [ ] Remove rejected shadow/translation alternatives and aliases after proof of zero consumers; do not keep renamed legacy implementations.
 - **Done when:** evidence gate passes prespecified precision, FAR and latency plus measured token saving with no loss of answer coverage.
 
+### S2 baseline infrastructure audit (2026-10-13)
+
+**Status: IN PROGRESS; no S2 gate success claimed.** The prior S1 acceptance is unchanged and PR #38 remains draft/unmerged.
+
+- **S2.1 (shared operation):** HTTP, MCP and the context facade already converge on the same `/v1/search` and `/v1/context` endpoints and `queryKnowledge` path, rather than a separate MCP ranking engine. Pure ranking and evidence assembly still reside in the large `apps/api/src/routes/search.ts` module; moving pure use-case ownership to `packages/retrieval` remains pending a baseline-preserving refactor.
+- **S2.2 (new holdout foundation):** `evals/registered/s2-source-span-holdout.json` freezes 4 domain-disjoint synthetic sources with 24 original units and 48 balanced English/Spanish answerable/no-answer questions (24/24). A committed Git blob and explicit oracle substring/strata/threshold validation run as a real CI check. This is **author-constructed and not independently adjudicated**. Do not tune to these publicly visible labels; further independent review and realistic sample-size planning remain necessary.
+- **S2.4 (measurement code, not performance):** `packages/evaluation/src/s2-source-span.ts` accepts independently recorded candidates, exact UTF-16 source offsets and decisions; it separately reports answer-bearing unit Recall@1/5/10, strict gold-span coverage, no-answer false admission, p95, reader degradation and optional actual pinned-tokenizer counts. Empty or partial executions cannot be passed as a release result. `scripts/s2-score-observations.ts` refuses empty, unpinned or forged-source run metadata.
+- **S2.3, S2.5–S2.11 (still open):** a paired real manual/Obsidian baseline, independent human gold review, bounded candidate/reader comparison, production quote-sufficiency or fail-closed regression changes, actual model-token comparison, continuation/access filter stress, and removal of measured-rejected alternatives require evidence. No retrieval policy, model or provider default has been changed to obtain an artificial metric.
+
+**S2 remains blocked at the measurement gate** until candidate and answer correctness evidence, properly stratified uncertainty, exact token budgets and paired task-completion results are collected. A passing CI validates infrastructure and contracts, not the S2 user-outcome thresholds.
+
 ### S3 — Multi-agent working loop and shared docs freshness
 
 - [ ] Walk a real task through ticket reference → bootstrap → claim → CODE/SEARCH → finding → structured handoff → resumed agent → review → Git publication → next bootstrap.

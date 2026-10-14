@@ -4422,6 +4422,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/s2-score-observations.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/scan-secrets.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
