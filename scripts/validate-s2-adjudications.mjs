@@ -265,6 +265,9 @@ if (args.has("--self-test")) {
   const reviewerA = args.get("--reviewer-a");
   const reviewerB = args.get("--reviewer-b");
   if (Boolean(reviewerA) !== Boolean(reviewerB)) fail("REVIEW_PAIR_REQUIRED");
+  if (reviewerA && !args.has("--packet-sha256")) {
+    fail("PINNED_PACKET_SHA256_REQUIRED_FOR_REVIEW");
+  }
   const report = {
     schemaVersion: "akp.s2.adjudication-integrity.v1",
     status: reviewerA ? "TWO_SUBMISSIONS_VALIDATED_HUMAN_ORIGIN_UNVERIFIED" :
