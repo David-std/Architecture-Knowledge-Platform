@@ -159,7 +159,9 @@ describe("S2 exact source-span measurement (not a live retrieval test)", () => {
         {
           id: "synthetic-other",
           domain: "other-domain",
-          units: [{ id: "unit-foreign", text: "Secret foreign source content." }],
+          units: [
+            { id: "unit-foreign", text: "Secret foreign source content." },
+          ],
         },
       ],
       cases: fixture.cases,
