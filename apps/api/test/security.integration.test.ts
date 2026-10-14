@@ -2628,9 +2628,9 @@ describe("API security boundaries", () => {
       expect(membershipRevokedContinuation.json()).toMatchObject({
         code: "CONTEXT_CONTINUATION_NOT_FOUND",
       });
-      expect(JSON.stringify(membershipRevokedContinuation.json())).not.toContain(
-        marker,
-      );
+      expect(
+        JSON.stringify(membershipRevokedContinuation.json()),
+      ).not.toContain(marker);
       const membershipRevokedPacket = await app.inject({
         method: "GET",
         url: `/v1/generated-context-packets/${packetId}`,
