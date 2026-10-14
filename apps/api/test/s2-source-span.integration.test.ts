@@ -404,7 +404,8 @@ describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
             positiveGoldUnitCount: caseDiagnostics
               .filter((item) => item.caseId.includes("-p"))
               .reduce(
-                (total, item) => total + item.lexicalIndexProbe.goldUnitsPresent,
+                (total, item) =>
+                  total + item.lexicalIndexProbe.goldUnitsPresent,
                 0,
               ),
             positiveStrictGoldMatches: caseDiagnostics
