@@ -151,6 +151,32 @@ describe("S2 exact source-span measurement (not a live retrieval test)", () => {
     expect(s2WilsonLower(20, 20)).toBeLessThan(1);
   });
 
+  it("does not misreport unexecuted admission as zero false admissions", () => {
+    const rankedOnly = fixture.cases.map((item) =>
+      observation(item.id, { admissionMeasured: false }),
+    );
+    const result = scoreS2SpanObservations(fixture, rankedOnly);
+    expect(result.status).toBe("MEASURED_NOT_GATEABLE");
+    expect(result.admissionObservedCases).toBe(0);
+    expect(result.falseAdmissionRate).toBeNull();
+    expect(result.exactGoldQuoteCoverage).toBeNull();
+    expect(() =>
+      scoreS2SpanObservations(fixture, [
+        observation("q1", {
+          admissionMeasured: false,
+          admitted: [
+            {
+              unitId: "unit-a",
+              startOffset: 17,
+              endOffset: 38,
+              quote: "seven signed receipts",
+            },
+          ],
+        }),
+      ]),
+    ).toThrow("S2_OBSERVATION_MALFORMED");
+  });
+
   it("does not present partial runs or absent adjudication as final evidence", () => {
     const result = scoreS2SpanObservations(fixture, [
       observation("q1", {

@@ -54,6 +54,8 @@ export interface S2SpanObservation {
   caseId: string;
   rankedUnitIds: readonly string[];
   admitted: readonly S2ObservedCitation[];
+  /** False means candidate ranking was measured but admission was NOT run. */
+  admissionMeasured?: boolean;
   elapsedMs: number;
   degraded: boolean;
   /** Only independently adjudicated answer outcomes should populate this. */
@@ -79,6 +81,7 @@ export interface S2SpanScore {
   exactGoldQuoteCoverage: number | null;
   admittedQuoteCount: number;
   exactGoldQuoteCount: number;
+  admissionObservedCases: number;
   falseAdmissionRate: number | null;
   simpleWilsonLowerForExactGoldCoverage: number | null;
   p95Ms: number | null;
@@ -165,7 +168,10 @@ export function scoreS2SpanObservations(
       item.elapsedMs < 0 ||
       typeof item.degraded !== "boolean" ||
       !Array.isArray(item.rankedUnitIds) ||
-      !Array.isArray(item.admitted)
+      !Array.isArray(item.admitted) ||
+      (item.admissionMeasured !== undefined &&
+        typeof item.admissionMeasured !== "boolean") ||
+      (item.admissionMeasured === false && item.admitted.length > 0)
     ) {
       throw new Error("S2_OBSERVATION_MALFORMED");
     }
@@ -192,6 +198,8 @@ export function scoreS2SpanObservations(
   let admittedQuoteCount = 0;
   let exactGoldQuoteCount = 0;
   let negativesWithAdmission = 0;
+  let negativeAdmissionObserved = 0;
+  let admissionObservedCases = 0;
   let degraded = 0;
   const durations: number[] = [];
   const answers: boolean[] = [];
@@ -205,6 +213,7 @@ export function scoreS2SpanObservations(
       continue;
     }
     durations.push(observation.elapsedMs);
+    if (observation.admissionMeasured !== false) admissionObservedCases += 1;
     if (observation.degraded) degraded += 1;
     if (typeof observation.finalAnswerCorrect === "boolean") {
       answers.push(observation.finalAnswerCorrect);
@@ -225,7 +234,10 @@ export function scoreS2SpanObservations(
       if (firstRank >= 0 && firstRank < 10) recalled10 += 1;
     } else {
       negativeObserved += 1;
-      if (observation.admitted.length > 0) negativesWithAdmission += 1;
+      if (observation.admissionMeasured !== false) {
+        negativeAdmissionObserved += 1;
+        if (observation.admitted.length > 0) negativesWithAdmission += 1;
+      }
     }
 
     for (const citation of observation.admitted) {
@@ -277,7 +289,11 @@ export function scoreS2SpanObservations(
     exactGoldQuoteCoverage: ratio(exactGoldQuoteCount, admittedQuoteCount),
     admittedQuoteCount,
     exactGoldQuoteCount,
-    falseAdmissionRate: ratio(negativesWithAdmission, negativeObserved),
+    admissionObservedCases,
+    falseAdmissionRate:
+      negativeAdmissionObserved === negativeObserved
+        ? ratio(negativesWithAdmission, negativeObserved)
+        : null,
     simpleWilsonLowerForExactGoldCoverage: s2WilsonLower(
       exactGoldQuoteCount,
       admittedQuoteCount,
