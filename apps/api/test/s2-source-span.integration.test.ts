@@ -163,6 +163,69 @@ async function cleanup(db: Postgres, f: Fixture): Promise<void> {
     f.organizationId,
   ]);
 }
+interface ScopedIndexProbe {
+  queryTerms: string;
+  indexedUnitsInVault: number;
+  strictMatchingUnitsInVault: number;
+  goldUnitsPresent: number;
+  goldUnitsMatchingStrictQuery: number;
+}
+
+/**
+ * Diagnostic-only SQL. This does not rank evidence or modify retrieval
+ * policy. The frozen question is passed unchanged through plainto_tsquery,
+ * exactly as the maintained lexical channel does. Never count a missing gold
+ * unit as a lexical nonmatch.
+ */
+async function inspectStrictLexicalIndex(
+  db: Postgres,
+  vaultId: string,
+  revision: string,
+  query: string,
+  goldIds: readonly string[],
+): Promise<ScopedIndexProbe> {
+  const { rows } = await db.pool.query<{
+    query_terms: string;
+    indexed_units_in_vault: number;
+    strict_matching_units_in_vault: number;
+    gold_units_present: number;
+    gold_units_matching_strict_query: number;
+  }>(
+    `with terms as (
+       select plainto_tsquery('simple',$2) query_terms
+     ), scoped as (
+       select u.id,u.lexical_search_vector
+         from knowledge_units u
+        where u.vault_id=$1
+          and u.corpus_revision=$3
+          and u.lifecycle='ACTIVE'
+          and not u.container_only
+     )
+     select terms.query_terms::text query_terms,
+            (select count(*)::int from scoped u
+              where u.lexical_search_vector::text <> '') indexed_units_in_vault,
+            (select count(*)::int from scoped u
+              where u.lexical_search_vector @@ terms.query_terms)
+              strict_matching_units_in_vault,
+            (select count(*)::int from scoped u
+              where u.id=any($4::uuid[])) gold_units_present,
+            (select count(*)::int from scoped u
+              where u.id=any($4::uuid[])
+                and u.lexical_search_vector @@ terms.query_terms)
+              gold_units_matching_strict_query
+       from terms`,
+    [vaultId, query, revision, [...goldIds]],
+  );
+  const row = rows[0];
+  if (!row) throw new Error("S2_LEXICAL_INDEX_PROBE_EMPTY");
+  return {
+    queryTerms: row.query_terms,
+    indexedUnitsInVault: row.indexed_units_in_vault,
+    strictMatchingUnitsInVault: row.strict_matching_units_in_vault,
+    goldUnitsPresent: row.gold_units_present,
+    goldUnitsMatchingStrictQuery: row.gold_units_matching_strict_query,
+  };
+}
 describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
   it.skipIf(!databaseUrl || !enabled)(
     "measures scoped exact+lexical source-unit recall without implying admission quality",
@@ -224,6 +287,15 @@ describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
         }
         for (const q of dataset.cases) {
           const vaultId = f.vaultIds.get(q.sourceId)!;
+          const indexProbe = await inspectStrictLexicalIndex(
+            db,
+            vaultId,
+            f.revision,
+            q.query,
+            q.gold.map((gold) => f.unitIds.get(gold.unitId)!),
+          );
+          expect(indexProbe.indexedUnitsInVault).toBe(6);
+          expect(indexProbe.goldUnitsPresent).toBe(q.gold.length);
           const warnings: string[] = [];
           let candidatePoolSize = 0;
           const started = performance.now();
@@ -275,6 +347,15 @@ describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
             returnedHits: hits.length,
             unmappedHits: hits.length - rankedUnitIds.length,
             firstGoldUnitRank: rank < 0 ? null : rank + 1,
+            lexicalIndexProbe: indexProbe,
+            diagnosis:
+              q.answerable && indexProbe.goldUnitsPresent === 0
+                ? "GOLD_UNIT_NOT_INGESTED"
+                : q.answerable && indexProbe.goldUnitsMatchingStrictQuery === 0
+                  ? "STRICT_FULL_TEXT_QUERY_MISSES_GOLD"
+                  : q.answerable && rank < 0
+                    ? "STRICT_MATCH_PRESENT_BUT_RETRIEVAL_DROPPED_GOLD"
+                    : "NO_PROVEN_LEXICAL_MISS",
             warnings,
           });
         }
@@ -319,6 +400,24 @@ describe("S2 frozen holdout on real PostgreSQL retrieval", () => {
           fixturePositiveControls: controlDiagnostics,
           score,
           caseDiagnostics,
+          indexProbeSummary: {
+            positiveGoldUnitCount: caseDiagnostics
+              .filter((item) => item.caseId.includes("-p"))
+              .reduce(
+                (total, item) => total + item.lexicalIndexProbe.goldUnitsPresent,
+                0,
+              ),
+            positiveStrictGoldMatches: caseDiagnostics
+              .filter((item) => item.caseId.includes("-p"))
+              .reduce(
+                (total, item) =>
+                  total + item.lexicalIndexProbe.goldUnitsMatchingStrictQuery,
+                0,
+              ),
+            strictQueryNoCandidateCases: caseDiagnostics.filter(
+              (item) => item.lexicalIndexProbe.strictMatchingUnitsInVault === 0,
+            ).length,
+          },
         };
         await mkdir(path.dirname(output), { recursive: true });
         await writeFile(output, JSON.stringify(report, null, 2) + "\n", "utf8");
