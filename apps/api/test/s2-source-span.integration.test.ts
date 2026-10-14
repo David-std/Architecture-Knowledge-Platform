@@ -794,8 +794,7 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
           fixtureProjection: "SYNTHETIC_APPROVED_TEST_ROWS_NOT_RAW_INGEST",
           frozenGitBlobSha1: frozenBlob,
           sourceSha256: sourceDigests,
-          branchHeadSha:
-            process.env.AKP_S2_BRANCH_HEAD_SHA ?? "LOCAL_UNPINNED",
+          branchHeadSha: process.env.AKP_S2_BRANCH_HEAD_SHA ?? "LOCAL_UNPINNED",
           readerDecisionsMeasured: false,
           independentAdjudication: false,
           sourceSpansAdmitted: false,
