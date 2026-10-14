@@ -100,13 +100,17 @@ function p95(values: readonly number[]): number | null {
 }
 
 /** Simple binomial diagnostic; this is NOT a stratified confidence interval. */
-export function s2WilsonLower(successes: number, trials: number): number | null {
+export function s2WilsonLower(
+  successes: number,
+  trials: number,
+): number | null {
   if (trials === 0) return null;
   const z = 1.96;
   const p = successes / trials;
   const z2 = z * z;
   return (
-    (p + z2 / (2 * trials) -
+    (p +
+      z2 / (2 * trials) -
       z * Math.sqrt((p * (1 - p)) / trials + z2 / (4 * trials * trials))) /
     (1 + z2 / trials)
   );
@@ -117,16 +121,21 @@ export function scoreS2SpanObservations(
   observations: readonly S2SpanObservation[],
 ): S2SpanScore {
   const cases = new Map(fixture.cases.map((item) => [item.id, item]));
-  const sources = new Map(fixture.sourceDocuments.map((item) => [item.id, item]));
+  const sources = new Map(
+    fixture.sourceDocuments.map((item) => [item.id, item]),
+  );
   const units = new Map(
     fixture.sourceDocuments.flatMap((source) =>
-      source.units.map((unit) => [unit.id, { ...unit, sourceId: source.id }] as const),
+      source.units.map(
+        (unit) => [unit.id, { ...unit, sourceId: source.id }] as const,
+      ),
     ),
   );
   if (
     cases.size !== fixture.cases.length ||
     sources.size !== fixture.sourceDocuments.length ||
-    units.size !== fixture.sourceDocuments.reduce((n, doc) => n + doc.units.length, 0)
+    units.size !==
+      fixture.sourceDocuments.reduce((n, doc) => n + doc.units.length, 0)
   ) {
     throw new Error("S2_FIXTURE_IDENTITIES_NOT_UNIQUE");
   }
@@ -278,12 +287,9 @@ export function scoreS2SpanObservations(
     finalAnswerCorrectRate: allAnswerOutcomes
       ? ratio(answers.filter(Boolean).length, answers.length)
       : null,
-    tokenizerRevision: exactTokenReport
-      ? [...tokenizerRevisions][0]!
-      : null,
+    tokenizerRevision: exactTokenReport ? [...tokenizerRevisions][0]! : null,
     meanExactInputTokens: exactTokenReport
-      ? tokenCounts.reduce((sum, value) => sum + value, 0) /
-        tokenCounts.length
+      ? tokenCounts.reduce((sum, value) => sum + value, 0) / tokenCounts.length
       : null,
     failureKinds,
   };

@@ -31,7 +31,10 @@ export function inspectHoldout(data) {
   ) {
     failures.push("HOLDOUT_FREEZE_METADATA_OR_GATE_CHANGED");
   }
-  if (!Array.isArray(data.sourceDocuments) || data.sourceDocuments.length !== 4) {
+  if (
+    !Array.isArray(data.sourceDocuments) ||
+    data.sourceDocuments.length !== 4
+  ) {
     failures.push("HOLDOUT_SOURCE_COUNT_INVALID");
   }
   if (!Array.isArray(data.cases) || data.cases.length !== 48) {
@@ -147,13 +150,27 @@ const dataset = JSON.parse(raw);
 const result = inspectHoldout(dataset);
 if (process.argv.includes("--self-test")) {
   const edits = [
-    (data) => { data.thresholdsPreRegistered.precisionMin = 0.5; },
-    (data) => { data.cases[0].gold[0].quote = "invented"; },
-    (data) => { data.cases[0].sourceId = data.sourceDocuments[1].id; },
-    (data) => { data.cases[1].id = data.cases[0].id; },
-    (data) => { data.cases[0].answerable = false; },
-    (data) => { data.eligibleForTuning = true; },
-    (data) => { data.sourceDocuments[0].units[0].text = ""; },
+    (data) => {
+      data.thresholdsPreRegistered.precisionMin = 0.5;
+    },
+    (data) => {
+      data.cases[0].gold[0].quote = "invented";
+    },
+    (data) => {
+      data.cases[0].sourceId = data.sourceDocuments[1].id;
+    },
+    (data) => {
+      data.cases[1].id = data.cases[0].id;
+    },
+    (data) => {
+      data.cases[0].answerable = false;
+    },
+    (data) => {
+      data.eligibleForTuning = true;
+    },
+    (data) => {
+      data.sourceDocuments[0].units[0].text = "";
+    },
   ];
   for (const edit of edits) {
     const tampered = structuredClone(dataset);

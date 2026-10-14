@@ -61,11 +61,9 @@ if (
   !/^[a-f0-9]{40}$/.test(recorded.executedCommitSha ?? "") ||
   typeof recorded.scopedRetrievalConfiguration !== "string" ||
   recorded.scopedRetrievalConfiguration.trim().length < 8 ||
-  ![
-    "AKP_CURRENT",
-    "PAIRED_MANUAL_SEARCH",
-    "FIXED_READER_COMPARATOR",
-  ].includes(recorded.method) ||
+  !["AKP_CURRENT", "PAIRED_MANUAL_SEARCH", "FIXED_READER_COMPARATOR"].includes(
+    recorded.method,
+  ) ||
   !Array.isArray(recorded.observations)
 ) {
   throw new Error("S2_RECORDED_RUN_IDENTITY_INCOMPLETE");
@@ -74,9 +72,7 @@ const sourceSha256 = Object.fromEntries(
   fixture.sourceDocuments.map((doc) => [
     doc.id,
     createHash("sha256")
-      .update(
-        doc.units.map((unit) => unit.id + "\n" + unit.text).join("\n\n"),
-      )
+      .update(doc.units.map((unit) => unit.id + "\n" + unit.text).join("\n\n"))
       .digest("hex"),
   ]),
 );

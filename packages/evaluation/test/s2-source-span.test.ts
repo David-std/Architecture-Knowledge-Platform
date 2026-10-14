@@ -126,15 +126,15 @@ describe("S2 exact source-span measurement (not a live retrieval test)", () => {
 
   it("rejects duplicate observations and fabricated gold references", () => {
     expect(() =>
-      scoreS2SpanObservations(fixture, [
-        observation("q1"),
-        observation("q1"),
-      ]),
+      scoreS2SpanObservations(fixture, [observation("q1"), observation("q1")]),
     ).toThrow("S2_OBSERVATION_UNKNOWN_OR_DUPLICATE_CASE");
     const invalid: S2SpanFixture = {
       ...fixture,
       cases: [
-        { ...fixture.cases[0]!, gold: [{ unitId: "unit-z", quote: "invented" }] },
+        {
+          ...fixture.cases[0]!,
+          gold: [{ unitId: "unit-z", quote: "invented" }],
+        },
       ],
     };
     expect(() => scoreS2SpanObservations(invalid, [])).toThrow(
@@ -143,9 +143,7 @@ describe("S2 exact source-span measurement (not a live retrieval test)", () => {
   });
 
   it("never infers exact model tokens from missing tokenizer evidence", () => {
-    const observations = [
-      observation("q1", { exactInputTokens: 42 }),
-    ];
+    const observations = [observation("q1", { exactInputTokens: 42 })];
     expect(() => scoreS2SpanObservations(fixture, observations)).toThrow(
       "S2_OBSERVATION_TOKENIZER_NOT_PINNED",
     );
