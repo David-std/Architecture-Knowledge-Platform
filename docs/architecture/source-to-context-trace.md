@@ -1,0 +1,149 @@
+# Source-to-context pipeline: S1 source authority trace
+
+- **Reviewed:** 2026-10-08, draft PR #38. Initial trace at `6b54e2b3`; source-projection binding updated in `d7d85b2c`, pending same-head CI verification.
+- **Scope:** S1.1 source/persistence/reader trace. This is a static code and SQL-path audit, **not** a passing compiler ON/OFF database integration, OCR quality claim or S1 exit certification.
+- **Authorities:** immutable raw bytes in object storage and `sources`; sanitized `DocumentArtifact` in `source_artifacts`; reviewed Markdown in managed Git/`knowledge_documents`; evidence excerpts, plans, index units and model output are derived or provisional.
+
+## 1. Actual write path
+
+1. `apps/api/src/routes/ingest.ts` checks `source:write` and authorized scope, rejects disallowed source paths, and inserts an ingest job with its source URI in operational state. Job responses redact local paths and object-store keys.
+2. `apps/worker/src/worker.ts`, `RECEIVED`: `objects.putImmutable` content-addresses the bytes and optionally verifies the caller-provided SHA. The SQL-fenced `RECEIVED → HASHED` transition inserts/reuses `sources` by `(vault_id, sha256)` or `(space_id, sha256)`; `stage_outputs.raw` carries bucket/key/hash, and `sourceId` records the SQL source identity.
+3. `HASHED → STORED` checks that the raw object still exists. `NORMALIZING` downloads it to a temporary file, independently hashes the bytes, calls `/v1/extract-upload`, and requires a matching source ID/hash/media type, extractor/version and a valid `DocumentArtifact` through `parseCanonicalExtractionResponse` in `apps/worker/src/document-artifact.ts`. The worker sanitizes paths and provider metadata.
+4. In the SQL-fenced `NORMALIZING → ANALYZING` transition, one `source_artifacts` row stores `document_artifact`, extractor/version, source hash, configuration hash and structured content hash (upsert identity `source_id + extractor + extractor_version + configuration_hash`). A linked `evidence` row stores machine-extracted evidence, locator and excerpt. Provider start/success/failure events are durable.
+5. `ANALYZING` checks for an active knowledge document with the same source SHA, then invokes `buildCompilationStage` if new material is needed. An existing source SHA can lead to `NO_MATERIAL`, but the structured source was persisted in the previous stage.
+6. If the compiler route is disabled or no eligible model exists, `sourceSummaryFallback` calls `renderDocumentArtifactDraft` with the **persisted, identity-verified complete source Markdown** in a `source-summary` machine draft, with `source_id`, `source_artifact_id`, SHA and an explicit human-review warning.
+7. If a compiler route is eligible, `buildCompilationStage` invokes `prepareGroundedKnowledgeCompilation` and `executePreparedGroundedKnowledgeCompilation`. The returned `CompilationPlan.proposedChanges` is **generative proposed knowledge**, not guaranteed to be a complete faithful source Markdown projection.
+8. `PLANNED` writes the plan's files to a managed Git draft branch; `DRAFTED` validates; `VALIDATING` creates a pending `reviews` record. Publication remains governed by the separate review path, not by LLM output.
+
+## 2. Read and index paths
+
+- `apps/api/src/routes/operator.ts`, `GET /v1/operator/sources/:id`, remains a sanitized operational preview of structured `DocumentArtifact`, metadata, descendants and reviews. It exposes Markdown hash/version metadata but **not** the complete Markdown body, avoiding a misleading changed-body/unchanged-hash response.
+- `apps/api/src/routes/knowledge.ts`, `GET /v1/sources/:id/artifacts/:artifactId/markdown`, is the authorized, pathless-vault-only **exact-byte** Markdown read. It returns the stored UTF-8 content, SHA, source/artifact hashes and a machine-extracted noncanonical trust marker; rejects missing/legacy projections and integrity failure. It never sanitizes or paraphrases the content bytes after hashing and includes `Cache-Control: no-store`.
+- `apps/api/src/routes/knowledge.ts`, `GET /v1/sources/:id`, is a separate metadata/evidence response; it does not return a full Markdown projection. No full Markdown read API is demonstrated by either of these endpoints.
+- `apps/web/app/sources/[id]/page.tsx` reads structured artifact blocks/headings/tables/figures for a source preview; it is not proof of independently persisted Markdown.
+- `packages/indexing/src/index.ts`, `rebuildChangedUnits`, reads approved `knowledge_documents.body_cache` from managed Git indexing and feeds `parseKnowledgeUnits`; a source artifact may be linked via validated `frontmatter.source_artifact_id`. This path does **not** independently index an arbitrary unapproved `source_artifacts.document_artifact` as approved knowledge. That distinction is desirable for authority, but source retrieval needs an explicitly authorized, noncanonical channel if required by the user journey.
+- `renderDocumentArtifactMarkdown` in `apps/worker/src/document-artifact.ts` renders complete structured material; `renderDocumentArtifactPreview` bounds a **presentation copy**. `worker.ts` calls `selectEvidenceFragment` with a 4,000-character preview, so the resulting `evidence.excerpt` must **not** be mistaken for full extracted text.
+
+## 3. Concrete discrepancy at the S1.2 boundary
+
+**Proven from code:** raw bytes and the structured sanitized `DocumentArtifact` are persisted independently of the compiler. The reviewed Git draft path differs across the two modes.
+
+**Implemented in draft PR #38, pending final CI:** an explicit, hashed, independently persisted **faithful Markdown projection** tied to the same source-artifact identity and extractor configuration. On a new compilation path, the worker reloads it from the authorized `source_artifacts` row and rejects source/structured-artifact hash or renderer mismatches before model routing; fallback consumes those persisted bytes, while the generative plan remains separate proposed knowledge. A full raw-file compiler ON/OFF parity integration remains unproven; the exact-byte authorized download now has a first-party E2E assertion in the product-lifecycle integration suite.
+
+The remaining gap is independent user-facing source retrieval and full compiler-mode E2E parity; it is **not** proof that the original bytes or structured artifact are lost when the LLM is enabled. It also does not justify treating extracted source text as an approved rule.
+
+## 4. Single-owner correction to prove before cutover
+
+- **Implemented (CI pending):** `source_artifacts` owns one derived, complete source Markdown projection created before optional compiler selection; a SHA and renderer version are preserved. A candidate cannot become approved knowledge without managed Git review.
+- **Implemented (CI pending):** `apps/worker/src/source-projection-backfill.ts` and `scripts/backfill-source-markdown.ts` provide a narrowly targeted, dry-run-first reconstruction of historical missing Markdown from the **existing structured artifact only**. They verify exact space/vault/source/artifact/SHA, ACTIVE source/enabled vault, extractor/configuration/structured JSON hashes, existing sanitization, full nonempty Markdown and idempotency under an artifact row lock. Hash/identity mismatch is an error requiring manual inspection/re-extraction. They do not access original MinIO blobs, recompute OCR, change reviews, modify Git or index knowledge. The existing 091 migration remains unchanged.
+- **Partially implemented (CI pending):** the exact-byte authorized source artifact endpoint preserves original SHA/renderer identity and denies unscoped reads without exposing raw source URI, object-store keys or provider credentials; an independent, revision-pinned structural source unit channel is now implemented in draft and requires CI validation.
+- Avoid an old/new parallel renderer: migrate the existing fallback draft and any API consumer to the one renderer/contract before removing superseded paths. A UI preview remains a bounded view and may not define searchable content.
+- Keep Source → Markdown and Source → LLM proposal as separate flows; a failed model/disabled vector subsystem must not invalidate the already persisted source.
+
+## 5. Required behavioral proof (still open)
+
+- In a disposable real PostgreSQL/object-store integration, ingest the **same** fixture with compiler OFF and an eligible local/mock compiler ON. Assert equal raw SHA, artifact/content SHA, full Markdown hash and ordered page/table/row/character locators before review; assert distinct proposal modes and no automatic publication.
+- Compare complete Markdown and indexed source units against fixtures: plain Markdown, DOCX tables, two-page digital PDF, rasterized OCR scan, embedded code, headerless/ragged tables, long material past the UI preview bound and successive revisions.
+- Fail closed for corrupt files, required OCR without capability, deliberately partial provider output, source/locator hash mismatch and revoked/cross-vault reads. Model mocks validate wiring, not semantic quality.
+- Prove that new approved managed-Git revisions rebuild only the intended authorized derived generation and that stale/archived content is not admitted.
+- Record SQL migrations, exact consumers, one-time backfill/reindex, negative tests, CI SHA and recovery before marking S1.2–S1.10 or S1 complete.
+
+## Existing regression evidence and limits
+
+`apps/worker/test/document-artifact.test.ts` exercises sanitized identity, full structured rendering, tables, captions, locators, preview behavior and rendering into knowledge units. `apps/api/test/document-intelligence.integration.test.ts` and `apps/api/test/product-lifecycle.integration.test.ts` exercise parts of durable artifact/ingest behavior. The [ingestion/chunking audit](ingestion-chunking-audit.md) documents known fixes and the absence of a full ON/OFF source projection parity gate. **These tests are not an end-to-end proof of source Markdown persistence in both compiler modes.**
+
+Related contracts: [core redesign execution specification](core-redesign-execution-spec.md), [roadmap](core-redesign-roadmap.md) and [repository standards](repository-standards.md).
+
+### S1.10 persisted-source ON/OFF parity regression (partial)
+
+The PostgreSQL integration test at `apps/worker/test/source-markdown-parity.integration.test.ts` seeds **one** immutable-source identity and structured DocumentArtifact with a **legacy NULL Markdown projection**, then checks guarded dry-run, exact-target refusal, apply and idempotent reapply before comparing both compiler modes. It preserves page/table/paragraph locators and a nonpublished evidence row. It reloads that same persisted representation and calls the **real** `buildCompilationStage` with model routing disabled and with a locally scoped mocked compiler. It checks both source Markdown hashes, renderer versions, the original locator set, full text beyond the preview, distinct provisional plans and the absence of automatically published knowledge. PostgreSQL enforces the projection digest constraint. The test is skipped without `DATABASE_URL` and is expected to run in the provisioned CI database.
+
+**Boundary:** This is a persisted-stage ON/OFF test, not two uploads of the same source through MinIO and the extractor. The actual source-ingest/worker/OCR and publication tests remain separately covered, while a combined two-mode raw-file-to-index parity path, source-unit indexing now has a dedicated ACL- and revision-scoped channel (CI pending), while **full original-file dual-mode parity and large-scale audited migration/re-extraction for invalid historical artifacts** are still S1 exit gaps. An in-process mocked provider verifies model-routing wiring, not generated knowledge quality.
+
+### Historical Markdown projection recovery (bounded operator workflow)
+
+The operation is **manual**, requires `DATABASE_URL` and explicit UUIDs for the space, vault, source and artifact, plus the source SHA-256. Read `sources` and `source_artifacts` with an authorized operator's SQL inspection first. Run without `--apply` to validate and print a metadata-only dry run; inspect `DRY_RUN`, source SHA and derived Markdown hash before repeating with `--apply`. This command handles **one artifact**, not a scan or bulk update:
+
+```sh
+pnpm backfill:source-markdown --space-id <space-uuid> --vault-id <vault-uuid> --source-id <source-uuid> --artifact-id <artifact-uuid> --source-sha256 <64-hex-source-sha>
+pnpm backfill:source-markdown --space-id <space-uuid> --vault-id <vault-uuid> --source-id <source-uuid> --artifact-id <artifact-uuid> --source-sha256 <64-hex-source-sha> --apply
+```
+
+The CLI deliberately logs only identifiers, computed digest, version, length and status. Existing correct projections produce `ALREADY_MATERIALIZED` without rewrite. Corrupt, redaction-unsafe or stale representations fail closed: use controlled original-source re-extraction after investigation, not an automatic parser fallback. Migration 091 allows legacy NULL records; no schema edit or mutable knowledge publication is necessary. A verified source projection is still machine-extracted evidence, not an approved Git document.
+
+### S1.6 source-unit projection (validated in CI)
+
+Migration `092_source_projection_units.sql` creates a physically separate noncanonical store: `source_projection_units`, not `knowledge_units`. The worker rebuilds only atomic structural Markdown units during its fenced NORMALIZING → ANALYZING SQL transaction; source Markdown, unit hashes and source-unit membership commit or roll back together. Controlled historical backfill also rebuilds this derived index with explicit `--apply`.
+
+`GET /v1/sources/:id/artifacts/:artifactId/units` requires `source:read` and a whole-vault authorization scope, plus exact `sourceSha256` and `markdownSha256` query pins. It excludes retired sources and disabled vaults, exposes only machine-extracted (not approved) units and returns UTF-16 offsets into the full exact Markdown projection, body hash and original-span hash. Revoked access, a wrong source/artifact or mismatched revision cannot fall back to approved-knowledge permissions or to old units. Responses use `Cache-Control: no-store`. This is a structural source-unit listing, **not** a new independent semantic retrieval/ranking engine. A future S2 source-passage candidate path may reuse these verified records with a measured ranking policy; it must not silently promote them into Git knowledge.
+
+The E2E lifecycle and PostgreSQL backfill suites now assert unit spans, revision mismatch and restricted-read denial. They do not certify OCR/table extraction fidelity on every document class nor full dual-file compiler ON/OFF end-to-end parity.
+
+### S1.10 raw-file dual-route parity (full process; validated in CI)
+
+`apps/api/test/product-lifecycle.integration.test.ts` now contains an independent end-to-end comparison using **two disposable vaults** and two byte-identical Markdown uploads. Both traverse HTTP ingestion, the actual worker, content-addressed MinIO, the actual extractor, normalized `DocumentArtifact` persistence and the independent source-unit index. The first route has the compiler explicitly disabled and produces a review-required machine source draft; the second configures a loopback OpenAI-compatible HTTP endpoint that receives a real bounded compiler input but intentionally returns `NO_MATERIAL`. Assertions compare the immutable raw SHA and MinIO key, byte-for-byte full Markdown and its SHA, renderer version, normalized original locators and structural passage rows. The source UUIDs and artifact UUIDs must differ between vaults; they are deliberately **not** compared for equality. No knowledge document is published from either route without review. The mocked provider verifies mode routing and source fidelity, not semantic generation quality. The normal provider configuration remains unchanged.
+
+### Historical corruption quarantine and verified re-extraction
+
+An exact-target backfill rejects an altered structured-content digest before any writes. The PostgreSQL regression now verifies that rejecting a corrupted artifact does not rebuild or silently delete its source units. Runbooks require operator inspection of the source ID, space/vault membership, immutable SHA and stored blob before any explicit new ingest of an operator-verified original. A mismatch is quarantined from source-unit reads by revision/hash fences; no tool silently asserts a different hash or marks an extracted document as approved. Re-extraction from the original is a new auditable ingest job with the existing review gate, **not** an unchecked backfill repair.
+
+### Full read-path quarantine for corrupted historical structured artifacts
+
+The API now verifies the parsed stored DocumentArtifact identity, extractor/version, configuration digest and canonical structured-content hash on both faithful Markdown and source-unit reads. These checks use the exact same canonical JSON serializer as the ingestion worker. Any mismatch returns 409 before exposing private source bytes or fragments. The real dual-ingest E2E deliberately changes the stored structured digest and checks both reads deny content; restoring the original digest is test-only cleanup. Corruption is not silently accepted or overwritten through a read operation.
+
+### Source revision and stale-review proof (S1.7–S1.9)
+
+New content-addressed source rows are STAGED until a lease-fenced database transition atomically persists the structured artifact, faithful Markdown, source projection units and machine evidence, then makes that exact source revision ACTIVE. If the authorized scoped source URI now has different complete bytes, the prior ACTIVE revision becomes SUPERSEDED. PostgreSQL advisory locking by scope/URI plus ingest submission ordering prevents an older extraction finishing late from retaking currentness. No immutable object is deleted and no generated text is approved by this transition.
+
+Both source read endpoints require an ACTIVE source and the most recently persisted document artifact for that source, so obsolete source bytes, passages or extractor generations cannot be served as current evidence. Reviewed Git documents that directly cite superseded machine evidence are marked STALE_BLOCKED in the mutable work projection, so search and embedding paths exclude obsolete citations; Git bytes are not rewritten. The same transaction invalidates derived cached context packets for the affected vault, including federated packets whose `scope.vaultIds` contains the changed vault even when their `vault_id` is null. A real PostgreSQL E2E seeds local and federated packets containing the obsolete marker and requires both to disappear after source replacement. An old ingestion-backed pending review cannot approve or finalize publication after its source is superseded; final publication repeats the check to catch a revision change between review and commit. The test in apps/api/test/product-lifecycle.integration.test.ts drives changed source bytes through real HTTP, worker, PostgreSQL, extractor and MinIO; it verifies old Markdown/unit 404, current indexed passages, stale approval 409, context cache invalidation and no unreviewed knowledge promotion. It deliberately supplies an operator title unlike the actual heading, and tests source content wins.
+
+Further real parser fixtures verify ragged Markdown cells are preserved, and Word merged-cell layout is flagged DOCX_TABLE_N_MERGED_CELL_UNCERTAIN with MACHINE_EXTRACTED rather than falsely exact quality. Same-SHA CI and release workflows remain necessary before considering S1 complete. This does not claim generalized OCR CER/WER, model quality or provider cost measurements.
+
+### Superseded flattened extractor removal — bounded cutover
+
+Runtime inventory of all `apps/extractor/app/` Python entry points and adapter modules, the thirteen extractor test modules and repository-wide code search found no active imports of `app.extractors.*` except the obsolete `tests/test_text.py`. FastAPI extraction and the registry select `DocumentIntelligencePort` adapters, including `DeterministicTextAdapter`; the old `app/extractors/{text,pdf,docx,html,pptx,image}.py` files separately produced flat `Artifact` lists but were not called in ingestion. Retaining them would preserve a second, inconsistent parsing authority (notably broken DOCX order and raw host-path locators). The old modules, empty package initializer and their only legacy test were removed together; `test_canonical_text_extractor_replaces_flattened_legacy_path` now checks the maintained Markdown path and source provenance.
+
+The public/API-compatible `Artifact` model is **not** removed: `adapters/base.py` still uses it to serve existing compatibility response shapes. This cutover requires no data migration because no legacy flattened extractor persisted independent state; existing immutable originals and source projections remain untouched. Rollback restores the prior Git tree, not a dual parser. Downstream _unregistered_ Python imports cannot be proven absent outside this repository and are not advertised as supported API. Run the locked extractor suite, runtime API integration, docs and relevant release workflows on the final SHA before claiming full closure.
+
+### Extractor revision identity after fidelity corrections
+
+Source artifacts are identified by `source_id + extractor + extractor_version + configuration_hash`. DOCX table/order, invalid UTF-8 quality and completely empty-source rejection are semantic changes to the maintained deterministic baseline. Using the old extractor version would permit an upsert to rewrite a prior derived artifact under an unchanged identity. The deterministic adapter and its shared plain-text helper now emit version `0.3.1` instead of `0.3.0`. The provider implementation and default selection remain unchanged. An authorized re-extraction creates a distinct version-scoped derived artifact and source passages while preserving existing immutable original bytes, historical projections and reviewed Git knowledge. Historical `0.3.0` projections are not retroactively rewritten; reprocessing requires the existing operator-controlled ingest/review path. This version fence does not by itself prove automatic source URI supersession or all stale-index invalidation requirements.
+
+### Completely empty source extraction must fail
+
+`_artifact_from_units` previously returned an otherwise valid DocumentArtifact with zero extracted structural blocks, including for blank Markdown, blank DOCX and a blank PDF. The renderer would have no faithful source Markdown to persist, making a nominal successful extractor response misleading. The shared deterministic adapter now rejects this with `DOCUMENT_EXTRACTION_EMPTY`, before durable source projection, instead of silently emitting an empty machine claim. A three-format negative regression checks the exact failure. This is intentionally different from **partially blank** digital PDFs, which retain usable page evidence plus page-specific warnings.
+
+### Digital PDF partial-page and corrupt-input regressions
+
+The locked `pypdf` deterministic baseline now has a source-file test built from the existing genuine two-page PDF plus a blank third page. It must preserve the first two text pages and their SHA-bound locators while recording `PAGE_3_NO_TEXT_EXTRACTED` and baseline OCR/layout limitations; it must not claim the blank page was transcribed. A corrupt PDF triggers `PdfReadError` instead of yielding a successful artifact. These tests cover bounded failure transparency, not broad multi-column PDF recall or arbitrary damaged PDF repair.
+
+### Headerless DOCX table fidelity
+
+The deterministic DOCX adapter must not interpret the first data row as a header merely because it occurs first. Native `w:tblHeader` (including explicit false) now controls whether the first row is a header. Otherwise `headers=[]` and every row survives in `rows`, including empty cells; the shared Markdown renderer already emits neutral positional column labels for headerless tables. A generated real DOCX fixture checks both declared headers (the interleaved-table case) and the explicit-false/headerless case. This does not yet certify nested/merged/ragged DOCX layouts or provider-independent accuracy.
+
+### Lossy UTF-8 input quarantine
+
+The active deterministic Markdown/text adapter previously decoded with `errors="replace"` without a warning and retained `EXACT_TEXT` even when invalid UTF-8 bytes were replaced. It now preserves the immutable raw-byte SHA, emits `INVALID_UTF8_REPLACED` and downgrades the extracted artifact to `MACHINE_EXTRACTED`. The negative regression covers an invalid byte and a valid UTF-8 control. It does not rewrite the original or approve any derived claim.
+
+### Deterministic DOCX reading-order correction
+
+The configured base extractor `apps/extractor/app/adapters/deterministic.py` previously iterated `document.paragraphs` and then `document.tables`, moving a table located between two paragraphs to the end of the output. The DOCX source still had its bytes and table cells but the `DocumentArtifact.reading_order` contradicted the original body order. This is a **source-fidelity defect**, not a generative model issue. A minimal generated DOCX reproduced it with the repository's locked `python-docx 1.2.0`.
+
+Implementation `afb19e564f476322ef1d9efc71edc53870698b69` uses `iter_inner_content()` in the existing deterministic adapter, retains paragraph/table locators, propagates the active heading path to tables, and adds `test_docx_baseline_preserves_interleaved_tables_paragraphs_and_locators` with real DOCX bytes and negative positional assertions. This keeps extraction as SOURCE and adds neither a second writer nor an optional provider. The implementation is not a global DOCX quality benchmark: nested/merged tables, pagination and headerless-table semantics require separate tests.
+
+### S1.9 representative fidelity regression matrix
+
+The following **synthetic, nonprivate** documents exercise distinct extraction mechanisms. Passing the tests is not a claim of universal OCR or document reconstruction accuracy.
+
+| Fixture / test                                                                        | Real extraction                                         | Source-to-context fidelity gate                                                                                               | Known limit                                                            |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Digital PDF (`test_real_docling_digital_pdf_preserves_visible_text_and_page_locator`) | Native Docling with selectable PDF text                 | Distinct text on pages 1 and 2, native page locators, blocks and reading order, OCR not requested                             | Synthetic two-page PDF, not a large multi-column benchmark             |
+| DOCX (`test_real_docling_docx_preserves_tables_headings_and_native_locators`)         | Native Docling over a real generated DOCX               | Heading, paragraph, terminal marker, table value `47 minutes`, original block IDs and source hashes                           | Merged-cell layouts, images and arbitrary pagination remain unmeasured |
+| OCR PDF (`document-intelligence.integration.test.ts`)                                 | Real Tesseract through API, worker, extractor and MinIO | OCR provenance, page/region, full authorized Markdown replay, structural units and span SHA, no automatic knowledge promotion | High-contrast fixture; degraded-scan error rate unmeasured             |
+| Same-file compiler OFF/ON (`product-lifecycle.integration.test.ts`)                   | Two real worker ingests, one local HTTP provider mock   | Byte-identical raw-source hashes, Markdown, locators and derived passages                                                     | The model mock tests routing, not semantic generation quality          |
+
+The baseline commit `a1bcdf7` passed all 14 required workflows including forged artifact and Markdown read quarantine. Candidate `b2164545` passed Python, native Docling, Graphify and OCR E2E; its TypeScript formatting check failed, and the exact correction was applied in `8d0ca8f`. The final combined SHA must pass CI before these new fixture checks are declared fully validated.
+
+The PostgreSQL dual-ingest E2E now additionally corrupts the existing structured digest in one disposable vault, verifies HTTP read quarantine (`409`), and explicitly re-ingests the byte-identical original under `REVIEW_REQUIRED`. It requires the same source/artifact identity, recovered structured digest, unchanged Markdown hash, source-unit availability and zero unreviewed publications. This is a bounded controlled re-extraction case; physically unrecoverable original bytes still require manual handling.
+
+An operator-verified original is still necessary for damaged-source re-extraction. No test here permits guessing the original hash, silently replacing corrupted bytes, or publishing machine-extracted content without the existing review gate.

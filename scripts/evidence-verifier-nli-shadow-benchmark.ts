@@ -227,6 +227,126 @@ const CASES: ShadowCase[] = [
     ],
     goldLabels: [],
   },
+  {
+    id: "bilingual-functional-definition",
+    split: "HOLDOUT",
+    query: "What is adaptive failover routing?",
+    candidates: [
+      {
+        label: "adaptive-routing-definition",
+        title: "Adaptive failover routing",
+        passage:
+          "El enrutamiento adaptativo selecciona un destino saludable y conserva una alternativa determinista cuando falla la ruta principal.",
+        vectorRank: 4,
+      },
+      {
+        label: "adaptive-routing-dashboard",
+        title: "Adaptive routing dashboard",
+        passage:
+          "The dashboard records latency and availability for adaptive failover routing.",
+        vectorRank: 8,
+      },
+    ],
+    goldLabels: ["adaptive-routing-definition"],
+  },
+  {
+    id: "generic-relation-same-entities",
+    split: "HOLDOUT",
+    query: "Can NEXO use QARO?",
+    candidates: [
+      {
+        label: "nexo-uses-qaro",
+        title: "NEXO integration",
+        passage: "NEXO can use QARO for delivery.",
+        vectorRank: 3,
+      },
+      {
+        label: "nexo-qaro-catalog",
+        title: "NEXO and QARO catalog",
+        passage: "NEXO and QARO are documented in separate reports.",
+        vectorRank: 5,
+      },
+    ],
+    goldLabels: ["nexo-uses-qaro"],
+  },
+  {
+    id: "generic-relation-reversed",
+    split: "HOLDOUT",
+    query: "Can ORCA call LUMA?",
+    candidates: [
+      {
+        label: "reverse-call",
+        title: "LUMA integration",
+        passage: "LUMA can call ORCA during reconciliation.",
+        vectorRank: 2,
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "indirect-responsibility-relation",
+    split: "HOLDOUT",
+    query: "Does a single-purpose module reduce reasons to change?",
+    candidates: [
+      {
+        label: "single-purpose-change-reason",
+        title: "Single-purpose modules",
+        passage:
+          "Un módulo con una sola responsabilidad concentra sus cambios en un único motivo de negocio.",
+        vectorRank: 7,
+      },
+    ],
+    goldLabels: ["single-purpose-change-reason"],
+  },
+  {
+    id: "spanish-yes-no-direct-relation",
+    split: "HOLDOUT",
+    query: "¿Puede VELA usar RINO?",
+    candidates: [
+      {
+        label: "vela-uses-rino",
+        title: "VELA integration",
+        passage: "VELA puede usar RINO para entregar mensajes.",
+        vectorRank: 4,
+      },
+      {
+        label: "vela-rino-catalog",
+        title: "VELA and RINO catalog",
+        passage: "VELA y RINO figuran en informes de operación separados.",
+        vectorRank: 1,
+      },
+    ],
+    goldLabels: ["vela-uses-rino"],
+  },
+  {
+    id: "spanish-yes-no-reversed-relation",
+    split: "HOLDOUT",
+    query: "¿Puede DORA llamar a LENO?",
+    candidates: [
+      {
+        label: "reversed-call",
+        title: "LENO integration",
+        passage: "LENO puede llamar a DORA durante la conciliación.",
+        vectorRank: 2,
+      },
+    ],
+    goldLabels: [],
+  },
+  {
+    id: "conditional-selection-rule",
+    split: "HOLDOUT",
+    query: "When should a bounded worker pool be chosen?",
+    candidates: [
+      {
+        label: "bounded-worker-condition",
+        title: "Bounded worker pool selection",
+        passage:
+          "Choose a bounded worker pool when downstream capacity is limited and unbounded concurrency would overload the dependency.",
+        vectorRank: 5,
+      },
+    ],
+    goldLabels: ["bounded-worker-condition"],
+  },
 ];
 
 const reportPath = path.resolve(
@@ -255,7 +375,7 @@ for (const modelDescriptor of MODEL_DESCRIPTORS) {
       for (const fixture of testCase.candidates) {
         const candidate = hit(fixture);
         const started = performance.now();
-        const verification = await verifier.verify({
+        const evaluation = await verifier.evaluate({
           query: testCase.query,
           candidateKey: retrievalAnswerabilityCandidateKey(candidate),
           title: candidate.title,
@@ -264,14 +384,21 @@ for (const modelDescriptor of MODEL_DESCRIPTORS) {
           parentUnitType: candidate.parentUnitType ?? null,
           documentType: candidate.type,
         });
+        const baselineSupports =
+          evaluation.score !== null &&
+          evaluation.polarityMargin !== null &&
+          evaluation.polarityMargin >= 0;
         candidates.push({
           label: fixture.label,
           candidateKey: retrievalAnswerabilityCandidateKey(candidate),
           vectorRank: fixture.vectorRank,
-          verifierDecision: verification.decision,
-          verifierScore: verification.score ?? null,
-          verifierReason: verification.reason,
-          evidenceSpan: verification.evidenceSpan ?? null,
+          verifierDecision: baselineSupports ? "SUPPORTS" : "INSUFFICIENT",
+          verifierScore: evaluation.score,
+          verifierOppositeScore: evaluation.oppositeScore,
+          verifierPolarityMargin: evaluation.polarityMargin,
+          verifierDirection: evaluation.direction,
+          verifierReason: evaluation.reason,
+          evidenceSpan: evaluation.evidenceSpan,
           latencyMs: performance.now() - started,
         });
       }
@@ -295,6 +422,7 @@ for (const modelDescriptor of MODEL_DESCRIPTORS) {
 function metricsFor(
   rows: typeof observations,
   threshold: number,
+  minimumPolarityMargin: number,
 ): {
   falseAbstentionRate: number;
   falseAcceptanceRate: number;
@@ -313,8 +441,10 @@ function metricsFor(
     const gold = new Set(entry.goldLabels);
     const accepted = entry.candidates.filter(
       (candidate) =>
-        candidate.verifierDecision === "SUPPORTS" &&
-        (candidate.verifierScore ?? 0) >= threshold,
+        candidate.verifierScore !== null &&
+        candidate.verifierPolarityMargin !== null &&
+        candidate.verifierScore >= threshold &&
+        candidate.verifierPolarityMargin >= minimumPolarityMargin,
     );
     const acceptedGold = accepted.filter((candidate) =>
       gold.has(candidate.label),
@@ -360,6 +490,14 @@ const comparisons = modelRuns.map((modelRun) => {
         : [],
     ),
   );
+  const observedCalibrationMargins = calibration.flatMap((entry) =>
+    entry.candidates.flatMap((candidate) =>
+      typeof candidate.verifierPolarityMargin === "number" &&
+      candidate.verifierPolarityMargin >= 0
+        ? [candidate.verifierPolarityMargin]
+        : [],
+    ),
+  );
   const thresholds = [
     ...new Set([
       0,
@@ -375,11 +513,30 @@ const comparisons = modelRuns.map((modelRun) => {
       ...observedCalibrationScores.map((score) => Number(score.toFixed(6))),
     ]),
   ].sort((left, right) => left - right);
+  const polarityMargins = [
+    ...new Set([
+      0,
+      0.05,
+      0.1,
+      0.2,
+      0.3,
+      0.4,
+      0.5,
+      0.6,
+      0.7,
+      0.8,
+      0.9,
+      ...observedCalibrationMargins.map((margin) => Number(margin.toFixed(6))),
+    ]),
+  ].sort((left, right) => left - right);
 
-  const calibrationMetrics = thresholds.map((threshold) => ({
-    threshold,
-    ...metricsFor(calibration, threshold),
-  }));
+  const calibrationMetrics = thresholds.flatMap((threshold) =>
+    polarityMargins.map((minimumPolarityMargin) => ({
+      threshold,
+      minimumPolarityMargin,
+      ...metricsFor(calibration, threshold, minimumPolarityMargin),
+    })),
+  );
   const calibrationCandidate =
     calibrationMetrics
       .filter(
@@ -388,13 +545,22 @@ const comparisons = modelRuns.map((modelRun) => {
           metrics.falseAbstentionRate === 0 &&
           metrics.supportSelectionPrecision === 1,
       )
-      .sort((left, right) => right.threshold - left.threshold)[0] ?? null;
+      .sort(
+        (left, right) =>
+          right.threshold - left.threshold ||
+          right.minimumPolarityMargin - left.minimumPolarityMargin,
+      )[0] ?? null;
   const holdoutMetrics =
     calibrationCandidate === null
       ? null
       : {
           threshold: calibrationCandidate.threshold,
-          ...metricsFor(holdout, calibrationCandidate.threshold),
+          minimumPolarityMargin: calibrationCandidate.minimumPolarityMargin,
+          ...metricsFor(
+            holdout,
+            calibrationCandidate.threshold,
+            calibrationCandidate.minimumPolarityMargin,
+          ),
         };
 
   return {
@@ -413,10 +579,10 @@ const comparisons = modelRuns.map((modelRun) => {
 });
 
 const report = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   status: "MEASURED",
   evidenceBoundary:
-    "Public synthetic bilingual calibration/holdout shadow comparison only. No threshold or verifier is promoted by this report.",
+    "Public synthetic bilingual calibration/holdout shadow comparison covering direct, negative, relational, definitional and conditional evidence. Entailment score and answer-polarity margin are calibrated jointly on calibration sources, then frozen for holdout. No threshold or verifier is promoted by this report.",
   splitCounts: {
     calibration: CASES.filter((entry) => entry.split === "CALIBRATION").length,
     holdout: CASES.filter((entry) => entry.split === "HOLDOUT").length,

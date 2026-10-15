@@ -1,0 +1,413 @@
+{
+  "id": "aircraft-maintenance",
+  "split": "heldout",
+  "language": "en",
+  "description": "Line maintenance of commercial aircraft: deferrals, release to service, inspections, tooling, parts and duty limits.",
+  "units": [
+    {
+      "id": "am-mel",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Minimum equipment list (MEL)",
+      "headingPath": ["Airworthiness", "Minimum equipment list (MEL)"],
+      "text": "An approved list of equipment that may be inoperative at departure, together with the conditions and time limits under which the aircraft can still fly. Anything not on the list must be repaired before the next flight."
+    },
+    {
+      "id": "am-mel-categories",
+      "documentType": "decision-rule",
+      "unitType": "TABLE",
+      "title": "MEL repair categories",
+      "headingPath": ["Airworthiness", "MEL repair categories"],
+      "text": "| Category | Repair interval |\n|---|---|\n| A | As stated in the item remarks |\n| B | 3 consecutive calendar days |\n| C | 10 consecutive calendar days |\n| D | 120 consecutive calendar days |"
+    },
+    {
+      "id": "am-crs",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Certificate of release to service",
+      "headingPath": ["Release", "Certificate of release to service"],
+      "text": "After any maintenance task, a licensed engineer signs a certificate of release to service before the aircraft may fly. A mechanic without a licence may do the work but cannot sign the release."
+    },
+    {
+      "id": "am-independent-inspection",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Independent inspection of flight controls",
+      "headingPath": ["Release", "Independent inspection of flight controls"],
+      "text": "Any disturbance of a flight control system requires an independent inspection by a second qualified person who did not perform the task. The aircraft cannot be released until both signatures are on the task card."
+    },
+    {
+      "id": "am-tool-control",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Tool control prevents foreign object damage",
+      "headingPath": [
+        "Workshop practice",
+        "Tool control prevents foreign object damage"
+      ],
+      "text": "Every tool sits on a shadow board and is counted at the end of a task. A missing tool stops the release of the aircraft until it is found, because a tool left in an engine or a control run can cause serious damage."
+    },
+    {
+      "id": "am-a-check",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "A-check",
+      "headingPath": ["Scheduled maintenance", "A-check"],
+      "text": "A light scheduled inspection carried out roughly every 600 flight hours, usually overnight at a line station. It covers a general visual inspection, fluids, filters and the deferred MEL items."
+    },
+    {
+      "id": "am-bird-strike",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Bird strike inspection",
+      "headingPath": ["Unscheduled maintenance", "Bird strike inspection"],
+      "text": "After a reported bird strike, engineers inspect the impact area, the engine inlet and the fan blades. If the bird hit an engine, a borescope inspection of that engine is done before the next flight."
+    },
+    {
+      "id": "am-tyres",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Tyre limits",
+      "headingPath": ["Landing gear", "Tyre limits"],
+      "text": "A tyre is replaced when the tread is worn to the bottom of any groove or when a cut exposes the cord. Tyre pressure is checked with the tyres cold before the first flight of each day."
+    },
+    {
+      "id": "am-duty-limits",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Engineer duty limits",
+      "headingPath": ["Human factors", "Engineer duty limits"],
+      "text": "Maintenance engineers may work at most 12 hours in a duty period and must have at least 11 hours of rest between duties."
+    },
+    {
+      "id": "am-reliability",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Fleet reliability",
+      "headingPath": ["Reporting", "Fleet reliability"],
+      "text": "| Indicator | Target | 2025 |\n|---|---|---|\n| Technical dispatch reliability | 99.5% | 99.2% |\n| Deferred defects per aircraft | Below 4 | 5.1 |\n| Repeat defects | Below 2% | 2.6% |"
+    },
+    {
+      "id": "am-repeat-defect",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Repeat defects",
+      "headingPath": ["Reliability", "Repeat defects"],
+      "text": "A defect that occurs three times on the same aircraft within 15 flight cycles is classified as a repeat defect and escalated to the reliability engineer for a root-cause investigation."
+    },
+    {
+      "id": "am-parts",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Unapproved parts are never installed",
+      "headingPath": ["Stores", "Unapproved parts are never installed"],
+      "text": "Every installed part must come with an authorised release certificate that traces it to an approved manufacturer or repair station. A part without that certificate is quarantined, even if it looks new."
+    },
+    {
+      "id": "am-wind",
+      "documentType": "note",
+      "unitType": "PARAGRAPH",
+      "title": "Hangar movements in high wind",
+      "headingPath": ["Facilities", "Hangar movements in high wind"],
+      "text": "When gusts exceed 40 knots, towing aircraft into or out of the hangar is suspended and the hangar doors stay closed."
+    },
+    {
+      "id": "am-engine-runs",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Engine ground runs",
+      "headingPath": ["Powerplant", "Engine ground runs"],
+      "text": "Only engineers who hold an engine-run authorisation may run engines on the ground, and any run above idle power takes place at the designated run-up area."
+    }
+  ],
+  "questions": [
+    {
+      "id": "am-q01",
+      "family": "unlicensed-release",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Can an unlicensed mechanic sign the release to service?",
+      "gold": ["am-crs"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "am-q02",
+      "family": "self-inspection",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Can the person who adjusted the flight controls also do the independent inspection?",
+      "gold": ["am-independent-inspection"],
+      "challenges": ["NEGATIVE_ANSWER", "PARAPHRASE"]
+    },
+    {
+      "id": "am-q03",
+      "family": "fly-unlisted-defect",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Can the aircraft fly with a broken item that is not on the MEL?",
+      "gold": ["am-mel"],
+      "challenges": ["NEGATIVE_ANSWER", "TITLE_CONTEXT"]
+    },
+    {
+      "id": "am-q04",
+      "family": "missing-tool-release",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "If a tool goes missing, can the aircraft still be released?",
+      "gold": ["am-tool-control"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "am-q05",
+      "family": "uncertified-part",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Is a part without a release certificate installed if it looks brand new?",
+      "gold": ["am-parts"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "am-q06",
+      "family": "tow-high-wind",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Se pueden remolcar aviones al hangar con ráfagas de 50 nudos?",
+      "gold": ["am-wind"],
+      "challenges": ["CROSS_LINGUAL", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "am-q07",
+      "family": "borescope-every-strike",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Is a borescope inspection required after every bird strike?",
+      "gold": ["am-bird-strike"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "am-q08",
+      "family": "engine-run-anyone",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Can any engineer run an engine above idle on the apron?",
+      "gold": ["am-engine-runs"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "am-q09",
+      "family": "mel-definition",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is the MEL?",
+      "gold": ["am-mel"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "am-q10",
+      "family": "a-check-definition",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What does an A-check involve?",
+      "gold": ["am-a-check"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "am-q11",
+      "family": "repeat-defect-definition",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué es un defecto repetitivo?",
+      "gold": ["am-repeat-defect"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "am-q12",
+      "family": "tyre-replacement",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "When does a tyre have to be replaced?",
+      "gold": ["am-tyres"],
+      "challenges": []
+    },
+    {
+      "id": "am-q13",
+      "family": "borescope-when",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "When is a borescope inspection needed?",
+      "gold": ["am-bird-strike"],
+      "challenges": []
+    },
+    {
+      "id": "am-q14",
+      "family": "reliability-escalation",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "When is a defect escalated to the reliability engineer?",
+      "gold": ["am-repeat-defect"],
+      "challenges": []
+    },
+    {
+      "id": "am-q15",
+      "family": "tool-count-rationale",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why are tools counted at the end of every task?",
+      "gold": ["am-tool-control"],
+      "challenges": []
+    },
+    {
+      "id": "am-q16",
+      "family": "quarantine-rationale",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué se pone en cuarentena una pieza que no tiene certificado?",
+      "gold": ["am-parts"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "am-q17",
+      "family": "bird-strike-scope",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "What gets inspected after a bird strike?",
+      "gold": ["am-bird-strike"],
+      "challenges": []
+    },
+    {
+      "id": "am-q18",
+      "family": "tyre-pressure",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "How is tyre pressure checked?",
+      "gold": ["am-tyres"],
+      "challenges": []
+    },
+    {
+      "id": "am-q19",
+      "family": "category-c-interval",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How many days can a category C MEL item stay deferred?",
+      "gold": ["am-mel-categories"],
+      "challenges": ["TABLE_ROW"]
+    },
+    {
+      "id": "am-q20",
+      "family": "a-check-interval",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How often is an A-check carried out?",
+      "gold": ["am-a-check"],
+      "challenges": []
+    },
+    {
+      "id": "am-q21",
+      "family": "max-duty",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What is the longest duty period a maintenance engineer may work?",
+      "gold": ["am-duty-limits"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "am-q22",
+      "family": "rest-between-duties",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántas horas de descanso necesita un técnico entre turnos?",
+      "gold": ["am-duty-limits"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "am-q23",
+      "family": "dispatch-reliability-2025",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What was the technical dispatch reliability in 2025?",
+      "gold": ["am-reliability"],
+      "challenges": ["TABLE_ROW"]
+    },
+    {
+      "id": "am-q24",
+      "family": "crs-signer",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who signs the certificate of release to service?",
+      "gold": ["am-crs"],
+      "challenges": []
+    },
+    {
+      "id": "am-q25",
+      "family": "run-up-location",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Where must engine runs above idle take place?",
+      "gold": ["am-engine-runs"],
+      "challenges": []
+    },
+    {
+      "id": "am-q26",
+      "family": "category-e",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How long can a category E item be deferred?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    },
+    {
+      "id": "am-q27",
+      "family": "head-of-maintenance",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who is the head of maintenance?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT"]
+    },
+    {
+      "id": "am-q28",
+      "family": "a-check-cost",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How much does an A-check cost?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "am-q29",
+      "family": "pilot-rest",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How many hours of rest do pilots need between flights?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "am-q30",
+      "family": "report-to-manufacturer",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Does the reliability engineer report repeat defects to the aircraft manufacturer?",
+      "gold": [],
+      "challenges": ["SAME_VOCABULARY"]
+    },
+    {
+      "id": "am-q31",
+      "family": "dispatch-reliability-2023",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What was technical dispatch reliability in 2023?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "TABLE_ROW"]
+    },
+    {
+      "id": "am-q32",
+      "family": "c-check",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Cuándo se hace una revisión C (C-check)?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "CROSS_LINGUAL"]
+    }
+  ]
+}

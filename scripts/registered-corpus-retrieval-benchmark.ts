@@ -1,11 +1,11 @@
 import "dotenv/config";
+import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import {
-  aggregateBenchmarkRun,
   RETRIEVAL_BENCHMARK_MATRIX,
   V03_RETRIEVAL_BASELINE,
   selectBenchmarkDefault,
@@ -23,14 +23,26 @@ import {
 import {
   assessRetrievalAnswerability,
   DeterministicQueryDecomposer,
+  LOCAL_MULTILINGUAL_BGE_RERANKER_DESCRIPTOR,
   LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR,
+  LocalBgeCrossEncoderReranker,
   LocalSemanticEmbeddingAdapter,
   MULTILINGUAL_E5_SMALL_DIMENSIONS,
+  parseKnowledgeUnits,
   QueryEmbeddingService,
+  reciprocalRankFusion,
+  resolveRetrievalPolicy,
   retrievalAnswerabilityCandidateKey,
+  retrievalCandidatesToRankedChannels,
   type ActiveEmbeddingGenerationDescriptor,
+  type EvidenceRetrievalStageSnapshot,
+  type RetrievalCandidate,
 } from "../packages/retrieval/src/index.js";
 import { queryKnowledge } from "../apps/api/src/routes/search.js";
+import {
+  aggregateObservedBenchmarkRun,
+  diagnoseSingleUnitCorpusCase,
+} from "./retrieval-stage-observation.js";
 
 type RegisteredDocument = {
   id: string;
@@ -97,7 +109,14 @@ type Fixture = {
 
 type QueryHit = Awaited<ReturnType<typeof queryKnowledge>>[number];
 
+type UnitizedUnit = {
+  id: string;
+  body: string;
+  embeddingEligible: boolean;
+};
+
 type RuntimeObservation = BenchmarkObservation & {
+  stageDiagnostics: ReturnType<typeof diagnoseSingleUnitCorpusCase>;
   warnings: string[];
   availableChannels: string[];
   rankedVaultIds: string[];
@@ -105,9 +124,15 @@ type RuntimeObservation = BenchmarkObservation & {
   candidateSignals: ReturnType<
     typeof assessRetrievalAnswerability
   >["candidateSignals"];
-  answerability: Omit<
+  answerability: Pick<
     ReturnType<typeof assessRetrievalAnswerability>,
-    "candidateSignals"
+    | "supported"
+    | "reason"
+    | "topVectorScore"
+    | "secondVectorScore"
+    | "thirdVectorScore"
+    | "vectorMargin"
+    | "vectorNeighborhoodMargin"
   >;
 };
 
@@ -119,8 +144,11 @@ type StorageSnapshot = {
   embeddingsBytes: number;
 };
 
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error("DATABASE_URL is required");
+const databaseUrl = (() => {
+  const value = process.env.DATABASE_URL;
+  if (!value) throw new Error("DATABASE_URL is required");
+  return value;
+})();
 assertSyntheticFixtureDatabaseSafety(databaseUrl);
 
 const repositoryRoot = path.resolve(".");
@@ -134,6 +162,14 @@ const outputPath = path.resolve(
   process.env.AKP_REGISTERED_RETRIEVAL_REPORT ??
     "reports/ci/registered-corpus-retrieval-benchmark.json",
 );
+
+const R3_GREEN_BASELINE_SHA = "ada069f13bd6566b71367f3ae983c196e9d84382";
+const R4_RERANK_ARMS = [
+  { poolDepth: 20, shortlist: 8 },
+  { poolDepth: 50, shortlist: 10 },
+  { poolDepth: 100, shortlist: 12 },
+  { poolDepth: 100, shortlist: 20 },
+] as const;
 
 function sha256(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
@@ -167,6 +203,29 @@ function passageMatchesGoldPredicate(
       normalized.includes(normalizedPredicateText(term)),
     );
   return all && any;
+}
+function resolveGoldUnitIds(
+  testCase: GoldCase,
+  unitsByDocument: ReadonlyMap<string, readonly UnitizedUnit[]>,
+): {
+  goldUnitIds: Set<string>;
+  unresolvedPredicates: string[];
+} {
+  const goldUnitIds = new Set<string>();
+  const unresolvedPredicates: string[] = [];
+  for (const predicate of testCase.gold_support ?? []) {
+    const matches = (unitsByDocument.get(predicate.document) ?? []).filter(
+      (unit) =>
+        unit.embeddingEligible &&
+        passageMatchesGoldPredicate(unit.body, predicate),
+    );
+    if (matches.length === 0) {
+      unresolvedPredicates.push(predicate.id);
+      continue;
+    }
+    for (const match of matches) goldUnitIds.add(match.id);
+  }
+  return { goldUnitIds, unresolvedPredicates };
 }
 
 async function storageSnapshot(db: Postgres): Promise<StorageSnapshot> {
@@ -244,8 +303,10 @@ async function loadDataset(): Promise<{
   const casesRaw = await readFile(casesPath, "utf8");
   const parsed = JSON.parse(manifestRaw) as RegisteredManifest;
   const hashes: Record<string, string> = {
-    [path.relative(repositoryRoot, manifestPath)]: sha256(manifestRaw),
-    [path.relative(repositoryRoot, casesPath)]: sha256(casesRaw),
+    [path.relative(repositoryRoot, manifestPath).replaceAll("\\", "/")]:
+      sha256(manifestRaw),
+    [path.relative(repositoryRoot, casesPath).replaceAll("\\", "/")]:
+      sha256(casesRaw),
   };
 
   const vaults: ResolvedVault[] = [];
@@ -424,6 +485,145 @@ async function seedCorpus(
   }
 }
 
+async function seedUnitizedCorpus(
+  db: Postgres,
+  manifest: ResolvedManifest,
+  fixture: Fixture,
+): Promise<Map<string, UnitizedUnit[]>> {
+  const unitsByDocument = new Map<string, UnitizedUnit[]>();
+  await db.pool.query(
+    `insert into organizations(id,slug,name) values($1,$2,$3)`,
+    [
+      fixture.organizationId,
+      `registered-unitized-${fixture.organizationId.slice(0, 8)}`,
+      "Registered public product corpus unit-selection benchmark",
+    ],
+  );
+  await db.pool.query(
+    `insert into spaces(id,organization_id,slug,name,visibility,knowledge_repo_path)
+     values($1,$2,$3,$4,'PRIVATE',$5)`,
+    [
+      fixture.spaceId,
+      fixture.organizationId,
+      `registered-unitized-${fixture.spaceId.slice(0, 8)}`,
+      "Registered public product corpus unit-selection benchmark",
+      `benchmark/registered-unitized/${fixture.spaceId}`,
+    ],
+  );
+
+  for (const vault of manifest.vaults) {
+    const vaultId = fixture.vaultIds.get(vault.id);
+    if (!vaultId) throw new Error(`Missing vault mapping for ${vault.id}`);
+    await db.pool.query(
+      `insert into vaults(
+         id,space_id,canonical_path,name,read_only,current_revision,
+         vault_key,local_path,visibility,enabled
+       ) values($1,$2,$3,$4,true,$5,$6,$3,'PRIVATE',true)`,
+      [
+        vaultId,
+        fixture.spaceId,
+        `benchmark/registered-unitized/${vault.id}`,
+        `Registered unitized ${vault.kind}`,
+        fixture.corpusRevision,
+        `registered-unitized-${vault.id}-${vaultId.slice(0, 8)}`,
+      ],
+    );
+    await db.pool.query(
+      `insert into vault_index_revisions(
+         space_id,vault_id,corpus_revision,lexical_revision,vector_revision,
+         graph_revision,context_pack_revision,status,warnings
+       ) values($1,$2,$3,$3,$3,$3,$3,'CONSISTENT','[]'::jsonb)`,
+      [fixture.spaceId, vaultId, fixture.corpusRevision],
+    );
+
+    for (const document of vault.documents) {
+      const documentId = fixture.documentIds.get(document.id);
+      if (!documentId) {
+        throw new Error(`Missing document mapping for ${document.id}`);
+      }
+      const contentHash = sha256(document.body);
+      await db.pool.query(
+        `insert into knowledge_documents(
+           id,space_id,vault_id,path,external_id,title,type,lifecycle,
+           trust_tier,current_revision,body_cache,frontmatter,aliases,layer,
+           content_hash,token_estimate,raw_links
+         ) values($1,$2,$3,$4,$5,$6,'concept','ACTIVE','HUMAN_REVIEWED',
+                  $7,$8,$9::jsonb,$10,'concept',$11,$12,'[]'::jsonb)`,
+        [
+          documentId,
+          fixture.spaceId,
+          vaultId,
+          document.sourcePath,
+          document.id,
+          document.title,
+          fixture.corpusRevision,
+          document.body,
+          JSON.stringify({
+            id: document.id,
+            title: document.title,
+            knowledge_layer: "concept",
+            benchmark_corpus: manifest.name,
+            source_path: document.sourcePath,
+            unitization: "parseKnowledgeUnits",
+          }),
+          document.aliases,
+          contentHash,
+          Math.max(1, document.body.split(/\s+/u).length),
+        ],
+      );
+
+      const parsedUnits = parseKnowledgeUnits(document.title, document.body);
+      const ids = new Map(
+        parsedUnits.map((unit) => [unit.unitKey, randomUUID()] as const),
+      );
+      const materialized: UnitizedUnit[] = [];
+      for (const unit of parsedUnits) {
+        const unitId = ids.get(unit.unitKey);
+        if (!unitId) throw new Error(`Missing unit id for ${unit.unitKey}`);
+        const parentUnitId = unit.parentUnitKey
+          ? (ids.get(unit.parentUnitKey) ?? null)
+          : null;
+        await db.pool.query(
+          `insert into knowledge_units(
+             id,document_id,space_id,vault_id,unit_key,unit_type,heading_path,
+             body,content_hash,corpus_revision,document_revision,lifecycle,
+             trust_tier,source_ids,token_estimate,parent_unit_id,permissions,
+             locator,structural_order,container_only,embedding_eligible
+           ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$10,'ACTIVE',
+                    'HUMAN_REVIEWED',$11,$12,$13,'{}'::jsonb,$14::jsonb,
+                    $15,$16,$17)`,
+          [
+            unitId,
+            documentId,
+            fixture.spaceId,
+            vaultId,
+            unit.unitKey,
+            unit.unitType,
+            unit.headingPath,
+            unit.body,
+            unit.contentHash,
+            fixture.corpusRevision,
+            document.evidence,
+            unit.tokenEstimate,
+            parentUnitId,
+            JSON.stringify(unit.locator),
+            unit.structuralOrder,
+            unit.containerOnly,
+            unit.embeddingEligible,
+          ],
+        );
+        materialized.push({
+          id: unitId,
+          body: unit.body,
+          embeddingEligible: unit.embeddingEligible,
+        });
+      }
+      unitsByDocument.set(document.id, materialized);
+    }
+  }
+  return unitsByDocument;
+}
+
 async function buildCommunityIndexes(
   db: Postgres,
   manifest: ResolvedManifest,
@@ -481,6 +681,7 @@ function benchmarkConfigurations(): BenchmarkConfiguration[] {
     "vector-only",
     "graph-only",
     "lexical+vector",
+    "exact+lexical+vector",
     "lexical+vector+graph",
     "lexical+graph",
     "vector+graph",
@@ -546,6 +747,8 @@ async function executeCase(
   testCase: GoldCase,
   configuration: BenchmarkConfiguration,
   queryEmbeddingService: QueryEmbeddingService,
+  candidatePoolLimit?: number,
+  disableAssertionRecall = false,
 ): Promise<RuntimeObservation> {
   const vaultId = fixture.vaultIds.get(testCase.vault);
   if (!vaultId) throw new Error(`Unknown case vault ${testCase.vault}`);
@@ -592,10 +795,17 @@ async function executeCase(
     queryEmbeddingService,
     graphScopes: [{ vaultId, pathPrefix: null }],
     graphPolicy: { maxHops: 3, directionPolicy: "both" as const },
+    ...(candidatePoolLimit === undefined
+      ? {}
+      : { benchmarkCandidatePoolLimit: candidatePoolLimit }),
+    ...(disableAssertionRecall
+      ? { benchmarkDisableAssertionRecall: true }
+      : {}),
   };
 
   const started = performance.now();
   let answerabilityCandidates: readonly QueryHit[] | undefined;
+  let candidateStages: EvidenceRetrievalStageSnapshot | undefined;
   const rawHits = await queryKnowledge(
     db,
     {
@@ -615,6 +825,9 @@ async function executeCase(
       availableChannelSink: availableChannels,
       answerabilityCandidateSink: (candidates) => {
         answerabilityCandidates = candidates;
+      },
+      stageDiagnosticSink: (snapshot) => {
+        candidateStages = snapshot;
       },
     },
   );
@@ -724,7 +937,20 @@ async function executeCase(
       warnings.push(`PREDICATE_SUPPORT_MISSED:${supportId}`);
     }
   }
+  const stageDiagnostics = diagnoseSingleUnitCorpusCase({
+    caseId: testCase.id,
+    goldDocuments: testCase.gold_documents,
+    expectNoAnswer: testCase.expect_no_answer === true,
+    documentIds: fixture.documentIds,
+    unitIds: fixture.unitIds,
+    candidateStages,
+    shortlist: rawHits,
+    shortlistLimit: 10,
+    admitted: hits,
+    assessment: answerability,
+  });
   return {
+    stageDiagnostics,
     configurationName: configuration.name,
     caseId: testCase.id,
     slice: testCase.slice ?? testCase.category,
@@ -760,7 +986,7 @@ async function executeCase(
       (sum, hit) => sum + Math.ceil(hit.excerpt.length / 4),
       0,
     ),
-    critical: testCase.critical,
+    ...(testCase.critical !== undefined ? { critical: testCase.critical } : {}),
     warnings: [...new Set(warnings)],
     availableChannels: [...availableChannels].sort(),
     rankedVaultIds: [...new Set(hits.map((hit) => hit.vaultId))],
@@ -783,12 +1009,688 @@ async function executeCase(
   };
 }
 
+function candidatePoolMeasurement(observations: readonly RuntimeObservation[]) {
+  let expectedTargets = 0;
+  let foundTargets = 0;
+  const firstGoldRanks: number[] = [];
+  const perChannelFound = new Map<string, number>();
+  for (const observation of observations) {
+    for (const target of observation.stageDiagnostics.expected) {
+      expectedTargets += 1;
+      const candidate = observation.stageDiagnostics.candidateTrace.find(
+        (entry) =>
+          entry.documentId === target.documentId &&
+          entry.unitId === target.unitId,
+      );
+      if (!candidate) continue;
+      foundTargets += 1;
+      firstGoldRanks.push(candidate.rank);
+      for (const channel of new Set(
+        candidate.channels.map((entry) => entry.channel),
+      )) {
+        perChannelFound.set(channel, (perChannelFound.get(channel) ?? 0) + 1);
+      }
+    }
+  }
+  return {
+    answerableGoldTargets: expectedTargets,
+    candidateGoldTargetsFound: foundTargets,
+    candidatePoolRecall:
+      expectedTargets === 0 ? null : foundTargets / expectedTargets,
+    meanFirstGoldRank:
+      firstGoldRanks.length === 0
+        ? null
+        : firstGoldRanks.reduce((sum, value) => sum + value, 0) /
+          firstGoldRanks.length,
+    candidateMisses: expectedTargets - foundTargets,
+    perChannelGoldCoverage: Object.fromEntries(
+      [...perChannelFound.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([channel, count]) => [
+          channel,
+          expectedTargets === 0 ? null : count / expectedTargets,
+        ]),
+    ),
+  };
+}
+
+function rankOfAny(
+  rankedIds: readonly string[],
+  goldIds: ReadonlySet<string>,
+): number | null {
+  const index = rankedIds.findIndex((id) => goldIds.has(id));
+  return index < 0 ? null : index + 1;
+}
+
+function summarizeUnitRanks(ranks: readonly (number | null)[]) {
+  const found = ranks.filter((rank): rank is number => rank !== null);
+  return {
+    cases: ranks.length,
+    recallAt10:
+      ranks.length === 0
+        ? null
+        : ranks.filter((rank) => rank !== null && rank <= 10).length /
+          ranks.length,
+    mrr:
+      ranks.length === 0
+        ? null
+        : ranks.reduce<number>(
+            (sum, rank) => sum + (rank === null ? 0 : 1 / rank),
+            0,
+          ) / ranks.length,
+    meanFoundRank:
+      found.length === 0
+        ? null
+        : found.reduce((sum, rank) => sum + rank, 0) / found.length,
+  };
+}
+
+async function runUnitSelectionStudy(
+  db: Postgres,
+  dataset: {
+    manifest: ResolvedManifest;
+    cases: GoldCase[];
+  },
+  fixture: Fixture,
+  queryEmbeddingService: QueryEmbeddingService,
+  unitsByDocument: ReadonlyMap<string, readonly UnitizedUnit[]>,
+  generationCount: number,
+) {
+  const labelled = dataset.cases.filter(
+    (testCase) => (testCase.gold_support?.length ?? 0) > 0,
+  );
+  const policy = resolveRetrievalPolicy();
+  const results = [];
+  const unresolvedPredicates: string[] = [];
+
+  for (const testCase of labelled) {
+    const vaultId = fixture.vaultIds.get(testCase.vault);
+    if (!vaultId) throw new Error(`Unknown case vault ${testCase.vault}`);
+    const { goldUnitIds, unresolvedPredicates: unresolvedForCase } =
+      resolveGoldUnitIds(testCase, unitsByDocument);
+    unresolvedPredicates.push(...unresolvedForCase);
+    if (unresolvedForCase.length > 0 || goldUnitIds.size === 0) {
+      results.push({
+        caseId: testCase.id,
+        status: "UNRESOLVED_GOLD_UNIT",
+        unresolvedPredicates: unresolvedForCase,
+      });
+      continue;
+    }
+
+    let snapshot: EvidenceRetrievalStageSnapshot | undefined;
+    await queryKnowledge(
+      db,
+      {
+        query: testCase.query,
+        spaceId: fixture.spaceId,
+        vaultId,
+        vaultIds: [],
+        federated: false,
+        types: [],
+        minimumTrust: "MACHINE_SUPPORTED",
+        mode: "SOURCE_BACKED",
+        limit: 10,
+      },
+      {
+        vaultIds: [vaultId],
+        channels: ["lexical", "vector"],
+        allowVectorForBenchmark: true,
+        queryEmbeddingService,
+        stageDiagnosticSink: (value) => {
+          snapshot = value;
+        },
+      },
+    );
+    if (!snapshot) {
+      throw new Error(`Missing stage diagnostics for ${testCase.id}`);
+    }
+
+    const keyToUnitId = new Map<string, string>();
+    const unitCandidates: RetrievalCandidate[] = [];
+    const documentCandidates: RetrievalCandidate[] = [];
+    const observedLeafCandidates = (
+      snapshot.channelCandidateTrace ?? []
+    ).filter(
+      (candidate) =>
+        candidate.unitId &&
+        (candidate.channel === "LEXICAL" || candidate.channel === "VECTOR"),
+    );
+    for (const candidate of observedLeafCandidates) {
+      const channel: RetrievalCandidate["channel"] =
+        candidate.channel === "LEXICAL" ? "LEXICAL" : "VECTOR";
+      const common = {
+        channel,
+        rank: candidate.rank,
+        ...(candidate.rawScore === null
+          ? {}
+          : { rawScore: candidate.rawScore }),
+        scopeId: fixture.spaceId,
+        documentId: candidate.documentId,
+        unitId: candidate.unitId!,
+        revision: fixture.corpusRevision,
+        selectionReason: candidate.selectionReason,
+      } satisfies Omit<RetrievalCandidate, "candidateId">;
+      documentCandidates.push({
+        ...common,
+        candidateId: candidate.documentId,
+      });
+      const candidateId = `${candidate.documentId}:${candidate.unitId}`;
+      keyToUnitId.set(candidateId, candidate.unitId!);
+      unitCandidates.push({ ...common, candidateId });
+    }
+
+    const preferredLegacyUnitByDocument = new Map<string, string>();
+    for (const candidate of [...observedLeafCandidates].sort((left, right) => {
+      const priority = (entry: (typeof observedLeafCandidates)[number]) =>
+        entry.channel === "LEXICAL" &&
+        !entry.selectionReason.includes("lexical:assertion-recall:")
+          ? 0
+          : entry.channel === "VECTOR"
+            ? 1
+            : 2;
+      return (
+        priority(left) - priority(right) ||
+        left.rank - right.rank ||
+        left.unitId!.localeCompare(right.unitId!)
+      );
+    })) {
+      if (!preferredLegacyUnitByDocument.has(candidate.documentId)) {
+        preferredLegacyUnitByDocument.set(
+          candidate.documentId,
+          candidate.unitId!,
+        );
+      }
+    }
+
+    const documentRanked = reciprocalRankFusion(
+      retrievalCandidatesToRankedChannels(documentCandidates, policy),
+    );
+    const unitRanked = reciprocalRankFusion(
+      retrievalCandidatesToRankedChannels(unitCandidates, policy),
+    );
+    const currentUnitIds = documentRanked.flatMap((item) => {
+      const unitId = preferredLegacyUnitByDocument.get(item.id);
+      return unitId ? [unitId] : [];
+    });
+    const unitKeyedIds = unitRanked.flatMap((item) => {
+      const unitId = keyToUnitId.get(item.id);
+      return unitId ? [unitId] : [];
+    });
+    const candidateGoldPresent = (snapshot.channelCandidateTrace ?? []).some(
+      (candidate) =>
+        candidate.unitId !== null && goldUnitIds.has(candidate.unitId),
+    );
+
+    results.push({
+      caseId: testCase.id,
+      status: "MEASURED",
+      goldUnitAlternatives: goldUnitIds.size,
+      candidateGoldPresent,
+      currentDocumentKeyedRank: rankOfAny(currentUnitIds, goldUnitIds),
+      unitKeyedRrfRank: rankOfAny(unitKeyedIds, goldUnitIds),
+    });
+  }
+
+  const measured = results.filter(
+    (
+      result,
+    ): result is {
+      caseId: string;
+      status: "MEASURED";
+      goldUnitAlternatives: number;
+      candidateGoldPresent: boolean;
+      currentDocumentKeyedRank: number | null;
+      unitKeyedRrfRank: number | null;
+    } => result.status === "MEASURED",
+  );
+  const candidateGoldCoverage =
+    measured.length === 0
+      ? null
+      : measured.filter((result) => result.candidateGoldPresent).length /
+        measured.length;
+  const current = summarizeUnitRanks(
+    measured.map((result) => result.currentDocumentKeyedRank),
+  );
+  const unitKeyed = summarizeUnitRanks(
+    measured.map((result) => result.unitKeyedRrfRank),
+  );
+  const comparable =
+    unresolvedPredicates.length === 0 &&
+    candidateGoldCoverage === 1 &&
+    current.recallAt10 !== null &&
+    unitKeyed.recallAt10 !== null &&
+    current.mrr !== null &&
+    unitKeyed.mrr !== null;
+  const epsilon = 1e-12;
+  const decision = !comparable
+    ? "INCONCLUSIVE"
+    : unitKeyed.recallAt10! > current.recallAt10! + epsilon ||
+        (Math.abs(unitKeyed.recallAt10! - current.recallAt10!) <= epsilon &&
+          unitKeyed.mrr! > current.mrr! + epsilon)
+      ? "PROMOTE"
+      : "REJECT";
+
+  return {
+    status: "MEASURED",
+    independentVariable: "fusionIdentity",
+    arms: ["DOCUMENT_KEYED_CURRENT", "UNIT_KEYED_RRF"],
+    corpusProjection: "FRESH_PARSE_KNOWLEDGE_UNITS",
+    casesLabelled: labelled.length,
+    casesMeasured: measured.length,
+    unresolvedPredicates: [...new Set(unresolvedPredicates)].sort(),
+    candidateGoldCoverage,
+    currentDocumentKeyed: current,
+    unitKeyedRrf: unitKeyed,
+    delta: {
+      recallAt10:
+        current.recallAt10 === null || unitKeyed.recallAt10 === null
+          ? null
+          : unitKeyed.recallAt10 - current.recallAt10,
+      mrr:
+        current.mrr === null || unitKeyed.mrr === null
+          ? null
+          : unitKeyed.mrr - current.mrr,
+    },
+    decision,
+    productionDefaultChanged: true,
+    selectedProductionDefault: "UNIT_AWARE_RRF",
+    generationCount,
+    goldDerivation:
+      "Gold units are derived only from versioned gold_support predicates matched against embedding-eligible parseKnowledgeUnits output; no private vocabulary or manual unit labels are added.",
+    claimBoundary:
+      "This registered public-product slice replays legacy document-keyed and unit-keyed RRF from the same measured lexical/vector channel candidates. A PROMOTE result supports the unit-aware production default; the study remains independent from that default.",
+    results,
+  };
+}
+function rankingCandidateIdentity(hit: QueryHit): string {
+  return hit.unitId ? `${hit.documentId}:${hit.unitId}` : hit.documentId;
+}
+
+function firstGoldUnitRank(
+  hits: readonly QueryHit[],
+  goldUnitIds: ReadonlySet<string>,
+): number | null {
+  const index = hits.findIndex(
+    (hit) => hit.unitId !== undefined && goldUnitIds.has(hit.unitId),
+  );
+  return index < 0 ? null : index + 1;
+}
+
+function summarizeRerankRanks(ranks: readonly (number | null)[]) {
+  return {
+    cases: ranks.length,
+    recall:
+      ranks.length === 0
+        ? null
+        : ranks.filter((rank) => rank !== null).length / ranks.length,
+    mrr:
+      ranks.length === 0
+        ? null
+        : ranks.reduce<number>(
+            (sum, rank) => sum + (rank === null ? 0 : 1 / rank),
+            0,
+          ) / ranks.length,
+    ndcg:
+      ranks.length === 0
+        ? null
+        : ranks.reduce<number>(
+            (sum, rank) => sum + (rank === null ? 0 : 1 / Math.log2(rank + 1)),
+            0,
+          ) / ranks.length,
+  };
+}
+
+async function runRerankStudy(
+  db: Postgres,
+  dataset: {
+    manifest: ResolvedManifest;
+    cases: GoldCase[];
+  },
+  fixture: Fixture,
+  queryEmbeddingService: QueryEmbeddingService,
+  unitsByDocument: ReadonlyMap<string, readonly UnitizedUnit[]>,
+  generations: readonly ActiveEmbeddingGenerationDescriptor[],
+  reranker: LocalBgeCrossEncoderReranker,
+  repositorySha: string,
+  datasetHash: string,
+  modelLoadLatencyMs: number,
+) {
+  type RerankArmObservation = {
+    poolDepth: number;
+    shortlist: number;
+    poolGoldPresent: boolean;
+    baselineRank: number | null;
+    rerankedRank: number | null;
+  };
+  type MeasuredResult = {
+    caseId: string;
+    status: "MEASURED";
+    goldUnitAlternatives: number;
+    frozenPoolCandidates: number;
+    arms: RerankArmObservation[];
+  };
+  type UnresolvedResult = {
+    caseId: string;
+    status: "UNRESOLVED_GOLD_UNIT";
+    unresolvedPredicates: string[];
+  };
+
+  const labelled = dataset.cases.filter(
+    (testCase) => (testCase.gold_support?.length ?? 0) > 0,
+  );
+  const unresolvedPredicates: string[] = [];
+  const results: Array<MeasuredResult | UnresolvedResult> = [];
+  let scoredCandidates = 0;
+  let scoringLatencyMs = 0;
+
+  for (const testCase of labelled) {
+    const vaultId = fixture.vaultIds.get(testCase.vault);
+    if (!vaultId) throw new Error(`Unknown case vault ${testCase.vault}`);
+    const { goldUnitIds, unresolvedPredicates: unresolvedForCase } =
+      resolveGoldUnitIds(testCase, unitsByDocument);
+    unresolvedPredicates.push(...unresolvedForCase);
+    if (unresolvedForCase.length > 0 || goldUnitIds.size === 0) {
+      results.push({
+        caseId: testCase.id,
+        status: "UNRESOLVED_GOLD_UNIT",
+        unresolvedPredicates: unresolvedForCase,
+      });
+      continue;
+    }
+
+    const frozenPool = await queryKnowledge(
+      db,
+      {
+        query: testCase.query,
+        spaceId: fixture.spaceId,
+        vaultId,
+        vaultIds: [],
+        federated: false,
+        types: [],
+        minimumTrust: "MACHINE_SUPPORTED",
+        mode: "SOURCE_BACKED",
+        limit: 100,
+      },
+      {
+        vaultIds: [vaultId],
+        channels: ["exact", "lexical", "vector"],
+        allowVectorForBenchmark: true,
+        benchmarkCandidatePoolLimit: 100,
+        queryEmbeddingService,
+      },
+    );
+
+    const passages = frozenPool.map((hit) => `${hit.title}\n${hit.excerpt}`);
+    const started = performance.now();
+    const scores = await reranker.scoreMany(testCase.query, passages);
+    scoringLatencyMs += performance.now() - started;
+    scoredCandidates += scores.length;
+    if (scores.length !== frozenPool.length) {
+      throw new Error("R4_RERANK_SCORE_COUNT_MISMATCH");
+    }
+
+    const scored = frozenPool.map((hit, index) => ({
+      hit,
+      preRank: index + 1,
+      score: scores[index]!,
+    }));
+
+    const arms = R4_RERANK_ARMS.map(({ poolDepth, shortlist }) => {
+      const baselinePool = frozenPool.slice(0, poolDepth);
+      const rerankedPool = scored
+        .filter((entry) => entry.preRank <= poolDepth)
+        .sort(
+          (left, right) =>
+            right.score - left.score ||
+            left.preRank - right.preRank ||
+            rankingCandidateIdentity(left.hit).localeCompare(
+              rankingCandidateIdentity(right.hit),
+            ),
+        )
+        .map((entry) => entry.hit);
+      const baselineRank = firstGoldUnitRank(
+        baselinePool.slice(0, shortlist),
+        goldUnitIds,
+      );
+      const rerankedRank = firstGoldUnitRank(
+        rerankedPool.slice(0, shortlist),
+        goldUnitIds,
+      );
+      return {
+        poolDepth,
+        shortlist,
+        poolGoldPresent: firstGoldUnitRank(baselinePool, goldUnitIds) !== null,
+        baselineRank,
+        rerankedRank,
+      };
+    });
+
+    results.push({
+      caseId: testCase.id,
+      status: "MEASURED",
+      goldUnitAlternatives: goldUnitIds.size,
+      frozenPoolCandidates: frozenPool.length,
+      arms,
+    });
+  }
+
+  const measured = results.filter(
+    (result): result is MeasuredResult => result.status === "MEASURED",
+  );
+
+  const armSummaries = R4_RERANK_ARMS.map(({ poolDepth, shortlist }) => {
+    const observations = measured.map((result) => {
+      const arm = result.arms.find(
+        (entry) =>
+          entry.poolDepth === poolDepth && entry.shortlist === shortlist,
+      );
+      if (!arm) throw new Error("R4_RERANK_ARM_MISSING");
+      return arm;
+    });
+    const candidateGoldCoverage =
+      observations.length === 0
+        ? null
+        : observations.filter((entry) => entry.poolGoldPresent).length /
+          observations.length;
+    const baselineRanks = observations.map((entry) => entry.baselineRank);
+    const rerankedRanks = observations.map((entry) => entry.rerankedRank);
+    const baseline = summarizeRerankRanks(baselineRanks);
+    const reranked = summarizeRerankRanks(rerankedRanks);
+    const goldDroppedByRerank = observations.filter(
+      (entry) => entry.baselineRank !== null && entry.rerankedRank === null,
+    ).length;
+    const goldRecoveredByRerank = observations.filter(
+      (entry) => entry.baselineRank === null && entry.rerankedRank !== null,
+    ).length;
+    const rankRegressions = observations.filter(
+      (entry) =>
+        entry.baselineRank !== null &&
+        entry.rerankedRank !== null &&
+        entry.rerankedRank > entry.baselineRank,
+    ).length;
+    const rankImprovements = observations.filter(
+      (entry) =>
+        (entry.baselineRank === null && entry.rerankedRank !== null) ||
+        (entry.baselineRank !== null &&
+          entry.rerankedRank !== null &&
+          entry.rerankedRank < entry.baselineRank),
+    ).length;
+    const comparable =
+      unresolvedPredicates.length === 0 &&
+      candidateGoldCoverage === 1 &&
+      baseline.recall !== null &&
+      baseline.mrr !== null &&
+      baseline.ndcg !== null &&
+      reranked.recall !== null &&
+      reranked.mrr !== null &&
+      reranked.ndcg !== null;
+    const epsilon = 1e-12;
+    const guardrailsPass =
+      comparable &&
+      goldDroppedByRerank === 0 &&
+      rankRegressions === 0 &&
+      reranked.recall! + epsilon >= baseline.recall! &&
+      reranked.mrr! + epsilon >= baseline.mrr! &&
+      reranked.ndcg! + epsilon >= baseline.ndcg!;
+    const improved =
+      guardrailsPass &&
+      (reranked.mrr! > baseline.mrr! + epsilon ||
+        reranked.ndcg! > baseline.ndcg! + epsilon);
+    return {
+      poolDepth,
+      shortlist,
+      candidateGoldCoverage,
+      baseline,
+      reranked,
+      delta: {
+        recall:
+          baseline.recall === null || reranked.recall === null
+            ? null
+            : reranked.recall - baseline.recall,
+        mrr:
+          baseline.mrr === null || reranked.mrr === null
+            ? null
+            : reranked.mrr - baseline.mrr,
+        ndcg:
+          baseline.ndcg === null || reranked.ndcg === null
+            ? null
+            : reranked.ndcg - baseline.ndcg,
+      },
+      goldDroppedByRerank,
+      goldRecoveredByRerank,
+      rankRegressions,
+      rankImprovements,
+      comparable,
+      decision: !comparable ? "INCONCLUSIVE" : improved ? "PROMOTE" : "REJECT",
+    };
+  });
+
+  const allComparable =
+    measured.length === labelled.length &&
+    unresolvedPredicates.length === 0 &&
+    armSummaries.every((arm) => arm.comparable);
+  const allGuardrailsPass =
+    allComparable &&
+    armSummaries.every(
+      (arm) =>
+        arm.goldDroppedByRerank === 0 &&
+        arm.rankRegressions === 0 &&
+        (arm.delta.recall ?? -1) >= -1e-12 &&
+        (arm.delta.mrr ?? -1) >= -1e-12 &&
+        (arm.delta.ndcg ?? -1) >= -1e-12,
+    );
+  const anyRankingImprovement = armSummaries.some(
+    (arm) => (arm.delta.mrr ?? 0) > 1e-12 || (arm.delta.ndcg ?? 0) > 1e-12,
+  );
+  const experimentDisposition = !allComparable
+    ? "INCONCLUSIVE"
+    : allGuardrailsPass && anyRankingImprovement
+      ? "PROMOTE"
+      : "REJECT";
+  const selection =
+    experimentDisposition === "PROMOTE"
+      ? "BGE_V2_M3_CROSS_ENCODER"
+      : experimentDisposition === "REJECT"
+        ? "NO_RERANK_ADVANTAGE"
+        : "INCONCLUSIVE";
+
+  const configurationHash = sha256(
+    JSON.stringify({
+      independentVariable: "reranker",
+      baseline: "UNIT_AWARE_RRF_ORDER",
+      challenger: LOCAL_MULTILINGUAL_BGE_RERANKER_DESCRIPTOR,
+      inputAssembly: "title-newline-atomic-excerpt",
+      arms: R4_RERANK_ARMS,
+      retrievalChannels: ["exact", "lexical", "vector"],
+    }),
+  );
+
+  return {
+    status: "MEASURED",
+    phase: "R4",
+    experimentDisposition,
+    selection,
+    independentVariable: "reranker",
+    baseline: "UNIT_AWARE_RRF_ORDER",
+    challenger: {
+      ...LOCAL_MULTILINGUAL_BGE_RERANKER_DESCRIPTOR,
+      inputAssembly: "title-newline-atomic-excerpt",
+    },
+    productionDefaultChanged: false,
+    enforcementEnabled: false,
+    casesLabelled: labelled.length,
+    casesMeasured: measured.length,
+    unresolvedPredicates: [...new Set(unresolvedPredicates)].sort(),
+    modelLoadLatencyMs,
+    scoringLatencyMs,
+    scoredCandidates,
+    arms: armSummaries,
+    experiment: {
+      hypothesis:
+        "A pinned multilingual BGE cross-encoder can improve ranking inside a frozen authorized hybrid pool without dropping a gold unit from the declared shortlist.",
+      failureStage: "RERANKING",
+      baselineSha: R3_GREEN_BASELINE_SHA,
+      candidateSha: repositorySha,
+      datasetVersion: dataset.manifest.name,
+      datasetHash,
+      indexGeneration: {
+        corpusRevision: fixture.corpusRevision,
+        embeddingGenerations: generations.map((generation) => ({
+          vaultId: generation.vaultId,
+          generationId: generation.generationId,
+          corpusRevision: generation.corpusRevision,
+        })),
+      },
+      embeddingModelRevision:
+        LOCAL_MULTILINGUAL_E5_SMALL_DESCRIPTOR.modelRevision,
+      rerankerRevision: LOCAL_MULTILINGUAL_BGE_RERANKER_DESCRIPTOR.revision,
+      readerRevision: "NOT_APPLICABLE_R4_RELEVANCE_ONLY",
+      configurationHash,
+      singleIndependentVariable:
+        "UNIT_AWARE_RRF_ORDER versus BGE_V2_M3_CROSS_ENCODER_ORDER",
+      primaryMetric: "MRR_AND_NDCG_AT_DECLARED_SHORTLIST",
+      guardrailMetrics: [
+        "candidateGoldCoverage=1",
+        "goldDroppedByRerank=0",
+        "rankRegressions=0",
+        "shortlistRecall does not decrease",
+      ],
+      expectedFailureIfWrong:
+        "BGE leaves ranking unchanged, worsens a gold rank, or drops a gold unit from a declared shortlist.",
+      promotionRule:
+        "PROMOTE only when every declared arm is comparable, no arm drops or regresses a gold unit, recall/MRR/nDCG never decrease, and at least one arm strictly improves MRR or nDCG.",
+      rollback:
+        "Keep production reranking unchanged; this measurement is shadow-only and can be removed without changing retrieval behavior.",
+    },
+    claimBoundary:
+      "R4 freezes the authorized/truth-valid unit-aware hybrid pool before scoring. BGE relevance only reorders that pool; it does not retrieve new candidates, authorize content, establish evidence support, or gate admission.",
+    results,
+  };
+}
+
 async function main(): Promise<void> {
+  const repositoryState = {
+    commit: execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+    }).trim(),
+    workingTreeDirty:
+      execFileSync("git", ["status", "--porcelain"], {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+      }).trim().length > 0,
+  };
   const previousVectorEnabled = process.env.AKP_VECTOR_ENABLED;
   process.env.AKP_VECTOR_ENABLED = "true";
   const db = new Postgres(databaseUrl);
   const dataset = await loadDataset();
+  const sortedFixtureHashes = Object.entries(dataset.hashes).sort(
+    ([left], [right]) => left.localeCompare(right),
+  );
+  const fixtureHash = sha256(JSON.stringify(sortedFixtureHashes));
   const fixture = createFixture(dataset.manifest);
+  const unitSelectionFixture = createFixture(dataset.manifest);
   const adapter = new LocalSemanticEmbeddingAdapter({
     ...(process.env.AKP_MODEL_CACHE_DIR?.trim()
       ? { cacheDir: process.env.AKP_MODEL_CACHE_DIR }
@@ -820,7 +1722,9 @@ async function main(): Promise<void> {
       async () => adapter,
     );
     const configurations = benchmarkConfigurations();
-    const runs = [];
+    const runs: Array<
+      ReturnType<typeof aggregateObservedBenchmarkRun<RuntimeObservation>>
+    > = [];
     for (const configuration of configurations) {
       const observations: RuntimeObservation[] = [];
       for (const testCase of dataset.cases) {
@@ -834,7 +1738,119 @@ async function main(): Promise<void> {
           ),
         );
       }
-      runs.push(aggregateBenchmarkRun(configuration, observations));
+      runs.push(aggregateObservedBenchmarkRun(configuration, observations));
+    }
+
+    const candidateDepths = [20, 50, 100] as const;
+    const candidateDepthConfiguration = configurations.find(
+      (configuration) => configuration.name === "full-hybrid-rrf",
+    );
+    if (
+      !candidateDepthConfiguration ||
+      !candidateDepthConfiguration.allowVectorForBenchmark
+    ) {
+      throw new Error(
+        "Registered candidate-depth study requires full-hybrid-rrf with benchmark vector access.",
+      );
+    }
+    const candidateDepthStudy = [];
+    for (const depth of candidateDepths) {
+      const observations: RuntimeObservation[] = [];
+      for (const testCase of dataset.cases) {
+        observations.push(
+          await executeCase(
+            db,
+            fixture,
+            testCase,
+            candidateDepthConfiguration,
+            queryEmbeddingService,
+            depth,
+          ),
+        );
+      }
+      candidateDepthStudy.push({
+        depth,
+        configuration: candidateDepthConfiguration.name,
+        ...candidatePoolMeasurement(observations),
+      });
+    }
+
+    const fullHybridRun = runs.find(
+      (run) => run.configurationName === candidateDepthConfiguration.name,
+    );
+    if (!fullHybridRun) {
+      throw new Error(
+        "Registered full-hybrid run missing for assertion study.",
+      );
+    }
+    const assertionRecallDisabledObservations: RuntimeObservation[] = [];
+    for (const testCase of dataset.cases) {
+      assertionRecallDisabledObservations.push(
+        await executeCase(
+          db,
+          fixture,
+          testCase,
+          candidateDepthConfiguration,
+          queryEmbeddingService,
+          undefined,
+          true,
+        ),
+      );
+    }
+    const assertionRecallStudy = {
+      independentVariable: "assertionRecall",
+      configuration: candidateDepthConfiguration.name,
+      productionDefaultChanged: false,
+      current: candidatePoolMeasurement(fullHybridRun.results),
+      disabled: candidatePoolMeasurement(assertionRecallDisabledObservations),
+      claimBoundary:
+        "This isolates the residual lexical assertion-recall path on the registered corpus; it does not alter production selection.",
+    };
+    const unitizedUnitsByDocument = await seedUnitizedCorpus(
+      db,
+      dataset.manifest,
+      unitSelectionFixture,
+    );
+    const unitizedGenerations = await buildRealEmbeddings(
+      db,
+      dataset.manifest,
+      unitSelectionFixture,
+      adapter,
+    );
+    const unitSelectionStudy = await runUnitSelectionStudy(
+      db,
+      dataset,
+      unitSelectionFixture,
+      queryEmbeddingService,
+      unitizedUnitsByDocument,
+      unitizedGenerations.length,
+    );
+
+    const bgeReranker = new LocalBgeCrossEncoderReranker({
+      ...(process.env.AKP_MODEL_CACHE_DIR?.trim()
+        ? { cacheDir: process.env.AKP_MODEL_CACHE_DIR }
+        : {}),
+      localFilesOnly: process.env.AKP_LOCAL_FILES_ONLY === "1",
+    });
+    const bgeLoadStarted = performance.now();
+    await bgeReranker.load();
+    const bgeModelLoadLatencyMs = performance.now() - bgeLoadStarted;
+    let rerankStudy;
+    try {
+      rerankStudy = await runRerankStudy(
+        db,
+        dataset,
+        unitSelectionFixture,
+        queryEmbeddingService,
+        unitizedUnitsByDocument,
+        unitizedGenerations,
+        bgeReranker,
+        repositoryState.commit,
+        fixtureHash,
+        bgeModelLoadLatencyMs,
+      );
+    } finally {
+      await bgeReranker.dispose();
     }
 
     const isolationViolations = runs.flatMap((run) =>
@@ -898,7 +1914,7 @@ async function main(): Promise<void> {
 
     const ablationStages = [
       { stage: "BASELINE_EXACT_LEXICAL", configuration: "exact+lexical" },
-      { stage: "ADD_DENSE", configuration: "lexical+vector" },
+      { stage: "ADD_DENSE", configuration: "exact+lexical+vector" },
       {
         stage: "ADD_TYPED_GRAPH",
         configuration: "lexical+vector+graph",
@@ -970,24 +1986,44 @@ async function main(): Promise<void> {
       };
     });
 
-    const sortedFixtureHashes = Object.entries(dataset.hashes).sort(
-      ([left], [right]) => left.localeCompare(right),
-    );
-    const fixtureHash = sha256(JSON.stringify(sortedFixtureHashes));
     const configurationHash = sha256(
-      JSON.stringify(
-        configurations.map((configuration) => ({
+      JSON.stringify({
+        configurations: configurations.map((configuration) => ({
           ...configuration,
           channels: [...configuration.channels],
         })),
-      ),
+        candidateDepthStudy: {
+          configuration: candidateDepthConfiguration.name,
+          depths: candidateDepths,
+        },
+        assertionRecallStudy: {
+          configuration: candidateDepthConfiguration.name,
+          variants: ["current", "disabled"],
+        },
+        unitSelectionStudy: {
+          corpusProjection: "FRESH_PARSE_KNOWLEDGE_UNITS",
+          variants: ["DOCUMENT_KEYED_CURRENT", "UNIT_KEYED_RRF"],
+          labelledCases: dataset.cases.filter(
+            (testCase) => (testCase.gold_support?.length ?? 0) > 0,
+          ).length,
+        },
+        rerankStudy: {
+          baselineSha: R3_GREEN_BASELINE_SHA,
+          baseline: "UNIT_AWARE_RRF_ORDER",
+          challenger: LOCAL_MULTILINGUAL_BGE_RERANKER_DESCRIPTOR,
+          arms: R4_RERANK_ARMS,
+          productionDefaultChanged: false,
+        },
+      }),
     );
     const cpu = os.cpus();
     const reproducibility = {
       tool: {
         repositoryUrl:
           "https://github.com/David-std/Architecture-Knowledge-Platform",
-        versionOrCommit: process.env.GITHUB_SHA ?? "UNAVAILABLE_OUTSIDE_CI",
+        versionOrCommit: process.env.GITHUB_SHA ?? repositoryState.commit,
+        checkoutCommit: repositoryState.commit,
+        workingTreeDirty: repositoryState.workingTreeDirty,
         licenseObserved: "NOT_DECLARED_IN_REPOSITORY",
       },
       configuration: {
@@ -1030,7 +2066,7 @@ async function main(): Promise<void> {
     };
 
     const report = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       generatedAt: new Date().toISOString(),
       historicalBaseline: V03_RETRIEVAL_BASELINE,
       evidence: {
@@ -1039,8 +2075,9 @@ async function main(): Promise<void> {
         description:
           "Versioned repository product documentation is read from its real source files, hashed, embedded with the pinned multilingual E5 provider, persisted to PostgreSQL/pgvector, and queried through production retrieval/RRF code.",
         limitations: [
+          "Stage diagnostics retain gold document/unit identities, but exact gold spans and final generation are not annotated or measured by this pack.",
           "The corpus is the product's own public documentation, not a private customer vault or production traffic sample.",
-          "The benchmark seeds one retrieval unit per source document and therefore does not validate extraction or production chunking fidelity.",
+          "The primary comparison matrix retains its one-unit-per-document compatibility projection; unitSelectionStudy and rerankStudy separately rebuild the same public Markdown with production parseKnowledgeUnits for controlled multi-unit comparisons.",
           "The corpus is small and single-product; results are not evidence of domain-general retrieval superiority.",
         ],
         notMeasured: [
@@ -1089,6 +2126,16 @@ async function main(): Promise<void> {
         violations: isolationViolations,
       },
       candidateDecision,
+      candidateDepthStudy: {
+        independentVariable: "candidatePoolLimit",
+        productionDefaultChanged: false,
+        measurements: candidateDepthStudy,
+        claimBoundary:
+          "Depth measurements use the same registered corpus and full-hybrid retrieval configuration; they do not select a production default.",
+      },
+      assertionRecallStudy,
+      unitSelectionStudy,
+      rerankStudy,
       productionDefault: {
         status: "NOT_SELECTED",
         reason:
@@ -1106,6 +2153,10 @@ async function main(): Promise<void> {
           evidenceLevel: report.evidence.level,
           cases: dataset.cases.length,
           candidateDecision,
+          candidateDepthStudy: report.candidateDepthStudy,
+          assertionRecallStudy: report.assertionRecallStudy,
+          unitSelectionStudy: report.unitSelectionStudy,
+          rerankStudy: report.rerankStudy,
           productionDefault: report.productionDefault,
           reproducibility: {
             commit: report.reproducibility.tool.versionOrCommit,
@@ -1137,13 +2188,17 @@ async function main(): Promise<void> {
     );
   } finally {
     try {
-      await cleanupCorpus(db, fixture);
+      await cleanupCorpus(db, unitSelectionFixture);
     } finally {
-      await db.close();
-      if (previousVectorEnabled === undefined) {
-        delete process.env.AKP_VECTOR_ENABLED;
-      } else {
-        process.env.AKP_VECTOR_ENABLED = previousVectorEnabled;
+      try {
+        await cleanupCorpus(db, fixture);
+      } finally {
+        await db.close();
+        if (previousVectorEnabled === undefined) {
+          delete process.env.AKP_VECTOR_ENABLED;
+        } else {
+          process.env.AKP_VECTOR_ENABLED = previousVectorEnabled;
+        }
       }
     }
   }

@@ -16,3 +16,5 @@ not installed or configured are reported as `SKIPPED` with the exact reason;
 they are never represented as successful deterministic extraction. The
 harness does not select a production default. A default requires an explicit
 benchmark review and an `AKP_DOCUMENT_INTELLIGENCE_SELECTION` configuration.
+
+The fixed binary `s1-digital-two-page.pdf` is a nonprivate synthetic PDF generated with ReportLab invariant output (SHA-256 `bab6f8b899dea622b814029b22e5351bad858e8f5f328c6fd1a2627dffa55d8a`). Page 1 contains `S1 PDF PROVENANCE 3179` and page 2 `S1 SECOND PAGE 4281`. The native Docling runtime test checks both text spans and their distinct page locators without OCR. This fixture is kept separate from the benchmark manifest to avoid silently changing provider-selection benchmarks.

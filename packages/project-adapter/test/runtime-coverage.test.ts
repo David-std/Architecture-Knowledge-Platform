@@ -2,13 +2,17 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CodeGraphArtifact } from "@akp/contracts";
 import {
   createCodeSnapshot,
   linkRuntimeCoverage,
   readNodeV8Coverage,
 } from "../src/index.js";
+
+// Real repository/process fixtures have bounded IO deadlines, including
+// slower filesystem scans and parallel workspace execution on Windows.
+vi.setConfig({ testTimeout: 30_000 });
 
 const roots: string[] = [];
 

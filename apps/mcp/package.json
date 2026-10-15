@@ -13,7 +13,7 @@
     "@akp/application": "workspace:*",
     "@akp/contracts": "workspace:*",
     "@akp/observability": "workspace:*",
-    "@modelcontextprotocol/sdk": "1.30.0",
+    "@modelcontextprotocol/sdk": "1.31.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {

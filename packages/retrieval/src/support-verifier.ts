@@ -1,4 +1,6 @@
 import type { SearchHit } from "@akp/contracts";
+import { markdownTableEvidence } from "./markdown-table-evidence.js";
+import { markdownVisibleSource } from "./markdown-visible-source.js";
 
 const ANSWERABILITY_STOPWORDS = new Set([
   "a",
@@ -39,6 +41,9 @@ const ANSWERABILITY_STOPWORDS = new Set([
   "what",
   "when",
   "where",
+  "who",
+  "whom",
+  "whose",
   "which",
   "why",
 ]);
@@ -61,6 +66,7 @@ export type PassageSupportReason =
   | "PASSAGE_TEXT_SUPPORT"
   | "PASSAGE_CUE_SUPPORT"
   | "CLAIM_RELATION_SUPPORT"
+  | "CONCEPT_DEFINITION_SUPPORT"
   | "NO_CONCRETE_PASSAGE"
   | "ANSWER_CUE_MISMATCH"
   | "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
@@ -467,6 +473,7 @@ const QUESTION_SHAPE_TOKENS = new Set([
   "cuando",
   "define",
   "defines",
+  "donde",
   "do",
   "does",
   "entire",
@@ -483,6 +490,8 @@ const QUESTION_SHAPE_TOKENS = new Set([
   "must",
   "por",
   "que",
+  "quien",
+  "quienes",
   "require",
   "requires",
   "should",
@@ -493,6 +502,10 @@ const QUESTION_SHAPE_TOKENS = new Set([
   "todos",
   "what",
   "when",
+  "where",
+  "who",
+  "whom",
+  "whose",
   "which",
   "why",
 ]);
@@ -558,6 +571,7 @@ const RELATION_GRAMMAR_TOKENS = new Set([
   "used",
   "via",
   "through",
+  "that",
   "or",
   "either",
   "both",
@@ -625,24 +639,158 @@ function queryYesNoRelationRoles(query: string): QueryRelationRoles | null {
 }
 
 function relationRolesMatch(
-  window: string,
+  evidence: string,
   relation: QueryRelationRoles,
+  scopeTitle?: string,
 ): boolean {
-  const windowTokens = new Set(semanticTokens(window));
-  return (
-    relation.predicates.some((token) => windowTokens.has(token)) &&
-    relation.subjectAnchors.some((token) => windowTokens.has(token)) &&
-    relation.objectAnchors.some((token) => windowTokens.has(token))
+  const tokens = orderedSemanticTokens(evidence);
+  const titleTokens = new Set(scopeTitle ? semanticTokens(scopeTitle) : []);
+  for (let index = 0; index < tokens.length; index += 1) {
+    if (!relation.predicates.includes(tokens[index]!)) continue;
+    const before = new Set(tokens.slice(0, index));
+    const after = new Set(tokens.slice(index + 1));
+    const subjectMatched = relation.subjectAnchors.some(
+      (token) => before.has(token) || titleTokens.has(token),
+    );
+    const negationNearPredicate = tokens
+      .slice(Math.max(0, index - 6), index)
+      .some((token) => ["no", "not", "never", "nunca"].includes(token));
+    const objectMatched = relation.objectAnchors.some(
+      (token) =>
+        after.has(token) || (before.has(token) && negationNearPredicate),
+    );
+    if (subjectMatched && objectMatched) return true;
+  }
+  return false;
+}
+
+function orderedSubsequencePresent(
+  haystack: readonly string[],
+  needle: readonly string[],
+): boolean {
+  if (needle.length === 0) return false;
+  let cursor = 0;
+  for (const token of haystack) {
+    if (token !== needle[cursor]) continue;
+    cursor += 1;
+    if (cursor === needle.length) return true;
+  }
+  return false;
+}
+
+function genericYesNoRelationRolesMatch(
+  evidence: string,
+  query: string,
+): boolean {
+  const queryTokens = orderedSemanticTokens(query).filter(
+    (token) => !ANSWERABILITY_STOPWORDS.has(token),
+  );
+  // In an inverted question, do/does precedes the subject; it is not
+  // part of the asserted relation in the evidence clause.
+  if (queryTokens[0] === "do" || queryTokens[0] === "does") {
+    queryTokens.shift();
+  }
+  if (queryTokens.length < 3) return false;
+  return orderedSubsequencePresent(
+    orderedSemanticTokens(evidence),
+    queryTokens,
   );
 }
 
-function isSupportEligibleClaim(hit: SearchHit): boolean {
+function isSupportEligibleProposition(hit: SearchHit): boolean {
   return (
     hit.lifecycle === "ACTIVE" &&
     (hit.trust === "MACHINE_SUPPORTED" ||
       hit.trust === "HUMAN_REVIEWED" ||
       hit.trust === "ATTESTED") &&
-    hit.type.trim().toLocaleLowerCase("en-US") === "claim"
+    ["claim", "rule", "decision-rule"].includes(
+      hit.type.trim().toLocaleLowerCase("en-US"),
+    )
+  );
+}
+
+function definitionIdentityMatches(
+  hit: SearchHit,
+  excerpt: string,
+  query: string,
+): boolean {
+  const anchors = queryPredicateAnchors(query, ["DEFINITION"]);
+  if (anchors.length === 0) return false;
+
+  const headingPath = hit.headingPath ?? [];
+  const canonicalLabels = [
+    hit.title?.trim() || hit.document.title,
+    headingPath[0] ?? "",
+    ...(hit.document.aliases ?? []),
+  ].filter((value) => value.trim().length > 0);
+  const scopeTokens = new Set(canonicalLabels.flatMap(semanticTokens));
+  const scopeOverlap = anchors.filter((token) => scopeTokens.has(token));
+  const requiredScopeOverlap = Math.min(2, anchors.length);
+  if (
+    scopeOverlap.length < requiredScopeOverlap ||
+    scopeOverlap.length / anchors.length < 0.6
+  ) {
+    return false;
+  }
+
+  const excerptTokens = new Set(semanticTokens(excerpt));
+  return canonicalLabels.some((label) => {
+    const identityTokens = semanticTokens(label).filter(
+      (token) =>
+        token.length >= 3 &&
+        !ANSWERABILITY_STOPWORDS.has(token) &&
+        !QUESTION_SHAPE_TOKENS.has(token),
+    );
+    if (identityTokens.length === 0) return false;
+    const matched = identityTokens.filter((token) => excerptTokens.has(token));
+    return (
+      matched.length >= Math.min(2, identityTokens.length) &&
+      matched.length / identityTokens.length >= 0.6
+    );
+  });
+}
+
+function definitionExcerptAnchorsMatch(
+  excerpt: string,
+  query: string,
+): boolean {
+  const anchors = queryPredicateAnchors(query, ["DEFINITION"]);
+  if (anchors.length === 0) return false;
+  const excerptTokens = new Set(semanticTokens(excerpt));
+  const overlap = anchors.filter((token) => excerptTokens.has(token));
+  return (
+    overlap.length >= Math.min(2, anchors.length) &&
+    overlap.length / anchors.length >= 0.6
+  );
+}
+
+function isIntroductoryConceptDefinition(
+  hit: SearchHit,
+  excerpt: string,
+  query: string,
+  required: readonly PassageAnswerCue[],
+): boolean {
+  if (
+    required.length !== 1 ||
+    required[0] !== "DEFINITION" ||
+    hit.lifecycle !== "ACTIVE" ||
+    !["MACHINE_SUPPORTED", "HUMAN_REVIEWED", "ATTESTED"].includes(hit.trust) ||
+    hit.type.trim().toLocaleLowerCase("en-US") !== "concept" ||
+    hit.unitType !== "PARAGRAPH" ||
+    !Number.isSafeInteger(hit.structuralOrder) ||
+    (hit.structuralOrder ?? Number.MAX_SAFE_INTEGER) > 2 ||
+    (hit.structuralOrder ?? -1) < 1 ||
+    !excerpt.trim()
+  ) {
+    return false;
+  }
+
+  const headingPath = hit.headingPath ?? [];
+  if (headingPath.length !== 1) return false;
+
+  const excerptTokenCount = normalizedAnswerabilityTokens(excerpt).length;
+  return (
+    definitionIdentityMatches(hit, excerpt, query) && excerptTokenCount >= 4
   );
 }
 
@@ -658,7 +806,7 @@ function atomicClaimRelationDiagnostics(
   excerpt: string,
   query: string,
 ): ClaimRelationDiagnostics {
-  const eligibleClaim = isSupportEligibleClaim(hit);
+  const eligibleClaim = isSupportEligibleProposition(hit);
   const relation = queryYesNoRelationRoles(query);
   const queryAnchors = queryPredicateAnchors(query, ["YES_NO"]);
   const excerptTokens = new Set(semanticTokens(excerpt));
@@ -692,8 +840,10 @@ function atomicClaimRelationDiagnostics(
   const objectOrScopeMatched =
     relation !== null &&
     (objectOverlap > 0 || (queryGlobalScope && excerptGlobalScope));
+  const evidenceIsQuestion = isInterrogativeEvidence(excerpt);
   const supported =
     eligibleClaim &&
+    !evidenceIsQuestion &&
     Boolean(excerpt.trim()) &&
     relation !== null &&
     predicateMatched &&
@@ -786,6 +936,16 @@ function queryAnswerCues(query: string): PassageAnswerCue[] {
     }
   }
 
+  // An infinitive-led question still asks whether its relation holds.
+  // It must not fall through to thematic token overlap.
+  if (
+    cues.size === 0 &&
+    query.trim().endsWith("?") &&
+    !QUESTION_SHAPE_TOKENS.has(tokens[0] ?? "")
+  ) {
+    cues.add("YES_NO");
+  }
+
   // "How can X be prevented/stopped?" asks for the prevention mechanism.
   // PROCEDURE is a generic interrogative cue here, not a second independent
   // predicate that the passage must prove.
@@ -801,25 +961,149 @@ function explicitlyLinkedContinuation(sentence: string): boolean {
   );
 }
 
-function passageWindows(passage: string, title?: string): string[] {
+function isInterrogativeEvidence(value: string): boolean {
+  return /[?？؟][\p{Pe}\p{Pf}"'`*_]*\s*$/u.test(value.trim());
+}
+
+function withoutInterrogativeSentences(value: string): string {
+  const segmenter = new Intl.Segmenter("en", { granularity: "sentence" });
+  return value
+    .split(/\n+/u)
+    .flatMap((line) =>
+      [...segmenter.segment(line)].map((part) => part.segment.trim()),
+    )
+    .filter((sentence) => sentence && !isInterrogativeEvidence(sentence))
+    .join("\n");
+}
+interface PassageWindow {
+  text: string;
+  evidence: string;
+  scopeTitle?: string;
+  structuralAnswerCues?: readonly PassageAnswerCue[];
+}
+
+function withoutReferenceMarkup(passage: string): string {
+  return passage
+    .replace(/\[\[[^\]]+\]\]/gu, " ")
+    .replace(/\[[^\]]+\]\([^)]*\)/gu, " ");
+}
+
+const TABLE_CONDITION_HEADER_PATTERNS = [
+  ...QUERY_CUE_PATTERNS.CONDITION,
+  ...PASSAGE_CUE_PATTERNS.CONDITION,
+  "situation*",
+  "situacion*",
+] as const;
+
+const TABLE_DECISION_HEADER_PATTERNS = ["decision*"] as const;
+
+function tableHeaderMatches(
+  value: string,
+  patterns: readonly string[],
+): boolean {
+  const normalized = normalizedMatchText(value);
+  const tokens = normalizedAnswerabilityTokens(value);
+  if (patterns === TABLE_DECISION_HEADER_PATTERNS && tokens.length !== 1) {
+    return false;
+  }
+  return patterns.some((pattern) =>
+    patternMatches(normalized, tokens, pattern),
+  );
+}
+
+function tableConditionWindows(
+  passage: string,
+  query: string,
+): PassageWindow[] {
+  const anchors = queryPredicateAnchors(query, ["CONDITION"]);
+  const requiredAnchorOverlap = Math.min(2, Math.max(1, anchors.length));
+
+  return markdownTableEvidence(passage).flatMap((table) => {
+    const conditionColumns = new Set(
+      table.header.cells
+        .filter((cell) =>
+          tableHeaderMatches(cell.source, TABLE_CONDITION_HEADER_PATTERNS),
+        )
+        .map((cell) => cell.columnIndex),
+    );
+    const decisionColumns = new Set(
+      table.header.cells
+        .filter((cell) =>
+          tableHeaderMatches(cell.source, TABLE_DECISION_HEADER_PATTERNS),
+        )
+        .map((cell) => cell.columnIndex),
+    );
+    if (
+      conditionColumns.size !== 1 ||
+      decisionColumns.size !== 1 ||
+      [...conditionColumns].some((column) => decisionColumns.has(column))
+    )
+      return [];
+
+    return table.rows.flatMap((row) => {
+      const conditionText = row.cells
+        .filter((cell) => conditionColumns.has(cell.columnIndex))
+        .map((cell) => cell.source)
+        .join(" ")
+        .trim();
+      const decisionText = row.cells
+        .filter((cell) => decisionColumns.has(cell.columnIndex))
+        .map((cell) => cell.source)
+        .join(" ")
+        .trim();
+      if (
+        !conditionText ||
+        !decisionText ||
+        isInterrogativeEvidence(decisionText)
+      )
+        return [];
+
+      const decisionTokens = new Set(semanticTokens(decisionText));
+      const overlap = anchors.filter((token) => decisionTokens.has(token));
+      const anchorCoverage =
+        anchors.length === 0 ? 0 : overlap.length / anchors.length;
+      if (overlap.length < requiredAnchorOverlap || anchorCoverage < 0.4) {
+        return [];
+      }
+
+      return [
+        {
+          text: table.header.source.concat(String.fromCharCode(10), row.source),
+          evidence: row.source,
+          structuralAnswerCues: ["CONDITION"] as const,
+        },
+      ];
+    });
+  });
+}
+
+function passageWindows(passage: string, title?: string): PassageWindow[] {
   // Evidence for an answer predicate must stay local. A unit title may scope a
   // sentence, and an adjacent sentence may be joined only when it explicitly
-  // refers back to its predecessor. This captures bounded structures such as
-  // "Reject X" + "without those drivers..." without concatenating unrelated
-  // sibling sentences or the whole document.
-  const sentences = passage
-    .split(/(?<=[.!?;])\s+|\n+/u)
+  // refers back to its predecessor. For relation questions, the title may
+  // identify the subject but cannot supply the predicate or object.
+  // A link to a proposition is a pointer, not an assertion of its content.
+  const evidentialPassage = withoutReferenceMarkup(passage);
+  const sentences = evidentialPassage
+    .split(/(?<=[.!?])\s+|\n+/u)
     .map((part) => part.trim())
     .filter(Boolean)
-    .map((sentence) => sentence.slice(0, 900).trim());
-  const boundedSentences =
-    sentences.length > 0 ? sentences : [passage.slice(0, 900).trim()];
+    .map((sentence) => sentence.slice(0, 900).trim())
+    .filter((sentence) => !isInterrogativeEvidence(sentence));
+  const boundedSentences = sentences;
   const boundedTitle = title?.trim().slice(0, 240);
-  const windows = [...boundedSentences];
+  const windows: PassageWindow[] = boundedSentences.map((sentence) => ({
+    text: sentence,
+    evidence: sentence,
+  }));
 
   if (boundedTitle) {
     for (const sentence of boundedSentences) {
-      windows.push(`${boundedTitle}: ${sentence}`.slice(0, 1200));
+      windows.push({
+        text: `${boundedTitle}: ${sentence}`.slice(0, 1200),
+        evidence: sentence,
+        scopeTitle: boundedTitle,
+      });
     }
   }
 
@@ -827,13 +1111,22 @@ function passageWindows(passage: string, title?: string): string[] {
     const current = boundedSentences[index]!;
     if (!explicitlyLinkedContinuation(current)) continue;
     const linked = `${boundedSentences[index - 1]} ${current}`.slice(0, 1800);
-    windows.push(linked);
+    windows.push({ text: linked, evidence: linked });
     if (boundedTitle) {
-      windows.push(`${boundedTitle}: ${linked}`.slice(0, 2040));
+      windows.push({
+        text: `${boundedTitle}: ${linked}`.slice(0, 2040),
+        evidence: linked,
+        scopeTitle: boundedTitle,
+      });
     }
   }
 
-  return [...new Set(windows.filter(Boolean))];
+  const seen = new Set<string>();
+  return windows.filter((window) => {
+    if (!window.text || seen.has(window.text)) return false;
+    seen.add(window.text);
+    return true;
+  });
 }
 
 const CUE_TOKENS_THAT_REMAIN_PREDICATE_ANCHORS = new Set([
@@ -890,13 +1183,17 @@ function queryPredicateAnchors(
   ];
 }
 
-function quantitativeEvidenceMatches(window: string, query: string): boolean {
+export function quantitativeEvidenceMatches(
+  window: string,
+  query: string,
+  scope: string = window,
+): boolean {
   const hasNumber = /(?:^|\s)(?:[$€£S\/]\s*)?\d+(?:[.,]\d+)?(?:\s*%|\b)/u.test(
     window,
   );
   if (!hasNumber) return false;
   const normalizedQuery = normalizedMatchText(query);
-  const normalizedWindow = normalizedMatchText(window);
+  const normalizedWindow = normalizedMatchText(scope);
   const asksMonthly = /\b(month|monthly|per month|mensual|por mes|mes)\b/u.test(
     normalizedQuery,
   );
@@ -909,7 +1206,10 @@ function quantitativeEvidenceMatches(window: string, query: string): boolean {
   return true;
 }
 
-function dateYearEvidenceMatches(window: string, query: string): boolean {
+export function dateYearEvidenceMatches(
+  window: string,
+  query: string,
+): boolean {
   const normalizedQuery = normalizedMatchText(query);
   const asksYear = /\b(year|ano)\b/u.test(normalizedQuery);
   if (asksYear) return /\b(?:19|20)\d{2}\b/u.test(window);
@@ -919,10 +1219,227 @@ function dateYearEvidenceMatches(window: string, query: string): boolean {
   );
 }
 
+export function explicitYearValues(value: string): string[] {
+  return normalizedAnswerabilityTokens(value).filter((token) => {
+    const year = Number(token);
+    return Number.isInteger(year) && year >= 1900 && year <= 2099;
+  });
+}
+
+export function explicitYearBindingsMatch(
+  scope: string,
+  query: string,
+): boolean {
+  const requested = explicitYearValues(query);
+  if (requested.length === 0) return true;
+  const available = new Set(normalizedAnswerabilityTokens(scope));
+  return requested.every((year) => available.has(year));
+}
+
+interface ShortNumericRun {
+  value: number;
+  startOffset: number;
+}
+
+function asciiDigitAt(value: string, index: number): boolean {
+  if (index < 0 || index >= value.length) return false;
+  const code = value.charCodeAt(index);
+  return code >= 48 && code <= 57;
+}
+
+function whitespaceCode(code: number): boolean {
+  return (
+    code === 9 ||
+    code === 10 ||
+    code === 13 ||
+    code === 32 ||
+    code === 160 ||
+    code === 8239
+  );
+}
+
+function previousNonWhitespaceIndex(value: string, index: number): number {
+  for (let cursor = index; cursor >= 0; cursor -= 1) {
+    if (!whitespaceCode(value.charCodeAt(cursor))) return cursor;
+  }
+  return -1;
+}
+
+function nextNonWhitespaceIndex(value: string, index: number): number {
+  for (let cursor = index; cursor < value.length; cursor += 1) {
+    if (!whitespaceCode(value.charCodeAt(cursor))) return cursor;
+  }
+  return -1;
+}
+
+function shortNumericRunIsComposite(
+  value: string,
+  startOffset: number,
+  endOffset: number,
+): boolean {
+  const leftCode = startOffset > 0 ? value.charCodeAt(startOffset - 1) : -1;
+  const rightCode = endOffset < value.length ? value.charCodeAt(endOffset) : -1;
+
+  if (
+    leftCode === 36 ||
+    leftCode === 43 ||
+    leftCode === 45 ||
+    leftCode === 163 ||
+    leftCode === 8364 ||
+    rightCode === 37 ||
+    rightCode === 176
+  ) {
+    return true;
+  }
+
+  const separators = new Set([44, 46, 47, 58]);
+  if (separators.has(leftCode)) {
+    const before = previousNonWhitespaceIndex(value, startOffset - 2);
+    if (asciiDigitAt(value, before)) return true;
+  }
+  if (separators.has(rightCode)) {
+    const after = nextNonWhitespaceIndex(value, endOffset + 1);
+    if (asciiDigitAt(value, after)) return true;
+  }
+
+  const before = previousNonWhitespaceIndex(value, startOffset - 1);
+  const after = nextNonWhitespaceIndex(value, endOffset);
+  if (
+    (before >= 0 && before < startOffset - 1 && asciiDigitAt(value, before)) ||
+    (after >= endOffset && after > endOffset && asciiDigitAt(value, after))
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function shortNumericRuns(value: string): ShortNumericRun[] {
+  const output: ShortNumericRun[] = [];
+  let startOffset = -1;
+  let digits = 0;
+  let numericValue = 0;
+  for (let index = 0; index <= value.length; index += 1) {
+    const code = index < value.length ? value.charCodeAt(index) : -1;
+    if (code >= 48 && code <= 57) {
+      if (startOffset < 0) startOffset = index;
+      digits += 1;
+      if (digits <= 3) numericValue = numericValue * 10 + code - 48;
+      continue;
+    }
+    if (
+      startOffset >= 0 &&
+      digits <= 3 &&
+      !shortNumericRunIsComposite(value, startOffset, index)
+    ) {
+      output.push({ value: numericValue, startOffset });
+    }
+    startOffset = -1;
+    digits = 0;
+    numericValue = 0;
+  }
+  return output;
+}
+
+interface CompactNumericSelector {
+  token: string;
+  prefix: string;
+}
+
+function compactNumericSelectors(value: string): CompactNumericSelector[] {
+  return normalizedAnswerabilityTokens(value).flatMap((token) => {
+    let digitStart = token.length;
+    while (digitStart > 0 && asciiDigitAt(token, digitStart - 1)) {
+      digitStart -= 1;
+    }
+    const digitCount = token.length - digitStart;
+    if (digitStart === 0 || digitCount < 1 || digitCount > 3) return [];
+    return [{ token, prefix: token.slice(0, digitStart) }];
+  });
+}
+
+function compactHeaderSelectorMatch(
+  table: ReturnType<typeof markdownTableEvidence>[number],
+  query: string,
+): boolean | null {
+  const requested = compactNumericSelectors(query);
+  if (requested.length === 0) return null;
+
+  const available = table.header.cells.flatMap((cell) =>
+    compactNumericSelectors(cell.source),
+  );
+  if (available.length === 0) return null;
+
+  const prefixes = new Set(available.map((selector) => selector.prefix));
+  const relevant = requested.filter((selector) =>
+    prefixes.has(selector.prefix),
+  );
+  if (relevant.length === 0) return null;
+
+  const tokens = new Set(available.map((selector) => selector.token));
+  return relevant.every((selector) => tokens.has(selector.token));
+}
+
+function compactTableHeaderSelectorsMatch(
+  passage: string,
+  query: string,
+): boolean {
+  let applicable = false;
+  for (const table of markdownTableEvidence(passage)) {
+    const result = compactHeaderSelectorMatch(table, query);
+    if (result === null) continue;
+    applicable = true;
+    if (result) return true;
+  }
+  return !applicable;
+}
+
+function tableQuantityWindows(
+  passage: string,
+  query: string,
+): PassageWindow[] | null {
+  let applicable = false;
+  const windows: PassageWindow[] = [];
+  for (const table of markdownTableEvidence(passage)) {
+    const bindings = shortNumericRuns(query).flatMap((run) => {
+      const anchor = semanticTokens(query.slice(0, run.startOffset)).at(-1);
+      if (!anchor) return [];
+      const columns = table.header.cells
+        .filter((cell) => semanticTokens(cell.source).includes(anchor))
+        .map((cell) => cell.columnIndex);
+      if (columns.length === 0) return [];
+      return [{ value: run.value, columns: new Set(columns) }];
+    });
+    if (bindings.length === 0) continue;
+    applicable = true;
+
+    for (const row of table.rows) {
+      const rowMatches = bindings.every((binding) =>
+        row.cells.some(
+          (cell) =>
+            binding.columns.has(cell.columnIndex) &&
+            shortNumericRuns(cell.source).some(
+              (run) => run.value === binding.value,
+            ),
+        ),
+      );
+      if (!rowMatches) continue;
+      windows.push({
+        text: table.header.source.concat(String.fromCharCode(10), row.source),
+        evidence: row.source,
+      });
+    }
+  }
+  return applicable ? windows : null;
+}
+
 function answerRequirementsMatch(
   window: string,
   query: string,
   required: readonly PassageAnswerCue[],
+  relationEvidence: string = window,
+  relationScopeTitle?: string,
+  structuralAnswerCues: readonly PassageAnswerCue[] = [],
 ): {
   matched: PassageAnswerCue[];
   allMatched: boolean;
@@ -932,7 +1449,10 @@ function answerRequirementsMatch(
     (cue) => cue !== "YES_NO" && cue !== "QUANTITY" && cue !== "DATE_YEAR",
   );
   const genericMatched = passageAnswerCues(window, genericRequired);
-  const matched = new Set<PassageAnswerCue>(genericMatched);
+  const matched = new Set<PassageAnswerCue>([
+    ...genericMatched,
+    ...structuralAnswerCues.filter((cue) => required.includes(cue)),
+  ]);
 
   if (required.includes("DEFINITION") && !matched.has("DEFINITION")) {
     const normalizedWindow = normalizedMatchText(window);
@@ -966,21 +1486,25 @@ function answerRequirementsMatch(
     matched.add("DATE_YEAR");
   }
   let relationRoleMatched = false;
-  if (required.includes("YES_NO")) {
-    const semanticWindow = new Set(semanticTokens(window));
-    const semanticQuery = semanticTokens(query);
+  // An interrogative sentence can state the same subject, predicate and object
+  // as the query without asserting that the relation is true. Questions are
+  // therefore never evidence for a YES_NO proposition by themselves.
+  const relationEvidenceIsQuestion = isInterrogativeEvidence(relationEvidence);
+  if (required.includes("YES_NO") && !relationEvidenceIsQuestion) {
     const relation = queryYesNoRelationRoles(query);
     if (relation) {
-      relationRoleMatched = relationRolesMatch(window, relation);
+      relationRoleMatched = relationRolesMatch(
+        relationEvidence,
+        relation,
+        relationScopeTitle,
+      );
       if (relationRoleMatched) matched.add("YES_NO");
     } else {
-      const relationTokens = semanticQuery.filter((token) =>
-        ["define", "require", "dependency", "points"].includes(token),
+      relationRoleMatched = genericYesNoRelationRolesMatch(
+        relationEvidence,
+        query,
       );
-      const relationMatched =
-        relationTokens.length === 0 ||
-        relationTokens.some((token) => semanticWindow.has(token));
-      if (relationMatched) matched.add("YES_NO");
+      if (relationRoleMatched) matched.add("YES_NO");
     }
   }
 
@@ -996,6 +1520,8 @@ function boundedPredicateSupport(
   query: string,
   required: readonly PassageAnswerCue[],
   title?: string,
+  allowStructuredTableCondition = false,
+  allowStructuredTableQuantity = false,
 ): {
   supported: boolean;
   matchedAnswerCues: PassageAnswerCue[];
@@ -1013,12 +1539,28 @@ function boundedPredicateSupport(
     relationRoleMatched: false,
   };
 
-  for (const window of passageWindows(passage, title)) {
-    const windowTokens = new Set(semanticTokens(window));
+  const quantityWindows =
+    allowStructuredTableQuantity && required.includes("QUANTITY")
+      ? tableQuantityWindows(passage, query)
+      : null;
+  const windows =
+    allowStructuredTableCondition && required.includes("CONDITION")
+      ? tableConditionWindows(passage, query)
+      : (quantityWindows ?? passageWindows(passage, title));
+
+  for (const window of windows) {
+    const windowTokens = new Set(semanticTokens(window.text));
     const overlap = anchors.filter((token) => windowTokens.has(token));
     const anchorCoverage =
       anchors.length === 0 ? 1 : overlap.length / anchors.length;
-    const answer = answerRequirementsMatch(window, query, required);
+    const answer = answerRequirementsMatch(
+      window.text,
+      query,
+      required,
+      window.evidence,
+      window.scopeTitle,
+      window.structuralAnswerCues,
+    );
     const boundedDefinitionRelation =
       required.includes("DEFINITION") &&
       answer.matched.includes("DEFINITION") &&
@@ -1108,10 +1650,20 @@ export function verifyDeterministicPassageSupport(
   policyInput: Partial<DeterministicPassageSupportPolicy> = {},
 ): DeterministicPassageSupportSignal {
   const policy = resolveDeterministicPassageSupportPolicy(policyInput);
-  const structural = hit.parentContext?.trim();
-  const excerpt = hit.excerpt.trim();
-  const passage = structural || excerpt;
-  const passageSource = structural ? "STRUCTURAL_CONTEXT" : "EXCERPT";
+  const excerpt = markdownVisibleSource(hit.excerpt).text.trim();
+  const sourcePassage = withoutReferenceMarkup(excerpt).trim();
+  const passage =
+    hit.unitType === "TABLE"
+      ? sourcePassage
+      : withoutInterrogativeSentences(sourcePassage);
+  const passageSource = "EXCERPT" as const;
+  const explicitYearsMatched = explicitYearBindingsMatch(
+    `${hit.title?.trim() || hit.document.title?.trim() || ""} ${passage}`,
+    query,
+  );
+  const compactHeaderSelectorsMatched =
+    hit.unitType !== "TABLE" ||
+    compactTableHeaderSelectorsMatch(passage, query);
   const queryTokens = normalizedAnswerabilityTokens(query);
   const salientQueryTokens = queryTokens.filter(
     (token) => token.length >= 3 && !ANSWERABILITY_STOPWORDS.has(token),
@@ -1128,28 +1680,48 @@ export function verifyDeterministicPassageSupport(
       ? 0
       : salientOverlapTokens.length / salientQueryTokens.length;
   const requiredAnswerCues = queryAnswerCues(query);
+  const structuredTableCondition =
+    hit.unitType === "TABLE" && requiredAnswerCues.includes("CONDITION");
+  const structuredTableQuantity =
+    hit.unitType === "TABLE" && requiredAnswerCues.includes("QUANTITY");
+  const tableSupportEligible =
+    !structuredTableCondition || isSupportEligibleProposition(hit);
   const boundedSupport = boundedPredicateSupport(
     passage,
     query,
     requiredAnswerCues,
-    hit.title?.trim() || hit.document.title?.trim() || undefined,
+    structuredTableCondition
+      ? undefined
+      : hit.title?.trim() || hit.document.title?.trim() || undefined,
+    structuredTableCondition,
+    structuredTableQuantity,
   );
   const claimRelationDiagnostics = requiredAnswerCues.includes("YES_NO")
-    ? atomicClaimRelationDiagnostics(hit, excerpt, query)
+    ? atomicClaimRelationDiagnostics(hit, passage, query)
     : null;
   const claimRelationSupport =
     claimRelationDiagnostics?.supported === true &&
     requiredAnswerCues
       .filter((cue) => cue !== "YES_NO")
       .every((cue) => boundedSupport.matchedAnswerCues.includes(cue));
-  const matchedAnswerCues = claimRelationSupport
-    ? [
-        ...new Set<PassageAnswerCue>([
-          ...boundedSupport.matchedAnswerCues,
-          "YES_NO",
-        ]),
-      ]
-    : boundedSupport.matchedAnswerCues;
+  const explicitDefinitionSupport =
+    boundedSupport.matchedAnswerCues.includes("DEFINITION") &&
+    definitionExcerptAnchorsMatch(passage, query);
+  const definitionEvidenceEligible =
+    !requiredAnswerCues.includes("DEFINITION") ||
+    explicitDefinitionSupport ||
+    definitionIdentityMatches(hit, passage, query);
+  const conceptDefinitionSupport =
+    !explicitDefinitionSupport &&
+    definitionEvidenceEligible &&
+    isIntroductoryConceptDefinition(hit, passage, query, requiredAnswerCues);
+  const matchedAnswerCues = [
+    ...new Set<PassageAnswerCue>([
+      ...boundedSupport.matchedAnswerCues,
+      ...(claimRelationSupport ? (["YES_NO"] as const) : []),
+      ...(conceptDefinitionSupport ? (["DEFINITION"] as const) : []),
+    ]),
+  ];
   const answerCueCoverage =
     requiredAnswerCues.length === 0
       ? 1
@@ -1177,15 +1749,54 @@ export function verifyDeterministicPassageSupport(
     boundedSupport.supported &&
     boundedSupport.semanticAnchorOverlap.length > 0;
 
+  // A yes/no answer must still be about every explicitly named acronym.
+  // The bounded evidence or its title may identify an entity; neighboring
+  // document sections cannot supply an absent entity.
+  const queryAcronyms = requiredAnswerCues.includes("YES_NO")
+    ? (query.match(/\b[A-Z][A-Z0-9]{1,}\b/gu) ?? [])
+    : [];
+  const evidenceScopeTokens = new Set(
+    normalizedAnswerabilityTokens(
+      `${hit.title?.trim() || hit.document.title?.trim() || ""} ${passage}`,
+    ),
+  );
+  const explicitAcronymsMatched = queryAcronyms.every((token) =>
+    evidenceScopeTokens.has(token.toLocaleLowerCase("en-US")),
+  );
+  const yesNoRelationEligible =
+    !requiredAnswerCues.includes("YES_NO") ||
+    boundedSupport.relationRoleMatched ||
+    claimRelationSupport;
   let reason: PassageSupportReason;
-  if (!passage) {
+  // Reference markup may leave punctuation behind. Titles can scope real
+  // assertions, but cannot turn a bare period or list marker into evidence.
+  if (
+    ![...passageTokens].some((token) => !ANSWERABILITY_STOPWORDS.has(token))
+  ) {
     reason = "NO_CONCRETE_PASSAGE";
+  } else if (!explicitYearsMatched) {
+    reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
+  } else if (!compactHeaderSelectorsMatched) {
+    reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
+  } else if (!tableSupportEligible) {
+    reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
+  } else if (!definitionEvidenceEligible) {
+    reason = "ANSWER_CUE_MISMATCH";
+  } else if (
+    !yesNoRelationEligible &&
+    requiredAnswerCues.length > matchedAnswerCues.length
+  ) {
+    reason = "ANSWER_CUE_MISMATCH";
+  } else if (!explicitAcronymsMatched || !yesNoRelationEligible) {
+    reason = "PASSAGE_SUPPORT_NOT_DEMONSTRATED";
   } else if (strongTextSupport) {
     reason = "PASSAGE_TEXT_SUPPORT";
   } else if (cueSemanticSupport) {
     reason = "PASSAGE_CUE_SUPPORT";
   } else if (claimRelationSupport) {
     reason = "CLAIM_RELATION_SUPPORT";
+  } else if (conceptDefinitionSupport) {
+    reason = "CONCEPT_DEFINITION_SUPPORT";
   } else if (
     requiredAnswerCues.length > 0 &&
     matchedAnswerCues.length < requiredAnswerCues.length
@@ -1199,13 +1810,13 @@ export function verifyDeterministicPassageSupport(
     supported:
       reason === "PASSAGE_TEXT_SUPPORT" ||
       reason === "PASSAGE_CUE_SUPPORT" ||
-      reason === "CLAIM_RELATION_SUPPORT",
+      reason === "CLAIM_RELATION_SUPPORT" ||
+      reason === "CONCEPT_DEFINITION_SUPPORT",
     reason,
     passageSource,
     passageCharacters: passage.length,
     excerptCharacters: excerpt.length,
-    supportSurfaceExtendsExcerpt:
-      structural !== undefined && structural.length > excerpt.length,
+    supportSurfaceExtendsExcerpt: false,
     queryTokens,
     overlapTokens,
     queryCoverage,

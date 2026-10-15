@@ -1,0 +1,426 @@
+{
+  "id": "structured-proposition-family-disjoint-v1",
+  "version": 1,
+  "frozenAt": "2026-10-04",
+  "baselineSha": "6fd9c3a4a848202a46592ae546f874f3e93689b0",
+  "description": "Fresh family-disjoint structured proposition admission holdout. Development and heldout use disjoint abstract families; semantic fallback is disabled so unsupported structured comparisons fail closed.",
+  "policy": {
+    "blindHoldout": "Heldout cases are frozen before first execution. After first observation they may be reported but not tuned; a changed runtime requires a versioned replacement holdout.",
+    "semanticFallback": "DISABLED_FAIL_CLOSED",
+    "sourceSpans": "EXACT_UNIQUE_QUOTE",
+    "runtimeChange": "NONE_MEASUREMENT_ONLY",
+    "promotionRule": "PROMOTE only if family sets are disjoint, development strict accuracy = 1.0, heldout strict accuracy = 1.0, and every case matches the predeclared layer+verdict."
+  },
+  "developmentFamilies": [
+    "DIRECT_EXACT",
+    "OBJECT_MISMATCH",
+    "OBJECT_OPTIONAL",
+    "EMPTY_REQUIRED_FIELD"
+  ],
+  "heldoutFamilies": [
+    "SUBJECT_BINDING",
+    "PREDICATE_BINDING",
+    "POLARITY_CONTRADICTION",
+    "NORMALIZATION_EQUIVALENCE"
+  ],
+  "cases": [
+    {
+      "id": "dev-direct-en",
+      "split": "development",
+      "family": "DIRECT_EXACT",
+      "language": "en",
+      "query": "Does privileged access require MFA?",
+      "passage": "Privileged access requires MFA.",
+      "quote": "Privileged access requires MFA.",
+      "queryProposition": {
+        "subject": "policy:privileged-access",
+        "predicate": "requires_mfa",
+        "object": "true",
+        "polarity": "POSITIVE"
+      },
+      "candidateProposition": {
+        "subject": "policy:privileged-access",
+        "predicate": "requires_mfa",
+        "object": "true",
+        "polarity": "POSITIVE"
+      },
+      "expected": {
+        "layer": "STRUCTURED_PROPOSITION",
+        "verdict": "ANSWERS"
+      }
+    },
+    {
+      "id": "dev-direct-es",
+      "split": "development",
+      "family": "DIRECT_EXACT",
+      "language": "es",
+      "query": "¿La política de respaldo exige cifrado?",
+      "passage": "La política de respaldo exige cifrado.",
+      "quote": "La política de respaldo exige cifrado.",
+      "queryProposition": {
+        "subject": "politica:respaldo",
+        "predicate": "exige_cifrado",
+        "object": "si",
+        "polarity": "POSITIVE"
+      },
+      "candidateProposition": {
+        "subject": "politica:respaldo",
+        "predicate": "exige_cifrado",
+        "object": "si",
+        "polarity": "POSITIVE"
+      },
+      "expected": {
+        "layer": "STRUCTURED_PROPOSITION",
+        "verdict": "ANSWERS"
+      }
+    },
+    {
+      "id": "dev-object-mismatch-en",
+      "split": "development",
+      "family": "OBJECT_MISMATCH",
+      "language": "en",
+      "query": "Is the release channel green?",
+      "passage": "The release channel is blue.",
+      "quote": "The release channel is blue.",
+      "queryProposition": {
+        "subject": "release:channel",
+        "predicate": "has_color",
+        "object": "green",
+        "polarity": "POSITIVE"
+      },
+      "candidateProposition": {
+        "subject": "release:channel",
+        "predicate": "has_color",
+        "object": "blue",
+        "polarity": "POSITIVE"
+      },
+      "expected": {
+        "layer": "STRUCTURED_PROPOSITION",
+        "verdict": "RELATED_NOT_ANSWERING"
+      }
+    },
+    {
+      "id": "dev-object-mismatch-es",
+      "split": "development",
+      "family": "OBJECT_MISMATCH",
+      "language": "es",
+      "query": "¿El modo de auditoría es estricto?",
+      "passage": "El modo de auditoría es flexible.",
+      "quote": "El modo de auditoría es flexible.",
+      "queryProposition": {
+        "subject": "auditoria:modo",
+        "predicate": "es",
+        "object": "estricto",
+        "polarity": "POSITIVE"
+      },
+      "candidateProposition": {
+        "subject": "auditoria:modo",
+        "predicate": "es",
+        "object": "flexible",
+        "polarity": "POSITIVE"
+      },
+      "expected": {
+        "layer": "STRUCTURED_PROPOSITION",
+        "verdict": "RELATED_NOT_ANSWERING"
+      }
+    },
+    {
+      "id": "dev-object-optional-en",
+      "split": "development",
+      "family": "OBJECT_OPTIONAL",
+      "language": "en",
+      "query": "Does the deployment policy define a strategy?",
+      "passage": "The deployment policy defines blue-green rollout.",
+      "quote": "The deployment policy defines blue-green rollout.",
+      "queryProposition": {
+        "subject": "policy:deployment",
+        "predicate": "defines_strategy",
+        "polarity": "POSITIVE"
+      },
+      "candidateProposition": {
+        "subject": "policy:deployment",
+        "predicate": "defines_strategy",
+        "object": "blue-green",
+        "polarity": "POSITIVE"
+      },
+      "expected": {
+        "layer": "STRUCTURED_PROPOSITION",
+        "verdict": "ANSWERS"
+      }
+    },
+    {
+      "id": "dev-object-optional-es",
+      "split": "development",
+      "family": "OBJECT_OPTIONAL",
+      "language": "es",
+      "query": "¿La política de retención define una regla?",
+      "passage": "La política de retención define archivo anual.",
+      "quote": "La política de retención define archivo anual.",
+      "queryProposition": {
+        "subject": "politica:retencion",
+        "predicate": "define_regla",
+        "polarity": "POSITIVE"
+      },
+      "candidateProposition": {
+        "subject": "politica:retencion",
+        "predicate": "define_regla",
+        "object": "archivo anual",
+        "polarity": "POSITIVE"
+      },
+      "expected": {
+        "layer": "STRUCTURED_PROPOSITION",
+        "verdict": "ANSWERS"
+      }
+    },
+    {
+      "id": "dev-empty-subject",
+      "split": "development",
+      "family": "EMPTY_REQUIRED_FIELD",
+      "language": "en",
+      "query": "Is the requirement active?",
+      "passage": "The requirement is active.",
+      "quote": "The requirement is active.",
+      "queryProposition": {
+        "subject": "   ",
+        "predicate": "is_active",
+        "object": "true",
+        "polarity": "POSITIVE"
+      },
+      "candidateProposition": {
+        "subject": "requirement:alpha",
+        "predicate": "is_active",
+        "object": "true",
+        "polarity": "POSITIVE"
+      },
+      "expected": {
+        "layer": "SEMANTIC_READER",
+        "verdict": "INSUFFICIENT"
+      }
+    },
+    {
+      "id": "dev-empty-predicate",
+      "split": "development",
+      "family": "EMPTY_REQUIRED_FIELD",
+      "language": "es",
+      "query": "¿La regla está vigente?",
+      "passage": "La regla está vigente.",
+      "quote": "La regla está vigente.",
+      "queryProposition": {
+        "subject": "regla:vigencia",
+        "predicate": "   ",
+        "object": "si",
+        "polarity": "POSITIVE"
+      },
+      "candidateProposition": {
+        "subject": "regla:vigencia",
+        "predicate": "esta_vigente",
+        "object": "si",
+        "polarity": "POSITIVE"
+      },
+      "expected": {
+        "layer": "SEMANTIC_READER",
+        "verdict": "INSUFFICIENT"
+      }
+    },
+    {
+      "id": "hold-subject-en",
+      "split": "heldout",
+      "family": "SUBJECT_BINDING",
+      "language": "en",
+      "query": "Does service Atlas require approval?",
+      "passage": "Service Beacon requires approval.",
+      "quote": "Service Beacon requires approval.",
+      "queryProposition": {
+        "subject": "service:atlas",
+        "predicate": "requires_approval",
+        "object": "true",
+        "polarity": "POSITIVE"
+      },
+      "candidateProposition": {
+        "subject": "service:beacon",
+        "predicate": "requires_approval",
+        "object": "true",
+        "polarity": "POSITIVE"
+      },
+      "expected": {
+        "layer": "SEMANTIC_READER",
+        "verdict": "INSUFFICIENT"
+      }
+    },
+    {
+      "id": "hold-subject-es",
+      "split": "heldout",
+      "family": "SUBJECT_BINDING",
+      "language": "es",
+      "query": "¿El equipo Norte usa validación dual?",
+      "passage": "El equipo Sur usa validación dual.",
+      "quote": "El equipo Sur usa validación dual.",
+      "queryProposition": {
+        "subject": "equipo:norte",
+        "predicate": "usa_validacion_dual",
+        "object": "si",
+        "polarity": "POSITIVE"
+      },
+      "candidateProposition": {
+        "subject": "equipo:sur",
+        "predicate": "usa_validacion_dual",
+        "object": "si",
+        "polarity": "POSITIVE"
+      },
+      "expected": {
+        "layer": "SEMANTIC_READER",
+        "verdict": "INSUFFICIENT"
+      }
+    },
+    {
+      "id": "hold-predicate-en",
+      "split": "heldout",
+      "family": "PREDICATE_BINDING",
+      "language": "en",
+      "query": "Does the archive encrypt backups?",
+      "passage": "The archive signs backups.",
+      "quote": "The archive signs backups.",
+      "queryProposition": {
+        "subject": "archive:primary",
+        "predicate": "encrypts_backups",
+        "object": "true",
+        "polarity": "POSITIVE"
+      },
+      "candidateProposition": {
+        "subject": "archive:primary",
+        "predicate": "signs_backups",
+        "object": "true",
+        "polarity": "POSITIVE"
+      },
+      "expected": {
+        "layer": "SEMANTIC_READER",
+        "verdict": "INSUFFICIENT"
+      }
+    },
+    {
+      "id": "hold-predicate-es",
+      "split": "heldout",
+      "family": "PREDICATE_BINDING",
+      "language": "es",
+      "query": "¿El portal bloquea sesiones inactivas?",
+      "passage": "El portal registra sesiones inactivas.",
+      "quote": "El portal registra sesiones inactivas.",
+      "queryProposition": {
+        "subject": "portal:externo",
+        "predicate": "bloquea_sesiones_inactivas",
+        "object": "si",
+        "polarity": "POSITIVE"
+      },
+      "candidateProposition": {
+        "subject": "portal:externo",
+        "predicate": "registra_sesiones_inactivas",
+        "object": "si",
+        "polarity": "POSITIVE"
+      },
+      "expected": {
+        "layer": "SEMANTIC_READER",
+        "verdict": "INSUFFICIENT"
+      }
+    },
+    {
+      "id": "hold-polarity-en",
+      "split": "heldout",
+      "family": "POLARITY_CONTRADICTION",
+      "language": "en",
+      "query": "Is external export allowed?",
+      "passage": "External export is prohibited.",
+      "quote": "External export is prohibited.",
+      "queryProposition": {
+        "subject": "export:external",
+        "predicate": "is_allowed",
+        "object": "true",
+        "polarity": "POSITIVE"
+      },
+      "candidateProposition": {
+        "subject": "export:external",
+        "predicate": "is_allowed",
+        "object": "true",
+        "polarity": "NEGATIVE"
+      },
+      "expected": {
+        "layer": "STRUCTURED_PROPOSITION",
+        "verdict": "CONTRADICTS"
+      }
+    },
+    {
+      "id": "hold-polarity-es",
+      "split": "heldout",
+      "family": "POLARITY_CONTRADICTION",
+      "language": "es",
+      "query": "¿Está permitido el acceso anónimo?",
+      "passage": "El acceso anónimo está prohibido.",
+      "quote": "El acceso anónimo está prohibido.",
+      "queryProposition": {
+        "subject": "acceso:anonimo",
+        "predicate": "esta_permitido",
+        "object": "si",
+        "polarity": "POSITIVE"
+      },
+      "candidateProposition": {
+        "subject": "acceso:anonimo",
+        "predicate": "esta_permitido",
+        "object": "si",
+        "polarity": "NEGATIVE"
+      },
+      "expected": {
+        "layer": "STRUCTURED_PROPOSITION",
+        "verdict": "CONTRADICTS"
+      }
+    },
+    {
+      "id": "hold-normalization-en",
+      "split": "heldout",
+      "family": "NORMALIZATION_EQUIVALENCE",
+      "language": "en",
+      "query": "Does the primary policy require review?",
+      "passage": "The primary policy requires review.",
+      "quote": "The primary policy requires review.",
+      "queryProposition": {
+        "subject": "  POLICY:PRIMARY  ",
+        "predicate": " REQUIRES_REVIEW ",
+        "object": " YES ",
+        "polarity": "POSITIVE"
+      },
+      "candidateProposition": {
+        "subject": "policy:primary",
+        "predicate": "requires_review",
+        "object": "yes",
+        "polarity": "POSITIVE"
+      },
+      "expected": {
+        "layer": "STRUCTURED_PROPOSITION",
+        "verdict": "ANSWERS"
+      }
+    },
+    {
+      "id": "hold-normalization-es",
+      "split": "heldout",
+      "family": "NORMALIZATION_EQUIVALENCE",
+      "language": "es",
+      "query": "¿La política de acceso exige revisión?",
+      "passage": "La política de acceso exige revisión.",
+      "quote": "La política de acceso exige revisión.",
+      "queryProposition": {
+        "subject": "  POLÍTICA:ACCESO  ",
+        "predicate": " EXIGE_REVISION ",
+        "object": " SÍ ",
+        "polarity": "POSITIVE"
+      },
+      "candidateProposition": {
+        "subject": "política:acceso",
+        "predicate": "exige_revision",
+        "object": "sí",
+        "polarity": "POSITIVE"
+      },
+      "expected": {
+        "layer": "STRUCTURED_PROPOSITION",
+        "verdict": "ANSWERS"
+      }
+    }
+  ]
+}

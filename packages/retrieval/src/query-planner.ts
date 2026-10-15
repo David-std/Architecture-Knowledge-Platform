@@ -192,7 +192,17 @@ function intentChannels(
     IMPACT_ANALYSIS: ["exact", "graph"],
     NO_RETRIEVAL_REQUIRED: [],
   };
-  return [...channelsByIntent[intent]];
+  const channels = [...channelsByIntent[intent]];
+  // Intent selects additional tools; it must not suppress an available semantic
+  // retriever. Capability checks still control every optional channel.
+  if (
+    intent !== "NO_RETRIEVAL_REQUIRED" &&
+    capabilities.vectorAvailable &&
+    !channels.includes("vector")
+  ) {
+    channels.push("vector");
+  }
+  return channels;
 }
 
 function channelIsAvailable(

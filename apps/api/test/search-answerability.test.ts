@@ -7,6 +7,7 @@ import {
 import {
   internalAnswerabilityCandidateLimit,
   partitionSearchHitsByAnswerability,
+  registerSearchRoutes,
 } from "../src/routes/search.js";
 
 function hit(id: string, unitId?: string): SearchHit {
@@ -141,5 +142,41 @@ describe("search answerability presentation", () => {
       exploratoryHits: [],
       retrievalOutcome: "NO_CANDIDATES",
     });
+  });
+});
+
+it("keeps hidden source assertions exploratory at the search presentation boundary", () => {
+  const candidate: SearchHit = {
+    ...hit("11111111-1111-4111-8111-111111111116"),
+    title: "Integration",
+    type: "claim",
+    excerpt: "<!-- ALFA can call BETA. -->",
+    fusionContributions: [
+      { channel: "exact", rank: 1, channelWeight: 1, reason: "fixture" },
+    ],
+  };
+  const assessment = assessRetrievalAnswerability(
+    [candidate],
+    "Can ALFA call BETA?",
+  );
+  expect(
+    partitionSearchHitsByAnswerability(
+      [candidate],
+      assessment.supportedCandidateKeys,
+    ),
+  ).toEqual({
+    hits: [],
+    exploratoryHits: [candidate],
+    retrievalOutcome: "EXPLORATORY_ONLY",
+  });
+});
+
+describe("layered admission wiring", () => {
+  it("refuses LAYERED mode without its admission pipeline", () => {
+    expect(() =>
+      registerSearchRoutes({} as never, {} as never, {
+        evidenceVerifierMode: "LAYERED",
+      }),
+    ).toThrow(/LAYERED evidence admission requires/);
   });
 });

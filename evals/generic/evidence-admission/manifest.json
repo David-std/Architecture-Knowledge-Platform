@@ -1,0 +1,201 @@
+{
+  "id": "evidence-admission-generalization",
+  "version": 1,
+  "description": "Domain-disjoint evaluation of passage-level evidence admission: does an admitted unit actually answer the question?",
+  "splits": {
+    "development": [
+      "domains/hospital-pharmacy.json",
+      "domains/biblioteca-municipal.json",
+      "domains/warehouse-logistics.json",
+      "domains/seguridad-alimentaria.json"
+    ],
+    "heldout": [
+      "domains/incident-response.json",
+      "domains/transporte-publico.json",
+      "domains/aircraft-maintenance.json",
+      "domains/nomina-y-licencias.json"
+    ]
+  },
+  "intents": [
+    "YES_NO",
+    "DEFINITION",
+    "CONDITION",
+    "RATIONALE",
+    "PROCEDURE",
+    "QUANTITY",
+    "DATE",
+    "ENTITY"
+  ],
+  "challenges": {
+    "PARAPHRASE": "The question uses different words or syntax than the answering unit.",
+    "CROSS_LINGUAL": "The question and the answering unit are written in different languages.",
+    "NEGATIVE_ANSWER": "The unit answers a yes/no question with no; it still settles the question.",
+    "TITLE_CONTEXT": "The unit body does not name the subject; its title or heading identifies it.",
+    "TABLE_ROW": "The answer, or the missing answer, depends on one row of a table.",
+    "COMPOUND": "More than one unit is required to cover the question.",
+    "INFORMAL": "No question mark, lowercase, or imperative phrasing.",
+    "MISSING_SLOT": "The corpus discusses the subject but not the requested value, name, date or amount.",
+    "WRONG_SUBJECT": "The corpus states the relation for a different entity than the one asked about.",
+    "INVERTED_RELATION": "The corpus states the relation in the opposite direction.",
+    "SAME_VOCABULARY": "Unanswerable question that shares vocabulary with answering-looking units."
+  },
+  "alignmentAudit": {
+    "version": 1,
+    "frozenAt": "2026-10-02",
+    "description": "Frozen source/span alignment audit for future verifier comparisons. Development and independent partitions use disjoint abstract families; the independent partition reuses previously existing heldout-domain questions and is not an untouched blind holdout.",
+    "development": [
+      {
+        "questionId": "hp-q23",
+        "family": "DIRECT_VALUE",
+        "citations": [
+          {
+            "unit": "hp-recall-matrix",
+            "quote": "| Class II | Remove the affected lots | Within 24 hours |"
+          }
+        ]
+      },
+      {
+        "questionId": "bm-q25",
+        "family": "DIRECT_VALUE",
+        "citations": [
+          {
+            "unit": "bm-estadisticas",
+            "quote": "| Préstamos | 48.200 | 51.900 |"
+          }
+        ]
+      },
+      {
+        "questionId": "hp-q25",
+        "family": "DIRECT_ENTITY",
+        "citations": [
+          {
+            "unit": "hp-excursion",
+            "quote": "The pharmacist on duty contacts the manufacturer"
+          }
+        ]
+      },
+      {
+        "questionId": "bm-q26",
+        "family": "DIRECT_ENTITY",
+        "citations": [
+          {
+            "unit": "bm-domicilio",
+            "quote": "El servicio lo realizan voluntarios coordinados por la biblioteca."
+          }
+        ]
+      },
+      {
+        "questionId": "hp-q04",
+        "family": "DIRECT_BOOLEAN",
+        "citations": [
+          {
+            "unit": "hp-vaccine-freeze",
+            "quote": "A vaccine that has frozen is destroyed and recorded as pharmaceutical waste; it never goes back into stock."
+          }
+        ]
+      },
+      {
+        "questionId": "wl-q01",
+        "family": "DIRECT_BOOLEAN",
+        "citations": [
+          {
+            "unit": "wl-receiving-asn",
+            "quote": "Inbound trucks are unloaded only when an advance shipping notice (ASN) exists in the system."
+          }
+        ]
+      },
+      {
+        "questionId": "hp-q15",
+        "family": "DIRECT_CONDITION",
+        "citations": [
+          {
+            "unit": "hp-par-level",
+            "quote": "When the counted stock falls below this quantity, the inventory system creates a replenishment request automatically."
+          }
+        ]
+      },
+      {
+        "questionId": "wl-q12",
+        "family": "DIRECT_CONDITION",
+        "citations": [
+          {
+            "unit": "wl-cycle-count",
+            "quote": "A location with a variance above 2% is recounted by a different operator before any adjustment is posted."
+          }
+        ]
+      }
+    ],
+    "independent": [
+      {
+        "questionId": "am-q23",
+        "family": "TEMPORAL_SLOT_BINDING",
+        "citations": [
+          {
+            "unit": "am-reliability",
+            "quote": "| Technical dispatch reliability | 99.5% | 99.2% |"
+          }
+        ]
+      },
+      {
+        "questionId": "am-q31",
+        "family": "TEMPORAL_SLOT_BINDING",
+        "citations": []
+      },
+      {
+        "questionId": "nl-q23",
+        "family": "SUBJECT_BINDING",
+        "citations": [
+          {
+            "unit": "nl-plantilla",
+            "quote": "| Sevilla | 128 | 1,4 días |"
+          }
+        ]
+      },
+      {
+        "questionId": "nl-q28",
+        "family": "SUBJECT_BINDING",
+        "citations": []
+      },
+      {
+        "questionId": "tp-q21",
+        "family": "SUBJECT_BINDING",
+        "citations": [
+          {
+            "unit": "tp-demanda",
+            "quote": "| Metro L2 | 141.000 |"
+          }
+        ]
+      },
+      {
+        "questionId": "tp-q27",
+        "family": "SUBJECT_BINDING",
+        "citations": []
+      },
+      {
+        "questionId": "ir-q29",
+        "family": "RELATION_DIRECTION",
+        "citations": []
+      },
+      {
+        "questionId": "nl-q32",
+        "family": "RELATION_DIRECTION",
+        "citations": []
+      },
+      {
+        "questionId": "tp-q30",
+        "family": "RELATION_DIRECTION",
+        "citations": []
+      },
+      {
+        "questionId": "ir-q07",
+        "family": "COMPOUND_SCOPE",
+        "citations": [
+          {
+            "unit": "ir-downgrade",
+            "quote": "The incident commander may lower the severity once customer impact is mitigated, but the postmortem requirement follows the highest severity the incident reached."
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,5 +1,9 @@
 import type { Postgres } from "@akp/postgres";
-import type { EmbeddingProvider } from "@akp/retrieval";
+import {
+  embeddingPassageInputHash,
+  embeddingPassageText,
+  type EmbeddingProvider,
+} from "@akp/retrieval";
 import {
   EmbeddingGenerationManager,
   configurationHashForDescriptor,
@@ -12,10 +16,17 @@ interface EmbeddableUnitRow {
   id: string;
   content_hash: string;
   body: string;
+  title: string;
+  heading_path: string[];
+}
+
+interface PreparedEmbeddingUnit extends EmbeddableUnitRow {
+  input_hash: string;
+  input_text: string;
 }
 
 interface CachedEmbeddingRow {
-  content_hash: string;
+  input_hash: string;
   embedding: string;
 }
 
@@ -93,10 +104,12 @@ async function generationCoverage(
           join embedding_generations g on g.id=e.generation_id
           join knowledge_units u
             on u.id=e.unit_id and u.content_hash=e.content_hash
+
           join knowledge_documents d on d.id=u.document_id
          where e.generation_id=$1 and u.space_id=$2 and u.vault_id=$3
            and u.corpus_revision=$4
            and e.embedding_dimensions=g.dimensions
+           and e.input_hash=akp_embedding_passage_input_hash(g.input_strategy,d.title,u.heading_path,u.body)
            and u.embedding_eligible=true
            and u.lifecycle in ('ACTIVE','DISPUTED')
            and d.lifecycle in ('ACTIVE','DISPUTED')
@@ -125,10 +138,12 @@ async function deleteInvalidGenerationEmbeddings(
            from embedding_generations g
            join knowledge_units u
              on u.id=e.unit_id and u.content_hash=e.content_hash
+
            join knowledge_documents d on d.id=u.document_id
           where g.id=e.generation_id
             and u.space_id=$2 and u.vault_id=$3 and u.corpus_revision=$4
             and e.embedding_dimensions=g.dimensions
+            and e.input_hash=akp_embedding_passage_input_hash(g.input_strategy,d.title,u.heading_path,u.body)
             and u.embedding_eligible=true
             and u.lifecycle in ('ACTIVE','DISPUTED')
             and d.lifecycle in ('ACTIVE','DISPUTED')
@@ -229,9 +244,9 @@ export async function buildEmbeddingIndex(
   const configurationHash = configurationHashForDescriptor(descriptor);
   const manager = new EmbeddingGenerationManager(db);
 
-  const units = await db.pool.query<EmbeddableUnitRow>(
+  const rawUnits = await db.pool.query<EmbeddableUnitRow>(
     `
-    select u.id,u.content_hash,u.body
+    select u.id,u.content_hash,u.body,u.heading_path,d.title
       from knowledge_units u
       join knowledge_documents d on d.id=u.document_id
      where u.space_id=$1 and u.vault_id=$2 and u.corpus_revision=$3
@@ -243,6 +258,21 @@ export async function buildEmbeddingIndex(
     `,
     [options.spaceId, options.vaultId, options.corpusRevision],
   );
+
+  const units = {
+    rows: rawUnits.rows.map((unit): PreparedEmbeddingUnit => {
+      const input = {
+        body: unit.body,
+        title: unit.title,
+        headingPath: unit.heading_path,
+      };
+      return {
+        ...unit,
+        input_hash: embeddingPassageInputHash(input, descriptor.inputStrategy),
+        input_text: embeddingPassageText(input, descriptor.inputStrategy),
+      };
+    }),
+  };
 
   let generation = await manager.request({
     spaceId: options.spaceId,
@@ -327,8 +357,11 @@ export async function buildEmbeddingIndex(
         from unit_embeddings e
         join knowledge_units u
           on u.id=e.unit_id and u.content_hash=e.content_hash
+        join knowledge_documents d on d.id=u.document_id
+        join embedding_generations g on g.id=e.generation_id
        where e.generation_id=$1
          and u.space_id=$2 and u.vault_id=$3 and u.corpus_revision=$4
+         and e.input_hash=akp_embedding_passage_input_hash(g.input_strategy,d.title,u.heading_path,u.body)
       `,
       [
         generation.generationId,
@@ -345,16 +378,16 @@ export async function buildEmbeddingIndex(
     const missingUnits = units.rows.filter(
       (unit) => !completedUnitIds.has(unit.id),
     );
-    const contentHashes = [
-      ...new Set(missingUnits.map((unit) => unit.content_hash)),
+    const inputHashes = [
+      ...new Set(missingUnits.map((unit) => unit.input_hash)),
     ];
     const cached =
-      contentHashes.length === 0
+      inputHashes.length === 0
         ? { rows: [] as CachedEmbeddingRow[] }
         : await db.pool.query<CachedEmbeddingRow>(
             `
-            select distinct on (e.content_hash)
-                   e.content_hash,e.embedding::text embedding
+            select distinct on (e.input_hash)
+                   e.input_hash,e.embedding::text embedding
               from unit_embeddings e
               join embedding_generations g on g.id=e.generation_id
              where g.space_id=$1 and g.vault_id=$2
@@ -363,9 +396,9 @@ export async function buildEmbeddingIndex(
                and g.input_strategy=$8 and g.configuration_version=$9
                and g.runtime=$10 and g.configuration_hash=$11
                and e.embedding_dimensions=$6
-               and e.content_hash=any($12::text[])
+               and e.input_hash=any($12::text[])
                and g.id<>$13
-             order by e.content_hash,g.created_at desc
+             order by e.input_hash,g.created_at desc
             `,
             [
               options.spaceId,
@@ -379,16 +412,16 @@ export async function buildEmbeddingIndex(
               descriptor.configurationVersion,
               serializeEmbeddingRuntime(descriptor.runtime),
               configurationHash,
-              contentHashes,
+              inputHashes,
               generation.generationId,
             ],
           );
     const cachedByHash = new Map(
-      cached.rows.map((row) => [row.content_hash, row.embedding]),
+      cached.rows.map((row) => [row.input_hash, row.embedding]),
     );
-    const needsInference: EmbeddableUnitRow[] = [];
+    const needsInference: PreparedEmbeddingUnit[] = [];
     for (const unit of missingUnits) {
-      const embedding = cachedByHash.get(unit.content_hash);
+      const embedding = cachedByHash.get(unit.input_hash);
       if (!embedding) {
         needsInference.push(unit);
         continue;
@@ -397,6 +430,7 @@ export async function buildEmbeddingIndex(
         generationId: generation.generationId,
         unitId: unit.id,
         contentHash: unit.content_hash,
+        inputHash: unit.input_hash,
         embedding,
       });
       embeddingsReused += 1;
@@ -404,7 +438,7 @@ export async function buildEmbeddingIndex(
     for (let start = 0; start < needsInference.length; start += batchSize) {
       const batch = needsInference.slice(start, start + batchSize);
       const vectors = await options.provider.embed(
-        batch.map((unit) => unit.body),
+        batch.map((unit) => unit.input_text),
         "passage",
       );
       if (vectors.length !== batch.length) {
@@ -417,6 +451,7 @@ export async function buildEmbeddingIndex(
           generationId: generation.generationId,
           unitId: unit.id,
           contentHash: unit.content_hash,
+          inputHash: unit.input_hash,
           embedding: vector,
         });
         embeddingsCreated += 1;

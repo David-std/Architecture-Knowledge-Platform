@@ -26,7 +26,12 @@ import {
 } from "@akp/contracts";
 import {
   assessRetrievalAnswerability,
+  assessRetrievalAnswerabilityWithLayeredAdmission,
   assessRetrievalAnswerabilityWithVerifier,
+  evidenceCandidateDiagnostic,
+  assertionRecallSelectionReason,
+  boundedAssertionRecallQuery,
+  isAssertionRecallSelectionReason,
   buildContextPacket,
   buildContextPacketPair,
   ContextPacketBudgetError,
@@ -35,6 +40,7 @@ import {
   createEmbeddingProviderForGeneration,
   personalizedPageRank,
   planQuery,
+  projectUnitAwareFusionCandidates,
   QueryEmbeddingService,
   rehydrateStructuralContext,
   retrievalAnswerabilityCandidateKey,
@@ -48,6 +54,7 @@ import {
   runtimeChannelEnabled,
   toPgVector,
   type ActiveEmbeddingGenerationDescriptor,
+  type LayeredEvidenceAdmissionEvaluator,
   type PersonalizedPageRankPolicy,
   type QueryConditionedEvidenceVerifier,
   type QueryConditionedEvidenceVerifierMode,
@@ -57,6 +64,8 @@ import {
   type QueryTransformationVariant,
   type QueryTransformerPort,
   type RetrievalAnswerabilityAssessment,
+  type RetrievalAnswerabilityContext,
+  type EvidenceRetrievalStageSnapshot,
   type RetrievalCandidate,
   type RetrievalPolicyInput,
   type Tokenizer,
@@ -511,6 +520,21 @@ export interface RetrievalExecutionOptions {
    * before presentation; the pool itself is never evidence by rank alone.
    */
   answerabilityCandidateSink?: (hits: readonly SearchHit[]) => void;
+  /** Metadata-only snapshots after scope/truth filtering; never source bytes. */
+  stageDiagnosticSink?: (snapshot: EvidenceRetrievalStageSnapshot) => void;
+  /**
+   * Registered benchmark-only candidate pool override. It is rejected unless
+   * allowVectorForBenchmark is enabled and never comes from the HTTP request.
+   */
+  benchmarkCandidatePoolLimit?: number;
+  /** Registered benchmark-only switch for the residual assertion-recall path. */
+  benchmarkDisableAssertionRecall?: boolean;
+  /**
+   * Experimental library-only opt-in for deterministic TABLE_ROW structured
+   * lexical context. HTTP requests cannot set this option and the default path
+   * remains byte-for-byte compatible with the current lexical vectors.
+   */
+  experimentalStructuredRowLexicalContext?: boolean;
   vaultIds?: string[];
   /** Exact, authorized Code Graph candidates resolved by the HTTP boundary. */
   codeCandidates?: CodeChannelCandidate[];
@@ -546,6 +570,19 @@ export function partitionSearchHitsByAnswerability(
           ? "EXPLORATORY_ONLY"
           : "NO_CANDIDATES",
   };
+}
+
+export const EVIDENCE_VERIFIER_DEGRADED_WARNING =
+  "EVIDENCE_VERIFIER_DEGRADED:VERIFIER_ERROR";
+
+export function evidenceVerifierDegradationWarnings(
+  answerability: Pick<RetrievalAnswerabilityAssessment, "candidateSignals">,
+): string[] {
+  return answerability.candidateSignals.some(
+    (signal) => signal.queryConditionedEvidence?.decision === "VERIFIER_ERROR",
+  )
+    ? [EVIDENCE_VERIFIER_DEGRADED_WARNING]
+    : [];
 }
 
 function recordAnswerabilityDiagnostics(
@@ -605,6 +642,69 @@ export interface SearchRouteDependencies {
   /** Injected verifiers default to SHADOW so evaluation cannot silently gate. */
   evidenceVerifierMode?: QueryConditionedEvidenceVerifierMode;
   evidenceVerifierMaxCandidates?: number;
+  /**
+   * Required by LAYERED mode, where it is the only admission authority:
+   * deterministic passage heuristics are diagnostics and never admit.
+   */
+  evidenceAdmissionPipeline?: LayeredEvidenceAdmissionEvaluator;
+  /** Query-level abstention; meaningful only in LAYERED mode. */
+  evidenceAdmissionMinDistinctDocuments?: number;
+  evidenceAdmissionAbstainOnConflict?: boolean;
+}
+
+/**
+ * Applies the configured admission authority to one request's candidate pool:
+ * LAYERED admits only through the layered pipeline, a verifier keeps its
+ * SHADOW/ENFORCE policy over the deterministic gate, and otherwise the
+ * deterministic gate decides alone.
+ */
+async function assessCandidateAnswerability(
+  dependencies: SearchRouteDependencies,
+  pool: readonly SearchHit[],
+  query: string,
+  context: RetrievalAnswerabilityContext,
+): Promise<RetrievalAnswerabilityAssessment> {
+  const maxCandidates =
+    dependencies.evidenceVerifierMaxCandidates === undefined
+      ? {}
+      : { maxCandidates: dependencies.evidenceVerifierMaxCandidates };
+  if (dependencies.evidenceVerifierMode === "LAYERED") {
+    return assessRetrievalAnswerabilityWithLayeredAdmission(
+      pool,
+      query,
+      dependencies.evidenceAdmissionPipeline!,
+      {
+        ...maxCandidates,
+        ...(dependencies.evidenceAdmissionMinDistinctDocuments === undefined
+          ? {}
+          : {
+              minimumDistinctDocuments:
+                dependencies.evidenceAdmissionMinDistinctDocuments,
+            }),
+        ...(dependencies.evidenceAdmissionAbstainOnConflict === undefined
+          ? {}
+          : {
+              abstainOnSourceConflict:
+                dependencies.evidenceAdmissionAbstainOnConflict,
+            }),
+      },
+      {},
+      context,
+    );
+  }
+  return dependencies.evidenceVerifier
+    ? assessRetrievalAnswerabilityWithVerifier(
+        pool,
+        query,
+        dependencies.evidenceVerifier,
+        {
+          mode: dependencies.evidenceVerifierMode ?? "SHADOW",
+          ...maxCandidates,
+        },
+        {},
+        context,
+      )
+    : assessRetrievalAnswerability(pool, query, {}, context);
 }
 
 interface StoredContextPacketRow {
@@ -1442,9 +1542,28 @@ export async function queryKnowledge(
 ): Promise<SearchHit[]> {
   if (!input.spaceId) throw new Error("SPACE_ID_REQUIRED");
   const spaceId = input.spaceId;
-  const internalCandidateLimit = internalAnswerabilityCandidateLimit(
-    input.limit,
-  );
+  const benchmarkCandidatePoolLimit = options.benchmarkCandidatePoolLimit;
+  const structuredRowLexicalContext =
+    options.experimentalStructuredRowLexicalContext === true;
+  if (
+    (benchmarkCandidatePoolLimit !== undefined ||
+      options.benchmarkDisableAssertionRecall === true) &&
+    !options.allowVectorForBenchmark
+  ) {
+    throw new Error("BENCHMARK_RETRIEVAL_OVERRIDE_NOT_ALLOWED");
+  }
+  if (benchmarkCandidatePoolLimit !== undefined) {
+    if (
+      !Number.isSafeInteger(benchmarkCandidatePoolLimit) ||
+      benchmarkCandidatePoolLimit < 1 ||
+      benchmarkCandidatePoolLimit > 200
+    ) {
+      throw new Error("BENCHMARK_CANDIDATE_POOL_LIMIT_INVALID");
+    }
+  }
+  const internalCandidateLimit =
+    benchmarkCandidatePoolLimit ??
+    internalAnswerabilityCandidateLimit(input.limit);
   telemetry.histogram(
     "retrieval_answerability_internal_candidate_limit",
     internalCandidateLimit,
@@ -1883,13 +2002,28 @@ export async function queryKnowledge(
   if (channels.has("exact")) options.availableChannelSink?.add("exact");
 
   const lexicalRows: LexicalSearchRow[] = [];
+  const assertionRecallRows: LexicalSearchRow[] = [];
+  const unitLexicalSearchVector = (alias: string) =>
+    structuredRowLexicalContext
+      ? `${alias}.lexical_augmented_search_vector`
+      : `${alias}.lexical_search_vector`;
+  const structuredRowContextScoreSql = structuredRowLexicalContext
+    ? " + ts_rank_cd(u.lexical_context_vector,d.terms)"
+    : "";
+  const structuredRowContextMatchSql = structuredRowLexicalContext
+    ? "u.lexical_context_vector @@ d.terms"
+    : "false";
   if (channels.has("lexical") || channels.has("graph")) {
     for (const assisted of assistedQueries) {
-      const result = await observedRetrieval("lexical", () =>
-        db.pool.query<LexicalSearchRow>(
-          `
+      const queryLexical = (orTerms: string | null) =>
+        observedRetrieval("lexical", () =>
+          db.pool.query<LexicalSearchRow>(
+            `
           with query as (
-            select plainto_tsquery('simple', $2) terms,
+            select case when $6::text is null
+                        then plainto_tsquery('simple', $2)
+                        else to_tsquery('simple', $6)
+                   end terms,
                    plainto_tsquery(
                      'simple',
                      akp_lexical_symbol_text($2)
@@ -1911,6 +2045,7 @@ export async function queryKnowledge(
                and d.lifecycle ${lifecycleClause}
                and ${trustClause("d.")}
                and d.refresh_status not in ('STALE_BLOCKED','INVALID')
+               and ($6::text is null or d.type in ('claim','rule','decision-rule'))
                ${documentScopeClause("d.", 5)}
                ${modeClause("d.")}
                ${rawAuthorizationClause("d.", 4)}
@@ -1927,7 +2062,7 @@ export async function queryKnowledge(
                       and matching_unit.lifecycle ${lifecycleClause}
                       and ${trustClause("matching_unit.")}
                       and (
-                        matching_unit.lexical_search_vector @@ query.terms
+                        ${unitLexicalSearchVector("matching_unit")} @@ query.terms
                         or matching_unit.lexical_symbol_vector @@ query.symbol_terms
                       )
                  )
@@ -1966,6 +2101,8 @@ export async function queryKnowledge(
                        then 'lexical:heading-terms'
                      when best_unit.unit_match
                        then 'lexical:unit-terms'
+                     when best_unit.context_match
+                       then 'lexical:structured-context-terms'
                      when best_unit.symbol_match
                        then 'lexical:symbol-terms'
                      else 'lexical:body-terms'
@@ -1975,9 +2112,9 @@ export async function queryKnowledge(
                 select u.id unit_id,u.unit_type,
                        12 * ts_rank_cd(u.lexical_heading_vector,d.terms) +
                         8 * ts_rank_cd(u.lexical_unit_vector,d.terms) +
-                            ts_rank_cd(u.lexical_body_vector,d.terms) +
+                            ts_rank_cd(u.lexical_body_vector,d.terms)${structuredRowContextScoreSql} +
                        case
-                         when not (u.lexical_search_vector @@ d.terms)
+                         when not (${unitLexicalSearchVector("u")} @@ d.terms)
                           and u.lexical_symbol_vector @@ d.symbol_terms
                          then 10 * ts_rank_cd(
                            u.lexical_symbol_vector,
@@ -1987,13 +2124,14 @@ export async function queryKnowledge(
                        end unit_score,
                        u.lexical_heading_vector @@ d.terms heading_match,
                        u.lexical_unit_vector @@ d.terms unit_match,
+                       ${structuredRowContextMatchSql} context_match,
                        u.lexical_symbol_vector @@ d.symbol_terms symbol_match
                   from knowledge_units u
                  where u.document_id=d.id
                    and u.corpus_revision=d.index_revision
                    and u.lifecycle ${lifecycleClause}
                    and ${trustClause("u.")}
-                  order by unit_score desc,u.container_only,u.structural_order,u.id
+                  order by u.container_only,unit_score desc,u.structural_order,u.id
                  limit 1
               ) best_unit on true
           )
@@ -2002,17 +2140,19 @@ export async function queryKnowledge(
            order by score desc,id,unit_id nulls last
            limit $3
           `,
-          [
-            spaceId,
-            assisted.query,
-            internalCandidateLimit,
-            rawAuthorizationJson,
-            documentScopeJson,
-          ],
-        ),
-      );
+            [
+              spaceId,
+              assisted.query,
+              internalCandidateLimit,
+              rawAuthorizationJson,
+              documentScopeJson,
+              orTerms,
+            ],
+          ),
+        );
+      const strict = await queryLexical(null);
       lexicalRows.push(
-        ...result.rows.map((row) =>
+        ...strict.rows.map((row) =>
           assisted.variant
             ? {
                 ...row,
@@ -2026,10 +2166,44 @@ export async function queryKnowledge(
             : row,
         ),
       );
+
+      const assertionTerms = options.benchmarkDisableAssertionRecall
+        ? null
+        : boundedAssertionRecallQuery(assisted.query);
+      if (assertionTerms) {
+        const assertionRecall = await queryLexical(assertionTerms);
+        assertionRecallRows.push(
+          ...assertionRecall.rows.map((row) => {
+            const tagged = {
+              ...row,
+              match_reason: assertionRecallSelectionReason(row.match_reason),
+            };
+            return assisted.variant
+              ? {
+                  ...tagged,
+                  match_reason: `lexical:transformed:${assisted.variant.kind}:${tagged.match_reason}`,
+                  query_variant_kind: assisted.variant.kind,
+                  query_variant_ordinal: assisted.variant.ordinal,
+                  ...(assisted.trace
+                    ? { query_transform_trace: assisted.trace }
+                    : {}),
+                }
+              : tagged;
+          }),
+        );
+      }
     }
   }
+  const strictLexicalRows = mergeLexicalRows(lexicalRows).slice(
+    0,
+    internalCandidateLimit,
+  );
+  const strictLexicalKeys = new Set(strictLexicalRows.map(lexicalRowKey));
+  const directAssertionRecallRows = mergeLexicalRows(assertionRecallRows)
+    .filter((row) => !strictLexicalKeys.has(lexicalRowKey(row)))
+    .slice(0, internalCandidateLimit);
   const lexical = {
-    rows: mergeLexicalRows(lexicalRows).slice(0, internalCandidateLimit),
+    rows: [...strictLexicalRows, ...directAssertionRecallRows],
   };
   recordRetrievalCandidates("lexical", lexical.rows.length);
   if (channels.has("lexical")) {
@@ -2109,11 +2283,15 @@ export async function queryKnowledge(
                      u.document_revision,
                      1 - (e.embedding::vector(${dimensions}) <=> $3::vector(${dimensions})) score
                 from unit_embeddings e
+                join embedding_generations g on g.id=e.generation_id
                 join knowledge_units u on u.id=e.unit_id
                 join knowledge_documents d on d.id=u.document_id
                where e.generation_id=$1 and u.space_id=$2 and u.vault_id=$4
                  and e.embedding_dimensions=${dimensions}
                  and e.content_hash=u.content_hash
+                 and u.corpus_revision=g.corpus_revision
+                 and (right(g.input_strategy,length('+title-heading-v1'))<>'+title-heading-v1'
+                   or e.input_hash=akp_embedding_passage_input_hash(g.input_strategy,d.title,u.heading_path,u.body))
                  and u.embedding_eligible
                  and u.lifecycle ${lifecycleClause}
                  and ${trustClause("u.")}
@@ -2184,9 +2362,13 @@ export async function queryKnowledge(
 
   const seedIds = [
     ...new Set(
-      [...exact.rows, ...lexical.rows, ...vector.rows].map((row) =>
-        String(row.id),
-      ),
+      [
+        ...exact.rows,
+        ...lexical.rows.filter(
+          (row) => !isAssertionRecallSelectionReason(row.match_reason),
+        ),
+        ...vector.rows,
+      ].map((row) => String(row.id)),
     ),
   ];
   const communityCandidates: CommunityCandidateRow[] = [];
@@ -2955,7 +3137,12 @@ export async function queryKnowledge(
           });
         };
         addPprSeeds(exact.rows, retrievalPolicy.channels.EXACT.weight);
-        addPprSeeds(lexical.rows, retrievalPolicy.channels.LEXICAL.weight);
+        addPprSeeds(
+          lexical.rows.filter(
+            (row) => !isAssertionRecallSelectionReason(row.match_reason),
+          ),
+          retrievalPolicy.channels.LEXICAL.weight,
+        );
         addPprSeeds(vector.rows, retrievalPolicy.channels.VECTOR.weight);
 
         if (pprSeedWeights.size > 0) {
@@ -3189,26 +3376,58 @@ export async function queryKnowledge(
     })),
     ...pprCandidates,
   ];
+  const fusionProjection =
+    projectUnitAwareFusionCandidates(retrievalCandidates);
   const rankedChannels = retrievalCandidatesToRankedChannels(
-    retrievalCandidates,
+    fusionProjection.candidates,
     retrievalPolicy,
   );
+  const fusionTarget = (fusionId: string) => {
+    const target = fusionProjection.targetsByFusionId.get(fusionId);
+    if (!target) throw new Error("FUSION_TARGET_MISSING");
+    return target;
+  };
   // Answerability operates on a bounded internal pool independent from the
   // visual/API presentation limit. A small presentation request must not hide
   // a support-bearing semantic unit before passage verification runs.
-  const fused = (
-    await withSpan("retrieve.fuse", {}, async () =>
-      reciprocalRankFusion(rankedChannels),
+  const fusedRanked = await withSpan("retrieve.fuse", {}, async () =>
+    reciprocalRankFusion(rankedChannels),
+  );
+  const fusedPrimary = fusedRanked.slice(0, internalCandidateLimit);
+  const fusedPrimaryIds = new Set(fusedPrimary.map((item) => item.id));
+  const assertionRecallFusionIds = new Set(
+    fusionProjection.candidates
+      .filter(
+        (candidate) =>
+          candidate.channel === "LEXICAL" &&
+          typeof candidate.selectionReason === "string" &&
+          candidate.selectionReason.includes("lexical:assertion-recall:"),
+      )
+      .map((candidate) => candidate.candidateId),
+  );
+  const fusedAssertionRecall = fusedRanked
+    .filter(
+      (item) =>
+        assertionRecallFusionIds.has(item.id) && !fusedPrimaryIds.has(item.id),
     )
-  ).slice(0, internalCandidateLimit);
+    .slice(0, internalCandidateLimit);
+  const fused = [...fusedPrimary, ...fusedAssertionRecall];
   if (fused.length === 0) {
     await finalizeTruthSnapshot();
+    options.stageDiagnosticSink?.({
+      channelCandidates: [],
+      channelCandidateTrace: [],
+      fusedCandidates: [],
+      beforeRerank: [],
+      afterRerank: [],
+      returned: [],
+    });
     return [];
   }
 
   const details = await db.pool.query(
     `
-    select d.id, d.space_id, d.vault_id, d.external_id, d.current_revision, d.path, d.title, d.type, d.layer,
+    select d.id, d.space_id, d.vault_id, d.external_id, d.current_revision, d.path, d.title, d.aliases, d.type, d.layer,
            d.trust_tier, d.lifecycle, d.body_cache,
            d.refresh_status,
            coalesce(
@@ -3243,29 +3462,34 @@ export async function queryKnowledge(
        and ${trustClause("d.")}
      group by d.id
     `,
-    [fused.map((item) => item.id), spaceId],
+    [
+      [
+        ...new Set(
+          (options.stageDiagnosticSink ? fusedRanked : fused).map(
+            (item) => fusionTarget(item.id).documentId,
+          ),
+        ),
+      ],
+      spaceId,
+    ],
   );
   const byId = new Map(details.rows.map((row) => [String(row.id), row]));
-  const bestUnitByDocument = new Map<
-    string,
-    { unitId: string; unitType: string }
-  >();
-  for (const row of [...lexical.rows, ...vector.rows]) {
-    const documentId = String(row.id);
-    if (!bestUnitByDocument.has(documentId) && row.unit_id) {
-      bestUnitByDocument.set(documentId, {
-        unitId: String(row.unit_id),
-        unitType: String(row.unit_type),
-      });
-    }
-  }
+  const fusionItems = options.stageDiagnosticSink ? fusedRanked : fused;
+  const selectedUnitIds = [
+    ...new Set(
+      fusionItems.flatMap((item) => {
+        const unitId = fusionTarget(item.id).unitId;
+        return unitId ? [unitId] : [];
+      }),
+    ),
+  ];
   const selectedUnits =
-    bestUnitByDocument.size === 0
+    selectedUnitIds.length === 0
       ? { rows: [] }
       : await db.pool.query(
           `
-          select u.id, u.document_id, u.unit_type, u.heading_path, u.body,
-                 u.parent_unit_id,
+          select u.id, u.document_id, u.unit_type, u.heading_path,
+                 u.structural_order, u.body, u.parent_unit_id,
                  p.unit_type parent_unit_type, p.body parent_body
             from knowledge_units u
             left join knowledge_units p
@@ -3277,11 +3501,7 @@ export async function queryKnowledge(
              and u.space_id=$2
              and u.vault_id=any($3::uuid[])
           `,
-          [
-            [...bestUnitByDocument.values()].map((unit) => unit.unitId),
-            spaceId,
-            vaultIds,
-          ],
+          [selectedUnitIds, spaceId, vaultIds],
         );
   const structuralContextByUnit = new Map(
     selectedUnits.rows.map((row) => {
@@ -3298,9 +3518,11 @@ export async function queryKnowledge(
         String(row.id),
         {
           body: unit.body,
+          unitType: unit.unitType,
           headingPath: Array.isArray(row.heading_path)
             ? row.heading_path.map(String)
             : [],
+          structuralOrder: Number(row.structural_order),
           ...(row.parent_unit_id
             ? { parentUnitId: String(row.parent_unit_id) }
             : {}),
@@ -3308,7 +3530,14 @@ export async function queryKnowledge(
             ? { parentUnitType: String(row.parent_unit_type) }
             : {}),
           context: rehydrateStructuralContext(unit),
-          excerpt: rehydrateStructuralContext(unit, 1200),
+          atomicExcerpt: rehydrateStructuralContext(
+            {
+              body: unit.body,
+              unitType: unit.unitType,
+              focusText: unit.focusText,
+            },
+            1200,
+          ),
         },
       ] as const;
     }),
@@ -3340,9 +3569,10 @@ export async function queryKnowledge(
       : undefined;
   };
 
-  const results = fused
-    .map((item): SearchHit | null => {
-      const row = byId.get(item.id);
+  const projectedEntries = fusionItems
+    .map((item): { fusionId: string; hit: SearchHit } | null => {
+      const target = fusionTarget(item.id);
+      const row = byId.get(target.documentId);
       const rowPath = String(row?.path ?? "");
       const rowVaultId = String(row?.vault_id ?? "");
       const rawDocument =
@@ -3399,10 +3629,21 @@ export async function queryKnowledge(
               (locator) =>
                 `evidence:${JSON.stringify(sanitizeEvidenceLocator(locator))}`,
             ),
-          ...(codeCitationsByCandidate.get(item.id) ?? []),
+          ...(codeCitationsByCandidate.get(target.documentId) ?? []),
         ]),
       ];
-      const matchedUnit = bestUnitByDocument.get(item.id);
+      const structuralContext = target.unitId
+        ? structuralContextByUnit.get(target.unitId)
+        : undefined;
+      if (target.unitId && !structuralContext) return null;
+      const matchedUnit = target.unitId
+        ? {
+            unitId: target.unitId,
+            ...(structuralContext?.unitType
+              ? { unitType: structuralContext.unitType }
+              : {}),
+          }
+        : undefined;
       const vaultId = String(row.vault_id);
       const contributionTruthStates = item.contributions.flatMap(
         (contribution) =>
@@ -3452,84 +3693,108 @@ export async function queryKnowledge(
             : { candidateRevision: contribution.candidateRevision }),
         }),
       );
-      const structuralContext = matchedUnit
-        ? structuralContextByUnit.get(matchedUnit.unitId)
-        : undefined;
-      const codeSupport = codeSupportByCandidate.get(item.id);
+      const codeSupport = codeSupportByCandidate.get(target.documentId);
       const answerabilityContext = [structuralContext?.context, codeSupport]
         .filter((value): value is string => Boolean(value?.trim()))
         .join("\n");
       return {
-        documentId: String(row.id),
-        vaultId,
-        ...matchedUnit,
-        ...(structuralContext?.parentUnitId
-          ? { parentUnitId: structuralContext.parentUnitId }
-          : {}),
-        ...(structuralContext?.parentUnitType
-          ? { parentUnitType: structuralContext.parentUnitType }
-          : {}),
-        ...(structuralContext?.headingPath
-          ? { headingPath: structuralContext.headingPath }
-          : {}),
-        ...(answerabilityContext
-          ? { parentContext: answerabilityContext.slice(0, 4_000) }
-          : {}),
-        document: {
-          externalId: row.external_id ? String(row.external_id) : null,
-          path: String(row.path),
+        fusionId: item.id,
+        hit: {
+          documentId: String(row.id),
+          vaultId,
+          ...matchedUnit,
+          ...(structuralContext?.parentUnitId
+            ? { parentUnitId: structuralContext.parentUnitId }
+            : {}),
+          ...(structuralContext?.parentUnitType
+            ? { parentUnitType: structuralContext.parentUnitType }
+            : {}),
+          ...(structuralContext?.headingPath
+            ? { headingPath: structuralContext.headingPath }
+            : {}),
+          ...(structuralContext &&
+          Number.isSafeInteger(structuralContext.structuralOrder) &&
+          structuralContext.structuralOrder >= 0
+            ? { structuralOrder: structuralContext.structuralOrder }
+            : {}),
+          ...(answerabilityContext
+            ? { parentContext: answerabilityContext.slice(0, 4_000) }
+            : {}),
+          document: {
+            externalId: row.external_id ? String(row.external_id) : null,
+            path: String(row.path),
+            title: String(row.title),
+            aliases: Array.isArray(row.aliases) ? row.aliases.map(String) : [],
+          },
+          revision: String(row.current_revision),
           title: String(row.title),
+          type: String(row.type),
+          trust: String(row.trust_tier) as SearchHit["trust"],
+          lifecycle: String(row.lifecycle) as SearchHit["lifecycle"],
+          refreshStatus: String(row.refresh_status),
+          score: item.score,
+          reasons: item.reasons,
+          fusionContributions: publicFusionContributions,
+          retrievalTrace: {
+            authorization: {
+              decision: options.authorizationResolved
+                ? "ALLOW"
+                : "SCOPED_INTERNAL",
+              spaceId,
+              vaultId,
+              pathRestricted: Boolean(options.pathAuthorizer),
+            },
+            truth: {
+              state: truthState,
+              consistency: truthConsistency,
+              revisionHash: truthRevision?.revisionHash ?? null,
+              capturedAt: truthSnapshot.capturedAt,
+            },
+            temporal: {
+              lifecycle: String(row.lifecycle) as SearchHit["lifecycle"],
+              refreshStatus: String(row.refresh_status),
+            },
+            contributions: traceContributions,
+            fusion: {
+              score: item.score,
+              reasons: item.reasons,
+            },
+            finalSelectionReason: item.reasons.join("; "),
+          },
+          ...(graphProvenanceByCandidate.has(target.documentId)
+            ? {
+                graphProvenance: graphProvenanceByCandidate.get(
+                  target.documentId,
+                ),
+              }
+            : {}),
+          excerpt:
+            codeSupport ??
+            structuralContext?.atomicExcerpt ??
+            String(row.body_cache).slice(0, 1200),
+          citations,
+          warnings: [
+            "UNTRUSTED_RETRIEVED_CONTENT",
+            ...(String(row.refresh_status ?? "CURRENT") ===
+            "STALE_PENDING_REVIEW"
+              ? ["STALE_PENDING_REVIEW"]
+              : []),
+          ],
         },
-        revision: String(row.current_revision),
-        title: String(row.title),
-        type: String(row.type),
-        trust: String(row.trust_tier) as SearchHit["trust"],
-        lifecycle: String(row.lifecycle) as SearchHit["lifecycle"],
-        refreshStatus: String(row.refresh_status),
-        score: item.score,
-        reasons: item.reasons,
-        fusionContributions: publicFusionContributions,
-        retrievalTrace: {
-          authorization: {
-            decision: options.authorizationResolved
-              ? "ALLOW"
-              : "SCOPED_INTERNAL",
-            spaceId,
-            vaultId,
-            pathRestricted: Boolean(options.pathAuthorizer),
-          },
-          truth: {
-            state: truthState,
-            consistency: truthConsistency,
-            revisionHash: truthRevision?.revisionHash ?? null,
-            capturedAt: truthSnapshot.capturedAt,
-          },
-          temporal: {
-            lifecycle: String(row.lifecycle) as SearchHit["lifecycle"],
-            refreshStatus: String(row.refresh_status),
-          },
-          contributions: traceContributions,
-          fusion: {
-            score: item.score,
-            reasons: item.reasons,
-          },
-          finalSelectionReason: item.reasons.join("; "),
-        },
-        ...(graphProvenanceByCandidate.has(item.id)
-          ? { graphProvenance: graphProvenanceByCandidate.get(item.id) }
-          : {}),
-        excerpt:
-          structuralContext?.excerpt ?? String(row.body_cache).slice(0, 1200),
-        citations,
-        warnings: [
-          "UNTRUSTED_RETRIEVED_CONTENT",
-          ...(String(row.refresh_status ?? "CURRENT") === "STALE_PENDING_REVIEW"
-            ? ["STALE_PENDING_REVIEW"]
-            : []),
-        ],
       };
     })
-    .filter((hit): hit is SearchHit => hit !== null);
+    .filter(
+      (entry): entry is { fusionId: string; hit: SearchHit } => entry !== null,
+    );
+  const projectedHits = projectedEntries.map((entry) => entry.hit);
+  const projectedByFusionId = options.stageDiagnosticSink
+    ? new Map(projectedEntries.map((entry) => [entry.fusionId, entry.hit]))
+    : undefined;
+  const results = options.stageDiagnosticSink
+    ? fused
+        .map((item) => projectedByFusionId?.get(item.id))
+        .filter((hit): hit is SearchHit => hit !== undefined)
+    : projectedHits;
   const reranker = resolveSearchHitReranker(
     retrievalPolicy.reranker ??
       (options.deterministicRerank
@@ -3545,6 +3810,46 @@ export async function queryKnowledge(
   options.answerabilityCandidateSink?.(rerankResult.hits);
   const finalResults = rerankResult.hits.slice(0, input.limit);
   await finalizeTruthSnapshot();
+  if (options.stageDiagnosticSink) {
+    const fullPool = projectedHits;
+    const allowedFusionIds = new Set(
+      projectedEntries.map((entry) => entry.fusionId),
+    );
+    const authorizedChannelCandidates = retrievalCandidates.filter(
+      (_candidate, index) =>
+        allowedFusionIds.has(fusionProjection.fusionIds[index]!),
+    );
+    options.stageDiagnosticSink({
+      channelCandidates: authorizedChannelCandidates.map((candidate) => ({
+        documentId: candidate.documentId ?? candidate.candidateId,
+        unitId: candidate.unitId ?? null,
+      })),
+      channelCandidateTrace: authorizedChannelCandidates.map((candidate) => ({
+        documentId: candidate.documentId ?? candidate.candidateId,
+        unitId: candidate.unitId ?? null,
+        channel: candidate.channel,
+        rank: candidate.rank,
+        rawScore: candidate.rawScore ?? null,
+        selectionReason:
+          typeof candidate.selectionReason === "string"
+            ? candidate.selectionReason
+            : "structured-reason",
+      })),
+      fusedCandidates: fullPool.map((hit, index) =>
+        evidenceCandidateDiagnostic(hit, index + 1),
+      ),
+      beforeRerank: results.map((hit, index) =>
+        evidenceCandidateDiagnostic(hit, index + 1),
+      ),
+      afterRerank: rerankResult.hits.map((hit, index) =>
+        evidenceCandidateDiagnostic(hit, index + 1),
+      ),
+      returned: finalResults.map((hit) => ({
+        documentId: hit.documentId,
+        unitId: hit.unitId ?? null,
+      })),
+    });
+  }
   return finalResults;
 }
 
@@ -3553,6 +3858,14 @@ export function registerSearchRoutes(
   db: Postgres,
   dependencies: SearchRouteDependencies = {},
 ): void {
+  if (
+    dependencies.evidenceVerifierMode === "LAYERED" &&
+    !dependencies.evidenceAdmissionPipeline
+  ) {
+    throw new Error(
+      "LAYERED evidence admission requires an evidence admission pipeline",
+    );
+  }
   app.post(
     "/v1/search",
     {
@@ -3768,33 +4081,20 @@ export function registerSearchRoutes(
         allowGraphSupport: plan.intent === "IMPACT_ANALYSIS",
         comparisonHits: answerabilityPool,
       };
-      const answerability = dependencies.evidenceVerifier
-        ? await assessRetrievalAnswerabilityWithVerifier(
-            answerabilityPool,
-            parsed.data.query,
-            dependencies.evidenceVerifier,
-            {
-              mode: dependencies.evidenceVerifierMode ?? "SHADOW",
-              ...(dependencies.evidenceVerifierMaxCandidates === undefined
-                ? {}
-                : {
-                    maxCandidates: dependencies.evidenceVerifierMaxCandidates,
-                  }),
-            },
-            {},
-            answerabilityContext,
-          )
-        : assessRetrievalAnswerability(
-            answerabilityPool,
-            parsed.data.query,
-            {},
-            answerabilityContext,
-          );
+      const answerability = await assessCandidateAnswerability(
+        dependencies,
+        answerabilityPool,
+        parsed.data.query,
+        answerabilityContext,
+      );
       const partitioned = partitionSearchHitsByAnswerability(
         answerabilityPool,
         answerability.supportedCandidateKeys,
       );
       recordAnswerabilityDiagnostics(answerability, "search");
+      retrievalWarnings.push(
+        ...evidenceVerifierDegradationWarnings(answerability),
+      );
       if (!answerability.supported && answerabilityPool.length > 0) {
         retrievalWarnings.push(
           `ANSWERABILITY_GATE_REJECTED:${answerability.reason}`,
@@ -4763,29 +5063,16 @@ export function registerSearchRoutes(
             )),
         comparisonHits: answerabilityPool,
       };
-      const answerability = dependencies.evidenceVerifier
-        ? await assessRetrievalAnswerabilityWithVerifier(
-            answerabilityPool,
-            parsed.data.query,
-            dependencies.evidenceVerifier,
-            {
-              mode: dependencies.evidenceVerifierMode ?? "SHADOW",
-              ...(dependencies.evidenceVerifierMaxCandidates === undefined
-                ? {}
-                : {
-                    maxCandidates: dependencies.evidenceVerifierMaxCandidates,
-                  }),
-            },
-            {},
-            answerabilityContext,
-          )
-        : assessRetrievalAnswerability(
-            answerabilityPool,
-            parsed.data.query,
-            {},
-            answerabilityContext,
-          );
+      const answerability = await assessCandidateAnswerability(
+        dependencies,
+        answerabilityPool,
+        parsed.data.query,
+        answerabilityContext,
+      );
       recordAnswerabilityDiagnostics(answerability, "context");
+      retrievalWarnings.push(
+        ...evidenceVerifierDegradationWarnings(answerability),
+      );
       const supportedCandidateKeys = new Set(
         answerability.supportedCandidateKeys,
       );

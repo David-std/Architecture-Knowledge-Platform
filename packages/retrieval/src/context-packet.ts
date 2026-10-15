@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { deterministicProjectionRetainsSupport } from "./support-verifier.js";
+import type { EvidenceIdentity } from "./quality-diagnostics.js";
 import type {
   CompactAgentPacket as ContractCompactAgentPacket,
   CompactContextSection as ContractCompactContextSection,
@@ -90,6 +91,15 @@ export interface MaterialConflictRequirement {
   documentIds: string[];
 }
 
+export interface ContextSelectionDiagnostic {
+  selected: EvidenceIdentity[];
+  omitted: Array<
+    EvidenceIdentity & {
+      reason: "TOKEN_BUDGET" | "DOCUMENT_SECTION_LIMIT" | "MISSING_EVIDENCE";
+    }
+  >;
+}
+
 export interface BuildContextPacketInput {
   request: SearchRequest;
   intent: string;
@@ -107,14 +117,6 @@ export interface BuildContextPacketInput {
   maxSectionsPerDocument?: number;
   /** An application tokenizer. Omitted means the labelled char/4 fallback. */
   tokenizer?: Tokenizer;
-  /**
-   * Deprecated compatibility aliases. `buildContextPacket` always returns a
-   * full packet; use `buildCompactAgentPacket` or `projectContextPacket` for
-   * the compact response shape.
-   */
-  packetMode?: ContextPacketMode;
-  outputMode?: ContextPacketMode;
-  projection?: ContextPacketMode;
   searchedChannels?: string[];
   requiredActions?: string[];
   recommendedActions?: string[];
@@ -124,6 +126,8 @@ export interface BuildContextPacketInput {
    * never inflate the measured or hashed packet wire representation.
    */
   continuationSink?: ContextContinuationSink;
+  /** Out-of-band selection metadata; does not enlarge or alter the packet. */
+  selectionDiagnosticSink?: (diagnostic: ContextSelectionDiagnostic) => void;
 }
 
 export interface CompactPacketIdentity {
@@ -959,6 +963,15 @@ export function buildContextPacket(
   const omitted: PacketCandidate[] = packetCandidates.filter(
     (candidate) => !orderedKeys.has(candidateKey(candidate)),
   );
+  const omissionReasons = new Map<
+    string,
+    ContextSelectionDiagnostic["omitted"][number]["reason"]
+  >(
+    omitted.map((candidate) => [
+      candidateKey(candidate),
+      "DOCUMENT_SECTION_LIMIT",
+    ]),
+  );
   const noteRequiredOmissions = (): void => {
     const omittedRequired = omitted.filter((candidate) =>
       requiredKeys.has(candidateKey(candidate)),
@@ -1179,12 +1192,14 @@ export function buildContextPacket(
     seenCandidates.add(key);
     if (requiresEvidence && !hasEvidence(candidate)) {
       omitted.push(candidate);
+      omissionReasons.set(key, "MISSING_EVIDENCE");
       continue;
     }
     const documentSections =
       sectionsByDocument.get(candidate.hit.documentId) ?? 0;
     if (documentSections >= maxSectionsPerDocument) {
       omitted.push(candidate);
+      omissionReasons.set(key, "DOCUMENT_SECTION_LIMIT");
       continue;
     }
     const section = contextSectionFromCandidate(
@@ -1200,6 +1215,7 @@ export function buildContextPacket(
     } catch (error) {
       if (error instanceof ContextPacketBudgetError) {
         omitted.push(candidate);
+        omissionReasons.set(key, "TOKEN_BUDGET");
         continue;
       }
       throw error;
@@ -1250,6 +1266,17 @@ export function buildContextPacket(
           ),
         });
       }
+      input.selectionDiagnosticSink?.({
+        selected: selected.map(({ candidate }) => ({
+          documentId: candidate.hit.documentId,
+          unitId: candidate.hit.unitId ?? null,
+        })),
+        omitted: omitted.map((candidate) => ({
+          documentId: candidate.hit.documentId,
+          unitId: candidate.hit.unitId ?? null,
+          reason: omissionReasons.get(candidateKey(candidate))!,
+        })),
+      });
       return full;
     } catch (error) {
       if (
@@ -1261,6 +1288,7 @@ export function buildContextPacket(
       const removed = selected.pop();
       if (!removed) throw error;
       omitted.push(removed.candidate);
+      omissionReasons.set(candidateKey(removed.candidate), "TOKEN_BUDGET");
       ensureNoAnswerGap();
       noteRequiredOmissions();
       notePrimaryQuerySupportOmission(selected.map((entry) => entry.section));
@@ -1346,7 +1374,6 @@ export function projectContextPacket(
     packet,
     packet.sections as BaseContextSection[],
   );
-  const references = [...new Set(packet.citations)].sort();
   const indexRevisions = packet.indexRevisions;
   const searchedChannels = [...new Set(packet.searchedChannels)];
   const suppliedRecommendations =
@@ -1391,6 +1418,20 @@ export function projectContextPacket(
     const content = sections.map((section) =>
       compactSection(section, { tight: isTightSection(section) }),
     );
+    // A packet-level citation must be backed by evidence visible in this
+    // particular wire projection. Full-source citations omitted by the compact
+    // budget remain available from the full packet or its continuation, but
+    // must not silently masquerade as locally present evidence.
+    const visibleCitations = [
+      ...new Set(content.flatMap((section) => section.citations)),
+    ].sort();
+    const hiddenCitationCount = packet.citations.filter(
+      (citation) => !visibleCitations.includes(citation),
+    ).length;
+    const continuationCitationGap =
+      hiddenCitationCount > 0
+        ? "Some source citations are available only through a full packet or continuation; they are not evidence visible in this compact packet."
+        : undefined;
     const primaryOriginalOmitted =
       primaryQuerySection !== undefined &&
       omittedSections.some((section) =>
@@ -1424,25 +1465,33 @@ export function projectContextPacket(
       : primarySupportTruncationUnverified
         ? "Highest-ranked query-supported material truncated in compact packet without retaining demonstrable answer support: only a bounded projection fit the active token budget. Request its full continuation before treating this compact packet as complete support for the query."
         : undefined;
-    const compactGaps =
-      primarySupportGap &&
+    const compactGaps = [
+      ...packet.gaps,
+      ...(primarySupportGap &&
       !packet.gaps.some((gap) =>
         gap.startsWith(primarySupportGap.split(":")[0]!),
       )
-        ? [...packet.gaps, primarySupportGap]
-        : packet.gaps;
-    const compactRequiredActions = primarySupportLimited
-      ? [
-          ...new Set([
-            ...packet.requiredActions,
-            "Request the continuation containing the full highest-ranked query-supported material before treating this compact packet as complete support for the query.",
-          ]),
-        ]
-      : packet.requiredActions;
+        ? [primarySupportGap]
+        : []),
+      ...(continuationCitationGap ? [continuationCitationGap] : []),
+    ];
+    const compactRequiredActions = [
+      ...new Set([
+        ...packet.requiredActions,
+        ...(primarySupportLimited
+          ? [
+              "Request the continuation containing the full highest-ranked query-supported material before treating this compact packet as complete support for the query.",
+            ]
+          : []),
+        ...(continuationCitationGap
+          ? ["Retrieve the continuation before citing omitted source material."]
+          : []),
+      ]),
+    ];
     const compactStatus =
       packet.status === "INSUFFICIENT_KNOWLEDGE"
         ? packet.status
-        : primarySupportLimited
+        : primarySupportLimited || continuationCitationGap
           ? "DEGRADED"
           : packet.status;
     const compactBase = {
@@ -1459,11 +1508,10 @@ export function projectContextPacket(
         indexRevisions,
       },
       content,
-      // citations is the canonical compact evidence list. Under tight budget,
-      // omit the duplicate references alias; the full packet/continuation
-      // retains every original per-section locator.
-      references: tightEnvelope ? [] : references,
-      citations: references,
+      // Only citations with source material in this compact payload may be
+      // presented as local evidence. Omitted ones remain in full/continuations.
+      references: tightEnvelope ? [] : visibleCitations,
+      citations: visibleCitations,
       searchedChannels,
       conflicts: packet.conflicts,
       gaps: compactGaps,
@@ -1614,9 +1662,6 @@ export function projectContextPacket(
     }
   }
 }
-
-/** Alias for adapters that use projection terminology. */
-export const toCompactAgentPacket = projectContextPacket;
 
 /**
  * Build both packet representations from one source selection. The full

@@ -2613,6 +2613,44 @@ describe("API security boundaries", () => {
         [continuedDocumentId],
       );
 
+      // A previously valid private-vault continuation must fail closed after
+      // its membership is revoked, even though the bearer token is unchanged.
+      await db.pool.query(
+        "update vault_memberships set enabled=false where user_id=$1 and vault_id=$2",
+        [admin, vaultId],
+      );
+      const membershipRevokedContinuation = await app.inject({
+        method: "GET",
+        url: `/v1/generated-context-packets/${packetId}/continuations/${handle}`,
+        headers: packetHeaders,
+      });
+      expect(membershipRevokedContinuation.statusCode).toBe(404);
+      expect(membershipRevokedContinuation.json()).toMatchObject({
+        code: "CONTEXT_CONTINUATION_NOT_FOUND",
+      });
+      expect(
+        JSON.stringify(membershipRevokedContinuation.json()),
+      ).not.toContain(marker);
+      const membershipRevokedPacket = await app.inject({
+        method: "GET",
+        url: `/v1/generated-context-packets/${packetId}`,
+        headers: packetHeaders,
+      });
+      expect(membershipRevokedPacket.statusCode).toBe(404);
+      await db.pool.query(
+        "update vault_memberships set enabled=true where user_id=$1 and vault_id=$2",
+        [admin, vaultId],
+      );
+      const restoredMemberContinuation = await app.inject({
+        method: "GET",
+        url: `/v1/generated-context-packets/${packetId}/continuations/${handle}`,
+        headers: packetHeaders,
+      });
+      expect(
+        restoredMemberContinuation.statusCode,
+        restoredMemberContinuation.body,
+      ).toBe(200);
+
       await db.pool.query(
         `update api_tokens
             set scopes=$2::jsonb

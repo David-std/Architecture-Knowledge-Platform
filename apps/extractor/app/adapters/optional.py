@@ -18,7 +18,7 @@ from ..ports import (
 from .base import infer_media_type
 from .chunkr_runtime import ChunkrAdapter
 from .docling_native import DoclingAdapter as _NativeDoclingAdapter
-from .docling_native import map_docling_document
+from .docling_native import document_from_docling_conversion, map_docling_document
 from .marker_native import MarkerAdapter
 
 
@@ -30,6 +30,7 @@ class DoclingAdapter(_NativeDoclingAdapter):
             from docling.datamodel.base_models import InputFormat  # type: ignore[import-not-found]
             from docling.datamodel.pipeline_options import (  # type: ignore[import-not-found]
                 PdfPipelineOptions,
+                TesseractCliOcrOptions,
             )
             from docling.document_converter import (  # type: ignore[import-not-found]
                 DocumentConverter,
@@ -47,20 +48,31 @@ class DoclingAdapter(_NativeDoclingAdapter):
         if media_type != "application/pdf":
             return DocumentConverter(), ocr_requested
 
+        selected_engine = request.configuration.get("ocr_engine") or "provider-default"
+        if selected_engine not in ("provider-default", "tesseract_cli"):
+            raise DocumentIntelligenceError("DOCLING_OCR_ENGINE_UNSUPPORTED")
+
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_ocr = ocr_requested
+        if ocr_requested and selected_engine == "tesseract_cli":
+            # Explicit, locally installed CLI OCR; never silently switch
+            # engines when the caller requested a specific implementation.
+            pipeline_options.ocr_options = TesseractCliOcrOptions(
+                lang=["eng"],
+                scale=2.0,
+            )
         pipeline_options.do_table_structure = True
         timeout = float(request.configuration.get("timeout_seconds", 300))
         if timeout <= 0 or timeout > 900:
-            raise DocumentIntelligenceError(
-                "Docling timeout_seconds must be between 1 and 900"
-            )
+            raise DocumentIntelligenceError("Docling timeout_seconds must be between 1 and 900")
         pipeline_options.document_timeout = timeout
 
         force_full_page = request.configuration.get("force_full_page_ocr")
         ocr_options = getattr(pipeline_options, "ocr_options", None)
-        if force_full_page is not None and ocr_options is not None and hasattr(
-            ocr_options, "force_full_page_ocr"
+        if (
+            force_full_page is not None
+            and ocr_options is not None
+            and hasattr(ocr_options, "force_full_page_ocr")
         ):
             ocr_options.force_full_page_ocr = bool(force_full_page)
 
@@ -81,20 +93,24 @@ class DoclingAdapter(_NativeDoclingAdapter):
         try:
             converter, ocr_requested = self._converter(request)
             conversion = converter.convert(str(request.source_path))
-            document = getattr(conversion, "document", conversion)
+            document = document_from_docling_conversion(conversion)
             artifact = map_docling_document(document, request)
             artifact.configuration.update(
                 {
                     "native_structure": True,
                     "ocr_requested": ocr_requested,
-                    "ocr_engine": "provider-default" if ocr_requested else None,
+                    "ocr_engine": (
+                        request.configuration.get("ocr_engine") or "provider-default"
+                    )
+                    if ocr_requested
+                    else None,
                 }
             )
             return artifact
         except (CapabilityNotConfigured, DocumentIntelligenceError):
             raise
         except Exception as error:  # pragma: no cover - provider-specific API
-            raise DocumentIntelligenceError(f"Docling extraction failed: {error}") from error
+            raise DocumentIntelligenceError("DOCLING_EXTRACTION_FAILED") from error
 
 
 __all__ = ["ChunkrAdapter", "DoclingAdapter", "MarkerAdapter"]
