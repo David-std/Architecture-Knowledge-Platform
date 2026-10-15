@@ -1840,14 +1840,11 @@ describe("product lifecycle E2E", () => {
     });
     expect(compactBody.gaps.length).toBeGreaterThan(0);
     expect(compactBody.continuations.length).toBeGreaterThan(0);
-    expect(
-      compactBody.requiredActions.some((action) =>
-        action.includes("continuation"),
-      ),
-    ).toBe(true);
-    expect(compactBody.citations).toEqual(
-      [...new Set(compactBody.content.flatMap((section) => section.citations))].sort(),
-    );
+    expect(compactBody.requiredActions.join(" ")).toContain("continuation");
+    const visibleCompactCitations = [
+      ...new Set(compactBody.content.flatMap((section) => section.citations)),
+    ].sort();
+    expect(compactBody.citations).toEqual(visibleCompactCitations);
     expect(compactBody.budget.serializedTokens).toBeLessThanOrEqual(1000);
     expect(
       compactBody.content.some((section) =>
