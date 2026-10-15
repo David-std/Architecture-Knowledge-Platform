@@ -143,7 +143,8 @@ export function inspectFrozenSourceBinding(
     fixture.schemaVersion !== "akp.s2.source-span-holdout.v1" ||
     !Array.isArray(fixture.sourceDocuments) ||
     !Array.isArray(fixture.cases) ||
-    packet.fixtureProjection !== "SYNTHETIC_APPROVED_TEST_ROWS_NOT_RAW_INGEST" ||
+    packet.fixtureProjection !==
+      "SYNTHETIC_APPROVED_TEST_ROWS_NOT_RAW_INGEST" ||
     packet.candidateOrder !== "SORTED_BY_STABLE_KEY_NOT_RETRIEVAL_RANK"
   ) {
     fail("FROZEN_SOURCE_SCHEMA_OR_PROJECTION_CHANGED");
@@ -189,8 +190,7 @@ export function inspectFrozenSourceBinding(
   const expectedQuestions = new Map();
   for (const question of fixture.cases) {
     const key = hash(question.query);
-    if (expectedQuestions.has(key))
-      fail("FROZEN_SOURCE_DUPLICATE_QUESTION");
+    if (expectedQuestions.has(key)) fail("FROZEN_SOURCE_DUPLICATE_QUESTION");
     expectedQuestions.set(key, question);
   }
   const seen = new Set();
@@ -495,11 +495,7 @@ function selfTest() {
     change(changed);
     inspectPacket(changed, 1, 1);
     reject(() =>
-      inspectFrozenSourceBinding(
-        changed,
-        syntheticFixtureBytes,
-        syntheticBlob,
-      ),
+      inspectFrozenSourceBinding(changed, syntheticFixtureBytes, syntheticBlob),
     );
   };
   mutateBound((changed) => {
@@ -516,8 +512,7 @@ function selfTest() {
   });
   mutateBound((changed) => {
     changed.cases[0].candidates[0].sourceStartOffsetUtf16 = 1;
-    changed.cases[0].candidates[0].sourceEndOffsetUtf16 =
-      passage.length + 1;
+    changed.cases[0].candidates[0].sourceEndOffsetUtf16 = passage.length + 1;
   });
   mutateBound((changed) => {
     changed.sourceSha256[syntheticSourceId] = hash("other source");
