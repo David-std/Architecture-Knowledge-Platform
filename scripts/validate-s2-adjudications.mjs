@@ -116,7 +116,7 @@ const frozenFixture = path.resolve(
 );
 const gitBlob = (bytes) =>
   createHash("sha1")
-    .update("blob " + bytes.length + "\\0")
+    .update("blob " + bytes.length + "\0")
     .update(bytes)
     .digest("hex");
 
@@ -174,7 +174,7 @@ export function inspectFrozenSourceBinding(
       unitsByDigest.set(digest, unit);
     }
     const digest = hash(
-      source.units.map((unit) => unit.id + "\\n" + unit.text).join("\\n\\n"),
+      source.units.map((unit) => unit.id + "\n" + unit.text).join("\n\n"),
     );
     if (packet.sourceSha256?.[source.id] !== digest)
       fail("FROZEN_SOURCE_DOCUMENT_HASH_MISMATCH");
@@ -217,7 +217,7 @@ export function inspectFrozenSourceBinding(
       usedUnits.add(unit.id);
       if (
         candidate.candidateKey !==
-          hash(question.query + "\\0" + frozen.sourceId + "\\0" + unit.id) ||
+          hash(question.query + "\0" + frozen.sourceId + "\0" + unit.id) ||
         unit.text.slice(
           candidate.sourceStartOffsetUtf16,
           candidate.sourceEndOffsetUtf16,
