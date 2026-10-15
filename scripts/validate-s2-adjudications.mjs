@@ -439,7 +439,93 @@ function selfTest() {
       1,
     ),
   );
-  return { mutationCases: 7, status: "PASSED" };
+  // A pair of identical internally consistent hashes cannot establish that
+  // a passage came from the frozen source unit. Exercise source binding with
+  // a tiny independent fixture, then mutate each provenance dimension.
+  const syntheticSourceId = "self-test-source";
+  const syntheticUnitId = "self-test-unit";
+  const syntheticFixture = {
+    schemaVersion: "akp.s2.source-span-holdout.v1",
+    sourceDocuments: [
+      {
+        id: syntheticSourceId,
+        units: [{ id: syntheticUnitId, text: passage }],
+      },
+    ],
+    cases: [{ query, sourceId: syntheticSourceId }],
+  };
+  const syntheticFixtureBytes = Buffer.from(
+    JSON.stringify(syntheticFixture),
+    "utf8",
+  );
+  const syntheticBlob = gitBlob(syntheticFixtureBytes);
+  const validBoundCandidate = {
+    ...source,
+    candidateKey: hash(
+      query + "\0" + syntheticSourceId + "\0" + syntheticUnitId,
+    ),
+  };
+  const boundPacket = {
+    ...packet,
+    frozenGitBlobSha1: syntheticBlob,
+    sourceSha256: {
+      [syntheticSourceId]: hash(syntheticUnitId + "\n" + passage),
+    },
+    fixtureProjection: "SYNTHETIC_APPROVED_TEST_ROWS_NOT_RAW_INGEST",
+    candidateOrder: "SORTED_BY_STABLE_KEY_NOT_RETRIEVAL_RANK",
+    cases: [
+      {
+        questionKey: hash(query),
+        query,
+        candidates: [validBoundCandidate],
+      },
+    ],
+  };
+  inspectPacket(boundPacket, 1, 1);
+  assert.equal(
+    inspectFrozenSourceBinding(
+      boundPacket,
+      syntheticFixtureBytes,
+      syntheticBlob,
+    ).sourceBoundCandidates,
+    1,
+  );
+  const mutateBound = (change) => {
+    const changed = structuredClone(boundPacket);
+    change(changed);
+    inspectPacket(changed, 1, 1);
+    reject(() =>
+      inspectFrozenSourceBinding(
+        changed,
+        syntheticFixtureBytes,
+        syntheticBlob,
+      ),
+    );
+  };
+  mutateBound((changed) => {
+    const candidate = changed.cases[0].candidates[0];
+    candidate.passage += " forged";
+    candidate.passageSha256 = hash(candidate.passage);
+    candidate.sourceEndOffsetUtf16 += " forged".length;
+  });
+  mutateBound((changed) => {
+    changed.cases[0].candidates[0].sourceUnitSha256 = hash("other unit");
+  });
+  mutateBound((changed) => {
+    changed.cases[0].candidates[0].candidateKey = hash("other candidate");
+  });
+  mutateBound((changed) => {
+    changed.cases[0].candidates[0].sourceStartOffsetUtf16 = 1;
+    changed.cases[0].candidates[0].sourceEndOffsetUtf16 =
+      passage.length + 1;
+  });
+  mutateBound((changed) => {
+    changed.sourceSha256[syntheticSourceId] = hash("other source");
+  });
+  mutateBound((changed) => {
+    changed.candidateOrder = "RETRIEVAL_RANK";
+  });
+  return { mutationCases: 13, sourceBindingMutationCases: 6, status: "PASSED" };
 }
 const args = new Map();
 for (let i = 2; i < process.argv.length; i += 1) {
