@@ -204,6 +204,16 @@ const rows = hybrid.diagnostics.map((diagnostic) => {
     maxTokens: 2048,
     maxSectionsPerDocument: 6,
     candidates,
+    // This synthetic transport benchmark intentionally bypasses the
+    // query-conditioned semantic reader. Fail closed on packet status so
+    // source transport cannot be mistaken for answer admission.
+    retrievalConfiguration: {
+      version: "s2-pre-admission-shadow",
+      channels: ["exact", "lexical", "vector"],
+      vectorEnabled: true,
+      warnings: ["QUERY_CONDITIONED_ADMISSION_NOT_EVALUATED"],
+    },
+    candidates,
     tokenizer: tokenizerPort,
     continuationSink: (payload) => continuationPayloads.push(payload),
   });
@@ -345,6 +355,13 @@ const rows = hybrid.diagnostics.map((diagnostic) => {
     compactPacketStatus: packetPair.compact.identity.status,
     compactHasContinuations: packetPair.compact.continuations.length > 0,
     sourceAnswerable: question.answerable,
+    // Scope these counts to the compact payload; global citation metadata
+    // from the full packet must never imply a passage was delivered.
+    compactPacketCitationCount: packetPair.compact.citations.length,
+    fullPacketCitationCount: packetPair.full.citations.length,
+    preAdmissionStatusExplicitlyDegraded:
+      packetPair.full.status === "DEGRADED" &&
+      packetPair.compact.identity.status === "DEGRADED",
     // Author-constructed oracle audit, NEVER independently adjudicated.
     goldUnitRetrievalRank: gold
       ? diagnostic.rankedUnitIds.indexOf(gold.unitId) + 1
@@ -367,6 +384,15 @@ const rows = hybrid.diagnostics.map((diagnostic) => {
 if (new Set(rows.map((row) => row.caseId)).size !== 48) {
   throw new Error("S2_TOKEN_DUPLICATE_OBSERVATIONS");
 }
+if (
+  rows.some(
+    (row) =>
+      !row.preAdmissionStatusExplicitlyDegraded ||
+      row.metadataOnlyCitations !== 0 ||
+      row.compactPacketCitationCount > row.fullPacketCitationCount,
+  )
+)
+  throw new Error("S2_PRE_ADMISSION_PACKET_MISREPRESENTS_EVIDENCE");
 function distribution(values: number[]) {
   const sorted = [...values].sort((a, b) => a - b);
   return {
@@ -470,6 +496,8 @@ const report = {
   realUserAnswerMeasured: false,
   evidenceAdmissionMeasured: false,
   independentAdjudication: false,
+  preAdmissionStatusesExplicitlyDegraded: true,
+  compactCitationsRestrictedToVisibleContent: true,
   productionDefaultsChanged: false,
   gateAccepted: false,
   interpretation:
