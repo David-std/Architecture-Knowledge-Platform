@@ -838,7 +838,11 @@ describe("buildContextPacket", () => {
     expect(compact.content[0]?.references).toEqual([]);
     expect(compact.content[0]?.citations).toEqual([]);
     expect(compact.references).toEqual([]);
-    expect(compact.citations.length).toBeGreaterThan(0);
+    expect(compact.citations).toEqual([]);
+    expect(compact.identity.status).toBe("DEGRADED");
+    expect(compact.requiredActions).toContain(
+      "Retrieve the continuation before citing omitted source material.",
+    );
     expect(compact.budget.serializedTokens).toBeLessThanOrEqual(1_000);
     expect(continuationSections.at(-1)).toEqual([fullContent]);
   });
@@ -1786,11 +1790,16 @@ describe("buildContextPacket", () => {
       corpusRevision: "deadbeef",
       maxTokens: 1_500,
       candidates: [
-        { hit: baseHit, content: "a".repeat(4_000), kind: "rule" },
+        {
+          hit: { ...baseHit, citations: ["source:visible"] },
+          content: "a".repeat(4_000),
+          kind: "rule",
+        },
         {
           hit: {
             ...baseHit,
             documentId: "22222222-2222-4222-8222-222222222222",
+            citations: ["source:omitted"],
           },
           content: "b".repeat(4_000),
           kind: "concept",
@@ -1813,5 +1822,23 @@ describe("buildContextPacket", () => {
     );
     expect(captured[0]?.sections).toHaveLength(1);
     expect(captured[0]?.sections[0]?.content).toBe("b".repeat(4_000));
+    // Packet-level references must be a subset of locally visible section
+    // citations, never a promise that continuation-only evidence is present.
+    const locallyVisible = [
+      ...new Set(
+        pair.compact.content.flatMap((section) => section.citations),
+      ),
+    ].sort();
+    expect(pair.compact.citations).toEqual(locallyVisible);
+    expect(pair.compact.references).toEqual(locallyVisible);
+    expect(pair.full.citations).toContain("source:omitted");
+    expect(pair.compact.citations).not.toContain("source:omitted");
+    expect(pair.compact.identity.status).toBe("DEGRADED");
+    expect(pair.compact.gaps).toContain(
+      "Some source citations are available only through a full packet or continuation; they are not evidence visible in this compact packet.",
+    );
+    expect(pair.compact.requiredActions).toContain(
+      "Retrieve the continuation before citing omitted source material.",
+    );
   });
 });
