@@ -375,11 +375,7 @@ export function disputeTemplateRows(packetIndex, disagreements) {
 }
 function assertSafeOutputPath(output, sourcePaths) {
   const target = path.resolve(output);
-  if (
-    sourcePaths.some(
-      (source) => source && path.resolve(source) === target,
-    )
-  )
+  if (sourcePaths.some((source) => source && path.resolve(source) === target))
     fail("OUTPUT_OVERWRITES_SOURCE_OR_SUBMISSION");
 }
 function encodeCsv(rows) {
