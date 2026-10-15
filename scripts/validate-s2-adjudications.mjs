@@ -278,7 +278,7 @@ function csvRows(raw) {
     return Object.fromEntries(columns.map((name, i) => [name, values[i]]));
   });
 }
-export function inspectAnnotations(packetIndex, raw) {
+export function inspectAnnotations(packetIndex, raw, expectedKeys = null) {
   const annotations = new Map();
   for (const row of csvRows(raw.replace(/^\uFEFF/u, ""))) {
     const question = packetIndex.questions.get(row.questionKey);
@@ -286,6 +286,8 @@ export function inspectAnnotations(packetIndex, raw) {
     const key = row.questionKey + ":" + row.candidateKey;
     if (!candidate || annotations.has(key))
       fail("FOREIGN_OR_DUPLICATE_CANDIDATE");
+    if (expectedKeys && !expectedKeys.has(key))
+      fail("DISPUTE_RESOLUTION_NOT_REQUESTED");
     if (
       row.query !== question.query ||
       row.passage !== candidate.passage ||
@@ -314,8 +316,8 @@ export function inspectAnnotations(packetIndex, raw) {
     }
     annotations.set(key, { verdict: row.verdict, start, end });
   }
-  if (annotations.size !== packetIndex.candidateCount)
-    fail("REVIEW_INCOMPLETE");
+  if (annotations.size !== (expectedKeys?.size ?? packetIndex.candidateCount))
+    fail(expectedKeys ? "DISPUTE_RESOLUTION_INCOMPLETE" : "REVIEW_INCOMPLETE");
   return annotations;
 }
 export function compareAnnotations(a, b) {
@@ -350,6 +352,26 @@ export function compareAnnotations(a, b) {
       : null,
     disagreements,
   };
+}
+export function disputeTemplateRows(packetIndex, disagreements) {
+  return disagreements.map(({ key }) => {
+    const [questionKey, candidateKey] = key.split(":");
+    const question = packetIndex.questions.get(questionKey);
+    const candidate = question?.candidates.get(candidateKey);
+    if (!candidate) fail("DISPUTE_SOURCE_IDENTITY_INVALID");
+    return {
+      questionKey,
+      query: question.query,
+      candidateKey,
+      passage: candidate.passage,
+      passageSha256: candidate.passageSha256,
+      sourceUnitSha256: candidate.sourceUnitSha256,
+      verdict: "",
+      quoteStartOffsetUtf16: "",
+      quoteEndOffsetUtf16: "",
+      reviewerNote: "",
+    };
+  });
 }
 function encodeCsv(rows) {
   const quote = (value) =>
@@ -520,7 +542,38 @@ function selfTest() {
   mutateBound((changed) => {
     changed.candidateOrder = "RETRIEVAL_RANK";
   });
-  return { mutationCases: 13, sourceBindingMutationCases: 6, status: "PASSED" };
+  const differentQuote = inspectAnnotations(
+    index,
+    encodeCsv([{ ...row, quoteStartOffsetUtf16: "0", quoteEndOffsetUtf16: "3" }]),
+  );
+  const disagreement = compareAnnotations(parsed, differentQuote);
+  assert.equal(disagreement.disagreements[0]?.kind, "QUOTE_DISAGREEMENT");
+  const disputeRows = disputeTemplateRows(index, disagreement.disagreements);
+  assert.equal(disputeRows.length, 1);
+  assert.equal(disputeRows[0].verdict, "");
+  assert.equal(disputeRows[0].passage, passage);
+  const disputedKeys = new Set(disagreement.disagreements.map((d) => d.key));
+  assert.equal(
+    inspectAnnotations(index, encodeCsv([row]), disputedKeys).size,
+    1,
+  );
+  reject(() => inspectAnnotations(index, encodeCsv([]), disputedKeys));
+  reject(() =>
+    inspectAnnotations(index, encodeCsv([row]), new Set(["other:dispute"])),
+  );
+  reject(() =>
+    inspectAnnotations(
+      index,
+      encodeCsv([{ ...row, passage: "forged" }]),
+      disputedKeys,
+    ),
+  );
+  return {
+    mutationCases: 16,
+    sourceBindingMutationCases: 6,
+    disputeResolutionMutationCases: 3,
+    status: "PASSED",
+  };
 }
 const args = new Map();
 for (let i = 2; i < process.argv.length; i += 1) {
@@ -554,7 +607,14 @@ if (args.has("--self-test")) {
   );
   const reviewerA = args.get("--reviewer-a");
   const reviewerB = args.get("--reviewer-b");
+  const disputeOutput = args.get("--disputes-output");
+  const resolutionPath = args.get("--resolution");
+  const adjudicatorId = args.get("--adjudicator-id");
   if (Boolean(reviewerA) !== Boolean(reviewerB)) fail("REVIEW_PAIR_REQUIRED");
+  if (!reviewerA && (disputeOutput || resolutionPath || adjudicatorId))
+    fail("REVIEW_PAIR_REQUIRED_FOR_DISPUTES");
+  if (Boolean(resolutionPath) !== Boolean(adjudicatorId))
+    fail("THIRD_ADJUDICATOR_ID_AND_FILE_REQUIRED");
   if (reviewerA && !args.has("--packet-sha256")) {
     fail("PINNED_PACKET_SHA256_REQUIRED_FOR_REVIEW");
   }
@@ -588,10 +648,55 @@ if (args.has("--self-test")) {
       secondId: idB,
       secondCsvSha256: hash(bytesB),
     };
-    report.agreement = compareAnnotations(
-      inspectAnnotations(packet, bytesA.toString("utf8")),
-      inspectAnnotations(packet, bytesB.toString("utf8")),
-    );
+    const first = inspectAnnotations(packet, bytesA.toString("utf8"));
+    const second = inspectAnnotations(packet, bytesB.toString("utf8"));
+    report.agreement = compareAnnotations(first, second);
+    const disputes = report.agreement.disagreements;
+    report.disputeResolution = {
+      status: disputes.length
+        ? "UNRESOLVED_PENDING_THIRD_REVIEW"
+        : "NO_DISAGREEMENTS_HUMAN_ORIGIN_UNVERIFIED",
+      disputedPairs: disputes.length,
+      thirdSubmissionValidated: false,
+      independentHumanOriginVerified: false,
+    };
+    if (disputeOutput) {
+      const csv = encodeCsv(disputeTemplateRows(packet, disputes));
+      const file = path.resolve(disputeOutput);
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, csv, "utf8");
+      report.disputeTemplate = {
+        sha256: hash(csv),
+        rowCount: disputes.length,
+        containsReviewerVerdicts: false,
+        containsGoldLabels: false,
+      };
+    }
+    if (resolutionPath) {
+      if (!disputes.length) fail("THIRD_REVIEW_NOT_NEEDED");
+      if (
+        adjudicatorId === idA ||
+        adjudicatorId === idB ||
+        !adjudicatorId.trim()
+      )
+        fail("DISTINCT_THIRD_ADJUDICATOR_REQUIRED");
+      const bytesThird = await readFile(path.resolve(resolutionPath));
+      const disputedKeys = new Set(disputes.map((item) => item.key));
+      const third = inspectAnnotations(
+        packet,
+        bytesThird.toString("utf8"),
+        disputedKeys,
+      );
+      report.disputeResolution = {
+        status: "THIRD_SUBMISSION_VALIDATED_HUMAN_ORIGIN_UNVERIFIED",
+        disputedPairs: disputes.length,
+        resolvedPairCount: third.size,
+        thirdSubmissionValidated: true,
+        thirdReviewerId: adjudicatorId,
+        thirdCsvSha256: hash(bytesThird),
+        independentHumanOriginVerified: false,
+      };
+    }
   }
   if (args.has("--output")) {
     const file = path.resolve(args.get("--output"));
