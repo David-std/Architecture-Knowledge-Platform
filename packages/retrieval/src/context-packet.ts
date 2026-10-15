@@ -1491,7 +1491,7 @@ export function projectContextPacket(
     const compactStatus =
       packet.status === "INSUFFICIENT_KNOWLEDGE"
         ? packet.status
-        : primarySupportLimited
+        : primarySupportLimited || continuationCitationGap
           ? "DEGRADED"
           : packet.status;
     const compactBase = {
