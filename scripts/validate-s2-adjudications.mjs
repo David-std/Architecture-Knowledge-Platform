@@ -544,7 +544,9 @@ function selfTest() {
   });
   const differentQuote = inspectAnnotations(
     index,
-    encodeCsv([{ ...row, quoteStartOffsetUtf16: "0", quoteEndOffsetUtf16: "3" }]),
+    encodeCsv([
+      { ...row, quoteStartOffsetUtf16: "0", quoteEndOffsetUtf16: "3" },
+    ]),
   );
   const disagreement = compareAnnotations(parsed, differentQuote);
   assert.equal(disagreement.disagreements[0]?.kind, "QUOTE_DISAGREEMENT");
