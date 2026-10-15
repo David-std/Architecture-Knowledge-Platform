@@ -1822,15 +1822,32 @@ describe("product lifecycle E2E", () => {
     const compactBody = compactContext.json() as {
       packetMode: string;
       identity: { packetId: string; status: string };
-      content: Array<{ content: string }>;
+      content: Array<{ content: string; citations: string[] }>;
+      citations: string[];
+      gaps: string[];
+      requiredActions: string[];
+      continuations: Array<{ handle: string }>;
       packetHash: string;
       budget: { maxTokens: number; serializedTokens: number };
     };
     expect(compactBody).toMatchObject({
       packetMode: "COMPACT_AGENT_PACKET",
-      identity: { status: "SUPPORTED" },
+      // The primary lookup survives; other cited passages do not fit this
+      // 1k-token projection. Omitted citations must not be advertised as
+      // visible, even though the original full packet remains available.
+      identity: { status: "DEGRADED" },
       budget: { maxTokens: 1000 },
     });
+    expect(compactBody.gaps.length).toBeGreaterThan(0);
+    expect(compactBody.continuations.length).toBeGreaterThan(0);
+    expect(
+      compactBody.requiredActions.some((action) =>
+        action.includes("continuation"),
+      ),
+    ).toBe(true);
+    expect(compactBody.citations).toEqual(
+      [...new Set(compactBody.content.flatMap((section) => section.citations))].sort(),
+    );
     expect(compactBody.budget.serializedTokens).toBeLessThanOrEqual(1000);
     expect(
       compactBody.content.some((section) =>
