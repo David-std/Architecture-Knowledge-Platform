@@ -373,6 +373,15 @@ export function disputeTemplateRows(packetIndex, disagreements) {
     };
   });
 }
+function assertSafeOutputPath(output, sourcePaths) {
+  const target = path.resolve(output);
+  if (
+    sourcePaths.some(
+      (source) => source && path.resolve(source) === target,
+    )
+  )
+    fail("OUTPUT_OVERWRITES_SOURCE_OR_SUBMISSION");
+}
 function encodeCsv(rows) {
   const quote = (value) =>
     '"' + String(value ?? "").replaceAll('"', '""') + '"';
@@ -570,8 +579,9 @@ function selfTest() {
       disputedKeys,
     ),
   );
+  reject(() => assertSafeOutputPath("reviewer-a.csv", ["reviewer-a.csv"]));
   return {
-    mutationCases: 16,
+    mutationCases: 17,
     sourceBindingMutationCases: 6,
     disputeResolutionMutationCases: 3,
     status: "PASSED",
@@ -663,6 +673,13 @@ if (args.has("--self-test")) {
       independentHumanOriginVerified: false,
     };
     if (disputeOutput) {
+      assertSafeOutputPath(disputeOutput, [
+        args.get("--packet"),
+        reviewerA,
+        reviewerB,
+        resolutionPath,
+        args.get("--output"),
+      ]);
       const csv = encodeCsv(disputeTemplateRows(packet, disputes));
       const file = path.resolve(disputeOutput);
       await mkdir(path.dirname(file), { recursive: true });
@@ -701,6 +718,13 @@ if (args.has("--self-test")) {
     }
   }
   if (args.has("--output")) {
+    assertSafeOutputPath(args.get("--output"), [
+      args.get("--packet"),
+      reviewerA,
+      reviewerB,
+      resolutionPath,
+      disputeOutput,
+    ]);
     const file = path.resolve(args.get("--output"));
     await mkdir(path.dirname(file), { recursive: true });
     await writeFile(file, JSON.stringify(report, null, 2) + "\n", "utf8");
