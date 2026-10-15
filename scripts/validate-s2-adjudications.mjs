@@ -109,6 +109,135 @@ export function inspectPacket(
   if (count !== expectedCandidates) fail("CANDIDATE_COUNT_CHANGED");
   return { questions, candidateCount: count };
 }
+const frozenBlobSha1 = "a61a24df46c0351115cd09e079ae0d8383033082";
+const frozenFixture = path.resolve(
+  import.meta.dirname,
+  "../evals/registered/s2-source-span-holdout.json",
+);
+const gitBlob = (bytes) =>
+  createHash("sha1")
+    .update("blob " + bytes.length + "\\0")
+    .update(bytes)
+    .digest("hex");
+
+/**
+ * The reviewer packet can be internally self-consistent yet fabricated.
+ * Bind every quoted UTF-16 passage, candidate key and source digest to the
+ * immutable, independently loaded public source corpus before accepting any
+ * reviewer CSV. This does not inspect author gold labels or judge sufficiency.
+ */
+export function inspectFrozenSourceBinding(
+  packet,
+  fixtureBytes,
+  expectedBlobSha1 = frozenBlobSha1,
+) {
+  const actualBlobSha1 = gitBlob(fixtureBytes);
+  if (
+    actualBlobSha1 !== expectedBlobSha1 ||
+    packet.frozenGitBlobSha1 !== actualBlobSha1
+  ) {
+    fail("FROZEN_SOURCE_BLOB_MISMATCH");
+  }
+  const fixture = JSON.parse(fixtureBytes.toString("utf8"));
+  if (
+    fixture.schemaVersion !== "akp.s2.source-span-holdout.v1" ||
+    !Array.isArray(fixture.sourceDocuments) ||
+    !Array.isArray(fixture.cases) ||
+    packet.fixtureProjection !== "SYNTHETIC_APPROVED_TEST_ROWS_NOT_RAW_INGEST" ||
+    packet.candidateOrder !== "SORTED_BY_STABLE_KEY_NOT_RETRIEVAL_RANK"
+  ) {
+    fail("FROZEN_SOURCE_SCHEMA_OR_PROJECTION_CHANGED");
+  }
+  const sources = new Map();
+  const allUnits = new Set();
+  for (const source of fixture.sourceDocuments) {
+    if (
+      typeof source.id !== "string" ||
+      sources.has(source.id) ||
+      !Array.isArray(source.units)
+    ) {
+      fail("FROZEN_SOURCE_IDENTITY_CHANGED");
+    }
+    const unitsByDigest = new Map();
+    for (const unit of source.units) {
+      if (
+        typeof unit.id !== "string" ||
+        typeof unit.text !== "string" ||
+        allUnits.has(unit.id)
+      ) {
+        fail("FROZEN_SOURCE_UNIT_IDENTITY_CHANGED");
+      }
+      allUnits.add(unit.id);
+      const digest = hash(unit.text);
+      if (unitsByDigest.has(digest))
+        fail("FROZEN_SOURCE_DUPLICATE_UNIT_DIGEST");
+      unitsByDigest.set(digest, unit);
+    }
+    const digest = hash(
+      source.units.map((unit) => unit.id + "\\n" + unit.text).join("\\n\\n"),
+    );
+    if (packet.sourceSha256?.[source.id] !== digest)
+      fail("FROZEN_SOURCE_DOCUMENT_HASH_MISMATCH");
+    sources.set(source.id, { unitsByDigest, count: source.units.length });
+  }
+  if (
+    Object.keys(packet.sourceSha256 ?? {}).length !== sources.size ||
+    fixture.cases.length !== packet.cases.length
+  ) {
+    fail("FROZEN_SOURCE_COUNTS_CHANGED");
+  }
+  const expectedQuestions = new Map();
+  for (const question of fixture.cases) {
+    const key = hash(question.query);
+    if (expectedQuestions.has(key))
+      fail("FROZEN_SOURCE_DUPLICATE_QUESTION");
+    expectedQuestions.set(key, question);
+  }
+  const seen = new Set();
+  let verifiedCandidates = 0;
+  for (const question of packet.cases) {
+    const frozen = expectedQuestions.get(question.questionKey);
+    if (
+      !frozen ||
+      seen.has(question.questionKey) ||
+      frozen.query !== question.query ||
+      !sources.has(frozen.sourceId)
+    ) {
+      fail("FROZEN_SOURCE_QUESTION_CHANGED");
+    }
+    seen.add(question.questionKey);
+    const source = sources.get(frozen.sourceId);
+    const usedUnits = new Set();
+    if (question.candidates.length !== source.count)
+      fail("FROZEN_SOURCE_CANDIDATE_COUNT_CHANGED");
+    for (const candidate of question.candidates) {
+      const unit = source.unitsByDigest.get(candidate.sourceUnitSha256);
+      if (!unit || usedUnits.has(unit.id))
+        fail("FROZEN_SOURCE_CANDIDATE_UNIT_CHANGED");
+      usedUnits.add(unit.id);
+      if (
+        candidate.candidateKey !==
+          hash(question.query + "\\0" + frozen.sourceId + "\\0" + unit.id) ||
+        unit.text.slice(
+          candidate.sourceStartOffsetUtf16,
+          candidate.sourceEndOffsetUtf16,
+        ) !== candidate.passage
+      ) {
+        fail("FROZEN_SOURCE_PASSAGE_OR_OFFSET_CHANGED");
+      }
+      verifiedCandidates += 1;
+    }
+  }
+  if (seen.size !== expectedQuestions.size)
+    fail("FROZEN_SOURCE_QUESTION_SET_CHANGED");
+  return {
+    status: "FROZEN_SOURCE_BOUND_NOT_SEMANTIC_ADJUDICATION",
+    frozenGitBlobSha1: actualBlobSha1,
+    questionCount: seen.size,
+    sourceBoundCandidates: verifiedCandidates,
+  };
+}
+
 /** Strict RFC-4180 CSV reader, including quoted commas, CRLF and newlines. */
 function csvRows(raw) {
   let quoted = false;
@@ -336,7 +465,12 @@ if (args.has("--self-test")) {
   ) {
     fail("PACKET_SHA256_MISMATCH");
   }
-  const packet = inspectPacket(JSON.parse(bytes.toString("utf8")));
+  const packetData = JSON.parse(bytes.toString("utf8"));
+  const packet = inspectPacket(packetData);
+  const sourceBinding = inspectFrozenSourceBinding(
+    packetData,
+    await readFile(frozenFixture),
+  );
   const reviewerA = args.get("--reviewer-a");
   const reviewerB = args.get("--reviewer-b");
   if (Boolean(reviewerA) !== Boolean(reviewerB)) fail("REVIEW_PAIR_REQUIRED");
@@ -349,6 +483,7 @@ if (args.has("--self-test")) {
       ? "TWO_SUBMISSIONS_VALIDATED_HUMAN_ORIGIN_UNVERIFIED"
       : "UNADJUDICATED_PACKET_VALIDATED",
     packetSha256,
+    sourceBinding,
     questionCount: packet.questions.size,
     candidateCount: packet.candidateCount,
     publicCorpusBlind: false,
