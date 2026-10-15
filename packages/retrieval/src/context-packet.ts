@@ -1374,7 +1374,6 @@ export function projectContextPacket(
     packet,
     packet.sections as BaseContextSection[],
   );
-  const references = [...new Set(packet.citations)].sort();
   const indexRevisions = packet.indexRevisions;
   const searchedChannels = [...new Set(packet.searchedChannels)];
   const suppliedRecommendations =
@@ -1419,6 +1418,20 @@ export function projectContextPacket(
     const content = sections.map((section) =>
       compactSection(section, { tight: isTightSection(section) }),
     );
+    // A packet-level citation must be backed by evidence visible in this
+    // particular wire projection. Full-source citations omitted by the compact
+    // budget remain available from the full packet or its continuation, but
+    // must not silently masquerade as locally present evidence.
+    const visibleCitations = [
+      ...new Set(content.flatMap((section) => section.citations)),
+    ].sort();
+    const hiddenCitationCount = packet.citations.filter(
+      (citation) => !visibleCitations.includes(citation),
+    ).length;
+    const continuationCitationGap =
+      hiddenCitationCount > 0
+        ? "Some source citations are available only through a full packet or continuation; they are not evidence visible in this compact packet."
+        : undefined;
     const primaryOriginalOmitted =
       primaryQuerySection !== undefined &&
       omittedSections.some((section) =>
@@ -1452,21 +1465,29 @@ export function projectContextPacket(
       : primarySupportTruncationUnverified
         ? "Highest-ranked query-supported material truncated in compact packet without retaining demonstrable answer support: only a bounded projection fit the active token budget. Request its full continuation before treating this compact packet as complete support for the query."
         : undefined;
-    const compactGaps =
-      primarySupportGap &&
+    const compactGaps = [
+      ...packet.gaps,
+      ...(primarySupportGap &&
       !packet.gaps.some((gap) =>
         gap.startsWith(primarySupportGap.split(":")[0]!),
       )
-        ? [...packet.gaps, primarySupportGap]
-        : packet.gaps;
-    const compactRequiredActions = primarySupportLimited
-      ? [
-          ...new Set([
-            ...packet.requiredActions,
-            "Request the continuation containing the full highest-ranked query-supported material before treating this compact packet as complete support for the query.",
-          ]),
-        ]
-      : packet.requiredActions;
+        ? [primarySupportGap]
+        : []),
+      ...(continuationCitationGap ? [continuationCitationGap] : []),
+    ];
+    const compactRequiredActions = [
+      ...new Set([
+        ...packet.requiredActions,
+        ...(primarySupportLimited
+          ? [
+              "Request the continuation containing the full highest-ranked query-supported material before treating this compact packet as complete support for the query.",
+            ]
+          : []),
+        ...(continuationCitationGap
+          ? ["Retrieve the continuation before citing omitted source material."]
+          : []),
+      ]),
+    ];
     const compactStatus =
       packet.status === "INSUFFICIENT_KNOWLEDGE"
         ? packet.status
@@ -1487,11 +1508,10 @@ export function projectContextPacket(
         indexRevisions,
       },
       content,
-      // citations is the canonical compact evidence list. Under tight budget,
-      // omit the duplicate references alias; the full packet/continuation
-      // retains every original per-section locator.
-      references: tightEnvelope ? [] : references,
-      citations: references,
+      // Only citations with source material in this compact payload may be
+      // presented as local evidence. Omitted ones remain in full/continuations.
+      references: tightEnvelope ? [] : visibleCitations,
+      citations: visibleCitations,
       searchedChannels,
       conflicts: packet.conflicts,
       gaps: compactGaps,
