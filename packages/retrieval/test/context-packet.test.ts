@@ -1825,9 +1825,7 @@ describe("buildContextPacket", () => {
     // Packet-level references must be a subset of locally visible section
     // citations, never a promise that continuation-only evidence is present.
     const locallyVisible = [
-      ...new Set(
-        pair.compact.content.flatMap((section) => section.citations),
-      ),
+      ...new Set(pair.compact.content.flatMap((section) => section.citations)),
     ].sort();
     expect(pair.compact.citations).toEqual(locallyVisible);
     expect(pair.compact.references).toEqual(locallyVisible);
