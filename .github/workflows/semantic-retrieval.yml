@@ -256,6 +256,14 @@ jobs:
             report.modelChatTemplateApplied !== false ||
             report.evidenceAdmissionMeasured !== false ||
             report.independentAdjudication !== false ||
+            report.preAdmissionStatusesExplicitlyDegraded !== true ||
+            report.compactCitationsRestrictedToVisibleContent !== true ||
+            report.rows.some(
+              (row) =>
+                row.metadataOnlyCitations !== 0 ||
+                row.fullPacketStatus !== "DEGRADED" ||
+                row.compactPacketStatus !== "DEGRADED"
+            ) ||
             report.quoteTransport?.status !== "AUTHOR_ORACLE_LITERAL_TRANSPORT_NOT_SEMANTIC_ADMISSION" ||
             report.quoteTransport.positiveCases !== 24 ||
             report.quoteTransport.fullQuoteVisible !== 24 ||
