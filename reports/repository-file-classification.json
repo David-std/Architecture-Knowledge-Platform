@@ -2167,6 +2167,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/s2-review-calibration-rubric.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/selective-semantic-admission.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
