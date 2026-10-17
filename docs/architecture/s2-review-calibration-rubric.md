@@ -7,7 +7,7 @@
 1. `ANSWERS`: the passage independently determines the requested answer with matching entity, attribute, value, period, unit and constraints. A clear negative may answer a yes/no question, but the mere absence of a requested numerical measurement is not an answer to that value.
 2. `CONTRADICTS`: the passage explicitly falsifies a factual *premise asserted by the query*. A source saying that a report **omits** the requested measurement does not contradict a numeric value the question never asserted. Do not count contradiction as an answer-bearing span for an open numeric question.
 3. `RELATED_NOT_ANSWERING`: the passage directly addresses the *requested property/relation*, including explicitly saying the relevant report lacks that measurement, but cannot determine the asked answer. The same device, document or domain alone is insufficient for this label.
-4. `INSUFFICIENT`: the passage addresses another property, entity, time, or relationship, or otherwise lacks material evidence concerning the specific requested slot. Example: an M-7 battery reading does not establish its salinity, even though both refer to M-7.
+4. `INSUFFICIENT`: the passage addresses another property, entity, time, or relationship, or otherwise lacks material evidence concerning the specific requested slot. Fictional, non-corpus example: a temperature reading from sensor Z-99 does not establish its requested pressure, even though both refer to Z-99.
 
 **Acceptance for open-question evidence:** only independently supported `ANSWERS` is provisionally answer-bearing; `CONTRADICTS` is a separate query-premise challenge requiring contextual evaluation, not automatically an admitted value; the other two labels are **NOT ADMIT**.
 
