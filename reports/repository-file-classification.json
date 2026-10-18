@@ -347,6 +347,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/api/src/s2-admission-shadow.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/api/src/server.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -553,6 +558,11 @@
     },
     {
       "path": "apps/api/test/runtime-config.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/s2-admission-shadow.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -2162,7 +2172,17 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/s2-adjudication-continuity-checkpoint.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/s2-evaluation-protocol.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
+      "path": "docs/architecture/s2-postcalibration-preregistration.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
     },

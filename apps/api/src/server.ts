@@ -34,6 +34,7 @@ import {
   type Tokenizer,
 } from "@akp/retrieval";
 import { registerSearchRoutes } from "./routes/search.js";
+import type { S2AdmissionShadowObservation } from "./s2-admission-shadow.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerKnowledgeRoutes } from "./routes/knowledge.js";
 import { registerReviewRoutes } from "./routes/reviews.js";
@@ -70,6 +71,8 @@ config({
 });
 
 export interface ApiServerDependencies {
+  /** Explicit evaluation-only sink; absent in normal deployment. */
+  s2AdmissionShadowSink?: (record: S2AdmissionShadowObservation) => void;
   contextTokenizer?: Tokenizer;
   queryTransformer?: QueryTransformerPort;
   evidenceVerifier?: QueryConditionedEvidenceVerifier;
@@ -345,6 +348,9 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
           })
         : undefined);
   registerSearchRoutes(app, db, {
+    ...(dependencies.s2AdmissionShadowSink
+      ? { s2AdmissionShadowSink: dependencies.s2AdmissionShadowSink }
+      : {}),
     ...(dependencies.contextTokenizer
       ? { contextTokenizer: dependencies.contextTokenizer }
       : {}),

@@ -1,4 +1,9 @@
 import { createHash } from "node:crypto";
+import {
+  notifyS2AdmissionShadow,
+  type S2AdmissionShadowObservation,
+  type S2AdmissionMode,
+} from "../s2-admission-shadow.js";
 import type { FastifyInstance } from "fastify";
 import {
   intersectVaultPathPrefixes,
@@ -630,6 +635,8 @@ function recordAnswerabilityDiagnostics(
 }
 
 export interface SearchRouteDependencies {
+  /** Opt-in, redacted S2 evaluator hook. Never an admission authority. */
+  s2AdmissionShadowSink?: (record: S2AdmissionShadowObservation) => void;
   /** Active model/agent tokenizer when the runtime provides one. */
   contextTokenizer?: Tokenizer;
   /** Optional experimental query transformer, normally controlled by feature flag. */
@@ -650,6 +657,16 @@ export interface SearchRouteDependencies {
   /** Query-level abstention; meaningful only in LAYERED mode. */
   evidenceAdmissionMinDistinctDocuments?: number;
   evidenceAdmissionAbstainOnConflict?: boolean;
+}
+
+function s2AdmissionMode(
+  dependencies: SearchRouteDependencies,
+): S2AdmissionMode {
+  if (dependencies.evidenceVerifierMode === "LAYERED") return "LAYERED";
+  if (!dependencies.evidenceVerifier) return "DETERMINISTIC";
+  return dependencies.evidenceVerifierMode === "ENFORCE"
+    ? "VERIFIER_ENFORCE"
+    : "VERIFIER_SHADOW";
 }
 
 /**
@@ -4081,12 +4098,22 @@ export function registerSearchRoutes(
         allowGraphSupport: plan.intent === "IMPACT_ANALYSIS",
         comparisonHits: answerabilityPool,
       };
+      const admissionStart = performance.now();
       const answerability = await assessCandidateAnswerability(
         dependencies,
         answerabilityPool,
         parsed.data.query,
         answerabilityContext,
       );
+      notifyS2AdmissionShadow(dependencies.s2AdmissionShadowSink, {
+        surface: "search",
+        mode: s2AdmissionMode(dependencies),
+        query: parsed.data.query,
+        authorizedVaultIds: vaultIds,
+        pool: answerabilityPool,
+        assessment: answerability,
+        admissionElapsedMs: performance.now() - admissionStart,
+      });
       const partitioned = partitionSearchHitsByAnswerability(
         answerabilityPool,
         answerability.supportedCandidateKeys,
@@ -5063,12 +5090,22 @@ export function registerSearchRoutes(
             )),
         comparisonHits: answerabilityPool,
       };
+      const admissionStart = performance.now();
       const answerability = await assessCandidateAnswerability(
         dependencies,
         answerabilityPool,
         parsed.data.query,
         answerabilityContext,
       );
+      notifyS2AdmissionShadow(dependencies.s2AdmissionShadowSink, {
+        surface: "context",
+        mode: s2AdmissionMode(dependencies),
+        query: parsed.data.query,
+        authorizedVaultIds: vaultIds,
+        pool: answerabilityPool,
+        assessment: answerability,
+        admissionElapsedMs: performance.now() - admissionStart,
+      });
       recordAnswerabilityDiagnostics(answerability, "context");
       retrievalWarnings.push(
         ...evidenceVerifierDegradationWarnings(answerability),
