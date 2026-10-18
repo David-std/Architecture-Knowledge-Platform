@@ -53,7 +53,9 @@ that 240 alone guarantees narrow confidence bounds.
   source unit and offset to the _original immutable source bytes_ and ACL/
   revision before scoring a quote. An excerpt-valid span is not necessarily a
   source-valid citation. Reject ambiguous joins, surrogate splits and stale
-  revisions. Preserve every reason for rejection.
+  revisions. Preserve every reason for rejection. The evaluation-only CLI in
+  `s2-authorized-source-rebinding.md` supports this byte-exact join, but its
+  internal hash checks alone **cannot authenticate the external source freeze**.
 - Record full request/answer elapsed times independently: admission p95 is
   **not** request p95. Record real model input tokens with one fixed tokenizer;
   never estimate using character ratios. A `VERIFIER_SHADOW` judgment must not

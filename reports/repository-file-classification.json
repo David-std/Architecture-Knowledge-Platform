@@ -352,6 +352,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/api/src/s2-source-rebind.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/api/src/server.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -563,6 +568,11 @@
     },
     {
       "path": "apps/api/test/s2-admission-shadow.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/s2-source-rebind.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -2173,6 +2183,11 @@
     },
     {
       "path": "docs/architecture/s2-adjudication-continuity-checkpoint.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
+      "path": "docs/architecture/s2-authorized-source-rebinding.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
     },
@@ -4453,6 +4468,11 @@
     },
     {
       "path": "scripts/runtime-retrieval-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/s2-rebind-admission-shadow.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

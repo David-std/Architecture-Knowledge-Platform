@@ -104,3 +104,32 @@ these local checks does not demonstrate reader semantic precision or acceptance.
    comparisons with exact pinned model tokens and no use of gold in readers.
 5. Audit every provisional gate independently before proposing S2 closure.
    Keep PR OPEN/DRAFT, E5 shadow, S3-S5 blocked and **NO MERGE**.
+
+## S2 source-rebinding continuation — 2026-10-18 (not acceptance)
+
+The next commit adds an evaluation-only authorized source-rebinding audit:
+
+- `apps/api/src/s2-source-rebind.ts` joins the redacted **actual application**
+  admission record to an externally supplied source-unit snapshot using
+  hashed vault/document/unit/revision/excerpt identities. It checks UTF-16
+  surrogate boundaries and exact SHA-256 quote bytes, rebases a uniquely
+  located excerpt into original-unit offsets, and fails closed on a foreign,
+  stale, ambiguous or inconsistent source. Reader/shadow-only spans are never
+  counted as admissions.
+- `scripts/s2-rebind-admission-shadow.ts` consumes separately protected,
+  explicit run and source-snapshot JSON; writes a redacted per-candidate
+  outcome report. Its digest checks **do not independently authenticate** the
+  claimed source-manifest freeze. The report explicitly leaves semantic
+  precision, FAR, final answers, full-request p95 and S2 acceptance unmeasured.
+- `docs/architecture/s2-authorized-source-rebinding.md` specifies the exact
+  private input contracts, invocation, status codes and boundaries; no private
+  sources, reviewer labels or traces are committed.
+- Synthetic unit tests cover source-byte and UTF-16 rebinding, absent/repeated
+  excerpt, changed identity and revision, tampered quote digest and shadow vs
+  application admission. This closes an **instrumentation/verification gap**,
+  not the independent real-reader experiment.
+
+The earlier parent confirmation of `77eda6e5e0069373eddd3da9ac036911c21013dc`
+showed PR #38 still OPEN/DRAFT/unmerged. Record the final commit SHA and its
+same-SHA workflow result **separately** after publishing this continuation;
+do not inherit a green badge from a prior SHA.
