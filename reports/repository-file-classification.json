@@ -4472,12 +4472,22 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/s2-paired-answer-generation.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/s2-rebind-admission-shadow.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
     {
       "path": "scripts/s2-score-calibration-admissions.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/s2-score-generated-answer-calibration.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

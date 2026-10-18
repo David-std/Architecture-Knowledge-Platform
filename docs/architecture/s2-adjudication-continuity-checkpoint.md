@@ -381,3 +381,108 @@ abstentions; exact target-model tokens; manual/Obsidian paired baseline;
 representative complete-response p95, degradation, ACL/revision and source
 cluster analysis. All S2 gate decisions remain unaccepted. E5 stays shadow;
 S3-S5 are blocked; PR remains OPEN/DRAFT with **NO MERGE**.
+
+### Paired local answer-generation continuation (2026-10-18, diagnostic only)
+
+After the live `/v1/search` admission decisions and source-rebound traces were
+fixed, two **separate evaluation-only** Node.js CLIs exercised a downstream
+answer generator against the same 48 author-crafted, public synthetic
+calibration questions. `scripts/s2-paired-answer-generation.mjs` strictly joins
+the already captured observation hashes, authorized source snapshots, frozen
+Git blob `a61a24df46c0351115cd09e079ae0d8383033082`, and the upstream
+route report. It fails closed if scope, original source bytes, candidate IDs,
+admission flags or UTF-16 citation hashes disagree. It never imports human
+adjudication labels or author-provided answerability into the generation
+prompt. It keeps raw questions and generated answers in ignored local
+`reports/ci` files, not Git.
+
+Each question was answered twice using the **same** local Qwen2.5 7B model,
+with deterministic alternating order based on query SHA parity:
+
+1. `FULL_POOL`: all six already retrieved, authorized source units, **not**
+   an entire private Obsidian vault.
+2. `ADMITTED_SPANS`: only the source-exact UTF-16 excerpts actually admitted
+   by the application in the prior `LAYERED` run; zero admissions means no
+   evidence supplied.
+
+Both arms used the same source-only JSON answer/abstain instruction,
+`temperature=0`, seed `1317`, maximum 160 generated tokens and JSON-object
+response format. Local Windows Node `24.20.0`, Ollama
+`qwen2.5:7b-instruct` digest
+`845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e`;
+requests went only to loopback `127.0.0.1:11434`. The reported prompt and
+completion tokens are **Ollama usage counters for the submitted messages**,
+not approximations derived from character lengths. This is a local simulated
+answer-writer continuation, **not an AKP product final-answer endpoint**.
+
+| Same 48 paired questions, final `SRC` replay             | Full retrieved pool | Source-bound admitted spans |
+| -------------------------------------------------------- | ------------------: | --------------------------: |
+| Actual model calls                                       |                  48 |                          48 |
+| Mean provider-reported prompt tokens                     |              320.71 |                      140.04 |
+| Generation p95, ms                                       |               1,295 |                       1,140 |
+| Model-declared `ANSWER` / `ABSTAIN`                      |             25 / 23 |                     22 / 26 |
+| Invalid JSON / unknown citations / malformed abstentions |           0 / 0 / 0 |                   0 / 0 / 0 |
+
+Mean paired prompt-token reduction was **180.67 tokens**, or approximately
+**56.3%** relative to the full-retrieved-pool mean. This comparison includes
+the actual fixed system/query prompts and evidence bytes submitted to Qwen,
+but excludes previous `/v1/search` reader calls, live answer-agent orchestration
+and real manual/Obsidian effort. Generation p95 is **not** a measured
+single-request retrieval-plus-answer p95, and observed local latency does not
+establish production performance.
+
+Only **after both arms completed**, the separately executed offline
+`scripts/s2-score-generated-answer-calibration.mjs` joined author-created
+question answerability labels. This measures **model-declared emission**,
+not semantic answer correctness:
+
+| Exposed author-question stratum            | Full retrieved pool | Admitted spans |
+| ------------------------------------------ | ------------------: | -------------: |
+| 24 synthetic answerable: emitted an answer |                  24 |             22 |
+| 24 synthetic no-answer: emitted an answer  |                   1 |              0 |
+| EN 12 answerable: emitted an answer        |                  12 |             11 |
+| ES 12 answerable: emitted an answer        |                  12 |             11 |
+| EN 12 no-answer: emitted an answer         |                   0 |              0 |
+| ES 12 no-answer: emitted an answer         |                   1 |              0 |
+
+The full-pool no-answer emission was in synthetic case
+`s2-optical-observatory-n06`; both positive abstentions in the selected-span
+arm were `s2-marine-beacon-p01` and `s2-campus-microgrid-p04`. These
+post-hoc observations must **not** be turned into corpus-specific retrieval
+rules or interpreted as adjudicated final-answer accuracy.
+
+The **final, repository-hygiene-compliant** 48-case experiment was run
+**twice** using source citation IDs `SRC1`–`SRC6`. Across all 96 paired
+arm/question outputs, prompt token counts and emitted `ANSWER`/`ABSTAIN`
+statuses matched; **95/96** raw JSON texts and completion token counts also
+matched. The only repeat difference was the admitted-span answer for
+`s2-heritage-vault-p06` (33 versus 36 completion tokens, still `ANSWER`).
+Generation timings were measured independently per run; do not claim
+byte-for-byte output determinism. The second final run's report SHA-256 is
+`c48903ff6f9e1c09736589f0af57e25eb86c97ff5266479ea11ac71cd5f55c2b`;
+the post-hoc stratified calibration report SHA-256 is
+`e2e51949aa406a035e2360dd516c26665a177cf3e7ca99428afd2d5189af8321`.
+The outputs remain local, explicitly not a postcalibration holdout or
+independent reviewer result. `gateAccepted=false` in both.
+
+```sh
+# Requires only the frozen local synthetic files and Ollama on loopback.
+# The output path must be new: the generator refuses to overwrite reports.
+node scripts/s2-paired-answer-generation.mjs \
+  --observations reports/ci/s2-live-route-layered-observations.json \
+  --sources reports/ci/s2-live-route-layered-authorized-sources.json \
+  --route-report reports/ci/s2-live-route-layered-observation.json \
+  --frozen-fixture evals/registered/s2-source-span-holdout.json \
+  --output reports/ci/s2-paired-generation-replay.json --max-cases 48
+node scripts/s2-score-generated-answer-calibration.mjs \
+  --generated-report reports/ci/s2-paired-generation-replay.json \
+  --frozen-fixture evals/registered/s2-source-span-holdout.json \
+  --output reports/ci/s2-paired-generation-replay-calibration.json
+```
+
+**S2 remains OPEN.** This adds real generator-token and timing evidence and
+an explicit answer/abstain capture mechanism, but does not satisfy the frozen
+independent holdout, blind semantic answer/citation adjudication, production
+full-response endpoint, source-cluster uncertainty, manual/Obsidian comparison
+or gate-authorized rollout criteria. No production provider/default change,
+PR merge, or S3-S5 promotion follows from it.
