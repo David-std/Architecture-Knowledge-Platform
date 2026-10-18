@@ -133,3 +133,251 @@ The earlier parent confirmation of `77eda6e5e0069373eddd3da9ac036911c21013dc`
 showed PR #38 still OPEN/DRAFT/unmerged. Record the final commit SHA and its
 same-SHA workflow result **separately** after publishing this continuation;
 do not inherit a green badge from a prior SHA.
+
+## S2 real-reader local continuation — 2026-10-18 (exploratory)
+
+The live-model measurements below are **engineering evidence, not S2 gate
+acceptance**. The target application commit before this continuation was
+`6b458a57c5fa65b999eaf3177ade1cfb10493a24`; GitHub confirmed 14
+required workflows completed successfully and nine optional ones skipped.
+PR #38 remained OPEN/DRAFT/unmerged.
+
+### Existing family-disjoint, synthetic 7B diagnostic
+
+A previously frozen (2026-10-06), author-constructed 24-question experiment
+was executed on the authorized Windows workstation at experimental commit
+`8f4416c1e76a123e64518680639610f4e197ac8f`, **not on the PR HEAD**:
+
+- Local NVIDIA RTX 4050, Ollama `qwen2.5:7b-instruct`, Q4_K_M, observed
+  deployment digest
+  `845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e`,
+  context length 4096, temperature zero, reader prompt `evidence-reader-v4`.
+- Pinned BGE `onnx-community/bge-reranker-v2-m3-ONNX` revision
+  `6f5ff65298512715a1e669753bc754d2bc8f367b` only ordered candidates.
+- 17 answerable / 7 no-answer: reader answerable admission recall 15/17,
+  precision among admitted 15/15, false admissions on negatives 0/7,
+  strict question-level success 22/24; legacy deterministic comparator
+  recall 5/17, one false acceptance on seven negatives.
+- The reader-only admission latency p95 was 6,799 ms; this is **not** the
+  complete `/v1/search` request or generated-answer latency.
+- A simple Wilson95 interval is about [0.796, 1] for 15/15 and [0, 0.354]
+  for 0/7. These cases are synthetic and the original human review cannot
+  make their model evaluation independent. The old experiment's
+  `PROMOTE_TO_PRIVATE_FRESH_E2E` status did **not** promote any production
+  setting or authorize S2 closure.
+
+Full report SHA-256:
+`d2ad30460ab99855383fa62f1c39570a4d0170dbf99efd81e6a9d5c05a483b97`.
+It remains in the workstation's ignored `reports/ci` directory, outside
+the official independently adjudicated S2 corpus.
+
+### Actual authenticated API observation in an isolated database
+
+At the exact PR parent commit above, a **local opt-in** integration runner
+now exercises `/v1/search` through real token authentication and vault
+authorization, PostgreSQL 16/pgvector, scoped E5 vector search, the
+runtime-configured `LAYERED` Qwen 7B evidence reader and the
+`s2AdmissionShadowSink`. The runner uses the same frozen 48-question
+public **calibration** projection (24 answerable / 24 no-answer, EN/ES),
+not a postcalibration holdout. It sends **no gold labels** to the reader.
+
+The test-only PostgreSQL container uses an obviously disposable
+`akp_s2_test` database; all 92 migrations were applied. Its source
+snapshots come from the frozen Git blob
+`a61a24df46c0351115cd09e079ae0d8383033082`; each redacted
+admission trace is rejoined by vault, document, unit and revision to the
+exact immutable synthetic source text, and each admitted UTF-16 span must
+rebind without fabrication. No production E5 activation was performed.
+
+An initial three-question pilot run passed 3/3 authenticated requests,
+observed two admissions with two exact source-rebound spans and no
+unrebound admitted span. Full request p95 was 27,531 ms, driven by the
+first request at 27,531 ms versus 12,735 and 12,137 ms afterward. All
+three were positive cases, so its negative-question FAR is **NULL**.
+The initial workstation test ran on Node 25.2.0 although the repository
+requires Node 24; authoritative portability needs a Node 24 rerun.
+
+### Complete paired 48-case API observation (Node 25 exploratory pass)
+
+The full request path was executed for all 48 fixed questions through
+`Fastify.inject`, authenticated with an isolated test principal, against
+the four authorized disposable vaults. Each mode used the same source
+projection, E5 activated only within the fixture and six scoped retrieval
+candidates per question. Results were recorded only after each active
+application decision:
+
+| Diagnostic                                                  | Deterministic admission | LAYERED Qwen 7B |
+| ----------------------------------------------------------- | ----------------------: | --------------: |
+| Positive questions with an admission, English               |                    8/12 |           11/12 |
+| Positive questions with an admission, Spanish               |                    0/12 |           11/12 |
+| Negative questions with a false admission, English          |                    4/12 |            0/12 |
+| Negative questions with a false admission, Spanish          |                    0/12 |            0/12 |
+| Total admitted candidate passages                           |                      13 |              23 |
+| Admitted passages with original-source UTF-16 quote rebound |                       0 |              23 |
+| Admitted passages lacking a reader span                     |                      13 |               0 |
+| Full authenticated search request p95                       |                5,754 ms |       13,133 ms |
+| Observed degraded query rate                                |                    0/48 |            0/48 |
+
+The four negative deterministic admissions are **real application decisions**
+under this fixture. The generic `scoreS2SpanObservations` scorer saw no
+deterministic `admitted[]` quotes and therefore misleadingly returned a
+zero quote-based FAR; the correct query-level numerator comes from
+`S2AdmissionShadowObservation.admittedCandidateCount`: **4/24**. The test
+harness now reports raw application FAR separately and suppresses the
+inapplicable span-scorer FAR field.
+
+All 23 LAYERED admitted spans rebound exactly to source bytes. However,
+only **7/23** literally enclosed a strict designated gold quote. This is
+a narrow exact-gold-span proxy, **not** a semantic precision measurement:
+neither the remaining 16 spans nor the 7 matches have been independently
+adjudicated as sufficient answers. The reader admitted at least one
+passage for 22/24 positives; two positives were abstentions. Source-unit
+candidate Recall@1 was 24/24 under the preexisting E5 fixture, separate
+from answerability and quote sufficiency.
+
+The source-rebound reader report SHA-256 was
+`4254d77bee0e8e88611532600b21cbc836154d41685f4e13ba299e6ba0df4332`;
+the deterministic report SHA-256 was
+`15782e12d0ce65ad74eb28e132b83a374abcb685d7ff71a3b9d0d7eb22fb0335`.
+Both are ignored local reports, **not committed as benchmark truth**.
+They came from Windows Node 25.2.0, outside the repository's Node 24
+engine requirement. Sequential warm/cold cache, one synthetic source per
+question, test-only LAYERED activation and absent manual task completion
+preclude deployment extrapolation.
+
+Follow-up: replayable hashed observation batches and authorized source
+snapshots are being added to the opt-in harness for use with the official
+`s2-rebind-admission-shadow.ts` audit, and Node 24.20.0 is being tested
+with `pnpm@10.34.5`. Full final answer generation is still unmeasured.
+
+### Pinned Node 24 real-reader replay and offline human-calibration join
+
+Using an isolated portable `node.exe` reporting v24.20.0 and the repo's
+`pnpm@10.34.5`, the complete LAYERED experiment repeated **48/48** routes
+on the same PR SHA. The observed reader again admitted 23 source-rebound
+spans and zero of the 24 negative questions. Full search request p95 was
+13,155 ms; the same 48-case source unit Recall@1 remained 24/24. The
+separately executed official source-rebinding CLI accepted all 48 redacted
+observations and 48 authorized snapshots, checking all 23 admitted spans.
+The authoritative **Node 24** LAYERED report SHA-256 is
+`f68e213ad24926056f3e32fce62e1db9f38947fbbf245dd8475cd7a4b609ffdc`
+and its source-rebinding audit SHA-256 is
+`ebffe4c73f241e052724a1e90e653ed50ce51eb7ecd75beefabf71f1d04da3bf`.
+
+The local Ollama OpenAI-compatible endpoint supplied actual model usage
+for **154 reader calls**: 77,744 prompt tokens, 5,850 completion tokens,
+83,594 total. These are provider-reported **reader** tokens, not target
+answer-model tokens, not per-task full-context token savings, and not a
+paired Obsidian/manual comparison.
+
+The same Node 24 environment then ran the **deterministic** API mode on
+48/48 questions. It made 13 passage admissions and falsely admitted on
+4/24 negative questions; eight of the 24 positive questions had a passage
+marked `ANSWERS` in the provisional human reference. Its full authenticated
+search request p95 was 6,609 ms. Since deterministic admission does not
+emit reader-selected source spans, the official source-rebinding CLI
+correctly reported 13 admitted passages with **zero** reader spans
+rebound, not 13 false source citations. The final deterministic report
+SHA-256 is
+`5dcbc67ff54b1d76f5246fe8fbacd5f2daea93e249cbee6a6a24f3c85f6280d6`;
+its source-rebinding audit SHA-256 is
+`32c5ca1e298a0c6402ec12b0bf1a6d51aa18c6ad560fa00e9f0967adde8b0ebe`.
+
+After the reader run had finished, a separate offline script joined the
+source-bound observations to the external 288-pair human **provisional
+calibration reference**, keyed by question and passage SHA-256. It verified
+**288/288** matches and the fixed reference distribution
+(24 `ANSWERS`, 33 `RELATED_NOT_ANSWERING`, 231 `INSUFFICIENT`,
+0 `CONTRADICTS`). Of the 23 application-admitted passages, 22 carried a
+provisional human `ANSWERS` label and **one** a human
+`INSUFFICIENT` label (Spanish, optical-observatory source family).
+This is **22/23 passage-category calibration agreement**, not independent
+source-span sufficiency or deployable precision.
+
+All 22 admitted `ANSWERS` passage spans overlapped the selected human
+quote; **only 1/22 enclosed the entire human quote**. In parallel, the
+different strict designated-gold containment proxy found **7/23**. Both
+are byte/interval alignment diagnostics; neither certifies nor disproves
+semantic sufficiency without a fresh blind quotation review. The local
+calibration join report SHA-256 was
+`9aea24cc0ceccd0c362cb4474e5779b0612a934af0db4f70a452049e416400f7`.
+It explicitly marks human independence unverified and `gateAccepted=false`.
+The deterministic calibration join matched all 288 pairs too, finding
+8/13 admissions labeled `ANSWERS` and **5/13 not answering**
+(four `RELATED_NOT_ANSWERING` and one `INSUFFICIENT`); its SHA-256 was
+`0c56405ce023b180c6bd2dd1fdf24d29cf76ea9cad8d49e4553647973d9af0e6`.
+The single LAYERED `INSUFFICIENT` admission occurred in synthetic case
+`s2-optical-observatory-p06`, an exposed Spanish calibration item.
+
+**Interpretation:** in this test-only mode the reader reduced the observed
+no-answer false admission numerator relative to the deterministic baseline
+and improved Spanish passage admission, but it still overadmitted one
+`INSUFFICIENT` passage and often chose shorter source quotations than the
+human-calibrated selections. S2 is **OPEN**. Do not tune to those exposed
+questions or promote a runtime default from this measurement.
+
+### Reproducing the opt-in local application study
+
+Requirements: a **separate disposable** PostgreSQL/pgvector database with
+all migrations, local pinned multilingual E5 cache and Ollama/Qwen 7B. Never
+run the synthetic writer against a private/operator database. The test
+database name must contain `test`, `e2e`, `ci` or `benchmark`; do not
+disable the repository's database-safety check.
+
+```sh
+export DATABASE_URL='<disposable postgres URL with *_test database name>'
+export NODE_ENV=test
+export AKP_S2_BRANCH_HEAD_SHA="$(git rev-parse HEAD)"
+export AKP_S2_LIVE_ROUTE_OBSERVATION=1
+export AKP_S2_LIVE_ROUTE_MAX_CASES=48
+export AKP_S2_LIVE_ROUTE_EXPECT_MODE=LAYERED
+export AKP_VECTOR_ENABLED=true
+export AKP_EMBEDDING_PROVIDER=local-multilingual-e5
+export AKP_LOCAL_FILES_ONLY=1
+export AKP_EVIDENCE_VERIFIER_LOCAL_FILES_ONLY=true
+export AKP_EVIDENCE_VERIFIER_PROVIDER=cross-encoder-reader
+export AKP_EVIDENCE_VERIFIER_MODE=LAYERED
+export AKP_EVIDENCE_READER_BASE_URL=http://127.0.0.1:11434/v1
+export AKP_EVIDENCE_READER_MODEL=qwen2.5:7b-instruct
+export AKP_EVIDENCE_READER_TIMEOUT_MS=60000
+export AKP_EVIDENCE_ADMISSION_TIMEOUT_MS=60000
+pnpm --filter @akp/api exec vitest run \
+  test/s2-source-span.integration.test.ts \
+  -t 'records source-rebound reader admissions'
+pnpm exec tsx scripts/s2-rebind-admission-shadow.ts \
+  --observations reports/ci/s2-live-route-layered-observations.json \
+  --sources reports/ci/s2-live-route-layered-authorized-sources.json \
+  --output reports/ci/s2-live-route-layered-rebound-audit.json
+# Only AFTER the reader has finished, score the external provisional human
+# calibration labels. The reference must never become a reader input:
+node scripts/s2-score-calibration-admissions.mjs \
+  --observations reports/ci/s2-live-route-layered-observations.json \
+  --rebound reports/ci/s2-live-route-layered-rebound-audit.json \
+  --reference /authorized/handoff/s2-provisional-calibration-reference-288.jsonl \
+  --cases evals/registered/s2-source-span-holdout.json \
+  --output reports/ci/s2-live-route-layered-calibration-join.json
+```
+
+For the fixed deterministic comparison, change
+`AKP_S2_LIVE_ROUTE_EXPECT_MODE=DETERMINISTIC`,
+`AKP_EVIDENCE_VERIFIER_PROVIDER=disabled` and
+`AKP_EVIDENCE_VERIFIER_MODE=SHADOW`. The route's active admission is then
+deterministic, not a shadow reader verdict. Output files are named by
+`layered` or `deterministic` and kept in ignored `reports/ci`. The
+`*-authorized-sources.json` files contain **raw public fixture text** and
+queries and should remain access-controlled, uncommitted and out of logs.
+The `*-observations.json` files are pseudonymous, not anonymous.
+
+The separately invoked source-rebinding CLI must match `runId`, commit,
+query/scope, source bytes and UTF-16 offsets; it reports the exact number of
+rebound spans and explicitly sets `sourceProvenanceExternallyVerified=false`.
+Ollama OpenAI-compatible `usage` counters can be observed for reader calls,
+but these do not supply target-agent final-answer tokens or a full-vault
+token-savings comparison.
+
+**Still OPEN:** new independently sourced and blindly adjudicated EN/ES
+holdout; semantic quote-sufficiency review; final grounded answers and
+abstentions; exact target-model tokens; manual/Obsidian paired baseline;
+representative complete-response p95, degradation, ACL/revision and source
+cluster analysis. All S2 gate decisions remain unaccepted. E5 stays shadow;
+S3-S5 are blocked; PR remains OPEN/DRAFT with **NO MERGE**.

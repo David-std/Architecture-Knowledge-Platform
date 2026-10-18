@@ -19,6 +19,11 @@ import {
   type S2SpanObservation,
 } from "@akp/evaluation";
 import { queryKnowledge } from "../src/routes/search.js";
+import type { S2AdmissionShadowObservation } from "../src/s2-admission-shadow.js";
+import {
+  rebindS2AdmissionToSource,
+  type S2AuthorizedSourceSnapshot,
+} from "../src/s2-source-rebind.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const enabled = process.env.AKP_S2_SPAN_BASELINE === "1";
@@ -887,5 +892,523 @@ describe("S2 pinned multilingual E5 shadow comparison", () => {
       }
     },
     360_000,
+  );
+});
+
+/**
+ * S2 route observation: executes the real authenticated /v1/search endpoint,
+ * including live retrieval, layered reader admission, and the opt-in shadow
+ * sink. This PUBLIC calibration fixture is only an engineering diagnostic.
+ * Reader requests contain the query and authorized source units, never gold.
+ */
+describe("S2 live application admission on disposable PostgreSQL", () => {
+  it.skipIf(!databaseUrl || process.env.AKP_S2_LIVE_ROUTE_OBSERVATION !== "1")(
+    "records source-rebound reader admissions and full route latency without claiming independent S2 accuracy",
+    async () => {
+      const frozenBlob = createHash("sha1")
+        .update("blob " + datasetBytes.byteLength + "\0")
+        .update(datasetBytes)
+        .digest("hex");
+      expect(frozenBlob).toBe(frozenBlobSha1);
+      const expectedMode =
+        process.env.AKP_S2_LIVE_ROUTE_EXPECT_MODE ?? "LAYERED";
+      expect(["LAYERED", "DETERMINISTIC"]).toContain(expectedMode);
+      const { buildServer } = await import("../src/server.js");
+      const db = new Postgres(databaseUrl!);
+      const fixture = makeFixture();
+      const actorId = randomUUID();
+      const accessToken = "s2-disposable-" + randomUUID();
+      const tokenHash = digest(accessToken);
+      const runId = "s2route-" + randomUUID();
+      const observed: S2AdmissionShadowObservation[] = [];
+      const authorizedSnapshots: S2AuthorizedSourceSnapshot[] = [];
+      const readerUsage: Array<{
+        promptTokens: number;
+        completionTokens: number;
+        totalTokens: number;
+      }> = [];
+      const originalFetch = globalThis.fetch;
+      if (expectedMode === "LAYERED") {
+        globalThis.fetch = async (input, init) => {
+          const response = await originalFetch(input, init);
+          try {
+            const url = new URL(
+              typeof input === "string"
+                ? input
+                : input instanceof URL
+                  ? input.href
+                  : input.url,
+            );
+            if (
+              url.hostname === "127.0.0.1" &&
+              url.port === "11434" &&
+              url.pathname.endsWith("/chat/completions")
+            ) {
+              const body = (await response.clone().json()) as {
+                usage?: {
+                  prompt_tokens?: unknown;
+                  completion_tokens?: unknown;
+                  total_tokens?: unknown;
+                };
+              };
+              const u = body.usage;
+              if (
+                u &&
+                typeof u.prompt_tokens === "number" &&
+                typeof u.completion_tokens === "number" &&
+                typeof u.total_tokens === "number" &&
+                Number.isSafeInteger(u.prompt_tokens) &&
+                Number.isSafeInteger(u.completion_tokens) &&
+                Number.isSafeInteger(u.total_tokens)
+              ) {
+                readerUsage.push({
+                  promptTokens: u.prompt_tokens,
+                  completionTokens: u.completion_tokens,
+                  totalTokens: u.total_tokens,
+                });
+              }
+            }
+          } catch {
+            // Token diagnostics are best effort and never modify admissions.
+          }
+          return response;
+        };
+      }
+      const app = buildServer({
+        s2AdmissionShadowSink: (record) => observed.push(record),
+      });
+      const maxCases = Number(
+        process.env.AKP_S2_LIVE_ROUTE_MAX_CASES ?? dataset.cases.length,
+      );
+      if (
+        !Number.isSafeInteger(maxCases) ||
+        maxCases < 1 ||
+        maxCases > dataset.cases.length
+      ) {
+        throw new Error("S2_INVALID_ROUTE_CASE_LIMIT");
+      }
+      const questions = dataset.cases.slice(0, maxCases);
+      const beforeVector = process.env.AKP_VECTOR_ENABLED;
+      process.env.AKP_VECTOR_ENABLED = "true";
+      const sourceByUnitHash = new Map<
+        string,
+        { logicalUnitId: string; uuid: string; text: string; sourceId: string }
+      >();
+      for (const source of dataset.sourceDocuments) {
+        for (const unit of source.units) {
+          const uuid = fixture.unitIds.get(unit.id)!;
+          sourceByUnitHash.set(digest(uuid), {
+            logicalUnitId: unit.id,
+            uuid,
+            text: unit.text,
+            sourceId: source.id,
+          });
+        }
+      }
+      const observations: S2SpanObservation[] = [];
+      const diagnostics: Array<{
+        caseId: string;
+        language: "en" | "es";
+        answerable: boolean;
+        admissionMode: string;
+        candidateCount: number;
+        admittedCount: number;
+        reboundCount: number;
+        admittedWithoutSourceSpan: number;
+        requestElapsedMs: number;
+        admissionElapsedMs: number;
+        readerCalls: number;
+        readerPromptTokens: number;
+        readerCompletionTokens: number;
+        reason: string;
+        warnings: string[];
+      }> = [];
+      let seeded = false;
+      try {
+        await seed(db, fixture);
+        seeded = true;
+        await db.pool.query(
+          "insert into users(id,email,display_name) values($1,$2,'S2 disposable reader')",
+          [actorId, actorId + "@example.test"],
+        );
+        await db.pool.query(
+          "insert into memberships(user_id,space_id,role,path_prefix) values($1,$2,'VIEWER',null)",
+          [actorId, fixture.spaceId],
+        );
+        for (const vaultId of fixture.vaultIds.values()) {
+          await db.pool.query(
+            "insert into vault_memberships(user_id,vault_id,role,path_prefix,permissions) " +
+              "values($1,$2,'VIEWER',null,'[\"knowledge:read\",\"source:read\"]'::jsonb)",
+            [actorId, vaultId],
+          );
+        }
+        await db.pool.query(
+          "insert into api_tokens(user_id,token_hash,label,scopes) values($1,$2,'S2 disposable',$3::jsonb)",
+          [
+            actorId,
+            tokenHash,
+            JSON.stringify({
+              spaces: [
+                {
+                  spaceId: fixture.spaceId,
+                  pathPrefix: null,
+                  permissions: ["knowledge:read", "source:read"],
+                },
+              ],
+            }),
+          ],
+        );
+        const adapter = new LocalSemanticEmbeddingAdapter({
+          ...(process.env.AKP_MODEL_CACHE_DIR?.trim()
+            ? { cacheDir: process.env.AKP_MODEL_CACHE_DIR }
+            : {}),
+          localFilesOnly: process.env.AKP_LOCAL_FILES_ONLY === "1",
+          maxBatchSize: 4,
+        });
+        await adapter.load();
+        for (const vaultId of fixture.vaultIds.values()) {
+          const built = await buildEmbeddingIndex(db, {
+            spaceId: fixture.spaceId,
+            vaultId,
+            corpusRevision: fixture.revision,
+            provider: adapter,
+            activate: true,
+            batchSize: 6,
+          });
+          expect(built.activated).toBe(true);
+          expect(built.unitCount).toBe(6);
+        }
+        const documentIds = new Map<string, string>();
+        const documents = await db.pool.query<{
+          vault_id: string;
+          id: string;
+        }>("select vault_id,id from knowledge_documents where space_id=$1", [
+          fixture.spaceId,
+        ]);
+        for (const row of documents.rows) {
+          documentIds.set(row.vault_id, row.id);
+        }
+        for (const question of questions) {
+          const vaultId = fixture.vaultIds.get(question.sourceId)!;
+          const countBefore = observed.length;
+          const readerUsageBefore = readerUsage.length;
+          const started = performance.now();
+          const response = await app.inject({
+            method: "POST",
+            url: "/v1/search",
+            headers: { authorization: "Bearer " + accessToken },
+            payload: {
+              query: question.query,
+              spaceId: fixture.spaceId,
+              vaultId,
+              vaultIds: [],
+              federated: false,
+              intent: "CONCEPTUAL",
+              types: [],
+              minimumTrust: "MACHINE_SUPPORTED",
+              mode: "SOURCE_BACKED",
+              limit: 10,
+            },
+          });
+          const requestElapsedMs = performance.now() - started;
+          expect(response.statusCode, response.body).toBe(200);
+          expect(observed.length - countBefore).toBe(1);
+          const record = observed[countBefore]!;
+          expect(record.surface).toBe("search");
+          expect(record.admissionMode).toBe(expectedMode);
+          expect(record.scopeSha256).toBe(digest(vaultId));
+          expect(record.querySha256).toBe(digest(question.query));
+          const snapshot = {
+            query: question.query,
+            authorizedVaultIds: [vaultId],
+            candidates: record.candidates.map((candidate) => {
+              const unit = candidate.unitIdSha256
+                ? sourceByUnitHash.get(candidate.unitIdSha256)
+                : undefined;
+              if (!unit || unit.sourceId !== question.sourceId) {
+                throw new Error("S2_LIVE_ROUTE_UNIT_OUT_OF_SCOPE");
+              }
+              const documentId = documentIds.get(vaultId);
+              if (!documentId)
+                throw new Error("S2_LIVE_ROUTE_DOCUMENT_MISSING");
+              // All frozen source units are short, single-paragraph units.
+              // Refuse to manufacture an excerpt if retrieval did not use
+              // exactly those bytes: a mismatch invalidates this run.
+              if (digest(unit.text) !== candidate.excerptSha256) {
+                throw new Error("S2_LIVE_ROUTE_EXCERPT_NOT_SOURCE_EXACT");
+              }
+              return {
+                vaultId,
+                documentId,
+                unitId: unit.uuid,
+                revision: fixture.revision,
+                excerpt: unit.text,
+                sourceUnitText: unit.text,
+                sourceUnitSha256: digest(unit.text),
+              };
+            }),
+          };
+          authorizedSnapshots.push(snapshot);
+          const rebound = rebindS2AdmissionToSource(record, snapshot);
+          const admitted = rebound.results.flatMap((item) => {
+            if (item.status !== "SOURCE_SPAN_REBOUND" || !item.sourceSpan) {
+              return [];
+            }
+            const indexed = snapshot.candidates.find(
+              (candidate) =>
+                digest(candidate.documentId + ":" + candidate.unitId) ===
+                item.candidateKeySha256,
+            );
+            const unit = indexed
+              ? sourceByUnitHash.get(digest(indexed.unitId!))
+              : undefined;
+            if (!unit) throw new Error("S2_LIVE_ROUTE_REBOUND_UNIT_MISSING");
+            return [
+              {
+                unitId: unit.logicalUnitId,
+                startOffset: item.sourceSpan.startOffsetUtf16,
+                endOffset: item.sourceSpan.endOffsetUtf16,
+                quote: unit.text.slice(
+                  item.sourceSpan.startOffsetUtf16,
+                  item.sourceSpan.endOffsetUtf16,
+                ),
+              },
+            ];
+          });
+          const rankedUnitIds = record.candidates.map((candidate) => {
+            const mapped = candidate.unitIdSha256
+              ? sourceByUnitHash.get(candidate.unitIdSha256)
+              : undefined;
+            if (!mapped) throw new Error("S2_LIVE_ROUTE_UNKNOWN_RANKED_UNIT");
+            return mapped.logicalUnitId;
+          });
+          const warnings: string[] = Array.isArray(response.json().warnings)
+            ? response.json().warnings
+            : [];
+          observations.push({
+            caseId: question.id,
+            rankedUnitIds,
+            admitted,
+            elapsedMs: requestElapsedMs,
+            degraded: warnings.some((w) =>
+              /(?:ERROR|UNAVAILABLE|TIMEOUT|DEGRADED)/u.test(w),
+            ),
+          });
+          diagnostics.push({
+            caseId: question.id,
+            language: question.language,
+            answerable: question.answerable,
+            admissionMode: record.admissionMode,
+            candidateCount: record.candidateCount,
+            admittedCount: record.admittedCandidateCount,
+            reboundCount: rebound.admittedWithSourceReboundSpan,
+            admittedWithoutSourceSpan: rebound.admittedWithoutSourceReboundSpan,
+            requestElapsedMs,
+            admissionElapsedMs: record.admissionElapsedMs,
+            readerCalls: readerUsage.length - readerUsageBefore,
+            readerPromptTokens: readerUsage
+              .slice(readerUsageBefore)
+              .reduce((sum, value) => sum + value.promptTokens, 0),
+            readerCompletionTokens: readerUsage
+              .slice(readerUsageBefore)
+              .reduce((sum, value) => sum + value.completionTokens, 0),
+            reason: record.reason,
+            warnings: warnings.filter((w) => /^[A-Z_0-9:-]+$/u.test(w)),
+          });
+        }
+        const score = scoreS2SpanObservations(
+          {
+            sourceDocuments: dataset.sourceDocuments,
+            cases: questions,
+          },
+          observations,
+        );
+        const p95 = (values: number[]) =>
+          [...values].sort((a, b) => a - b)[
+            Math.ceil(values.length * 0.95) - 1
+          ] ?? null;
+        const byLanguage = Object.fromEntries(
+          (["en", "es"] as const).map((language) => {
+            const rows = diagnostics.filter((row) => row.language === language);
+            const negatives = rows.filter((row) => !row.answerable);
+            const positives = rows.filter((row) => row.answerable);
+            return [
+              language,
+              {
+                cases: rows.length,
+                answerable: positives.length,
+                negative: negatives.length,
+                positivesWithAdmission: positives.filter(
+                  (row) => row.admittedCount > 0,
+                ).length,
+                negativesWithAdmission: negatives.filter(
+                  (row) => row.admittedCount > 0,
+                ).length,
+                fullRequestP95Ms: p95(rows.map((row) => row.requestElapsedMs)),
+              },
+            ];
+          }),
+        );
+        const rawNegativeAdmissions = diagnostics.filter(
+          (row) => !row.answerable && row.admittedCount > 0,
+        ).length;
+        const negativeCount = diagnostics.filter(
+          (row) => !row.answerable,
+        ).length;
+        const report = {
+          schemaVersion: "akp.s2.live-route-observation.v1",
+          evidenceLevel:
+            expectedMode === "LAYERED"
+              ? "AUTHENTICATED_API_REAL_MODEL_ON_PUBLIC_AUTHOR_CRAFTED_SYNTHETIC_CALIBRATION"
+              : "AUTHENTICATED_API_DETERMINISTIC_ON_PUBLIC_AUTHOR_CRAFTED_SYNTHETIC_CALIBRATION",
+          executedCommitSha:
+            process.env.AKP_S2_BRANCH_HEAD_SHA ?? "LOCAL_UNPINNED",
+          frozenSourceBlobSha1: frozenBlob,
+          readerModel:
+            expectedMode === "LAYERED"
+              ? (process.env.AKP_EVIDENCE_READER_MODEL ?? "UNPINNED")
+              : null,
+          providerMode: expectedMode,
+          corpusQuestions: dataset.cases.length,
+          questionsRun: questions.length,
+          runId,
+          // The generic span scorer sees only rebound quotations; the
+          // deterministic gate can admit passages without any reader span.
+          // Thus only rawApplicationAdmissions below is authoritative for
+          // the observed query-level false admission numerator.
+          score: { ...score, falseAdmissionRate: null },
+          rawApplicationAdmissions: {
+            admittedCount: diagnostics.reduce(
+              (sum, row) => sum + row.admittedCount,
+              0,
+            ),
+            negativesWithAdmission: rawNegativeAdmissions,
+            negativeCount,
+            falseAdmissionRate:
+              negativeCount > 0 ? rawNegativeAdmissions / negativeCount : null,
+            exactSourceReboundCount: diagnostics.reduce(
+              (sum, row) => sum + row.reboundCount,
+              0,
+            ),
+            admittedWithoutSourceSpan: diagnostics.reduce(
+              (sum, row) => sum + row.admittedWithoutSourceSpan,
+              0,
+            ),
+          },
+          fullRequestP95Ms: p95(diagnostics.map((row) => row.requestElapsedMs)),
+          readerTokenUsage: {
+            providerReported: expectedMode === "LAYERED",
+            observedCalls: readerUsage.length,
+            promptTokens: readerUsage.reduce(
+              (sum, item) => sum + item.promptTokens,
+              0,
+            ),
+            completionTokens: readerUsage.reduce(
+              (sum, item) => sum + item.completionTokens,
+              0,
+            ),
+            totalTokens: readerUsage.reduce(
+              (sum, item) => sum + item.totalTokens,
+              0,
+            ),
+            doesNotMeasureFinalAnswerTokensOrSavings: true,
+          },
+          byLanguage,
+          diagnostics,
+          independentHoldout: false,
+          independentAdjudication: false,
+          fullGeneratedAnswersMeasured: false,
+          pairedManualObsidianMeasured: false,
+          exactModelTokensMeasured: false,
+          gateAccepted: false,
+        };
+        const file = path.resolve(
+          import.meta.dirname,
+          "../../../reports/ci/s2-live-route-" +
+            expectedMode.toLowerCase() +
+            "-observation.json",
+        );
+        await mkdir(path.dirname(file), { recursive: true });
+        await writeFile(file, JSON.stringify(report, null, 2) + "\n");
+        const traceDirectory = path.dirname(file);
+        const modeKey = expectedMode.toLowerCase();
+        const admissionRun = {
+          schemaVersion: "akp.s2.observed-admission-run.v1",
+          runId,
+          executedCommitSha:
+            process.env.AKP_S2_BRANCH_HEAD_SHA ?? "LOCAL_UNPINNED",
+          observations: observed,
+        };
+        const sourceBatch = {
+          schemaVersion: "akp.s2.authorized-snapshot-batch.v1",
+          runId,
+          frozenSourceManifestSha256: digest(datasetBytes.toString("utf8")),
+          snapshots: authorizedSnapshots,
+        };
+        const admissionFile = path.join(
+          traceDirectory,
+          `s2-live-route-${modeKey}-observations.json`,
+        );
+        const sourceFile = path.join(
+          traceDirectory,
+          `s2-live-route-${modeKey}-authorized-sources.json`,
+        );
+        await writeFile(
+          admissionFile,
+          JSON.stringify(admissionRun, null, 2) + "\n",
+        );
+        await writeFile(
+          sourceFile,
+          JSON.stringify(sourceBatch, null, 2) + "\n",
+        );
+        console.log(
+          "S2_LIVE_ROUTE " +
+            JSON.stringify({
+              questions: questions.length,
+              rawAdmissionFalseRate:
+                report.rawApplicationAdmissions.falseAdmissionRate,
+              sourceRebound:
+                report.rawApplicationAdmissions.exactSourceReboundCount,
+              fullRequestP95Ms: report.fullRequestP95Ms,
+              replayableTraceRecords: observed.length,
+              replayableSourceSnapshots: authorizedSnapshots.length,
+              gateAccepted: false,
+            }),
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+        await app.close();
+        await db.pool.query("delete from api_tokens where user_id=$1", [
+          actorId,
+        ]);
+        await db.pool.query("delete from vault_memberships where user_id=$1", [
+          actorId,
+        ]);
+        await db.pool.query("delete from memberships where user_id=$1", [
+          actorId,
+        ]);
+        await db.pool.query("delete from users where id=$1", [actorId]);
+        if (seeded) {
+          const vaults = [...fixture.vaultIds.values()];
+          await db.pool.query(
+            "delete from unit_embeddings where generation_id in " +
+              "(select id from embedding_generations where vault_id=any($1::uuid[]))",
+            [vaults],
+          );
+          await db.pool.query(
+            "delete from embedding_generations where vault_id=any($1::uuid[])",
+            [vaults],
+          );
+          await cleanup(db, fixture);
+        }
+        await db.close();
+        if (beforeVector === undefined) {
+          delete process.env.AKP_VECTOR_ENABLED;
+        } else {
+          process.env.AKP_VECTOR_ENABLED = beforeVector;
+        }
+      }
+    },
+    1_200_000,
   );
 });
