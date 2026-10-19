@@ -2197,6 +2197,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/s2-independent-vault-holdout-protocol.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/s2-postcalibration-preregistration.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
