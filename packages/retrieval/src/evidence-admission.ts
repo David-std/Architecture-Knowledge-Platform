@@ -199,6 +199,19 @@ function assertionLike(value: string): boolean {
   return !/[?？؟][\p{Pe}\p{Pf}"'`*_]*\s*$/u.test(trimmed);
 }
 
+/** A list's ordinal marker is not itself evidence of a requested count. */
+function quoteIsOnlyOrdinalListMarker(
+  passage: string,
+  span: ExactSourceSpan,
+): boolean {
+  const selected = passage.slice(span.startOffset, span.endOffset).trim();
+  if (!/^\d+(?:\s*[-–]\s*\d+)?$/u.test(selected)) return false;
+  const lineStart = passage.lastIndexOf("\n", span.startOffset - 1) + 1;
+  const linePrefix = passage.slice(lineStart, span.startOffset);
+  const next = passage.slice(span.endOffset);
+  return /^\s*$/u.test(linePrefix) && /^\.\s/u.test(next);
+}
+
 function hardStructuralFactsSatisfied(
   hit: SearchHit,
   query: string,
@@ -217,7 +230,12 @@ function hardStructuralFactsSatisfied(
 
   if (
     structuralRequirements.includes("QUANTITY") &&
-    !quantitativeEvidenceMatches(evidence.valueText, query, evidence.scopedText)
+    (quoteIsOnlyOrdinalListMarker(hit.excerpt, span) ||
+      !quantitativeEvidenceMatches(
+        evidence.valueText,
+        query,
+        evidence.scopedText,
+      ))
   ) {
     return false;
   }

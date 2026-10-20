@@ -132,6 +132,63 @@ describe("R5 layered evidence admission boundaries", () => {
     });
   });
 
+  it("distinguishes ordinal list labels from actual quantities in two languages", () => {
+    const guard = new StructuralEvidenceGuard();
+    const numbered = hit({
+      excerpt:
+        "11. Rotate the signing keys after the deployment.\n12. Archive the old keys.",
+    });
+    expect(
+      guard.constrainVerdict(numbered, "How many signing keys are active?", {
+        kind: "ANSWERS",
+        quote: { startOffset: 0, endOffset: 2 },
+      }),
+    ).toMatchObject({
+      accepted: false,
+      reason: "STRUCTURAL_REQUIRED_FACT_MISSING",
+    });
+
+    const ranged = hit({
+      excerpt: "15–17. Revisar el inventario antes del despliegue.",
+    });
+    expect(
+      guard.constrainVerdict(
+        ranged,
+        "¿Cuántos servidores exige el despliegue?",
+        {
+          kind: "ANSWERS",
+          quote: { startOffset: 0, endOffset: 5 },
+        },
+      ),
+    ).toMatchObject({
+      accepted: false,
+      reason: "STRUCTURAL_REQUIRED_FACT_MISSING",
+    });
+
+    const actualCount = hit({
+      excerpt: "The warehouse has 11 active signing keys.",
+    });
+    const countStart = actualCount.excerpt.indexOf("11");
+    expect(
+      guard.constrainVerdict(actualCount, "How many signing keys are active?", {
+        kind: "ANSWERS",
+        quote: { startOffset: countStart, endOffset: countStart + 2 },
+      }),
+    ).toMatchObject({ accepted: true, verdict: { kind: "ANSWERS" } });
+
+    // An ordinal is legitimate when the query asks for the step identifier.
+    expect(
+      guard.constrainVerdict(
+        numbered,
+        "Which numbered step rotates signing keys?",
+        {
+          kind: "ANSWERS",
+          quote: { startOffset: 0, endOffset: 2 },
+        },
+      ),
+    ).toMatchObject({ accepted: true, verdict: { kind: "ANSWERS" } });
+  });
+
   it("keeps selected table cells inside their header/year scope", () => {
     const guard = new StructuralEvidenceGuard();
     const passage = [
