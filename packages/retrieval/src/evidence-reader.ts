@@ -8,7 +8,7 @@ import {
   locateEvidenceQuote,
 } from "./contextual-evidence.js";
 
-export const EVIDENCE_READER_PROMPT_VERSION = "evidence-reader-v4";
+export const EVIDENCE_READER_PROMPT_VERSION = "evidence-reader-v5";
 
 export interface EvidenceReaderInput {
   readonly query: string;
@@ -79,6 +79,7 @@ export function evidenceReaderMessages(
 /** Parse the first JSON object in a model reply; anything else fails closed. */
 export function parseEvidenceReaderJudgment(
   reply: string,
+  options: { readonly allowLegacyBoolean?: boolean } = {},
 ): EvidenceReaderJudgment {
   const start = reply.indexOf("{");
   const end = reply.lastIndexOf("}");
@@ -110,7 +111,7 @@ export function parseEvidenceReaderJudgment(
     if (!["ANSWERS", "RELATED_NOT_ANSWERING", "UNRELATED"].includes(verdict)) {
       throw new Error("EVIDENCE_READER_REPLY_INVALID");
     }
-    // The v4 reader contract explicitly requires the requested fact, an
+    // The structured reader contract requires the requested fact, an
     // extracted answer, and a source span. A model verdict alone cannot
     // establish answerability. Legacy boolean responses are separate below.
     if (
@@ -129,7 +130,10 @@ export function parseEvidenceReaderJudgment(
       quote: typeof record.answer_span === "string" ? record.answer_span : "",
     };
   }
-  if (typeof record?.answers !== "boolean") {
+  if (
+    options.allowLegacyBoolean === false ||
+    typeof record?.answers !== "boolean"
+  ) {
     throw new Error("EVIDENCE_READER_REPLY_INVALID");
   }
   return {
@@ -365,7 +369,9 @@ export class OpenAICompatibleEvidenceReader implements EvidenceReader {
       if (typeof content !== "string") {
         throw new Error("EVIDENCE_READER_RESPONSE_INVALID");
       }
-      return parseEvidenceReaderJudgment(content);
+      return parseEvidenceReaderJudgment(content, {
+        allowLegacyBoolean: false,
+      });
     } finally {
       // Fetch resolves at the headers. The deadline must also cover the body.
       clearTimeout(timer);

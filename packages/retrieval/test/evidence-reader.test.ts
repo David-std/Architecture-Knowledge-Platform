@@ -361,14 +361,40 @@ describe("reader evidence verifier", () => {
 });
 
 describe("OpenAI-compatible evidence reader", () => {
+  it("does not admit a legacy boolean response through the structured v5 transport", async () => {
+    const reader = new OpenAICompatibleEvidenceReader({
+      baseUrl: "http://127.0.0.1:11434",
+      model: "local-model",
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: '{"answers":true,"quote":"An unrelated title."}',
+                },
+                finish_reason: "stop",
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+    });
+    await expect(
+      reader.judge({
+        query: "What changed?",
+        scope: "",
+        body: "An unrelated title.",
+      }),
+    ).rejects.toThrow("EVIDENCE_READER_REPLY_INVALID");
+  });
+
   it("posts a greedy chat completion without leaking the key into its id", async () => {
     const fetch = vi.fn(
       async () =>
         new Response(
           JSON.stringify({
-            choices: [
-              { message: { content: '{"answers": false, "quote": ""}' } },
-            ],
+            choices: [{ message: { content: '{"verdict": "UNRELATED"}' } }],
           }),
           { status: 200 },
         ),
@@ -411,7 +437,7 @@ describe("OpenAI-compatible evidence reader", () => {
           JSON.stringify({
             choices: [
               {
-                message: { content: '{"answers":false,"quote":""}' },
+                message: { content: '{"verdict":"UNRELATED"}' },
                 finish_reason: "stop",
               },
             ],
@@ -449,7 +475,7 @@ describe("OpenAI-compatible evidence reader", () => {
         body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         return new Response(
           JSON.stringify({
-            choices: [{ message: { content: '{"answers":false,"quote":""}' } }],
+            choices: [{ message: { content: '{"verdict":"UNRELATED"}' } }],
           }),
           { status: 200 },
         );
@@ -458,7 +484,7 @@ describe("OpenAI-compatible evidence reader", () => {
     await reader.judge({ query: "Q?", scope: "", body: "B." });
     expect(body.max_tokens).toBe(256);
     expect(body).not.toHaveProperty("reasoning_effort");
-    expect(reader.id).toBe("openai-compatible:m:evidence-reader-v4");
+    expect(reader.id).toBe("openai-compatible:m:evidence-reader-v5");
     expect(
       () =>
         new OpenAICompatibleEvidenceReader({
@@ -541,7 +567,7 @@ describe("OpenAI-compatible evidence reader", () => {
             choices: [
               {
                 finish_reason: "stop",
-                message: { content: '{"answers":false,"quote":""}' },
+                message: { content: '{"verdict":"UNRELATED"}' },
               },
             ],
           }),
@@ -575,7 +601,7 @@ describe("OpenAI-compatible evidence reader", () => {
               choices: [
                 {
                   ...terminal,
-                  message: { content: '{"answers":false,"quote":""}' },
+                  message: { content: '{"verdict":"UNRELATED"}' },
                 },
               ],
             }),
