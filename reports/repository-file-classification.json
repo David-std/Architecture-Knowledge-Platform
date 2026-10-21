@@ -2242,6 +2242,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/s2-owner-controlled-evaluation.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/s2-postcalibration-preregistration.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
@@ -3027,6 +3032,16 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-owner-holdout.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/evaluation/src/s2-owner-review-audit.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-section-blind-review.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3143,6 +3158,16 @@
     },
     {
       "path": "packages/evaluation/test/s2-holdout-freeze.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-owner-holdout.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-owner-review-audit.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -4602,6 +4627,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/s2-audit-owner-holdout-reviews.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/s2-audit-section-blind-reviewers.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -4612,12 +4642,22 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/s2-finalize-owner-case-proposals.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/s2-freeze-and-run-writer-probe.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
     {
       "path": "scripts/s2-paired-answer-generation.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/s2-prepare-owner-holdout.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

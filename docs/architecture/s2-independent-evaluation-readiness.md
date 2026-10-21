@@ -1,5 +1,7 @@
 # S2 independent evaluation readiness: exact writer passages and family-disjoint freeze
 
+**Personal project path:** see [S2 owner-controlled evaluation pilot](./s2-owner-controlled-evaluation.md) for owner-custodial precommits, blinded X/Y reviews, full original file provenance and exact quote auditing. It is an internal evidence tier and **does not claim external independence or supersede the formal gate**.
+
 **Status: preparation-only; S2 OPEN, E5 SHADOW, S3–S5 BLOCKED.** Nothing here is a new production search path, source authorization bypass, admission rule, deployed writer, calibration target or release gold.
 
 ## Evidence model and the historical gap
