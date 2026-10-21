@@ -2232,6 +2232,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/s2-independent-evaluation-readiness.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/s2-independent-vault-holdout-protocol.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
@@ -3017,6 +3022,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-holdout-freeze.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-section-blind-review.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3028,6 +3038,11 @@
     },
     {
       "path": "packages/evaluation/src/s2-source-span.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/evaluation/src/s2-writer-passage-capture.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -3127,6 +3142,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/evaluation/test/s2-holdout-freeze.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/evaluation/test/s2-section-blind-review.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -3138,6 +3158,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-source-span.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-writer-passage-capture.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -4587,6 +4612,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/s2-freeze-and-run-writer-probe.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/s2-paired-answer-generation.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -4628,6 +4658,11 @@
     },
     {
       "path": "scripts/s2-summarize-writer-reviews.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/s2-verify-external-holdout-freeze.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

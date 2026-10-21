@@ -1,5 +1,7 @@
 # Source-bound SECTION candidate experiment
 
+For future publisher-family-disjoint evaluation preparation, independently signed freeze verification and **exact provider passage/request byte capture**, see [S2 independent evaluation readiness](./s2-independent-evaluation-readiness.md). These are opt-in, offline development tools only; they do not amend the existing S2 gate or historic writer traces.
+
 **S2 remains OPEN.** The SECTION path introduced in PR #38 is a **library-only opt-in shadow**, not a new retrieval default, evidence admission authority, citation format or release acceptance.
 
 ## Execution boundaries
