@@ -93,14 +93,36 @@ export function parseEvidenceReaderJudgment(
   }
   const record = value as {
     verdict?: unknown;
+    needed?: unknown;
+    answer?: unknown;
     answer_span?: unknown;
     answers?: unknown;
     quote?: unknown;
   };
-  if (typeof record?.verdict === "string") {
+  if (record && Object.prototype.hasOwnProperty.call(record, "verdict")) {
+    if (
+      typeof record.verdict !== "string" ||
+      Object.prototype.hasOwnProperty.call(record, "answers")
+    ) {
+      throw new Error("EVIDENCE_READER_REPLY_INVALID");
+    }
     const verdict = record.verdict.trim().toUpperCase();
     if (!["ANSWERS", "RELATED_NOT_ANSWERING", "UNRELATED"].includes(verdict)) {
       throw new Error("EVIDENCE_READER_REPLY_INVALID");
+    }
+    // The v4 reader contract explicitly requires the requested fact, an
+    // extracted answer, and a source span. A model verdict alone cannot
+    // establish answerability. Legacy boolean responses are separate below.
+    if (
+      verdict === "ANSWERS" &&
+      (typeof record.needed !== "string" ||
+        !record.needed.trim() ||
+        typeof record.answer !== "string" ||
+        !record.answer.trim() ||
+        typeof record.answer_span !== "string" ||
+        !record.answer_span.trim())
+    ) {
+      throw new Error("EVIDENCE_READER_REPLY_INCOMPLETE_ANSWER");
     }
     return {
       answers: verdict === "ANSWERS",
@@ -516,7 +538,7 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
         ...scored,
         reason: `READER_ERROR:${
           error instanceof Error &&
-          /^EVIDENCE_READER_(?:TIMEOUT|NETWORK_ERROR|REPLY_NOT_JSON|REPLY_INVALID|RESPONSE_INVALID|HTTP_[1-5][0-9]{2})$/u.test(
+          /^EVIDENCE_READER_(?:TIMEOUT|NETWORK_ERROR|REPLY_NOT_JSON|REPLY_INVALID|REPLY_INCOMPLETE_ANSWER|RESPONSE_INVALID|HTTP_[1-5][0-9]{2})$/u.test(
             error.message,
           )
             ? error.message

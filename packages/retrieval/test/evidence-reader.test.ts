@@ -187,6 +187,44 @@ describe("evidence reader replies", () => {
     expect(user?.content?.trim().split("\n").at(-3)).toBe("Question: Q?");
   });
 
+  it("rejects incomplete structured answers without guessing their meaning", () => {
+    const valid = {
+      needed: "the deadline for Class II",
+      answer: "24 hours",
+      answer_span: "Class II must be resolved within 24 hours.",
+      verdict: "ANSWERS",
+    };
+    expect(parseEvidenceReaderJudgment(JSON.stringify(valid))).toEqual({
+      answers: true,
+      quote: valid.answer_span,
+    });
+    for (const incomplete of [
+      { ...valid, needed: "" },
+      { ...valid, answer: "" },
+      { ...valid, answer_span: "" },
+      { ...valid, answer: null },
+      { ...valid, needed: undefined },
+    ]) {
+      expect(() =>
+        parseEvidenceReaderJudgment(JSON.stringify(incomplete)),
+      ).toThrow("EVIDENCE_READER_REPLY_INCOMPLETE_ANSWER");
+    }
+    for (const mixed of [
+      { ...valid, verdict: 42, answers: true },
+      { ...valid, verdict: "ANSWERS", answers: true },
+    ]) {
+      expect(() => parseEvidenceReaderJudgment(JSON.stringify(mixed))).toThrow(
+        "EVIDENCE_READER_REPLY_INVALID",
+      );
+    }
+    // An insufficient judgment need not invent a required answer or quote.
+    expect(
+      parseEvidenceReaderJudgment(
+        JSON.stringify({ verdict: "RELATED_NOT_ANSWERING" }),
+      ),
+    ).toEqual({ answers: false, quote: "" });
+  });
+
   it("admits only an ANSWERS verdict", () => {
     expect(
       parseEvidenceReaderJudgment(
@@ -195,7 +233,7 @@ describe("evidence reader replies", () => {
     ).toEqual({ answers: false, quote: "every six months" });
     expect(
       parseEvidenceReaderJudgment(
-        '{"needed": "deadline", "answer_span": "24 hours", "verdict": "answers"}',
+        '{"needed": "Class II deadline", "answer": "24 hours", "answer_span": "24 hours", "verdict": "answers"}',
       ),
     ).toEqual({ answers: true, quote: "24 hours" });
     expect(() =>
