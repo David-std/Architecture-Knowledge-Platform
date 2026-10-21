@@ -15,6 +15,7 @@ export * from "./agent-arena.js";
 export * from "./competitive-arena.js";
 export * from "./parity-exclusion.js";
 export * from "./s2-source-span.js";
+export * from "./s2-section-paired.js";
 
 export interface RetrievalMetrics {
   recallAtK: number;

@@ -31,6 +31,28 @@ If a document was OCR-transformed, edited during extraction or otherwise lacks a
 
 **Crucial custody boundary:** `manifestPinMatched: true` means only that the given manifest bytes match the provided digest. There is no cryptographic or operational proof that this digest came from an independent custodian, that a version was immutable at freeze time, that the files were lawfully accessible, or that their evidence answers the user's question. Output always sets `externalCustodyIndependentlyAttested: false` and `gateAccepted: false`. Never derive `trustedManifestSha256` from the same manifest at evaluation time for a real S2 gate, and never put private manifests or originals into GitHub.
 
+## Paired SECTION capture: preparation-only comparison
+
+`scoreSectionPairedShadow` (package `@akp/evaluation`) and the explicitly offline `scripts/s2-score-section-paired.ts` consume **new, precommitted** case identities and separately captured search-vs-SECTION observations. Do not use any of the already inspected 200 tasks or the historic public 48-question calibration material as an independent holdout.
+
+Prepare an access-controlled, UTF-8 JSON manifest with exact schema `akp.s2.section-paired-manifest.v1` containing `executedCommitSha` (40 hex), `sourceManifestSha256` (64 hex), and `cases` with unique `caseKeySha256`, `scopeSha256`, `sourceFamilySha256`, and `language` (`en` or `es`). The **SHA-256 of the raw manifest bytes must be fixed and retained separately before collecting the run**, in a text file containing just the hex digest.
+
+Record a distinct `akp.s2.section-paired-run.v1` file on that same source manifest and executing SHA, with `mode: "SHADOW_ONLY"` and one `captures` entry per manifest case. Each capture contains exact `caseKeySha256`, `scopeSha256`, measured child-only `childRequestMs`, `childDegraded`, the exact identities of authorized child hits as `eligibleChildKeysSha256`, measured incremental `sectionLookupMs`, `shadowErrorCode: null` (or a redacted error code and zero candidates), and `sectionCandidates` with `sectionKeySha256`, `childKeySha256`, `originalStatus` from the separately executed frozen-original source verifier. The runner verifies every candidate belongs to the recorded authorized child pool; a frozen-file match is **not** sufficiency or an accepted answer.
+
+Run **locally** with all source/case inputs in private storage:
+
+```sh
+pnpm exec tsx scripts/s2-score-section-paired.ts \
+  --manifest /secure/section-cases.json \
+  --pin-file /independent-custodian/section-cases.sha256 \
+  --captures /secure/section-captures.json \
+  --output /secure/section-paired-aggregate.json
+```
+
+This emits **aggregates only**: EN/ES counts, source-family count, eligible child counts, proposed and original-file-matched parent counts, per-status rejection counts, shadow errors, child-only full request p95 and _incremental parent lookup_ p95. It rejects duplicate/foreign questions, mismatched scopes or revisions, malformed status and input fields, invented labels, misplaced parent identities and non-pinned manifests. Output is created without overwrite.
+
+The parent arm has **not** yet generated answers or changed application admission. Its full-request p95, semantic citation precision, false admission rate, correctness, cost and independent holdout provenance are **not measured**. The aggregate is always `DESCRIPTIVE_ONLY_NOT_GATEABLE`, with `independentHoldoutEstablished: false`, `groundTruthLoaded: false`, `actualSectionAdmissionMeasured: false` and `gateAccepted: false`. Even a matching manifest SHA does not establish independent source-family assignment or reviewer independence. Do not use a post-hoc, self-generated pin for a release gate.
+
 ## Tests and measurement
 
 - Synthetic unit tests cover CRLF, frontmatter, surrogate pairs, source modification, file/section hash mismatches, identities and duplicates.
