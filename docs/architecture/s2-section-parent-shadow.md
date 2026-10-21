@@ -25,6 +25,12 @@ The verifier checks full-file hash, body-projection hash, body frame, source spa
 
 If a document was OCR-transformed, edited during extraction or otherwise lacks an exact Markdown body frame, do not guess with fuzzy matching; record the failure and obtain the correct artifact provenance and locator instead.
 
+## Pinned file-manifest validation (offline only)
+
+`verifyPinnedSectionRebind` accepts an immutable manifest **byte string** and its SHA-256 **obtained separately before inspection**, plus authorized original file bytes and SECTION candidates. Its strict `akp.s2.section-frozen-manifest.v1` file records specify vault/document, revision, safe relative path, original-file SHA-256 and original-file body UTF-16 boundaries. The validator rejects mismatched pins, duplicate/missing/extra files, modified byte payloads, invalid UTF-8, unsafe paths, unknown record fields and inconsistent candidate identities before invoking the original-file SECTION rebinder. It preserves raw CRLF and BOM coordinate frames, does not serialize source content, and returns a diagnostic, not a new evidence authority.
+
+**Crucial custody boundary:** `manifestPinMatched: true` means only that the given manifest bytes match the provided digest. There is no cryptographic or operational proof that this digest came from an independent custodian, that a version was immutable at freeze time, that the files were lawfully accessible, or that their evidence answers the user's question. Output always sets `externalCustodyIndependentlyAttested: false` and `gateAccepted: false`. Never derive `trustedManifestSha256` from the same manifest at evaluation time for a real S2 gate, and never put private manifests or originals into GitHub.
+
 ## Tests and measurement
 
 - Synthetic unit tests cover CRLF, frontmatter, surrogate pairs, source modification, file/section hash mismatches, identities and duplicates.

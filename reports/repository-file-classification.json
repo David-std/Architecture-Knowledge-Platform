@@ -362,6 +362,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/api/src/section-manifest-rebind.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/api/src/section-original-rebind.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -613,6 +618,11 @@
     },
     {
       "path": "apps/api/test/section-candidate-shadow.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/section-manifest-rebind.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
