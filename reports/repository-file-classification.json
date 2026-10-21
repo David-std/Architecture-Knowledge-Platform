@@ -3012,6 +3012,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-dual-axis.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-section-blind-review.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3023,6 +3028,16 @@
     },
     {
       "path": "packages/evaluation/src/s2-source-span.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/evaluation/src/s2-writer-semantic-audit.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/evaluation/src/s2-writer-semantic-packets.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -3102,6 +3117,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/evaluation/test/s2-dual-axis.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/evaluation/test/s2-section-blind-review.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -3113,6 +3133,16 @@
     },
     {
       "path": "packages/evaluation/test/s2-source-span.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-writer-semantic-audit.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-writer-semantic-packets.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -4542,7 +4572,17 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/s2-audit-writer-semantic-review.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/s2-paired-answer-generation.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/s2-prepare-writer-semantic-review.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
