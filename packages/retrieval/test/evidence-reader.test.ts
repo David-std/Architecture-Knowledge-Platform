@@ -197,6 +197,8 @@ describe("evidence reader replies", () => {
     expect(parseEvidenceReaderJudgment(JSON.stringify(valid))).toEqual({
       answers: true,
       quote: valid.answer_span,
+      requestedFact: valid.needed,
+      extractedAnswer: valid.answer,
     });
     for (const incomplete of [
       { ...valid, needed: "" },
@@ -235,7 +237,12 @@ describe("evidence reader replies", () => {
       parseEvidenceReaderJudgment(
         '{"needed": "Class II deadline", "answer": "24 hours", "answer_span": "24 hours", "verdict": "answers"}',
       ),
-    ).toEqual({ answers: true, quote: "24 hours" });
+    ).toEqual({
+      answers: true,
+      quote: "24 hours",
+      requestedFact: "Class II deadline",
+      extractedAnswer: "24 hours",
+    });
     expect(() =>
       parseEvidenceReaderJudgment('{"verdict": "MAYBE", "answer_span": ""}'),
     ).toThrow("EVIDENCE_READER_REPLY_INVALID");
@@ -247,6 +254,8 @@ describe("reader evidence verifier", () => {
     const reader = readerReturning(() => ({
       answers: true,
       quote: "Class: II; Deadline: 24 hours",
+      requestedFact: "Class II deadline",
+      extractedAnswer: "24 hours",
     }));
     const verifier = new ReaderEvidenceVerifier({ reader });
     const result = await verifier.verify(input(table));
@@ -254,6 +263,9 @@ describe("reader evidence verifier", () => {
       decision: "SUPPORTS",
       reason: "READER_QUOTED_ANSWER",
     });
+    // Internal extraction metadata must not escape through the admission API.
+    expect("requestedFact" in result).toBe(false);
+    expect("extractedAnswer" in result).toBe(false);
     expect(
       table.slice(
         result.evidenceSpan!.startOffset,

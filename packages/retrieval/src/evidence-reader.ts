@@ -22,6 +22,12 @@ export interface EvidenceReaderJudgment {
   readonly answers: boolean;
   /** Verbatim body text that states the answer; empty when not answered. */
   readonly quote: string;
+  /**
+   * In-memory v5 extraction metadata, for authorized private evaluation only.
+   * Do not emit in API responses, telemetry or source-independent decisions.
+   */
+  readonly requestedFact?: string;
+  readonly extractedAnswer?: string;
 }
 
 /**
@@ -128,6 +134,12 @@ export function parseEvidenceReaderJudgment(
     return {
       answers: verdict === "ANSWERS",
       quote: typeof record.answer_span === "string" ? record.answer_span : "",
+      ...(verdict === "ANSWERS"
+        ? {
+            requestedFact: (record.needed as string).trim(),
+            extractedAnswer: (record.answer as string).trim(),
+          }
+        : {}),
     };
   }
   if (
