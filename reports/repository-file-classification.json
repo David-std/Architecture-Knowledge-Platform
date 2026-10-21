@@ -362,6 +362,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/api/src/section-original-rebind.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/api/src/server.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -608,6 +613,11 @@
     },
     {
       "path": "apps/api/test/section-candidate-shadow.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/section-original-rebind.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -2223,6 +2233,11 @@
     },
     {
       "path": "docs/architecture/s2-review-calibration-rubric.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
+      "path": "docs/architecture/s2-section-parent-shadow.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
     },
