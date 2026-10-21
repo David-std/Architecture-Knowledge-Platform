@@ -16,6 +16,7 @@ export * from "./competitive-arena.js";
 export * from "./parity-exclusion.js";
 export * from "./s2-source-span.js";
 export * from "./s2-section-paired.js";
+export * from "./s2-section-blind-review.js";
 
 export interface RetrievalMetrics {
   recallAtK: number;

@@ -51,7 +51,25 @@ pnpm exec tsx scripts/s2-score-section-paired.ts \
 
 This emits **aggregates only**: EN/ES counts, source-family count, eligible child counts, proposed and original-file-matched parent counts, per-status rejection counts, shadow errors, child-only full request p95 and _incremental parent lookup_ p95. It rejects duplicate/foreign questions, mismatched scopes or revisions, malformed status and input fields, invented labels, misplaced parent identities and non-pinned manifests. Output is created without overwrite.
 
-The parent arm has **not** yet generated answers or changed application admission. Its full-request p95, semantic citation precision, false admission rate, correctness, cost and independent holdout provenance are **not measured**. The aggregate is always `DESCRIPTIVE_ONLY_NOT_GATEABLE`, with `independentHoldoutEstablished: false`, `groundTruthLoaded: false`, `actualSectionAdmissionMeasured: false` and `gateAccepted: false`. Even a matching manifest SHA does not establish independent source-family assignment or reviewer independence. Do not use a post-hoc, self-generated pin for a release gate.
+This **offline scorer** does not generate answers or change application admission. A separate private MDN development run did exercise a local writer on 5 SECTION-enriched pairs, but its outputs were not independently adjudicated and cannot be used as release gold. Its full-request p95, semantic citation precision, false admission rate, correctness, cost and independent holdout provenance are **not measured**. The aggregate is always `DESCRIPTIVE_ONLY_NOT_GATEABLE`, with `independentHoldoutEstablished: false`, `groundTruthLoaded: false`, `actualSectionAdmissionMeasured: false` and `gateAccepted: false`. Even a matching manifest SHA does not establish independent source-family assignment or reviewer independence. Do not use a post-hoc, self-generated pin for a release gate.
+
+## Offline blind-reviewer packet and submission audit
+
+`auditSectionBlindReviews` in `@akp/evaluation` and `scripts/s2-audit-section-blind-reviewers.ts` validate the **previously frozen, private** two-packet reviewer protocol. The operation never writes to the vault, production database, retrieval or admission. The private case and source manifest bytes are compared to their frozen SHA-256 digests; both unmodified packet bytes must match the reviewer-packet receipt. The auditor independently binds each packet's original Markdown text, source frame and source digest to the original-file bytes from the frozen manifest, then recomputes every question key from language and exact question text. This rejects hidden labels, silently changed questions, swapped source revisions, duplicate/missing files and packets, and deviations in original UTF-16 coordinates.
+
+The original packets **remain immutable** when reviewers respond. A reviewer submits a distinct `akp.s2.section-blind-review-submission.v1` JSON with `reviewerAssignment` ("A"/"B"), `packetSha256`, and complete `cases` containing `questionKey`, `answerability`, `answerText`, `quotes`, `note`. Allowed classifications: `ANSWERABLE_EXPLICIT`, `NOT_ANSWERABLE`, `AMBIGUOUS`, `CONTRADICTED`. Each quote is an object containing `documentKey`, `startUtf16`, `endUtf16`, `quote`. Exact original-file UTF-16 offsets must be inside the source body, never split a surrogate pair, and match the literal source string; duplicate spans or foreign sources fail closed. A positive label requires an answer and at least one literal quote; a `NOT_ANSWERABLE` label requires no answer or quotes.
+
+Run the preflight, with **no responses yet**:
+
+```sh
+pnpm exec tsx scripts/s2-audit-section-blind-reviewers.ts \
+  --private-dir /secure/section-new-family-20261021 \
+  --output /secure/section-new-family-20261021/reviewer-preflight.json
+```
+
+After acquiring two separately submitted results, include `--submission-a` and `--submission-b` pointing to their private JSON files. A response from only one reviewer is rejected. The audit reports only overall agreement/disagreement counts and exact original-file quote counts, never raw questions, answers or source text. Do not overwrite the original packets or an existing report.
+
+**Crucial:** original-file quote identity does not establish whether a quote supports the answer, whether a claimed `CONTRADICTED` item is really contradicted, reviewer independence, consensus, external source custody, or an S2 FAR/correctness gate. All these fields are explicitly `false` or `null`, even with two structurally valid submissions. A separate independent human/authorized-review process is still required. The MDN development packets are not the preregistered independent holdout.
 
 ## Tests and measurement
 

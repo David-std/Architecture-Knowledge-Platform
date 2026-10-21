@@ -3012,6 +3012,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-section-blind-review.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-section-paired.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3093,6 +3098,11 @@
     },
     {
       "path": "packages/evaluation/test/parity-exclusion.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-section-blind-review.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -4523,6 +4533,11 @@
     },
     {
       "path": "scripts/runtime-retrieval-benchmark.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/s2-audit-section-blind-reviewers.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
