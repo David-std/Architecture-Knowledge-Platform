@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import {
+  resolveSectionCandidatesShadow,
+  type SectionShadowCandidate,
+} from "../section-candidate-shadow.js";
+import {
   notifyS2AdmissionShadow,
   type S2AdmissionShadowObservation,
   type S2AdmissionMode,
@@ -525,6 +529,13 @@ export interface RetrievalExecutionOptions {
    * before presentation; the pool itself is never evidence by rank alone.
    */
   answerabilityCandidateSink?: (hits: readonly SearchHit[]) => void;
+  /**
+   * Internal-only experimental observer; never receives API request data,
+   * never changes admission or ranking, and is absent in production calls.
+   */
+  sectionCandidateShadowSink?: (
+    candidates: readonly SectionShadowCandidate[],
+  ) => void;
   /** Metadata-only snapshots after scope/truth filtering; never source bytes. */
   stageDiagnosticSink?: (snapshot: EvidenceRetrievalStageSnapshot) => void;
   /**
@@ -3826,6 +3837,20 @@ export async function queryKnowledge(
   }
   options.answerabilityCandidateSink?.(rerankResult.hits);
   const finalResults = rerankResult.hits.slice(0, input.limit);
+  if (options.sectionCandidateShadowSink) {
+    if (!options.authorizationResolved || !options.pathAuthorizer)
+      throw new Error("SECTION_SHADOW_AUTHORIZATION_REQUIRED");
+    const sections = await resolveSectionCandidatesShadow(db, {
+      spaceId,
+      vaultIds,
+      authorizedChildHits: rerankResult.hits,
+      pathAuthorizer: options.pathAuthorizer,
+      sourceReadAuthorizer: (path, vault, layer, type) =>
+        !requiresSourceRead(layer, type) ||
+        pathAllowedByScopes(path, vault, rawScopes),
+    });
+    options.sectionCandidateShadowSink(sections);
+  }
   await finalizeTruthSnapshot();
   if (options.stageDiagnosticSink) {
     const fullPool = projectedHits;

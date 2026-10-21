@@ -357,6 +357,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/api/src/section-candidate-shadow.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/api/src/server.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -593,6 +598,16 @@
     },
     {
       "path": "apps/api/test/search-revision-policy.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/section-candidate-shadow.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/section-candidate-shadow.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
