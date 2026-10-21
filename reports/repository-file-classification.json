@@ -3032,6 +3032,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-writer-review-compat.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-writer-semantic-audit.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3133,6 +3138,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-source-span.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-writer-review-compat.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -4592,6 +4602,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/s2-reconcile-writer-review-submissions.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/s2-score-calibration-admissions.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -4608,6 +4623,11 @@
     },
     {
       "path": "scripts/s2-score-section-paired.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/s2-summarize-writer-reviews.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

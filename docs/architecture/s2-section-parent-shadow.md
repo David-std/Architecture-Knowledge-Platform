@@ -98,3 +98,21 @@ Each semantic reviewer receives only their separately frozen `writer-semantic-re
 The older **v1 semantic review packets** were an internal preflight: their `SECTION1` identifier could reveal the arm, so they are **superseded and must not be distributed**. Only the neutral-reference **v2 packets** are eligible for the next private development review; even v2 does not establish independent reviewer status, an independent publisher-family holdout or S2 release acceptance.
 
 S2 OPEN · E5 SHADOW · S3–S5 BLOCKED · PR #38 draft/unmerged.
+
+## Submitted X/Y semantic reviews: immutable original and strict compatibility
+
+The two development reviewer returns arrived after the v2 packet freeze with the expected packet SHA-256 bindings and all 13 response identities. They are **not canonical-schema responses**: reviewer X supplied an additional `sourceSha256` with each quote, reviewer Y omitted `documentKeySha256`, and both used `ANSWERABLE_EXPLICIT`, `NOT_ANSWERABLE` and `FULL` instead of `EXPLICITLY_DECIDABLE`, `NOT_SUPPORTED` and `FULLY_SUPPORTED`. Never silently change the original submitted files or loosen the canonical auditor.
+
+`adaptWriterReviewSubmission` and `scripts/s2-reconcile-writer-review-submissions.ts` implement a **fail-closed, auditable development-only migration**: exact reviewer packet SHA-256 verification, original source-text SHA-256 verification, frozen response-to-document identity, literal UTF-16 original-file source text/offset verification with surrogate boundaries, duplicate/foreign quote protection, strict label allowlists and complete X/Y coverage. The extra X source hashes must equal the frozen originals; missing Y document identities are resolved **only from that response's own pinned original v2 packet**, never from X's labels or guesses. Label mappings are explicit; original raw bytes, notes, labels, and source provenance are preserved. Normalized outputs and a hash-linked compatibility receipt are created only in ignored/private storage using exclusive writes. A second pass through the existing `auditWriterSemanticReviewPackets` is mandatory.
+
+```sh
+pnpm exec tsx scripts/s2-reconcile-writer-review-submissions.ts \
+  --private-dir /secure/section-frozen-experiment \
+  --submission-x /secure/submission-X-original.json \
+  --submission-y /secure/submission-Y-original.json \
+  --output-prefix /secure/section-frozen-experiment/writer-reviewed
+```
+
+On the four original MDN documents, the development-only capture produced **13/13 matched classifications** and **20/20 exact original-file UTF-16 quote spans** (11 X and 9 Y); nine document identities absent from Y were re-bound to the pinned Y packet and eleven explicit X source hashes matched. Both submissions mark `independentReviewAttested=false`. All four writer positive responses were classified `FULLY_SUPPORTED`, five abstentions `UNNECESSARY`, and four `JUSTIFIED`. No released answer-label ground truth is being inferred from model self-reports: these are third-party-submitted _labels with structural evidence verification_, not independently authenticated semantic truth. The owner-only descriptive arm-map reconciling script `scripts/s2-summarize-writer-reviews.ts` reports the original small, observational comparison without computing production FAR or changing thresholds.
+
+**Unresolved acceptance gaps:** submitted label agreement is not authenticated reviewer independence; original-source quote equality is not an entailment proof; old Qwen traces lack complete inference-time source-ID→passage mapping; reused MDN development questions are not independent publisher-family holdout; there is no new full-HTTP p95/cost/cluster uncertainty assessment. Keep all gate flags false, S2 OPEN, E5 SHADOW and S3–S5 BLOCKED. Do not merge or promote SECTION based on this development observation.

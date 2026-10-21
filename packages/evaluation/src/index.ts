@@ -20,6 +20,7 @@ export * from "./s2-section-blind-review.js";
 export * from "./s2-dual-axis.js";
 export * from "./s2-writer-semantic-packets.js";
 export * from "./s2-writer-semantic-audit.js";
+export * from "./s2-writer-review-compat.js";
 
 export interface RetrievalMetrics {
   recallAtK: number;
