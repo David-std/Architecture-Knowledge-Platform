@@ -162,11 +162,6 @@
       "reason": "runtime, build or operational code"
     },
     {
-      "path": "apps/api/reports/ci/r2-r7-fresh-source-e2e.json",
-      "category": "PRODUCT_CODE",
-      "reason": "runtime, build or operational code"
-    },
-    {
       "path": "apps/api/src/auth.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"

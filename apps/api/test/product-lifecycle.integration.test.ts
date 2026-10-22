@@ -2947,7 +2947,12 @@ describe("product lifecycle E2E", () => {
       };
       const reportPath = path.resolve(
         process.env.AKP_R2_R7_FRESH_E2E_REPORT ??
-          "reports/ci/r2-r7-fresh-source-e2e.json",
+          path.join(
+            repositoryRoot,
+            "reports",
+            "ci",
+            "r2-r7-fresh-source-e2e.json",
+          ),
       );
       await mkdir(path.dirname(reportPath), { recursive: true });
       await writeFile(
