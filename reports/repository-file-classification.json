@@ -3077,6 +3077,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-http-evidence-replay.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-native-structured-writer.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3258,6 +3263,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-holdout-freeze.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-http-evidence-replay.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
