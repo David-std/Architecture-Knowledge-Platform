@@ -2257,6 +2257,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/s2-retrieved-writer-development.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/s2-review-calibration-rubric.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
@@ -3052,6 +3057,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-retrieved-writer-bridge.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-section-blind-review.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3183,6 +3193,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-owner-review-audit.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-retrieved-writer-bridge.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

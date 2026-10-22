@@ -1,5 +1,7 @@
 # S2 independent evaluation readiness: exact writer passages and family-disjoint freeze
 
+**Actual authorized retrieval-to-writer development path:** see [S2 retrieved writer bridge](./s2-retrieved-writer-development.md), validated only on an isolated synthetic PostgreSQL fixture with pinned native Qwen raw requests/responses, not the production HTTP route.
+
 **Local writer output diagnostics:** see [S2 native structured-writer diagnostics](./s2-native-writer-diagnostics.md). This is synthetic/development-only and does not supersede the frozen eight-case owner pilot.
 
 **Personal project path:** see [S2 owner-controlled evaluation pilot](./s2-owner-controlled-evaluation.md) for owner-custodial precommits, blinded X/Y reviews, full original file provenance and exact quote auditing. It is an internal evidence tier and **does not claim external independence or supersede the formal gate**.
