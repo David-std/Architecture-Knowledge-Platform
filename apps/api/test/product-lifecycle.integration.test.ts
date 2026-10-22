@@ -11,6 +11,7 @@ import type { FastifyInstance } from "fastify";
 import { config } from "dotenv";
 import { Client } from "minio";
 import { Postgres, grantVaultMembership, registerVault } from "@akp/postgres";
+import { S2BoundedQuestionCandidateTransformer } from "@akp/retrieval";
 import { repositoryPublicationKey } from "../src/projections.js";
 
 config({
@@ -494,6 +495,10 @@ beforeAll(async () => {
   );
   const module = await import("../src/server.js");
   app = module.buildServer({
+    // Test-scoped shadow experiment only; the server default stays unchanged.
+    ...(process.env.AKP_S2_SHADOW_R2_R7_QUERY_PROBES === "1"
+      ? { queryTransformer: new S2BoundedQuestionCandidateTransformer() }
+      : {}),
     contextTokenizer: {
       id: "e2e-char4",
       label: "E2E deterministic char/4 tokenizer",
@@ -2666,7 +2671,10 @@ describe("product lifecycle E2E", () => {
           excerpt: string;
           citations: string[];
           retrievalTrace?: {
-            contributions: Array<{ candidateRevision?: string | null }>;
+            contributions: Array<{
+              candidateRevision?: string | null;
+              generation?: { kind: string; id: string };
+            }>;
           };
         }>;
         scope: { vaultIds: string[] };
@@ -2692,7 +2700,9 @@ describe("product lifecycle E2E", () => {
       expect(
         goldHit?.retrievalTrace?.contributions.some(
           (contribution) =>
-            contribution.candidateRevision === indexRow.corpus_revision,
+            contribution.candidateRevision === documentRow.current_revision &&
+            contribution.generation?.kind === "LEXICAL" &&
+            contribution.generation.id === indexRow.corpus_revision,
         ),
         JSON.stringify(goldHit?.retrievalTrace),
       ).toBe(true);
