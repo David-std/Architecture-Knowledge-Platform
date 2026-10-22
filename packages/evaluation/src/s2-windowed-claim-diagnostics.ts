@@ -18,6 +18,7 @@ export interface S2WindowClaimAssessment {
   readonly status:
     | "SUPPORTED_CANDIDATE"
     | "CONTRADICTED"
+    | "CONFLICTING_EVIDENCE"
     | "INSUFFICIENT"
     | "ERROR"
     | "REJECTED";
@@ -87,7 +88,7 @@ export async function assessS2WindowedClaim(
     statuses.includes("SUPPORTED_CANDIDATE")
   )
     return make(
-      "CONTRADICTED",
+      "CONFLICTING_EVIDENCE",
       "CONFLICTING_SOURCE_WINDOW_EVIDENCE",
       selectedWindows,
     );

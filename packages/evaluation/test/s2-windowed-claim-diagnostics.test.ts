@@ -80,8 +80,26 @@ describe("source-window semantic aggregation is evaluation only", () => {
             : "INSUFFICIENT",
       ),
     );
-    expect(x.status).toBe("CONTRADICTED");
+    expect(x.status).toBe("CONFLICTING_EVIDENCE");
     expect(x.reason).toBe("CONFLICTING_SOURCE_WINDOW_EVIDENCE");
+    expect(x.productionAdmission).toBe(false);
+    expect(x.releaseGateAccepted).toBe(false);
+  });
+  it("distinguishes explicit contradiction from conflicting evidence", async () => {
+    const result = await assessS2WindowedClaim(
+      "Who controls locker 37?",
+      "Horizon controls locker 37.",
+      source,
+      select,
+      semantic((quote) =>
+        quote.includes("does not control locker 37")
+          ? "CONTRADICTS"
+          : "INSUFFICIENT",
+      ),
+    );
+    expect(result.status).toBe("CONTRADICTED");
+    expect(result.reason).toBe("CLAIM_CONTRADICTED_IN_SOURCE_WINDOW");
+    expect(result.productionAdmission).toBe(false);
   });
   it("refuses direct numeric mismatch without calling models", async () => {
     const x = await assessS2WindowedClaim(
