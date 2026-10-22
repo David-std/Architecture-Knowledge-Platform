@@ -121,6 +121,28 @@ All results in this section are development diagnostics, not S2 acceptance, rele
 
 **Decision:** S2 OPEN; E5 SHADOW; S3–S5 BLOCKED; PR #38 remains OPEN/DRAFT/UNMERGED. No production admission/ranker/retrieval/model defaults have changed.
 
+## Source-origin citation transit and external expert labels (2026-10-22)
+
+**Classification:** development/shadow evidence only. Results below do not supersede S2 acceptance gates, and no reviewed production artifact or release policy was changed.
+
+### Verified imported-source transit, distinct from a synthetic SQL fixture
+
+- Ran the repository's actual `importVaultReadOnly` on a fresh two-file Markdown vault, with source-layer documents, recorded original byte hashes, imported revision, and a unique disposable PostgreSQL organization/space/vault. This is **read-only vault import**, not the complete `/v1/ingest` worker pipeline, and `HUMAN_REVIEWED` was declared by _synthetic frontmatter_, not issued by the governed review API.
+- A generated read-only principal made real authenticated loopback Fastify `/v1/search` calls. Unauthorized/no bearer was 401, foreign-vault probe was 404, and authorized HTTP result identities were checked against imported document path, vault, revision and source citation strings. Two **exact declarative evidence queries** each returned one admitted hit, zero exploratory hits, and a retained `buildContextPacket` in `SUPPORTED` state with **one section and one original-source citation**. This proves that the previous all-empty packet experiment arose at least partly from its uncited direct-SQL knowledge fixtures; it does not prove all normal ingestion paths.
+- On the **same imported source family**, four open questions (two English and two Spanish) returned **0/4 retrieval candidates** with the current lexical-only DEV configuration, without any admission or citation. These are distinct from the two exact declarative queries. Do not report the source-import success as success on natural questions.
+- The inputs, original HTTP bytes, hash manifests and per-case ContextPacket JSON remain in private ignored Windows lab directories. The lab confirmed **zero fixture organizations remaining** after cleanup. The source documents are disposable synthetic notes, not real governed publication.
+
+### Independently annotated external semantic challenge
+
+- Downloaded the public AllenAI SciFact original release (`https://github.com/allenai/scifact`), immutable local tarball SHA-256 `11c621288d41ac144d29b13b0f8503b3820b7d6e8b1f6ff24dff335c196d76be`. Used `claims_dev.jsonl` and `corpus.jsonl`, selecting **313** expert-annotated single-sentence rationales from scientific abstracts (199 SUPPORT, 114 CONTRADICT). Model inputs and scoring policy were frozen before inference; labels were used only after writing unscored predictions. This is independent _expert annotation_, but it is a known public development set and potential pretrained-model overlap cannot be excluded; it is not AKP's confidential blind acceptance holdout.
+- Pinned MiniLM multilingual NLI on exactly the expert rationale sentence, with original-document F binding, literal-number veto, score floor 0.8, polarity margin 0.2 and QA deliberately bypassed: **17/199 expert-supported facts retained, 182/199 missed; 1/114 expert-contradicted fact incorrectly supported, 113/114 withheld**. A false support involved a reversal of which group had higher incidence, a relational error that the numeric guard cannot repair. External-source recall of 8.5% is unacceptable for claiming generality.
+- MiniLM with the **entire abstract** as premise (same predeclared limits): **3/199 supports retained**, 0/114 contradictory labels admitted. The alternative pinned mDeBERTa quantized NLI (`onnx-community/mDeBERTa-v3-base-xnli-multilingual-nli-2mil7-ONNX@cdc8277b4682665e2f2e87cd83da7da07b153d75`, local ONNX SHA-256 `f1920d10296efd121a601b2161e8de9fa0c934a6c0331cd1764fd09a06a83041`) on entire abstracts likewise retained **3/199** and admitted 0/114 contradictions. The full-abstract input exceeded 512 tokens for **113/313** MiniLM and **123/313** mDeBERTa cases, explaining a subset of fail-closed outcomes; low support on shorter inputs still needs investigation. These full-abstract arms were source-preserving diagnostics, not authorized production D promotion.
+- All benchmark cases were staged behind the existing shadow semantic port. No empirical QA, whole-answer atomicity, contextual-qualification, cross-claim-consistency or authenticated answer-route acceptance can be inferred from these NLI-only experiments.
+
+**Engineering conclusion:** successful real-imported provenance is encouraging, but both natural-language lexical recall and expert-labeled semantic support remain gate blockers. Do not weaken the numeric/provenance guards or tune thresholds on the same exposed SciFact development set and call the result a holdout win. Prefer broader-source rationale selection, independently assessed atomic claims and a separately frozen and adjudicated AKP-domain test before any proposal to change admissions.
+
+**S2 remains OPEN; E5 stays SHADOW; S3–S5 remain BLOCKED; PR #38 remains OPEN/DRAFT/UNMERGED.**
+
 ## Engineering decision / next gate
 
 **Leading engineering candidate for more development: D + F**, NOT a production switch. It addresses two independently reproduced failure modes: source-specific passages omitted from admitted hits despite relevant authorized documents and hallucinated model citation IDs with otherwise exact source quotes. Preserve an explicit authorized-source check, SHA-pinned original bytes, exact evidence offsets, unambiguous quote attribution and a separate semantic-entailment verifier before admitting any answer.
