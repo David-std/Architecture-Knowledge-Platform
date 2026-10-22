@@ -5,6 +5,7 @@ import { Postgres } from "@akp/postgres";
 import {
   buildContextPacket,
   DeterministicQueryDecomposer,
+  S2BoundedQuestionCandidateTransformer,
   planQuery,
   type QueryTransformerPort,
 } from "@akp/retrieval";
@@ -195,6 +196,56 @@ const capabilities = {
 };
 
 describe("query transformation retrieval", () => {
+  it.skipIf(!databaseUrl)(
+    "rescues a bounded open-question candidate without crossing vault authorization",
+    async () => {
+      if (!databaseUrl) return;
+      const value = fixture();
+      const db = new Postgres(databaseUrl);
+      const query = "Where are TLS rotation intervals defined?";
+      try {
+        await seed(db, value);
+        const plan = planQuery(query, {
+          requestedIntent: "CONCEPTUAL",
+          capabilities,
+        });
+        const original = await queryKnowledge(db, request(value, query), {
+          channels: ["lexical"],
+          plan,
+          vaultIds: [value.authorizedVaultId],
+        });
+        expect(original).toHaveLength(0);
+        const withQuestionProbe = await queryKnowledge(
+          db,
+          request(value, query),
+          {
+            channels: ["lexical"],
+            plan,
+            vaultIds: [value.authorizedVaultId],
+            queryTransformer: new S2BoundedQuestionCandidateTransformer(),
+          },
+        );
+        expect(withQuestionProbe.map((hit) => hit.documentId)).toEqual([
+          value.tlsDocumentId,
+        ]);
+        expect(
+          withQuestionProbe.every(
+            (hit) =>
+              hit.vaultId === value.authorizedVaultId &&
+              hit.retrievalTrace?.authorization.vaultId ===
+                value.authorizedVaultId &&
+              hit.reasons.some((reason) =>
+                reason.startsWith("lexical:transformed:MULTI_QUERY:"),
+              ),
+          ),
+        ).toBe(true);
+      } finally {
+        await cleanup(db, value).catch(() => undefined);
+        await db.close();
+      }
+    },
+  );
+
   it.skipIf(!databaseUrl)(
     "persists original+variants and uses variants only inside the authorized vault",
     async () => {

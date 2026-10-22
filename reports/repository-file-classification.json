@@ -4082,6 +4082,16 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/s2-bilingual-candidate-shadow.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/src/s2-question-candidate-transform.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/selective-evaluation.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -4293,6 +4303,16 @@
     },
     {
       "path": "packages/retrieval/test/rrf.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/s2-bilingual-candidate-shadow.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/s2-question-candidate-transform.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

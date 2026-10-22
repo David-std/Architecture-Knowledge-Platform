@@ -22,6 +22,8 @@ export * from "./reasoning-plan.js";
 export * from "./reasoning-executor.js";
 export * from "./reasoning-planner.js";
 export * from "./query-transform.js";
+export * from "./s2-question-candidate-transform.js";
+export * from "./s2-bilingual-candidate-shadow.js";
 export * from "./query-translation.js";
 export * from "./support-verifier.js";
 export * from "./assertion-recall.js";
