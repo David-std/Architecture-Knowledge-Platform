@@ -8,6 +8,7 @@ import {
 import {
   createS2DirectNliClaimProbe,
   createS2QaRelevanceProbe,
+  createS2QaQuestionFocusProbe,
 } from "../src/s2-semantic-probes.js";
 
 const text =
@@ -85,7 +86,7 @@ describe("S2 experimental quote→question→claim verification", () => {
     });
     expect((await run(undefined, undefined, conf)).status).toBe("CONTRADICTED");
   });
-  it("treats a changed quantity as contradiction, not substring proof", async () => {
+  it("vetoes a changed explicit quantity before NLI is called", async () => {
     const conf = config();
     conf.claimEntailmentProbe = port("nli@frozen", {
       decision: "CONTRADICTS",
@@ -97,7 +98,9 @@ describe("S2 experimental quote→question→claim verification", () => {
       { ...response, answerText: "43 crates" },
       conf,
     );
-    expect(out.status).toBe("CONTRADICTED");
+    expect(out.status).toBe("INSUFFICIENT");
+    expect(out.reason).toBe("EXPLICIT_CLAIM_NUMBER_NOT_IN_QUOTE");
+    expect(conf.claimEntailmentProbe.verify).not.toHaveBeenCalled();
   });
   it("treats negation/temporal scope uncertainty as insufficient", async () => {
     const conf = config();
@@ -200,6 +203,45 @@ describe("S2 experimental quote→question→claim verification", () => {
 });
 
 describe("independent QA relevance and direct NLI adapters", () => {
+  it("handles an open Spanish question and paraphrased answer without lexical overlap", async () => {
+    const qa = createS2QaQuestionFocusProbe("xlm-qa@revision-frozen", {
+      verify: async ({ query, passage }) => {
+        expect(query).toBe("¿Qué cantidad transporta el transbordador?");
+        expect(passage).toBe(quote);
+        return {
+          decision: "SUPPORTS",
+          evidenceSpan: {
+            startOffset: quote.indexOf("42"),
+            endOffset: quote.indexOf("42") + 2,
+          },
+        };
+      },
+    });
+    const result = await run(
+      "¿Qué cantidad transporta el transbordador?",
+      { ...response, answerText: "Transporta cuarenta y dos cajas." },
+      { ...config(), questionRelevanceProbe: qa },
+    );
+    expect(result.status).toBe("SUPPORTED_CANDIDATE");
+    expect(result.questionRelevance?.reason).toBe(
+      "QUESTION_FOCUS_FOUND_IN_QUOTE",
+    );
+    // The NLI probe is responsible for detecting any semantic mistranslation.
+  });
+  it("fails closed on invalid open-question QA boundaries", async () => {
+    const qa = createS2QaQuestionFocusProbe("xlm-qa@revision-frozen", {
+      verify: async () => ({
+        decision: "SUPPORTS",
+        evidenceSpan: { startOffset: -2, endOffset: 3 },
+      }),
+    });
+    const result = await run(undefined, undefined, {
+      ...config(),
+      questionRelevanceProbe: qa,
+    });
+    expect(result.status).toBe("INSUFFICIENT");
+  });
+
   it("uses original question, exact quote and spans; never a model source ID", async () => {
     const qa = vi.fn(async () => ({
       decision: "SUPPORTS" as const,

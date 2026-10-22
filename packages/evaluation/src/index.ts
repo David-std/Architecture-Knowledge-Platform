@@ -31,6 +31,8 @@ export * from "./s2-authenticated-http-writer-bridge.js";
 export * from "./s2-exact-quote-attribution.js";
 export * from "./s2-semantic-evidence.js";
 export * from "./s2-semantic-probes.js";
+export * from "./s2-complete-answer-evidence.js";
+export * from "./s2-claim-numeric-integrity.js";
 
 export interface RetrievalMetrics {
   recallAtK: number;

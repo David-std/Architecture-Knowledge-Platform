@@ -69,6 +69,49 @@ export function createS2QaRelevanceProbe(
   };
 }
 
+/**
+ * Open-question focus: unlike substring-matching answer probes, this only
+ * asks if the original question has an extractive answer at an exact quote
+ * span. The separate entailment gate checks the complete generated claim,
+ * allowing cross-language paraphrases without trusting lexical equivalence.
+ */
+export function createS2QaQuestionFocusProbe(
+  id: string,
+  qa: S2ExtractiveQaVerifier,
+): S2SemanticProbe {
+  if (!id.includes("@")) throw new Error("S2_QA_MODEL_REVISION_REQUIRED");
+  return {
+    id,
+    verify: async (input): Promise<S2SemanticProbeResult> => {
+      const result = await qa.verify({
+        query: input.originalQuestion,
+        passage: input.exactQuote,
+      });
+      if (result.decision !== "SUPPORTS" || !result.evidenceSpan)
+        return {
+          decision: "INSUFFICIENT",
+          reason: "QUESTION_NOT_ANSWERED_BY_QUOTE",
+        };
+      const { startOffset: start, endOffset: end } = result.evidenceSpan;
+      if (
+        !Number.isSafeInteger(start) ||
+        !Number.isSafeInteger(end) ||
+        start < 0 ||
+        end > input.exactQuote.length ||
+        end <= start ||
+        !input.exactQuote.slice(start, end).trim()
+      )
+        return { decision: "INSUFFICIENT", reason: "QA_FOCUS_SPAN_UNBOUND" };
+      // The enclosing semantic cascade independently replays UTF-16 boundaries.
+      return {
+        decision: "SUPPORTS",
+        reason: "QUESTION_FOCUS_FOUND_IN_QUOTE",
+        evidenceSpan: { startUtf16: start, endUtf16: end },
+      };
+    },
+  };
+}
+
 export interface S2DirectNliRuntime {
   infer(
     premise: string,

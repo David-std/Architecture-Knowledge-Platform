@@ -1,3 +1,4 @@
+import { explicitClaimNumbersBoundToQuote } from "./s2-claim-numeric-integrity.js";
 import {
   attributeS2VerbatimQuote,
   type S2ExactQuoteAttribution,
@@ -215,6 +216,11 @@ export async function assessS2QuoteSemantics(
     quoteStartUtf16: attribution.startUtf16,
     quoteEndUtf16: attribution.endUtf16,
   };
+  const integrity = explicitClaimNumbersBoundToQuote(
+    input.exactQuote,
+    input.answerClaim,
+  );
+  if (!integrity.eligible) return make("INSUFFICIENT", integrity.reason);
   const question = await runProbe(
     config.questionRelevanceProbe,
     input,

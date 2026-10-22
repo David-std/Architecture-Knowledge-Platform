@@ -94,6 +94,33 @@ Private, author-constructed NEW four-family synthetic challenge (16 cases: 8 pos
 
 **Next:** evaluate an independently executable QA/NLI verifier, run further source-disjoint hard negatives and an authenticated HTTP→ContextPacket→writer shadow harness. Do not report statistically certified 0 FAR from 8 negatives.
 
+## Independent-model QA/NLI and authenticated HTTP continuation (2026-10-22)
+
+All results in this section are development diagnostics, not S2 acceptance, release proof or authorization to promote D, F or the semantic verifier. Private per-case data, original responses, source contents and oracle remain in ignored worktree directories.
+
+### Real pinned model execution and generality
+
+- Independently loaded MiniLM multilingual NLI in ONNX Runtime after copying the verified model artifact to a **short Windows path**. The original very long Transformers.js cache path caused native model-load errors even though the original ONNX file was byte-complete. MiniLM pinned commit `0a71e92a985b6e1ad1828cf67ce9c459639c1dca`, artifact SHA-256 `79f8cda2b1230585a95ea0514a6f1bd21c5c986ba0529bb3261213a3e195fa6e`.
+- Independently loaded extractive multilingual XLM-R QA from `onnx-community/xlm-roberta-base-squad2-distilled-ONNX@484112fae76dde6ad01b640192d559cbc2d488e1`, quantized artifact SHA-256 `7e9eb6a4b524a076b137eb976d0457378216e195b218a4d63fd6f4f694bc26cc`. Cross-language question-to-answer controls ran locally. Neither model was promoted as a production default.
+- Frozen source-disjoint author-constructed corpus: 12 new synthetic document families, 144 claims (48 positives, 96 hard negatives); no oracle supplied to either model during inference. NLI-only with predeclared score 0.8 and margin 0.2 supported **43/48** positives but falsely supported **4/96** negatives, all quantity changes. These are stage-level false-support candidates, NOT product FAR.
+- A generic strict explicit-number-in-quote guard now fails closed on numeric claim values absent from the uniquely source-bound quote before QA/NLI. It is deliberately not a calculator, synonym recognizer or proof of subject-quantity binding. With numeric veto and real independent QA/NLI (QA score floor 0.1, NLI score 0.8 and margin 0.2), the same frozen private corpus yielded **39/48** supported positives, **0/96** false-supported negatives and **9/48** missed positives (six paraphrase, three negation). This exposed corpus is not a valid independent acceptance sample. In particular, 0/96 does NOT establish universal zero false admissions.
+- One NLI control incorrectly classified an unsupported roof-color statement as CONTRADICTION instead of NEUTRAL. It was still withheld but demonstrates semantic-label calibration risk. Positive paraphrase misses also remain. Do not disable fail-closed integrity checks to recover these cases.
+
+### Actual authenticated retrieval, packet and writer replay
+
+- On the isolated disposable PostgreSQL `akp_s2_bench` and loopback Fastify HTTP API, ran **16 SHA-frozen questions in each of three retrieval variants** (48 real authenticated HTTP requests). Access checks were inherited from the preserved harness; all candidate originals were bound to the HTTP response vault, path and revision. Repeated model-provider requests were frozen BEFORE inference and used local Qwen `qwen2.5:7b-instruct` at the existing pinned digest.
+- Baseline retrieval returned at least one admitted hit for 12/16 cases. The authenticated results may also contain exploratory hits; these remain **research candidates**, never admitted production evidence. Replayed 16 ContextPackets using the maintained `buildContextPacket` on admitted hits only. All 16 were `INSUFFICIENT_KNOWLEDGE` with no sections because the synthetic seeded knowledge documents returned no source citations. This is a fixture/provenance gap, not evidence of a defect in production ingestion. No exploratory hit was silently upgraded into a packet section.
+- Replayed independent pinned QA+NLI over the newly observed Qwen writer responses with unique-SHA original-text attribution F. On this previously exposed 16-case development corpus (10 positives, 6 negatives), A-only-admitted yielded **9/10** supported positives and **0/6** false-supported negatives; D full-authorized-original shadow yielded **10/10** and **0/6**, respectively. D is not an admissible production ContextPacket route and no complete answer HTTP API was exercised. The additional model calls were new, but the underlying question/source families were already exposed, so these results cannot be considered blind acceptance.
+- The disposable fixture cleanup query confirmed **0 residual** synthetic organizations under its test slug. The local replay and raw model responses are private, not committed. The main user vaults/databases were not altered.
+
+### Remaining S2 acceptance blockers
+
+1. Replace the synthetic knowledge-only seed with an isolated **real SOURCE ingestion → reviewed KNOWLEDGE publication → indexed citations → nonempty ContextPacket** workflow and validate freshness, permissions, UTF-16 spans and full writer transport end to end.
+2. Run a genuinely held-out and independently adjudicated corpus containing multiple facts per answer, conditional/temporal changes, negative numerical cases, bilingual paraphrases and counterexamples. Measure stage recall, support precision, no-answer false admissions, coverage, confidence intervals and actual writer correctness independently.
+3. Verify the whole-answer atomicity, qualified local-source context and cross-claim consistency checks with real pinned model providers. Those interfaces are currently shadow-only contracts with synthetic regressions, not empirically calibrated semantic gates. Complete matched manual/Obsidian comparisons, exact tokenizer accounting and S2 exit criteria before reviewers or promotion.
+
+**Decision:** S2 OPEN; E5 SHADOW; S3–S5 BLOCKED; PR #38 remains OPEN/DRAFT/UNMERGED. No production admission/ranker/retrieval/model defaults have changed.
+
 ## Engineering decision / next gate
 
 **Leading engineering candidate for more development: D + F**, NOT a production switch. It addresses two independently reproduced failure modes: source-specific passages omitted from admitted hits despite relevant authorized documents and hallucinated model citation IDs with otherwise exact source quotes. Preserve an explicit authorized-source check, SHA-pinned original bytes, exact evidence offsets, unambiguous quote attribution and a separate semantic-entailment verifier before admitting any answer.

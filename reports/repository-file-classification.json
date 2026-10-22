@@ -3047,6 +3047,16 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-claim-numeric-integrity.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/evaluation/src/s2-complete-answer-evidence.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-dual-axis.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3203,6 +3213,16 @@
     },
     {
       "path": "packages/evaluation/test/s2-authenticated-http-writer-bridge.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-claim-numeric-integrity.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-complete-answer-evidence.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
