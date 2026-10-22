@@ -35,6 +35,7 @@ export * from "./s2-complete-answer-evidence.js";
 export * from "./s2-claim-numeric-integrity.js";
 export * from "./s2-evidence-window-selection.js";
 export * from "./s2-windowed-claim-diagnostics.js";
+export * from "./s2-pipeline-stage-ledger.js";
 
 export interface RetrievalMetrics {
   recallAtK: number;
