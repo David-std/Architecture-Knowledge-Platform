@@ -1,5 +1,7 @@
 # S2 independent evaluation readiness: exact writer passages and family-disjoint freeze
 
+**Stage-by-stage S2 pipeline diagnosis and self-run candidate comparisons:** see [S2 pipeline diagnosis and candidate lab](./s2-pipeline-diagnosis-and-candidate-lab.md). This documents two new synthetic corpora, multiple local pipeline options, false-abstention causes and a shadow-only exact-quote attribution candidate. Do not use these trials to accept a gate or send new reviewer packs.
+
 **Authenticated HTTP search-to-writer development evidence:** see [S2 authenticated HTTP writer bridge](./s2-authenticated-http-writer-development.md), with real bearer-authenticated local Fastify, no exploratory-hit promotion and explicit false-abstention reporting. These development observations are not an independent real-source release holdout.
 
 **Actual authorized retrieval-to-writer development path:** see [S2 retrieved writer bridge](./s2-retrieved-writer-development.md), validated only on an isolated synthetic PostgreSQL fixture with pinned native Qwen raw requests/responses, not the production HTTP route.

@@ -28,6 +28,7 @@ export * from "./s2-owner-review-audit.js";
 export * from "./s2-native-structured-writer.js";
 export * from "./s2-retrieved-writer-bridge.js";
 export * from "./s2-authenticated-http-writer-bridge.js";
+export * from "./s2-exact-quote-attribution.js";
 
 export interface RetrievalMetrics {
   recallAtK: number;

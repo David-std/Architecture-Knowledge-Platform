@@ -2257,6 +2257,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/s2-pipeline-diagnosis-and-candidate-lab.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/s2-postcalibration-preregistration.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
@@ -3047,6 +3052,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-exact-quote-attribution.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-holdout-freeze.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3188,6 +3198,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-dual-axis.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-exact-quote-attribution.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
