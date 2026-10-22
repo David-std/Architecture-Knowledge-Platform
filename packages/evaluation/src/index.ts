@@ -25,6 +25,7 @@ export * from "./s2-writer-passage-capture.js";
 export * from "./s2-holdout-freeze.js";
 export * from "./s2-owner-holdout.js";
 export * from "./s2-owner-review-audit.js";
+export * from "./s2-native-structured-writer.js";
 
 export interface RetrievalMetrics {
   recallAtK: number;

@@ -2242,6 +2242,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/s2-native-writer-diagnostics.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/s2-owner-controlled-evaluation.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
@@ -3032,6 +3037,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-native-structured-writer.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-owner-holdout.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3158,6 +3168,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-holdout-freeze.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-native-structured-writer.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -4663,6 +4678,11 @@
     },
     {
       "path": "scripts/s2-prepare-writer-semantic-review.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/s2-probe-native-structured-writer.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
