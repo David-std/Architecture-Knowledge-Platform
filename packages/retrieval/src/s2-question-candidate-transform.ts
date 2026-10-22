@@ -164,13 +164,38 @@ export class S2BoundedQuestionCandidateTransformer implements QueryTransformerPo
         /[\p{L}]/u.test(term) &&
         !FUNCTION_TOKENS.has(term.toLocaleLowerCase()),
     );
-    // Multiple guessed proper names may bind unrelated sources. Abstain
-    // rather than choosing the wrong subject.
-    if (anchors.length !== 1) return result;
-    const anchor = anchors[0]!;
+    // Preserve both original named anchors for descriptive location/entity
+    // questions. Coordinated or compared entities imply a relation; lexical
+    // co-occurrence cannot establish that relation, so abstain instead.
+    if (anchors.length < 1 || anchors.length > 2) return result;
+    if (anchors.length === 2) {
+      const first = tokens.indexOf(anchors[0]!);
+      const second = tokens.indexOf(anchors[1]!, first + 1);
+      const between = tokens
+        .slice(first + 1, second)
+        .map((t) => t.toLocaleLowerCase());
+      if (
+        between.some((t) =>
+          ["and", "or", "vs", "versus", "y", "o", "contra", "entre"].includes(
+            t,
+          ),
+        ) ||
+        tokens.some((t) =>
+          [
+            "compare",
+            "comparison",
+            "comparar",
+            "comparación",
+            "between",
+          ].includes(t.toLocaleLowerCase()),
+        )
+      )
+        return result;
+    }
     const other = tokens.filter(
       (token) =>
-        token !== anchor && !FUNCTION_TOKENS.has(token.toLocaleLowerCase()),
+        !anchors.includes(token) &&
+        !FUNCTION_TOKENS.has(token.toLocaleLowerCase()),
     );
     if (other.length < 2) return result;
     const requiredNumbers = tokens.filter((t) => /\p{N}/u.test(t));
@@ -179,7 +204,7 @@ export class S2BoundedQuestionCandidateTransformer implements QueryTransformerPo
     const groups = [other.slice(0, 2), other.slice(-2)];
     const seen = new Set<string>();
     for (const terms of groups) {
-      const queryTokens = [anchor, ...terms];
+      const queryTokens = [...anchors, ...terms];
       if (requiredNumbers.some((v) => !queryTokens.includes(v))) continue;
       const query = queryTokens.join(" ");
       const key = query.toLocaleLowerCase();

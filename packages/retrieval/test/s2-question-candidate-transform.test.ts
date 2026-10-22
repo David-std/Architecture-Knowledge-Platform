@@ -38,6 +38,47 @@ describe("S2 question candidate probes (shadow only)", () => {
       ),
     ).toBe(true);
   });
+  it("keeps multiple descriptive entity and location anchors in source-bound probes", async () => {
+    const originalQuery =
+      "What recovery target is documented for the Atlas relay in the Lima staging cluster?";
+    const output = await transformer.transform({ originalQuery });
+    const validated = validateQueryTransformationResult(
+      output,
+      originalQuery,
+      2,
+    );
+    expect(validated.variants.map((variant) => variant.query)).toContain(
+      "Atlas Lima recovery target",
+    );
+    expect(
+      validated.variants.every(
+        (variant) =>
+          variant.query.includes("Atlas") && variant.query.includes("Lima"),
+      ),
+    ).toBe(true);
+  });
+  it("retains a second exact named acronym on a no-answer question", async () => {
+    const originalQuery =
+      "What TLS certificate serial number is configured for the Atlas relay?";
+    const output = await transformer.transform({ originalQuery });
+    expect(
+      output.variants.every(
+        (variant) =>
+          variant.query.includes("TLS") && variant.query.includes("Atlas"),
+      ),
+    ).toBe(true);
+  });
+  it("withholds multi-entity comparisons even when all names occur in the source", async () => {
+    for (const originalQuery of [
+      "Compare Atlas and Lima recovery targets.",
+      "What are the duties of Nebula versus Horizon?",
+      "How do Nebula and Horizon coordinate recovery?",
+    ]) {
+      expect((await transformer.transform({ originalQuery })).variants).toEqual(
+        [],
+      );
+    }
+  });
   it("does not arbitrarily pick a subject across several named entities", async () => {
     const result = await transformer.transform({
       originalQuery: "What are the obligations of Nebula and Horizon?",
