@@ -3062,6 +3062,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-evidence-window-selection.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-exact-quote-attribution.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3113,6 +3118,11 @@
     },
     {
       "path": "packages/evaluation/src/s2-source-span.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/evaluation/src/s2-windowed-claim-diagnostics.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -3232,6 +3242,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/evaluation/test/s2-evidence-window-selection.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/evaluation/test/s2-exact-quote-attribution.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -3278,6 +3293,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-source-span.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-windowed-claim-diagnostics.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

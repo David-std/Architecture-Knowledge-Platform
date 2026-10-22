@@ -178,6 +178,39 @@ The known externally annotated SciFact stress test still has MiniLM 17/199 suppo
 
 **Status:** S2 OPEN, E5 SHADOW, S3–S5 BLOCKED, PR #38 OPEN/DRAFT/UNMERGED.
 
+## Evidence-window selection, verifier isolation and deferred repository hygiene (2026-10-22)
+
+This is a development-stage engineering record, not a new release gate. Preserve S2 OPEN, E5 SHADOW, S3-S5 BLOCKED and the draft, unmerged PR. No candidate, model decision, or test result below authorizes evidence promotion.
+
+### Comparison with maintained reference implementations
+
+- [AllenAI SciFact/VeriSci](https://github.com/allenai/scifact/blob/master/doc/model.md) explicitly separates abstract retrieval, rationale selection and label prediction. Its sentence-level evaluator requires all evidence sentences for a multi-sentence rationale; a single attractive sentence is not necessarily sufficient.
+- [MultiVerS](https://github.com/dwadden/multivers) takes claim plus longer document context and predicts both verdict and rationale, but its scientific Longformer checkpoints and legacy Python 3.8 research dependencies are not equivalent to an installed, production-ready AKP verifier. The checkpoint itself must be run on a frozen independent sample before claiming improved accuracy.
+- [RAGChecker](https://proceedings.neurips.cc/paper_files/paper/2024/hash/27245589131d17368cccdfa990cbf16e-Abstract-Datasets_and_Benchmarks_Track.html) distinguishes retrieval, missing claims and generated unsupported claims. AKP must report _evidence selection_ separately from entailment quality, final-answer atomicity and the end-to-end false-admission rate.
+- The [Hugging Face SciFact-tuned DeBERTa checkpoint](https://huggingface.co/jedick/DeBERTa-v3-base-mnli-fever-anli-scifact-citint) claims research evaluations but is not a pinned runnable ONNX candidate in this workspace. Published accuracy is not independent AKP-domain evidence.
+- A separate pre-frozen 80-case comparison attempted a Qwen2.5:7b-instruct prompted three-way verifier on expert SciFact rationales. It was **stopped incomplete at 36/80** after 17 model outputs failed strict exact-evidence/shape validation; only 19 were structurally accepted. No expert-label score was computed because the frozen denominator was not completed. Preserve the partial raw private receipts for protocol debugging, but **never** report the valid-only subset as verifier accuracy. Qwen is not a SciFact fine-tuned specialist and the actual MultiVerS/SciFact-tuned model comparison remains outstanding.
+
+### Shadow-only engineering changes and measured stage result
+
+- `s2-evidence-window-selection.ts` selects up to a bounded number of **contiguous** one- or two-sentence candidate windows from one _already authorized_ and SHA-256-verified original. It preserves exact UTF-16 source offsets, fatal UTF-8 decoding, source ID and original hash. Each candidate is counted against the **same pinned tokenizer** used by the verifier; over-budget windows are withheld rather than silently truncated. Selection never makes a semantic support or production-admission decision.
+- `s2-windowed-claim-diagnostics.ts` applies existing F binding and QA/NLI evidence gates to each shortlisted span. Explicit contradiction in any evaluated window blocks a positive from a different window; malformed binding or verifier errors fail closed. This aggregation still cannot prove that _all_ relevant contradictory source passages or documents were searched. It remains evaluation-only, and its `SUPPORTED_CANDIDATE` must never drive production admission.
+- On the **already exposed public SciFact DEV** source documents (313 independently expert-annotated single-sentence rationale pairs, 199 SUPPORT, 114 CONTRADICT), the selection stage was run with claim text, full known source abstract, MiniLM pinned token counting, max 512 tokens, three windows and at most two adjacent sentences. No gold rationale text was supplied _to the selector_. Exact gold-rationale containment after prediction freeze: first-source-sentence baseline 10/313; selected top-1 **113/313** (36.1%); selected top-3 **182/313** (58.1%); **131/313** misses. These figures measure sentence _selection given the correct document_, NOT verification precision, document retrieval recall or accepted answers. Results must not be reported as a holdout or used to tune the selector and then claim blind acceptance.
+- Corrected `s2-complete-answer-evidence.ts` so the successful, atomicity-rejection and cross-claim-rejection outcomes retain the actually evaluated `sourceContextCheck`. Previously, successful shadow assessments exposed `sourceContextCheck:null` despite running the context verifier. This is a diagnostic-contract bug, not a demonstrated new model-quality improvement. A regression assertion covers the positive path.
+- New tests cover hash/UTF-8 tampering, source-coordinate replay, surrogate pairs, tokenizer failures/limits, two-sentence availability, incorrect quantities, positive/contradictory window collisions and immutable `productionAdmission:false`.
+
+### Deferred hygiene review at the S2 to S3 transition
+
+The temporary inventory `.work/s2-hygiene-deferred-inventory-20261022.json` scanned **1012 tracked files** and flagged **198 files** with potential PR/stage/experimental wording. Counts by coarse location: 51 runtime source files, 41 tests, 38 documentation files, 13 evaluation files, one report and 54 others; _these are matches, not 198 confirmed defects_. The private report retains per-file line numbers and can be regenerated without changing tracked content.
+
+**Keep the hygiene pass explicitly PENDING after S2 evidence closure, before declaring the repository clean for subsequent stages.** Treat this as a review item at the S2/S3 boundary, not as permission to modify the S3-S5 blocked state or the current production gates.
+
+1. Classify every flagged location as durable behavior/API/security contract, validated test fixture, required historical/frozen evidence, redundant experiment trace or obsolete PR-specific commentary. Do not remove frozen hashes, audit logs, source provenance or release-gate history.
+2. Update temporary-sounding runtime comments and names only after the experiment's status (promote, retire, archive) has an approved disposition. Keep migration and compatibility implications explicit; do not blindly rename public symbols or delete stage contracts.
+3. Distinguish production architecture documentation from experiment logs and owner/reviewer checklists. Preserve provenance through appropriate archives or issue/PR references, rather than scattering ephemeral checkpoint text through permanent specifications.
+4. Rerun the repository classification/hygiene inventory, docs validator, format, typecheck, security checks, build/tests and same-SHA CI after any cleanup. Review whether the future S3-S5 criteria add retention requirements before changing or deleting tests and artifacts.
+
+**Open S2 exit prerequisites:** better evidence selection on source-disjoint AKP-domain cases, a genuinely calibrated independent verifier for comparative/conditional and multi-claim relations, governed SOURCE ingestion and review/publication, an authenticated answer route with original citation spans and a statistically meaningful blind no-answer test. The above is an engineering step, not an acceptance decision.
+
 ## Engineering decision / next gate
 
 **Leading engineering candidate for more development: D + F**, NOT a production switch. It addresses two independently reproduced failure modes: source-specific passages omitted from admitted hits despite relevant authorized documents and hallucinated model citation IDs with otherwise exact source quotes. Preserve an explicit authorized-source check, SHA-pinned original bytes, exact evidence offsets, unambiguous quote attribution and a separate semantic-entailment verifier before admitting any answer.

@@ -278,6 +278,8 @@ export async function assessS2CompleteAnswer(
       atomicity === "CONTRADICTS" ? "CONTRADICTED" : "INSUFFICIENT",
       "ATOMICITY_" + atomicity,
       atomicity,
+      null,
+      contextCheck,
     );
   const consistency = await invoke(config.consistencyVerifier);
   if (!consistency)
@@ -294,11 +296,13 @@ export async function assessS2CompleteAnswer(
       "CROSS_CLAIM_" + consistency,
       atomicity,
       consistency,
+      contextCheck,
     );
   return make(
     "COMPLETE_SUPPORTED_CANDIDATE",
     "ALL_CLAIMS_BOUND_AND_CHECKED",
     atomicity,
     consistency,
+    contextCheck,
   );
 }

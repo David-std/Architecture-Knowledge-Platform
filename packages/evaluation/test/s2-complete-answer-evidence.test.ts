@@ -114,6 +114,7 @@ describe("S2 complete multi-claim answer proof in shadow", () => {
       releaseGateAccepted: false,
       atomicityCheck: "SUPPORTS",
       consistencyCheck: "SUPPORTS",
+      sourceContextCheck: "SUPPORTS",
     });
     expect(out.claimResults).toHaveLength(2);
     expect(out.claimResults[0]?.attribution).toMatchObject({
