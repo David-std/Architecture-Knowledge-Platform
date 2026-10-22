@@ -2222,6 +2222,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/s2-authenticated-http-writer-development.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/s2-authorized-source-rebinding.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
@@ -3032,6 +3037,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-authenticated-http-writer-bridge.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-dual-axis.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3168,6 +3178,11 @@
     },
     {
       "path": "packages/evaluation/test/parity-exclusion.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-authenticated-http-writer-bridge.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

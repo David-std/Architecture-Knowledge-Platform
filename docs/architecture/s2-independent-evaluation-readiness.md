@@ -1,5 +1,7 @@
 # S2 independent evaluation readiness: exact writer passages and family-disjoint freeze
 
+**Authenticated HTTP search-to-writer development evidence:** see [S2 authenticated HTTP writer bridge](./s2-authenticated-http-writer-development.md), with real bearer-authenticated local Fastify, no exploratory-hit promotion and explicit false-abstention reporting. These development observations are not an independent real-source release holdout.
+
 **Actual authorized retrieval-to-writer development path:** see [S2 retrieved writer bridge](./s2-retrieved-writer-development.md), validated only on an isolated synthetic PostgreSQL fixture with pinned native Qwen raw requests/responses, not the production HTTP route.
 
 **Local writer output diagnostics:** see [S2 native structured-writer diagnostics](./s2-native-writer-diagnostics.md). This is synthetic/development-only and does not supersede the frozen eight-case owner pilot.
