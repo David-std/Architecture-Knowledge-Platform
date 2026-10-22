@@ -26,6 +26,37 @@ const config = () => ({
   maxSentencesPerWindow: 2 as const,
 });
 describe("bounded exact-source evidence window discovery", () => {
+  it("optionally reduces duplicate overlapping windows without changing the default ranking", async () => {
+    const question = "Where does Nebula store folders?";
+    const claim = "Nebula stores folders near Horizon.";
+    const a = await selectS2ClaimEvidenceWindows(original, question, claim, {
+      ...config(),
+      maxWindows: 3,
+    });
+    const b = await selectS2ClaimEvidenceWindows(original, question, claim, {
+      ...config(),
+      maxWindows: 3,
+      diversityMode: "NON_REDUNDANT",
+    });
+    expect(a.status).toBe("CANDIDATES");
+    expect(b.status).toBe("CANDIDATES");
+    expect(b.windows[0]?.exactText).toBe(a.windows[0]?.exactText);
+    expect(b.windows.every((w) => w.productionAdmission === false)).toBe(true);
+    for (const w of b.windows) {
+      expect(body.slice(w.startUtf16, w.endUtf16)).toBe(w.exactText);
+      expect(w.modelTokens).toBeLessThanOrEqual(200);
+    }
+  });
+  it("rejects unsupported shadow selection modes", async () => {
+    const r = await selectS2ClaimEvidenceWindows(
+      original,
+      "Where does Nebula store folders?",
+      "Nebula stores folders.",
+      { ...config(), diversityMode: "UNKNOWN" as "NON_REDUNDANT" },
+    );
+    expect(r.status).toBe("REJECTED");
+  });
+
   it("selects contiguous original spans, with SHA and UTF-16 replay", async () => {
     const r = await selectS2ClaimEvidenceWindows(
       original,

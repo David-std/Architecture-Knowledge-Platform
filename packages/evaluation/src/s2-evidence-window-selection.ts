@@ -32,6 +32,8 @@ export interface S2EvidenceWindowSelectorConfig {
   readonly maxTokens: number;
   readonly maxWindows: number;
   readonly maxSentencesPerWindow: 1 | 2;
+  /** Shadow-only selection mode. Default leaves existing selection unchanged. */
+  readonly diversityMode?: "NONE" | "NON_REDUNDANT";
 }
 
 const tokenize = (value: string): string[] =>
@@ -190,6 +192,8 @@ export async function selectS2ClaimEvidenceWindows(
     config.maxWindows < 1 ||
     config.maxWindows > 16 ||
     ![1, 2].includes(config.maxSentencesPerWindow) ||
+    (config.diversityMode !== undefined &&
+      !["NONE", "NON_REDUNDANT"].includes(config.diversityMode)) ||
     typeof config.countTokens !== "function"
   )
     return result("REJECTED", "EVIDENCE_SELECTOR_INPUT_OR_CONFIG_INVALID");
@@ -239,7 +243,7 @@ export async function selectS2ClaimEvidenceWindows(
     0,
     Math.min(96, Math.max(12, config.maxWindows * 12)),
   );
-  const windows: S2EvidenceWindow[] = [];
+  const eligible: S2EvidenceWindow[] = [];
   let rejectedForTokens = 0;
   for (const entry of shortlisted) {
     const exactText = source.slice(entry.begin, entry.finish);
@@ -272,7 +276,7 @@ export async function selectS2ClaimEvidenceWindows(
         shortlisted.length,
         rejectedForTokens,
       );
-    windows.push({
+    eligible.push({
       sourceId: original.assignedSourceId,
       sourceSha256: original.sourceSha256,
       startUtf16: entry.begin,
@@ -282,7 +286,45 @@ export async function selectS2ClaimEvidenceWindows(
       lexicalScore: entry.score,
       productionAdmission: false,
     });
-    if (windows.length >= config.maxWindows) break;
+    if (
+      config.diversityMode !== "NON_REDUNDANT" &&
+      eligible.length >= config.maxWindows
+    )
+      break;
+  }
+  const windows = eligible.slice(0, config.maxWindows);
+  if (config.diversityMode === "NON_REDUNDANT") {
+    const diverse: S2EvidenceWindow[] = [];
+    const fractionalOverlap = (
+      left: S2EvidenceWindow,
+      right: S2EvidenceWindow,
+    ) => {
+      const overlap = Math.max(
+        0,
+        Math.min(left.endUtf16, right.endUtf16) -
+          Math.max(left.startUtf16, right.startUtf16),
+      );
+      const shorter = Math.min(
+        left.endUtf16 - left.startUtf16,
+        right.endUtf16 - right.startUtf16,
+      );
+      return shorter > 0 ? overlap / shorter : 1;
+    };
+    for (const candidate of eligible) {
+      if (
+        diverse.every(
+          (previous) => fractionalOverlap(previous, candidate) <= 0.5,
+        )
+      )
+        diverse.push(candidate);
+      if (diverse.length >= config.maxWindows) break;
+    }
+    // Fill unused slots without claiming uniqueness or source completeness.
+    for (const candidate of eligible) {
+      if (diverse.length >= config.maxWindows) break;
+      if (!diverse.includes(candidate)) diverse.push(candidate);
+    }
+    windows.splice(0, windows.length, ...diverse);
   }
   return windows.length
     ? result(
