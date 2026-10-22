@@ -67,6 +67,33 @@ Nine synthetic adversarial regression tests passed, including forged IDs, mismat
 
 The 9/10 long D replay result is **posthoc development evidence**, since source-ID repair was designed after diagnosing those very outputs. It is NOT a new blind holdout or unbiased independent accuracy estimate.
 
+## Experimental S: quote-bound semantic verification (not acceptance)
+
+A separate **evaluation-only** layer now follows the existing F attribution helper:
+
+- The model-supplied source ID is untrusted. F first requires unique verbatim evidence, SHA-256 content verification and original UTF-16 span replay. Neither semantic probe can bypass F.
+- A **question-relevance probe** receives the original question and exact quote. The existing local extractive QA adapter can supply a bounded answer span; its adapter requires that exact phrase inside the proposed answer. A QA match alone is not a truth certificate.
+- A distinct **claim-entailment probe** receives the exact quote as premise and the full writer claim as hypothesis. Its direct-NLI adapter requires a revision-pinned identifier, an exact pinned-tokenizer count under the configured window, finite class probabilities and a score/margin. Uncalibrated thresholds remain research-only.
+- Both distinct probes must return support with replayable evidence spans. Contradiction, insufficiency, malformed model results, exceptions, timeout, ambiguous quotes, invalid SHA and over-budget original context all lead to non-admission. Model exception text is not copied into diagnostics.
+- Even when both probes agree, the outcome is only `SUPPORTED_CANDIDATE`, with immutable `productionAdmission:false` and `releaseGateAccepted:false`.
+- Synthetic port-level regression tests cover question irrelevance, reversed relations, quantity changes, temporal uncertainty, source ID hallucination, invalid spans, model errors, timeouts and SHA tampering. They are NOT real-model semantic accuracy measurements.
+
+Implementation: `packages/evaluation/src/s2-semantic-evidence.ts`, `packages/evaluation/src/s2-semantic-probes.ts`, and `packages/evaluation/test/s2-semantic-evidence.test.ts`.
+
+This construction does not promote exploratory hits to admitted evidence or turn experimental D into a production answer endpoint. The QA-phrase-in-claim requirement can over-abstain on cross-language paraphrases. A successful QA/NLI pair can also be semantically wrong. Both failure modes need empirical, source-disjoint DEV measurement before any product proposal.
+
+### Independent synthetic DEV challenge (2026-10-22, observed, not acceptance)
+
+Private, author-constructed NEW four-family synthetic challenge (16 cases: 8 positive, 8 hard negative), unrelated to previously exposed SHORT/LONG corpora. Inputs and the 32 exact Ollama provider requests were frozen before any provider call. The private oracle was loaded only in postrun scoring. The writer claims were constructed for this test; these were NOT output by a production answer endpoint.
+
+- Literal F alone: 16/16 quote/source bindings; 8/8 negative claims could still have appeared quote-bound, demonstrating that attribution alone is insufficient.
+- An experimental two-step Qwen semantic diagnosis (original question to quote; full proposed claim to quote) yielded supported candidates on **8/8 positive claims**, and withheld **8/8 negative claims** (all eight marked CONTRADICTED). Each of four document families contained two positives and two negatives.
+- Exact pinned local Ollama `qwen2.5:7b-instruct` was queried 32 times with temperature=0, fixed seed and a native JSON schema. The local provider observed p95 was approximately 2.122 s per call over these 32 calls. This is NOT HTTP answer-route end-to-end p95.
+- The SAME Qwen model performed both semantic checks; it is not independent NLI evidence. The official pinned QA/NLI ONNX local loads failed because expected model artifacts were unavailable. Their real-world precision, cross-language accuracy and calibration remain unproven.
+- These 16 exposed cases are now DEV, not a fresh holdout. No production admission, release gate, threshold or retrieval default changed, and no private prompts, documents, raw observations or gold were committed.
+
+**Next:** evaluate an independently executable QA/NLI verifier, run further source-disjoint hard negatives and an authenticated HTTP→ContextPacket→writer shadow harness. Do not report statistically certified 0 FAR from 8 negatives.
+
 ## Engineering decision / next gate
 
 **Leading engineering candidate for more development: D + F**, NOT a production switch. It addresses two independently reproduced failure modes: source-specific passages omitted from admitted hits despite relevant authorized documents and hallucinated model citation IDs with otherwise exact source quotes. Preserve an explicit authorized-source check, SHA-pinned original bytes, exact evidence offsets, unambiguous quote attribution and a separate semantic-entailment verifier before admitting any answer.
