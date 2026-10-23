@@ -68,7 +68,7 @@ export interface S2CompleteAnswerAssessment {
     | "INSUFFICIENT"
     | "ERROR"
     | "REJECTED"
-    | "VALID_ABSTAIN";
+    | "ABSTENTION_UNVERIFIED";
   readonly reason: string;
   readonly claimResults: readonly S2SemanticEvidenceAssessment[];
   readonly atomicityCheck: "SUPPORTS" | "CONTRADICTS" | "INSUFFICIENT" | null;
@@ -150,12 +150,19 @@ export async function assessS2CompleteAnswer(
     productionAdmission: false,
     releaseGateAccepted: false,
   });
+  // A syntactically empty response cannot establish that the question
+  // really had no answer in authorized evidence. Never score it as a
+  // justified abstention without a separate source-answerability review.
   if (
     input.abstained === true &&
     input.answerText === "" &&
-    input.claims.length === 0
+    Array.isArray(input.claims) &&
+    input.claims.length === 0 &&
+    typeof input.originalQuestion === "string" &&
+    input.originalQuestion.trim() !== "" &&
+    input.originalQuestion.length <= 2048
   )
-    return make("VALID_ABSTAIN", "COMPLETE_EMPTY_ABSTENTION");
+    return make("ABSTENTION_UNVERIFIED", "EMPTY_ABSTENTION_NOT_ADJUDICATED");
   if (
     input.abstained !== false ||
     typeof input.originalQuestion !== "string" ||

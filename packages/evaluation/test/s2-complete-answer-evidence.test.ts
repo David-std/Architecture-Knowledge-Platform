@@ -245,7 +245,7 @@ describe("S2 complete multi-claim answer proof in shadow", () => {
       "ERROR",
     );
   });
-  it("does not require models when answer is a coherent empty abstention", async () => {
+  it("does not incorrectly certify an empty abstention as justified", async () => {
     const conf = cfg();
     const out = await assessS2CompleteAnswer(
       {
@@ -257,8 +257,28 @@ describe("S2 complete multi-claim answer proof in shadow", () => {
       [original],
       conf,
     );
-    expect(out.status).toBe("VALID_ABSTAIN");
+    expect(out).toMatchObject({
+      status: "ABSTENTION_UNVERIFIED",
+      reason: "EMPTY_ABSTENTION_NOT_ADJUDICATED",
+      releaseGateAccepted: false,
+      productionAdmission: false,
+    });
     expect(conf.atomicityVerifier.verify).not.toHaveBeenCalled();
+    expect(conf.semantic.questionRelevanceProbe.verify).not.toHaveBeenCalled();
+  });
+  it("rejects a blank-question abstention rather than silently accepting it", async () => {
+    const out = await assessS2CompleteAnswer(
+      {
+        ...input,
+        originalQuestion: "",
+        answerText: "",
+        claims: [],
+        abstained: true,
+      },
+      [original],
+      cfg(),
+    );
+    expect(out.status).toBe("REJECTED");
   });
   it("refuses unauthorised or changed source SHA before whole-answer checks", async () => {
     const conf = cfg();
