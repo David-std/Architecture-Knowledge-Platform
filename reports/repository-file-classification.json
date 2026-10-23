@@ -2267,6 +2267,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/s2-question-role-claim-relation-evaluation.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/s2-retrieved-writer-development.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
@@ -3047,6 +3052,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-actor-binding.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-authenticated-http-writer-bridge.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3103,6 +3113,11 @@
     },
     {
       "path": "packages/evaluation/src/s2-pipeline-stage-ledger.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/evaluation/src/s2-question-answer-claim.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -3242,6 +3257,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/evaluation/test/s2-actor-binding.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/evaluation/test/s2-authenticated-http-writer-bridge.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -3298,6 +3318,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-pipeline-stage-ledger.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-question-answer-claim.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

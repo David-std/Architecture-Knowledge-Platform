@@ -16,6 +16,79 @@ export interface S2EvidenceWindow {
   readonly productionAdmission: false;
 }
 
+export interface S2VerbatimWindowQuoteCandidate {
+  readonly status: "VERBATIM_UNIQUE_ORIGINAL_CANDIDATE";
+  readonly sourceId: string;
+  readonly sourceSha256: string;
+  readonly quote: string;
+  readonly startUtf16: number;
+  readonly endUtf16: number;
+  readonly productionAdmission: false;
+}
+
+/**
+ * Bridge source-bound retrieval windows into the existing exact-quote F3 API.
+ * Markdown blocks can end with CRLF/whitespace, while verbatim attribution
+ * correctly forbids surrounding whitespace. Trim ONLY the original window
+ * boundaries, then verify the resulting quote remains unique in the pinned
+ * SHA-verified source. No fuzzy matching, invented text or admission.
+ */
+export function bindS2VerbatimWindowQuote(
+  original: S2ExactQuoteOriginal,
+  window: Pick<
+    S2EvidenceWindow,
+    | "sourceId"
+    | "sourceSha256"
+    | "startUtf16"
+    | "endUtf16"
+    | "exactText"
+    | "productionAdmission"
+  >,
+): S2VerbatimWindowQuoteCandidate | null {
+  const source = verifySource(original);
+  if (
+    source === null ||
+    original.assignedSourceId !== window.sourceId ||
+    original.sourceSha256 !== window.sourceSha256 ||
+    !validBoundary(source, window.startUtf16) ||
+    !validBoundary(source, window.endUtf16) ||
+    window.endUtf16 <= window.startUtf16 ||
+    source.slice(window.startUtf16, window.endUtf16) !== window.exactText ||
+    window.productionAdmission !== false
+  )
+    return null;
+  const quote = window.exactText.trim();
+  if (quote.length < 12 || quote.length > 12000) return null;
+  const offsetInWindow = window.exactText.indexOf(quote);
+  const start = window.startUtf16 + offsetInWindow;
+  const end = start + quote.length;
+  if (
+    offsetInWindow < 0 ||
+    !validBoundary(source, start) ||
+    !validBoundary(source, end) ||
+    end > window.endUtf16 ||
+    source.slice(start, end) !== quote
+  )
+    return null;
+  const body = source.slice(original.bodyStartUtf16, original.bodyEndUtf16);
+  const local = body.indexOf(quote);
+  if (
+    local < 0 ||
+    original.bodyStartUtf16 + local !== start ||
+    body.indexOf(quote, local + 1) !== -1
+  )
+    return null;
+  return {
+    status: "VERBATIM_UNIQUE_ORIGINAL_CANDIDATE",
+    sourceId: window.sourceId,
+    sourceSha256: window.sourceSha256,
+    quote,
+    startUtf16: start,
+    endUtf16: end,
+    productionAdmission: false,
+  };
+}
+
 export interface S2EvidenceWindowResult {
   readonly status: "CANDIDATES" | "INSUFFICIENT" | "REJECTED";
   readonly reason: string;

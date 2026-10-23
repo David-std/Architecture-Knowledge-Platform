@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { selectS2ClaimEvidenceWindows } from "../src/s2-evidence-window-selection.js";
+import {
+  selectS2ClaimEvidenceWindows,
+  bindS2VerbatimWindowQuote,
+} from "../src/s2-evidence-window-selection.js";
 const body = [
   "# Contingency plan",
   "Nebula stores 37 encrypted folders in locker E17.",
@@ -26,6 +29,69 @@ const config = () => ({
   maxSentencesPerWindow: 2 as const,
 });
 describe("bounded exact-source evidence window discovery", () => {
+  it("bridges original Markdown windows into unique, whitespace-free F3 quotes without changing internal bytes", async () => {
+    const source =
+      "# Policy 🧭\r\n\r\nThe custodian can approve retention only after identity verification.\r\n\r\n";
+    const bytes = Buffer.from(source);
+    const original = {
+      assignedSourceId: "S1",
+      sourceSha256: createHash("sha256").update(bytes).digest("hex"),
+      exactUtf8Bytes: bytes,
+      bodyStartUtf16: 0,
+      bodyEndUtf16: source.length,
+    };
+    const w = {
+      sourceId: original.assignedSourceId,
+      sourceSha256: original.sourceSha256,
+      startUtf16: 0,
+      endUtf16: source.length,
+      exactText: source,
+      modelTokens: 30,
+      lexicalScore: 1,
+      productionAdmission: false as const,
+    };
+    const candidate = bindS2VerbatimWindowQuote(original, w);
+    expect(candidate?.quote).toContain("only after identity verification.");
+    expect(candidate?.quote.endsWith("\r\n")).toBe(false);
+    expect(source.slice(candidate!.startUtf16, candidate!.endUtf16)).toBe(
+      candidate?.quote,
+    );
+    expect(candidate?.productionAdmission).toBe(false);
+    expect(
+      bindS2VerbatimWindowQuote(original, {
+        ...w,
+        sourceSha256: "0".repeat(64),
+      }),
+    ).toBeNull();
+    expect(
+      bindS2VerbatimWindowQuote(original, {
+        ...w,
+        exactText: source + "fabricated",
+      }),
+    ).toBeNull();
+  });
+  it("rejects ambiguous repeated quotes even if the broad original window was unique", async () => {
+    const source = "A policy prevents deletion.\n\nA policy prevents deletion.";
+    const bytes = Buffer.from(source);
+    const original = {
+      assignedSourceId: "S1",
+      sourceSha256: createHash("sha256").update(bytes).digest("hex"),
+      exactUtf8Bytes: bytes,
+      bodyStartUtf16: 0,
+      bodyEndUtf16: source.length,
+    };
+    const w = {
+      sourceId: "S1",
+      sourceSha256: original.sourceSha256,
+      startUtf16: 0,
+      endUtf16: 27,
+      exactText: source.slice(0, 27),
+      modelTokens: 20,
+      lexicalScore: 1,
+      productionAdmission: false as const,
+    };
+    expect(bindS2VerbatimWindowQuote(original, w)).toBeNull();
+  });
   it("opt-in Markdown blocks preserve an adjacent heading, explanation and fenced command", async () => {
     const markdown = [
       "# Volume management",
