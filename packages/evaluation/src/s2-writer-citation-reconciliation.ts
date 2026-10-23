@@ -94,6 +94,36 @@ export function reconcileS2WriterCitations(
       attribution.endUtf16! <= attribution.startUtf16!
     )
       return make("STRUCTURALLY_REJECTED", "CITATION_ATTRIBUTION_UNTRUSTED");
+    if (result.status === "SUPPORTED_CANDIDATE") {
+      const spanLength = attribution.endUtf16! - attribution.startUtf16!;
+      const supportsWithBoundSpan = (
+        step: typeof result.questionRelevance,
+      ): boolean => {
+        const bounds = step?.evidenceSpan;
+        return (
+          step?.decision === "SUPPORTS" &&
+          typeof step.reason === "string" &&
+          /^[A-Z][A-Z0-9_]{0,99}$/u.test(step.reason) &&
+          bounds !== undefined &&
+          Number.isSafeInteger(bounds.startUtf16) &&
+          Number.isSafeInteger(bounds.endUtf16) &&
+          bounds.startUtf16 >= 0 &&
+          bounds.endUtf16 > bounds.startUtf16 &&
+          bounds.endUtf16 <= spanLength
+        );
+      };
+      if (
+        !result.questionProbeId?.includes("@") ||
+        !result.claimProbeId?.includes("@") ||
+        result.questionProbeId === result.claimProbeId ||
+        !supportsWithBoundSpan(result.questionRelevance) ||
+        !supportsWithBoundSpan(result.claimEntailment)
+      )
+        return make(
+          "STRUCTURALLY_REJECTED",
+          "SEMANTIC_STAGES_NOT_SOURCE_BOUND",
+        );
+    }
     reviewed.add(review.citationId);
   }
   if (reviews.some((entry) => entry.assessment.status === "CONTRADICTED"))

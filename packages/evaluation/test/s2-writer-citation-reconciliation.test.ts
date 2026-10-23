@@ -43,8 +43,16 @@ function assessment(
       semanticEntailmentVerified: false,
       releaseGateAccepted: false,
     },
-    questionRelevance: null,
-    claimEntailment: null,
+    questionRelevance: {
+      decision: "SUPPORTS",
+      reason: "QUESTION_FOCUS_BOUND",
+      evidenceSpan: { startUtf16: 0, endUtf16: 20 },
+    },
+    claimEntailment: {
+      decision: "SUPPORTS",
+      reason: "CLAIM_BOUND",
+      evidenceSpan: { startUtf16: 0, endUtf16: 20 },
+    },
     questionProbeId: "qa@pinned",
     claimProbeId: "nli@pinned",
     productionAdmission: false,
@@ -115,6 +123,37 @@ describe("shadow native-writer to F3 citation reconciliation", () => {
       reconcileS2WriterCitations(writer, [
         paired()[0]!,
         { citationId: "SRC2", assessment: repaired },
+      ]).status,
+    ).toBe("STRUCTURALLY_REJECTED");
+  });
+  it("rejects a fabricated aggregate SUPPORT without independently bound stage observations", () => {
+    const first = assessment("SRC1");
+    const second = assessment("SRC2");
+    const missing: S2SemanticEvidenceAssessment = {
+      ...second,
+      questionRelevance: null,
+    };
+    expect(
+      reconcileS2WriterCitations(writer, [
+        { citationId: "SRC1", assessment: first },
+        { citationId: "SRC2", assessment: missing },
+      ]),
+    ).toMatchObject({
+      status: "STRUCTURALLY_REJECTED",
+      reason: "SEMANTIC_STAGES_NOT_SOURCE_BOUND",
+    });
+    const outside: S2SemanticEvidenceAssessment = {
+      ...second,
+      claimEntailment: {
+        decision: "SUPPORTS",
+        reason: "MODEL_SUPPORT",
+        evidenceSpan: { startUtf16: 0, endUtf16: 99999 },
+      },
+    };
+    expect(
+      reconcileS2WriterCitations(writer, [
+        { citationId: "SRC1", assessment: first },
+        { citationId: "SRC2", assessment: outside },
       ]).status,
     ).toBe("STRUCTURALLY_REJECTED");
   });
