@@ -98,7 +98,12 @@ function layeredTrace(
       : null;
   const evidenceSpan = quote ? trimmedExcerptSpan(hit, quote) : null;
   return {
-    verifierId: decision.readerId ?? `${admissionId}:${decision.layer}`,
+    // The effective decision layer, not an overridden reader proposal, owns
+    // the attribution when a structural guard vetoes evidence.
+    verifierId:
+      decision.layer === "SEMANTIC_READER" && decision.readerId
+        ? decision.readerId
+        : `${admissionId}:${decision.layer}`,
     mode: "LAYERED",
     decision: failed
       ? "VERIFIER_ERROR"

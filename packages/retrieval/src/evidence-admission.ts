@@ -622,7 +622,9 @@ export class LayeredEvidenceAdmissionPipeline {
             structured,
           );
           output[index] = {
-            layer: "STRUCTURED_PROPOSITION",
+            layer: constrained.accepted
+              ? "STRUCTURED_PROPOSITION"
+              : "STRUCTURAL_GUARD",
             verdict: constrained.verdict,
             reason: constrained.reason,
           };
@@ -680,6 +682,8 @@ export class LayeredEvidenceAdmissionPipeline {
         );
         output[inputIndex] = {
           ...semantic,
+          // The guard owns the final veto even when the reader ran first.
+          layer: constrained.accepted ? semantic.layer : "STRUCTURAL_GUARD",
           verdict: constrained.verdict,
           reason:
             constrained.reason === "STRUCTURAL_SOURCE_SPAN_VALID" ||

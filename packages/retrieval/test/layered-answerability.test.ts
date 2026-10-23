@@ -120,6 +120,26 @@ describe("layered production admission", () => {
     });
   });
 
+  it("records the final structural veto rather than the reader proposal", async () => {
+    const outdated = hit("The retry budget is 3 attempts in 2025.");
+    const assessment = await assessRetrievalAnswerabilityWithLayeredAdmission(
+      [outdated],
+      "What is the retry budget in 2026?",
+      new LayeredEvidenceAdmissionPipeline({
+        semanticReader: semanticReader([outdated.excerpt]),
+      }),
+    );
+    expect(assessment.supported).toBe(false);
+    expect(assessment.supportedCandidateKeys).toEqual([]);
+    expect(
+      assessment.candidateSignals[0]?.queryConditionedEvidence,
+    ).toMatchObject({
+      verifierId: "layered-admission:STRUCTURAL_GUARD",
+      decision: "INSUFFICIENT",
+      reason: "STRUCTURAL_REQUIRED_FACT_MISSING",
+    });
+  });
+
   it("reports spans against the trimmed excerpt", async () => {
     const padded = hit("  The retry budget is 3 attempts per request.\n");
     const assessment = await assessRetrievalAnswerabilityWithLayeredAdmission(

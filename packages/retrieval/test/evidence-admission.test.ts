@@ -553,7 +553,42 @@ describe("R5 layered evidence admission boundaries", () => {
         hit: candidate,
       }),
     ).resolves.toMatchObject({
-      layer: "SEMANTIC_READER",
+      layer: "STRUCTURAL_GUARD",
+      verdict: { kind: "INSUFFICIENT" },
+      reason: "STRUCTURAL_REQUIRED_FACT_MISSING",
+    });
+  });
+
+  it("attributes a structured proposition veto to the structural guard", async () => {
+    const read = vi.fn(async () => ({
+      layer: "SEMANTIC_READER" as const,
+      verdict: { kind: "INSUFFICIENT" as const },
+      reason: "READER_SHOULD_NOT_RUN",
+    }));
+    const pipeline = new LayeredEvidenceAdmissionPipeline({
+      semanticReader: { id: "unused-reader", read },
+    });
+    const outdated = hit({
+      excerpt: "The retry budget is 3 attempts in 2025.",
+    });
+    const decision = await pipeline.evaluate({
+      query: "What is the retry budget in 2026?",
+      hit: outdated,
+      queryProposition: {
+        subject: "retry-policy",
+        predicate: "max_attempts",
+        object: "3",
+      },
+      candidateProposition: {
+        subject: "retry-policy",
+        predicate: "max_attempts",
+        object: "3",
+        quote: { startOffset: 0, endOffset: outdated.excerpt.length },
+      },
+    });
+    expect(read).not.toHaveBeenCalled();
+    expect(decision).toMatchObject({
+      layer: "STRUCTURAL_GUARD",
       verdict: { kind: "INSUFFICIENT" },
       reason: "STRUCTURAL_REQUIRED_FACT_MISSING",
     });
