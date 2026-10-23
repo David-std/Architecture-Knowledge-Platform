@@ -26,6 +26,177 @@ const config = () => ({
   maxSentencesPerWindow: 2 as const,
 });
 describe("bounded exact-source evidence window discovery", () => {
+  it("opt-in Markdown blocks preserve an adjacent heading, explanation and fenced command", async () => {
+    const markdown = [
+      "# Volume management",
+      "",
+      "## Remove unused volumes",
+      "",
+      "To remove all unused volumes and free disk space:",
+      "",
+      "```console",
+      "$ docker volume prune",
+      "```",
+      "",
+      "## Inspect volumes",
+      "",
+      "The inspect command prints metadata.",
+    ].join("\n");
+    const raw = Buffer.from(markdown, "utf8");
+    const o = {
+      ...original,
+      sourceSha256: createHash("sha256").update(raw).digest("hex"),
+      exactUtf8Bytes: raw,
+      bodyEndUtf16: markdown.length,
+    };
+    const result = await selectS2ClaimEvidenceWindows(
+      o,
+      "Which command removes unused volumes?",
+      "docker volume prune removes unused volumes.",
+      {
+        ...config(),
+        maxTokens: 350,
+        maxWindows: 8,
+        segmentationMode: "MARKDOWN_BLOCKS",
+        maxMarkdownBlocksPerWindow: 3,
+      },
+    );
+    expect(result.status).toBe("CANDIDATES");
+    expect(
+      result.windows.some(
+        (w) =>
+          w.exactText.includes("To remove all unused volumes") &&
+          w.exactText.includes("$ docker volume prune"),
+      ),
+    ).toBe(true);
+    for (const window of result.windows) {
+      expect(markdown.slice(window.startUtf16, window.endUtf16)).toBe(
+        window.exactText,
+      );
+      expect(window.modelTokens).toBeLessThanOrEqual(350);
+      expect(window.productionAdmission).toBe(false);
+    }
+  });
+
+  it("retains fence contents across blank lines, CRLF and Unicode source offsets", async () => {
+    const markdown = [
+      "# Guía 🧭",
+      "",
+      "Una condición explícita:",
+      "",
+      "```text",
+      "sujeto: A",
+      "",
+      "permiso: no",
+      "```",
+    ].join("\r\n");
+    const raw = Buffer.from(markdown);
+    const o = {
+      ...original,
+      exactUtf8Bytes: raw,
+      sourceSha256: createHash("sha256").update(raw).digest("hex"),
+      bodyEndUtf16: markdown.length,
+    };
+    const result = await selectS2ClaimEvidenceWindows(
+      o,
+      "¿Qué permiso tiene A?",
+      "A tiene permiso no",
+      {
+        ...config(),
+        segmentationMode: "MARKDOWN_BLOCKS",
+        maxMarkdownBlocksPerWindow: 3,
+        maxTokens: 200,
+      },
+    );
+    expect(result.status).toBe("CANDIDATES");
+    expect(
+      result.windows.some((w) =>
+        w.exactText.includes("sujeto: A\r\n\r\npermiso: no"),
+      ),
+    ).toBe(true);
+    expect(
+      result.windows.every(
+        (w) => markdown.slice(w.startUtf16, w.endUtf16) === w.exactText,
+      ),
+    ).toBe(true);
+  });
+
+  it("never joins sibling heading blocks into one artificial fact", async () => {
+    const markdown = [
+      "## Agent Delta",
+      "",
+      "Delta can approve an invoice.",
+      "",
+      "## Agent Sigma",
+      "",
+      "Sigma cannot approve an invoice.",
+    ].join("\n");
+    const bytes = Buffer.from(markdown);
+    const o = {
+      ...original,
+      exactUtf8Bytes: bytes,
+      sourceSha256: createHash("sha256").update(bytes).digest("hex"),
+      bodyEndUtf16: markdown.length,
+    };
+    const result = await selectS2ClaimEvidenceWindows(
+      o,
+      "Can Agent Sigma approve an invoice?",
+      "Agent Sigma approves an invoice.",
+      {
+        ...config(),
+        segmentationMode: "MARKDOWN_BLOCKS",
+        maxMarkdownBlocksPerWindow: 3,
+        maxWindows: 16,
+        maxTokens: 200,
+      },
+    );
+    expect(result.status).toBe("CANDIDATES");
+    expect(
+      result.windows.every(
+        (w) =>
+          !(
+            w.exactText.includes("Delta can approve") &&
+            w.exactText.includes("Sigma cannot approve")
+          ),
+      ),
+    ).toBe(true);
+    expect(result.windows.every((w) => !w.productionAdmission)).toBe(true);
+  });
+
+  it("keeps byte integrity, budget and opt-in scope for block segmentation", async () => {
+    const m = "# Rules\n\nAlpha cannot modify Beta.\n\nBeta can modify Alpha.";
+    const raw = Buffer.from(m);
+    const o = {
+      ...original,
+      exactUtf8Bytes: raw,
+      sourceSha256: createHash("sha256").update(raw).digest("hex"),
+      bodyEndUtf16: m.length,
+    };
+    const bad = await selectS2ClaimEvidenceWindows(
+      { ...o, sourceSha256: "f".repeat(64) },
+      "Can Alpha modify Beta?",
+      "Alpha can modify Beta",
+      { ...config(), segmentationMode: "MARKDOWN_BLOCKS" },
+    );
+    expect(bad.status).toBe("REJECTED");
+    const v = config();
+    v.maxTokens = 1;
+    const limited = await selectS2ClaimEvidenceWindows(
+      o,
+      "Can Alpha modify Beta?",
+      "Alpha can modify Beta",
+      { ...v, segmentationMode: "MARKDOWN_BLOCKS" },
+    );
+    expect(limited.windows).toHaveLength(0);
+    const reversed = await selectS2ClaimEvidenceWindows(
+      o,
+      "Can Alpha modify Beta?",
+      "Beta can modify Alpha",
+      { ...config(), segmentationMode: "MARKDOWN_BLOCKS" },
+    );
+    expect(reversed.productionAdmission).toBe(false);
+    expect(reversed.windows.every((w) => !w.productionAdmission)).toBe(true);
+  });
   it("optionally reduces duplicate overlapping windows without changing the default ranking", async () => {
     const question = "Where does Nebula store folders?";
     const claim = "Nebula stores folders near Horizon.";

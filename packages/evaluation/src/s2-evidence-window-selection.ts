@@ -34,6 +34,10 @@ export interface S2EvidenceWindowSelectorConfig {
   readonly maxSentencesPerWindow: 1 | 2;
   /** Shadow-only selection mode. Default leaves existing selection unchanged. */
   readonly diversityMode?: "NONE" | "NON_REDUNDANT";
+  /** Shadow-only alternative preserving Markdown prose/code block boundaries. */
+  readonly segmentationMode?: "SENTENCES" | "MARKDOWN_BLOCKS";
+  /** Only for MARKDOWN_BLOCKS; at most three adjacent original blocks. */
+  readonly maxMarkdownBlocksPerWindow?: 1 | 2 | 3;
 }
 
 const tokenize = (value: string): string[] =>
@@ -153,7 +157,45 @@ function sentences(source: string, start: number, end: number) {
 }
 
 /**
- * Rank contiguous sentence windows, preserving original UTF-16 coordinates.
+ * Identify bounded Markdown blocks without normalizing original text.
+ * Blank-line separation is ignored inside fenced code; headings remain
+ * source text and can be joined to following explanatory/code blocks.
+ * This is segmentation only, never source or answer authority.
+ */
+function markdownBlocks(source: string, start: number, end: number) {
+  const body = source.slice(start, end);
+  const lines = body.match(/[^\n]*(?:\n|$)/gu) ?? [];
+  const blocks: { start: number; end: number }[] = [];
+  let cursor = 0;
+  let activeStart = -1;
+  let activeEnd = 0;
+  let fence: string | null = null;
+  const flush = () => {
+    if (activeStart < 0) return;
+    if (validBoundary(source, activeStart) && validBoundary(source, activeEnd))
+      blocks.push({ start: activeStart, end: activeEnd });
+    activeStart = -1;
+  };
+  for (const line of lines) {
+    if (!line) continue;
+    const trim = line.trim();
+    const lineStart = start + cursor;
+    cursor += line.length;
+    const marker = trim.match(/^(`{3,}|~{3,})/u)?.[1] ?? null;
+    if (activeStart < 0 && trim) activeStart = lineStart;
+    if (trim) activeEnd = start + cursor;
+    if (marker) {
+      if (fence === null) fence = marker[0]!;
+      else if (marker[0] === fence && marker.length >= 3) fence = null;
+    }
+    if (!trim && fence === null) flush();
+  }
+  flush();
+  return blocks;
+}
+
+/**
+ * Rank contiguous source windows, preserving original UTF-16 coordinates.
  * Its lexical score is only a proposal order; external verifiers must assess
  * each claim with independently observed source text and question context.
  */
@@ -194,18 +236,21 @@ export async function selectS2ClaimEvidenceWindows(
     ![1, 2].includes(config.maxSentencesPerWindow) ||
     (config.diversityMode !== undefined &&
       !["NONE", "NON_REDUNDANT"].includes(config.diversityMode)) ||
+    (config.segmentationMode !== undefined &&
+      !["SENTENCES", "MARKDOWN_BLOCKS"].includes(config.segmentationMode)) ||
+    (config.maxMarkdownBlocksPerWindow !== undefined &&
+      ![1, 2, 3].includes(config.maxMarkdownBlocksPerWindow)) ||
     typeof config.countTokens !== "function"
   )
     return result("REJECTED", "EVIDENCE_SELECTOR_INPUT_OR_CONFIG_INVALID");
   const source = verifySource(original);
   if (source === null || source.length > 100_000)
     return result("REJECTED", "SOURCE_HASH_UTF8_OR_SPAN_INVALID");
-  const sentencesInBody = sentences(
-    source,
-    original.bodyStartUtf16,
-    original.bodyEndUtf16,
-  );
-  if (sentencesInBody.length > 2000)
+  const useBlocks = config.segmentationMode === "MARKDOWN_BLOCKS";
+  const spans = useBlocks
+    ? markdownBlocks(source, original.bodyStartUtf16, original.bodyEndUtf16)
+    : sentences(source, original.bodyStartUtf16, original.bodyEndUtf16);
+  if (spans.length > 2000)
     return result("INSUFFICIENT", "SOURCE_SENTENCE_BUDGET_EXCEEDED");
   const terms = new Set(
     [...tokenize(question), ...tokenize(claim)].filter(
@@ -217,11 +262,28 @@ export async function selectS2ClaimEvidenceWindows(
     return result("INSUFFICIENT", "NO_CLAIM_FOCUS_TERMS");
 
   const pool: { begin: number; finish: number; score: number }[] = [];
-  for (let i = 0; i < sentencesInBody.length; i++) {
-    for (let width = 1; width <= config.maxSentencesPerWindow; width++) {
-      if (i + width > sentencesInBody.length) continue;
-      const begin = sentencesInBody[i]!.start;
-      const finish = sentencesInBody[i + width - 1]!.end;
+  for (let i = 0; i < spans.length; i++) {
+    const limit = useBlocks
+      ? (config.maxMarkdownBlocksPerWindow ?? 3)
+      : config.maxSentencesPerWindow;
+    for (let width = 1; width <= limit; width++) {
+      if (i + width > spans.length) continue;
+      // Never join two independent Markdown sections to manufacture a
+      // subject/predicate relationship across sibling headings. The first
+      // block may be its section heading; later blocks must not start one.
+      if (
+        useBlocks &&
+        width > 1 &&
+        Array.from({ length: width - 1 }, (_, offset) => i + offset + 1).some(
+          (index) =>
+            /^ {0,3}#{1,6}(?:\s|$)/u.test(
+              source.slice(spans[index]!.start, spans[index]!.end),
+            ),
+        )
+      )
+        continue;
+      const begin = spans[i]!.start;
+      const finish = spans[i + width - 1]!.end;
       const phrase = source.slice(begin, finish);
       if (phrase.length > 8000) continue;
       const observed = new Set(tokenize(phrase));
