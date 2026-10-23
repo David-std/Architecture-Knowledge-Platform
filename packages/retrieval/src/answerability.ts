@@ -85,6 +85,19 @@ export interface QueryConditionedEvidenceVerifierInput {
   documentType: string;
 }
 
+/** Optional admission-aware stopping condition for bounded adaptive readers. */
+export interface QueryConditionedEvidenceBatchOptions {
+  /**
+   * A provisional reader SUPPORTS verdict can end adaptive reading only if
+   * the calling admission guard accepts its concrete source span. When absent,
+   * retain the existing reader-only stopping rule.
+   */
+  readonly acceptsSupport?: (
+    index: number,
+    result: QueryConditionedEvidenceVerification,
+  ) => boolean;
+}
+
 export interface QueryConditionedEvidenceVerifier {
   readonly id: string;
   verify(
@@ -93,6 +106,7 @@ export interface QueryConditionedEvidenceVerifier {
   /** Optional batched form; results are returned in input order. */
   verifyBatch?(
     inputs: readonly QueryConditionedEvidenceVerifierInput[],
+    options?: QueryConditionedEvidenceBatchOptions,
   ): Promise<QueryConditionedEvidenceVerification[]>;
 }
 

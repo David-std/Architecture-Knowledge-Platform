@@ -9,6 +9,7 @@ import {
   type SemanticEvidenceReader,
 } from "../src/evidence-admission.js";
 import type { QueryConditionedEvidenceVerifier } from "../src/answerability.js";
+import { ReaderEvidenceVerifier } from "../src/evidence-reader.js";
 
 function hit(overrides: Partial<SearchHit> = {}): SearchHit {
   const base: SearchHit = {
@@ -37,6 +38,49 @@ function hit(overrides: Partial<SearchHit> = {}): SearchHit {
 }
 
 describe("R5 layered evidence admission boundaries", () => {
+  it("continues bounded adaptive reading when final structural guard vetoes an early support", async () => {
+    const oldSource = hit({
+      excerpt: "The retry budget was 3 attempts in 2025.",
+    });
+    const currentSource = hit({
+      excerpt: "The retry budget is 4 attempts in 2026.",
+    });
+    const calls: string[] = [];
+    const verifier = new ReaderEvidenceVerifier({
+      reader: {
+        id: "synthetic-adaptive-reader",
+        judge: async ({ body }) => {
+          calls.push(body);
+          return { answers: true, quote: body };
+        },
+      },
+      shortlist: {
+        id: "fixed-ordered-scores",
+        scoreBatch: async () => [0.9, 0.8],
+      },
+      shortlistSize: 1,
+      adaptiveMaxCandidates: 2,
+    });
+    const pipeline = new LayeredEvidenceAdmissionPipeline({
+      semanticReader: new QueryConditionedSemanticEvidenceReader({ verifier }),
+    });
+    const decisions = await pipeline.evaluateBatch(
+      [oldSource, currentSource].map((source) => ({
+        query: "What was the retry budget in 2026?",
+        hit: source,
+      })),
+    );
+    expect(calls).toHaveLength(2);
+    expect(decisions[0]).toMatchObject({
+      layer: "STRUCTURAL_GUARD",
+      verdict: { kind: "INSUFFICIENT" },
+      reason: "STRUCTURAL_REQUIRED_FACT_MISSING",
+    });
+    expect(decisions[1]).toMatchObject({
+      layer: "SEMANTIC_READER",
+      verdict: { kind: "ANSWERS" },
+    });
+  });
   it("matches only explicit structured propositions without semantic guessing", () => {
     const matcher = new ExactStructuredPropositionMatcher();
     const quote = { startOffset: 0, endOffset: 12 };

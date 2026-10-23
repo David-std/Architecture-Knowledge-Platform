@@ -294,6 +294,27 @@ describe("bounded adaptive evidence reading", () => {
     expect(results[2]?.decision).toBe("SUPPORTS");
   });
 
+  it("fails closed if the final admission callback itself throws", async () => {
+    const judge = vi.fn(async ({ body }: { body: string }) => ({
+      answers: true,
+      quote: body,
+    }));
+    const verifier = new ReaderEvidenceVerifier({
+      reader: { id: "callback-error", judge },
+      shortlistSize: 2,
+      adaptiveMaxCandidates: 4,
+    });
+    const results = await verifier.verifyBatch(adaptiveInputs(), {
+      acceptsSupport: () => {
+        throw new Error("guard unavailable");
+      },
+    });
+    expect(judge).toHaveBeenCalledTimes(2);
+    expect(results[0]?.decision).toBe("INSUFFICIENT");
+    expect(results[0]?.reason).toBe("ADMISSION_CHECK_ERROR");
+    expect(results[2]?.reason).toBe("NOT_SHORTLISTED_FOR_READING");
+  });
+
   it("does not amplify a reader outage into more calls", async () => {
     const judge = vi.fn(async () => {
       throw new Error("upstream unavailable");

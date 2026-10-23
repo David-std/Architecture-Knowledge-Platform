@@ -353,6 +353,12 @@ export interface SemanticEvidenceReader {
   ): Promise<EvidenceAdmissionDecision>;
   readBatch?(
     inputs: readonly QueryConditionedEvidenceVerifierInput[],
+    options?: {
+      acceptsSupport?: (
+        index: number,
+        decision: EvidenceAdmissionDecision,
+      ) => boolean;
+    },
   ): Promise<EvidenceAdmissionDecision[]>;
 }
 
@@ -474,6 +480,12 @@ export class QueryConditionedSemanticEvidenceReader implements SemanticEvidenceR
 
   async readBatch(
     inputs: readonly QueryConditionedEvidenceVerifierInput[],
+    options?: {
+      acceptsSupport?: (
+        index: number,
+        decision: EvidenceAdmissionDecision,
+      ) => boolean;
+    },
   ): Promise<EvidenceAdmissionDecision[]> {
     if (inputs.length === 0) return [];
     if (inputs.some((input) => !isReaderInput(input))) {
@@ -484,7 +496,28 @@ export class QueryConditionedSemanticEvidenceReader implements SemanticEvidenceR
     }
     let rows: unknown;
     try {
-      rows = await this.withTimeout(this.verifier.verifyBatch(inputs));
+      rows = await this.withTimeout(
+        this.verifier.verifyBatch(
+          inputs,
+          options?.acceptsSupport
+            ? {
+                acceptsSupport: (index, verification) => {
+                  const input = inputs[index]!;
+                  const { verdict, reason } = verificationVerdict(
+                    input.passage,
+                    verification,
+                  );
+                  return options.acceptsSupport!(index, {
+                    layer: "SEMANTIC_READER",
+                    verdict,
+                    reason,
+                    readerId: this.id,
+                  });
+                },
+              }
+            : undefined,
+        ),
+      );
       if (!Array.isArray(rows) || rows.length !== inputs.length) {
         throw new SourceVerificationError(
           "QUERY_CONDITIONED_EVIDENCE_BATCH_SIZE_MISMATCH",
@@ -651,7 +684,16 @@ export class LayeredEvidenceAdmissionPipeline {
       let semanticDecisions: EvidenceAdmissionDecision[];
       try {
         semanticDecisions = this.semanticReader.readBatch
-          ? await this.semanticReader.readBatch(semanticInputs)
+          ? await this.semanticReader.readBatch(semanticInputs, {
+              acceptsSupport: (semanticIndex, proposed) => {
+                const original = inputs[semanticIndexes[semanticIndex]!]!;
+                return this.guard.constrainVerdict(
+                  original.hit,
+                  original.query,
+                  proposed.verdict,
+                ).accepted;
+              },
+            })
           : await Promise.all(
               semanticInputs.map((input) => this.semanticReader.read(input)),
             );

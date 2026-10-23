@@ -1,4 +1,5 @@
 import type {
+  QueryConditionedEvidenceBatchOptions,
   QueryConditionedEvidenceVerification,
   QueryConditionedEvidenceVerifier,
   QueryConditionedEvidenceVerifierInput,
@@ -623,6 +624,7 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
 
   async verifyBatch(
     inputs: readonly QueryConditionedEvidenceVerifierInput[],
+    options?: QueryConditionedEvidenceBatchOptions,
   ): Promise<QueryConditionedEvidenceVerification[]> {
     const scores = this.shortlist
       ? await this.shortlist.scoreBatch(inputs)
@@ -664,8 +666,28 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
           results[index] = judged[position]!;
         });
       }
+      let admissionCheckFailed = false;
+      const hasAdmissibleSupport = round.some((index) => {
+        const result = results[index]!;
+        if (result.decision !== "SUPPORTS") return false;
+        if (!options?.acceptsSupport) return true;
+        try {
+          return options.acceptsSupport(index, result);
+        } catch {
+          admissionCheckFailed = true;
+          return false;
+        }
+      });
+      if (admissionCheckFailed) {
+        // Never fall back to reader-only authority after a guard failure.
+        return results.map((result) =>
+          result.decision === "SUPPORTS"
+            ? { decision: "INSUFFICIENT", reason: "ADMISSION_CHECK_ERROR" }
+            : result,
+        );
+      }
       if (
-        round.some((index) => results[index]!.decision === "SUPPORTS") ||
+        hasAdmissibleSupport ||
         round.some((index) =>
           /^(?:READER_ERROR:|READER_QUOTE_SUFFICIENCY_ERROR$)/u.test(
             results[index]!.reason,
