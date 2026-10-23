@@ -3142,6 +3142,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-writer-citation-reconciliation.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-writer-passage-capture.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3323,6 +3328,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-windowed-claim-diagnostics.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-writer-citation-reconciliation.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
