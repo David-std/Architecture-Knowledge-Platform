@@ -49,3 +49,19 @@ Under ignored `.work`:
 - `s2-mdn-new-family-20261023/RUN-MDN-NLI-FULL-CLAIMS-DEV/UNSCORED.json` SHA `01daddfba5138ad721069ee4985812a878440842f32a52d9c81e4f1b561b9fa0`. This run uses previously projected full claims; those claims are **not themselves validated or independently scored**.
 
 Model registry digests pinned at capture: Qwen2.5-7B `845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e`; Llama3.2-3B `a80c4f17acd55265feec403c7aef86be0c25983ab279d83f3bcd3abbcb5b8b72`; MiniLM revision `0a71e92a985b6e1ad1828cf67ce9c459639c1dca`. All files stay off Git.
+
+## Third-model transfer: Gemma3-4B (same-day, no threshold changes)
+
+To test whether the preceding effects were Qwen/Llama artifacts, a third **digest-pinned** Ollama model, `gemma3:4b` (`68ceab7e468a31c988b44d5a4984a0e21f58c4f7158c6ce29c1804babac38df7`), was evaluated against the **same previously frozen sources and questions**. It received the same general two-stage F3 instructions and source-actor extraction protocol; no source-specific labels, model thresholds or cases were added to the prompts.
+
+- F3 on the 16 known adversarial relations: **8/8 supported positives; 2/8 false supports**, again exactly **B4 and C4**. The errors were correlated across generative models, so model voting alone is not a sufficient relation gate.
+- Gemma's separate literal actor extraction returned mismatched, original-bound subjects for both **B4 and C4**; the **conjunction F3 SUPPORTS + no explicit actor mismatch** retained 8/8 positive candidates and 0/8 false-support candidates *on this exposed development slice*. Four actor cases were indeterminate, not counted as actor matches. Unlike entailment, this is a narrow structural diagnostic. The result has no reliable independent-domain estimate and is not a production gate.
+- On the 8 public MDN EN/ES writer questions, the **unchanged generalized JSON writer schema and instructions** produced only **6/8 structurally valid outputs**; among four positives there were **3 structurally valid non-abstentions**, and among four negatives **2 structurally valid non-abstentions**. Thus the favorable structural actor result on synthetic material **did not** translate into a generally reliable answer writer. Neither syntax nor a single-source citation is a factual adequacy guarantee.
+
+Additional private SHA-pinned receipts under the already ignored `.work`:
+
+- `s2-semantic-new-families-20261022/private-gemma-f3-relational-20261023/UNSCORED.json` SHA `ddf1a24ed547e51cac208d891eee8db57ba3bce60537a1cfaeff82440289a4c2`; `PRIVATE_POSTHOC_SCORE.json` SHA `aac27bbad0d6d85d7441bb952a3b92b5e09e182f61e0a63588eb529e4acf42ef`.
+- `s2-semantic-new-families-20261022/private-actor-gemma-20261023/UNSCORED.json` SHA `3729e7f2cdcf2cb2c6c6d66aa30aaf5f6360d992215a5ffd169146abf5c01810`; `PRIVATE_POSTHOC_SCORE.json` SHA `5225d9d94d64cbff4ce6ac2d5fc82817a5f1e5aed3a1420d408284f6c1392a8a`.
+- `s2-mdn-new-family-20261023/RUN-MDN-NATIVE-WRITER-GEMMA-DEV/UNSCORED.json` SHA `ff1f081183dadf33974ea4eb3635b6c7295717512e4d1813224074b57481ba5d`; `PRIVATE_POSTHOC_SCORE.json` SHA `32b5adfefbc7ffbfc1482cc82cd1f7c342125c3e125bfa5afb9ff7e97507ceb5`.
+
+These runs are append-only new trial arms; previous Qwen, Llama and ONNX receipts were not overwritten or relabeled. **Zero observed false support on eight author-known negatives is not an independent validation or license to promote the actor checker.**
