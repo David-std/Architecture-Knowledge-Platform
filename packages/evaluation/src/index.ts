@@ -35,6 +35,7 @@ export * from "./s2-complete-answer-evidence.js";
 export * from "./s2-writer-citation-reconciliation.js";
 export * from "./s2-question-answer-claim.js";
 export * from "./s2-actor-binding.js";
+export * from "./s2-evidence-portfolio.js";
 export * from "./s2-claim-numeric-integrity.js";
 export * from "./s2-evidence-window-selection.js";
 export * from "./s2-windowed-claim-diagnostics.js";
