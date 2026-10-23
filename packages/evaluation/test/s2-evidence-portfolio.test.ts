@@ -103,7 +103,7 @@ describe("portfolio of authorized source-bound evidence windows", () => {
       c,
     );
     expect(result).toMatchObject({
-      status: "CONFLICTING_EVIDENCE",
+      status: "CONFLICTING_PROPOSALS",
       supportedEvidence: 1,
       contradictedEvidence: 1,
     });
@@ -209,6 +209,92 @@ describe("portfolio of authorized source-bound evidence windows", () => {
     expect(result.status, result.reason).toBe("SUPPORTED_CANDIDATE");
     expect(result.checks.length).toBeGreaterThan(0);
     expect(result.checks.every((c) => c.sourceId === "SRC1")).toBe(true);
+    expect(result.productionAdmission).toBe(false);
+  });
+  it("keeps model-reported contradictions as unconfirmed proposals, not verified facts", async () => {
+    const c = config(
+      () => "SUPPORTS",
+      () => "CONTRADICTS",
+    );
+    const out = await assessS2ClaimEvidencePortfolio(
+      question,
+      claim,
+      [original()],
+      [window(quotes[1])],
+      c,
+    );
+    expect(out).toMatchObject({
+      status: "CONTRADICTION_PROPOSED",
+      contradictedEvidence: 1,
+      productionAdmission: false,
+      completeAnswerVerified: false,
+    });
+  });
+  it("validates all windows before short-circuiting after the first model support", async () => {
+    const c = config(
+      () => "SUPPORTS",
+      () => "SUPPORTS",
+    );
+    const tampered = { ...window(quotes[0]), sourceSha256: "0".repeat(64) };
+    const fail = await assessS2ClaimEvidencePortfolio(
+      question,
+      claim,
+      [original()],
+      [window(quotes[1]), tampered],
+      { ...c, verificationMode: "FIRST_SUPPORT" },
+    );
+    expect(fail.status).toBe("REJECTED");
+    expect(c.semantic.questionRelevanceProbe.verify).not.toHaveBeenCalled();
+    const ok = await assessS2ClaimEvidencePortfolio(
+      question,
+      claim,
+      [original()],
+      quotes.map(window),
+      { ...c, verificationMode: "FIRST_SUPPORT" },
+    );
+    expect(ok).toMatchObject({
+      status: "SUPPORTED_CANDIDATE",
+      exhaustiveEvidenceScan: false,
+      unexaminedWindows: 1,
+      completeAnswerVerified: false,
+      reason: "FIRST_SUPPORT_DISCOVERY_UNCHECKED_WINDOWS",
+    });
+    expect(c.semantic.questionRelevanceProbe.verify).toHaveBeenCalledTimes(1);
+  });
+  it("prunes fully contained sentence/markdown spans without erasing the source", async () => {
+    const c = config(
+      () => "SUPPORTS",
+      () => "SUPPORTS",
+    );
+    const tokenizer = vi.fn(async () => 25);
+    const result = await assessS2MultiGranularityClaim(
+      original(),
+      question,
+      claim,
+      {
+        tokenizerId: "snapshot-token-counter@v1",
+        countTokens: tokenizer,
+        maxTokens: 150,
+        maxWindows: 4,
+        maxSentencesPerWindow: 2,
+        maxMarkdownBlocksPerWindow: 2,
+        diversityMode: "NON_REDUNDANT",
+      },
+      c,
+    );
+    expect(result.status).toBe("SUPPORTED_CANDIDATE");
+    const spans = result.checks.map((x) => [
+      x.quoteStartUtf16,
+      x.quoteEndUtf16,
+    ]);
+    for (let i = 0; i < spans.length; i++)
+      for (let j = i + 1; j < spans.length; j++) {
+        const a = spans[i]!,
+          b = spans[j]!;
+        expect(
+          (a[0] >= b[0] && a[1] <= b[1]) || (b[0] >= a[0] && b[1] <= a[1]),
+        ).toBe(false);
+      }
     expect(result.productionAdmission).toBe(false);
   });
 });

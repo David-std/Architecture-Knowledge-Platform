@@ -65,3 +65,36 @@ Additional private SHA-pinned receipts under the already ignored `.work`:
 - `s2-mdn-new-family-20261023/RUN-MDN-NATIVE-WRITER-GEMMA-DEV/UNSCORED.json` SHA `ff1f081183dadf33974ea4eb3635b6c7295717512e4d1813224074b57481ba5d`; `PRIVATE_POSTHOC_SCORE.json` SHA `32b5adfefbc7ffbfc1482cc82cd1f7c342125c3e125bfa5afb9ff7e97507ceb5`.
 
 These runs are append-only new trial arms; previous Qwen, Llama and ONNX receipts were not overwritten or relabeled. **Zero observed false support on eight author-known negatives is not an independent validation or license to promote the actor checker.**
+
+## Correction of false contradictions and multi-window cost (23 October, follow-up)
+
+The first original-bound Qwen run after the multigranularity bridge accepted only **1/3 author-positive claim candidates** (ES01) and 0/4 author-negative candidates. EN01 was spuriously labeled `CONTRADICTED` by a reader even though the original MDN source explains that Cache-Control directives are case-insensitive. That NLI output is not a factual contradiction. Seven exposed-development questions required **43 model calls** and approximately 189,179 ms cumulative model call time (not HTTP p95). Raw, pre-oracle observations: `.work/s2-mdn-new-family-20261023/RUN-MDN-REAL-MULTIWINDOW-F3-DEV/UNSCORED.json` SHA `4177bed6f254492275ede25f04889f50929f7623691e30bb6e1fcaab81be299c`; posthoc SHA `60ea57f90183b83e4289dc867af14aa6a6abfd75adf20a8a6d1a8df486d93c26`.
+
+The implementation now makes three general, shadow-only architectural corrections rather than tuning labels or a model score:
+
+- **Typed negative semantics.** A model's `CONTRADICTS` at the _question relevance_ stage is mapped to `INSUFFICIENT`: an interrogative question is not a refutable factual claim. The raw stage verdict remains inspectable. A claim-entailment `CONTRADICTS` is retained as `CONTRADICTION_PROPOSED`; a support/contradiction collision is `CONFLICTING_PROPOSALS`, not a certified logical contradiction or an authoritative negative. This does not turn contradictions into support.
+- **Overlapping evidence reduction.** Dual sentence/Markdown candidates are rebound to the frozen original SHA/UTF-16 positions before being compared. A fully contained span is redundant to a longer source-bound window, so it is pruned; partially overlapping windows are preserved to avoid dropping facts, conditions or negations not shared between them. The existing source, quote, token and authorization checks remain fail-closed.
+- **Single-call paired observations.** `createS2PairedSemanticPorts` projects a single structured provider response into distinct question-relevance and complete-claim entailment ports, reusing a bounded, content-addressed in-flight/completed inference. Cache keys include question, complete claim, source ID, revision SHA, literal quotation and exact UTF-16 boundaries. Failed calls are evicted. **The two decisions from one model are correlated, not independent corroboration.** Existing F3 checks each returned reason and source-bound evidence span; neither this adapter nor a proposed `SUPPORTED_CANDIDATE` grants production admission.
+- **Optional discovery short circuit.** `FIRST_SUPPORT` is an opt-in exploratory setting to stop model calls after a first candidate. It must prevalidate all supplied source windows before _any_ call, explicitly reports unchecked windows and `exhaustiveEvidenceScan: false`, and cannot certify contradiction absence or answer-level completeness. The default remains `EXHAUSTIVE`.
+
+These changes intentionally do **not** modify the production admission pipeline, policy thresholds, authorization constraints, active E5 defaults or S2 release gates. Reproducibility of subsequent paired-model runs must use fresh, immutable output directories and compare the same frozen claims/sources. Any observed speedup combines pairing, candidate containment and prompt changes; do not attribute it solely to one component or claim statistical accuracy without independent labels. Validation status and measured outcomes should be recorded after the completed final run.
+
+### Result of the real paired-reader shadow run (23 October; post-capture score)
+
+A separate capture compared the now-available opt-in paired reader against the existing two-model-stage Qwen run, using **exactly the same seven frozen Llama writer claims and two original MDN source files**. Candidate selection was modified by containment pruning, and the prompt/structured output were modified from separate question/claim prompts to one pair; results therefore do **not** isolate the effect of the memoization adapter alone. The author labels were opened **after** provider bytes were frozen. The original source files were previously inspected by this project; they are not an independent holdout.
+
+| Dev measure                                 | Two-stage old trial | Paired new trial |
+| ------------------------------------------- | ------------------: | ---------------: |
+| Full cases                                  |                   7 |                7 |
+| Author-positive claims                      |                   3 |                3 |
+| Positive source-bound support proposals     |      **1/3 (ES01)** |          **0/3** |
+| False support proposals on author negatives |                 0/4 |              0/4 |
+| Actual Qwen calls                           |                  43 |               26 |
+| Sum of provider-call wall durations         |          189,179 ms |       130,626 ms |
+| Candidate windows evaluated                 |                  39 |               26 |
+
+**Decision:** Do not promote the paired reader to the default semantic engine. Its ~39.5% fewer calls and ~31% lower cumulative call duration are **not** worth the 1/3→0/3 loss in the already small positive set. No independent label, complete-answer FAR, HTTP p95, source admission or production quality gain is established. Direct F3 question-stage `CONTRADICTS` is now an explicit insufficient-relevance observation, while uncorroborated claim contradictions remain model proposals; this prevents overreporting logical conflicts but does not manufacture support.
+
+The new raw run is ignored/private: `.work/s2-mdn-new-family-20261023/RUN-MDN-REAL-MULTIWINDOW-PAIRED-V2/UNSCORED.json` SHA-256 `583e46ffa3895cb08df8a0378247ce8c2cbf8464c272faec5a705f8e4dc24b45`; `PRIVATE_POSTHOC_SCORE.json` SHA `d8160f3bda17f42c9ea585e08b33d925d91699b74e8fae6ca00a74c4b600cfeb`. Inference had a single revised model and the original, known questions. Source texts, prompts, full claims, byte receipts and case labels were **not committed**. The negative result stays in the evidence ledger, not silently excluded.
+
+For subsequent engineering, keep **specialized question focus and independent full-claim NLI** as the higher-recall experimental path; investigate better source contextualization, claim projection fidelity, and independent verification of the answer type before moving to new family-disjoint benchmark cases. Optimize latency only after preserving both positives and negatives and checking claim-level error reasons.

@@ -27,14 +27,17 @@ export interface S2EvidencePortfolioResult {
   readonly status:
     | "SUPPORTED_CANDIDATE"
     | "INSUFFICIENT"
-    | "CONTRADICTED"
-    | "CONFLICTING_EVIDENCE"
+    | "CONTRADICTION_PROPOSED"
+    | "CONFLICTING_PROPOSALS"
     | "REJECTED"
     | "ERROR";
   readonly reason: string;
   readonly checks: readonly S2WindowClaimCheck[];
   readonly supportedEvidence: number;
   readonly contradictedEvidence: number;
+  /** False when the intentionally inexpensive discovery mode stopped early. */
+  readonly exhaustiveEvidenceScan: boolean;
+  readonly unexaminedWindows: number;
   readonly questionFocusVerified: false;
   readonly completeAnswerVerified: false;
   readonly independentEvaluation: false;
@@ -44,6 +47,8 @@ export interface S2EvidencePortfolioResult {
 export interface S2EvidencePortfolioConfig {
   readonly semantic: S2SemanticEvidenceConfig;
   readonly maxWindows?: number;
+  /** SHADOW ONLY. A first-support discovery does not check later conflicts. */
+  readonly verificationMode?: "EXHAUSTIVE" | "FIRST_SUPPORT";
 }
 
 /**
@@ -53,7 +58,8 @@ export interface S2EvidencePortfolioConfig {
  *
  * A portfolio result is an untrusted development observation: it NEVER
  * promotes exploratory hits, manufactures provenance, or approves an answer.
- * Contradictory original-bound model proposals are exposed as conflict.
+ * Contradictory original-bound model proposals are exposed as *proposals*,
+ * not an authoritative refutation of a factual claim.
  */
 export async function assessS2ClaimEvidencePortfolio(
   question: string,
@@ -82,6 +88,8 @@ export async function assessS2ClaimEvidencePortfolio(
       .length,
     contradictedEvidence: checks.filter((x) => x.status === "CONTRADICTED")
       .length,
+    exhaustiveEvidenceScan: checks.length === windows.length,
+    unexaminedWindows: Math.max(0, windows.length - checks.length),
     questionFocusVerified: false,
     completeAnswerVerified: false,
     independentEvaluation: false,
@@ -106,7 +114,10 @@ export async function assessS2ClaimEvidencePortfolio(
     max < 1 ||
     max > 16 ||
     !config?.semantic?.questionRelevanceProbe?.id ||
-    !config?.semantic?.claimEntailmentProbe?.id
+    !config?.semantic?.claimEntailmentProbe?.id ||
+    !["EXHAUSTIVE", "FIRST_SUPPORT"].includes(
+      config.verificationMode ?? "EXHAUSTIVE",
+    )
   )
     return make("REJECTED", "PORTFOLIO_INPUT_OR_BUDGET_INVALID");
   const originalsById = new Map<string, S2ExactQuoteOriginal>();
@@ -115,7 +126,12 @@ export async function assessS2ClaimEvidencePortfolio(
       return make("REJECTED", "DUPLICATE_AUTHORIZED_SOURCE_ID");
     originalsById.set(original.assignedSourceId, original);
   }
+  // Validate the entire candidate set *before* the first model call,
+  // including FIRST_SUPPORT discovery. No later malformed/foreign source may
+  // hide behind an earlier positive verdict.
   const seen = new Set<string>();
+  const verified: NonNullable<ReturnType<typeof bindS2VerbatimWindowQuote>>[] =
+    [];
   for (const window of windows) {
     if (!window || window.productionAdmission !== false)
       return make("REJECTED", "WINDOW_NOT_EXPERIMENTAL");
@@ -127,6 +143,9 @@ export async function assessS2ClaimEvidencePortfolio(
       bound.sourceSha256 + ":" + bound.startUtf16 + ":" + bound.endUtf16;
     if (seen.has(key)) return make("REJECTED", "DUPLICATE_BOUND_WINDOW");
     seen.add(key);
+    verified.push(bound);
+  }
+  for (const bound of verified) {
     const assessment = await assessS2QuoteSemantics(
       question,
       {
@@ -156,15 +175,33 @@ export async function assessS2ClaimEvidencePortfolio(
         assessment.status,
         "SOURCE_BOUND_VERIFIER_" + assessment.status,
       );
+    // Discovery may return after a candidate is found. This is never an
+    // exhaustive contradiction scan and cannot clear a full-answer gate.
+    if (
+      config.verificationMode === "FIRST_SUPPORT" &&
+      assessment.status === "SUPPORTED_CANDIDATE"
+    )
+      return make(
+        "SUPPORTED_CANDIDATE",
+        "FIRST_SUPPORT_DISCOVERY_UNCHECKED_WINDOWS",
+      );
   }
   const supported = checks.some((x) => x.status === "SUPPORTED_CANDIDATE");
   const conflicting = checks.some((x) => x.status === "CONTRADICTED");
   if (supported && conflicting)
-    return make("CONFLICTING_EVIDENCE", "CANDIDATE_SUPPORT_AND_CONTRADICTION");
+    return make(
+      "CONFLICTING_PROPOSALS",
+      "UNVERIFIED_SUPPORT_AND_CONTRADICTION_PROPOSALS",
+    );
   if (supported)
     return make("SUPPORTED_CANDIDATE", "AT_LEAST_ONE_COMPLETE_CLAIM_CANDIDATE");
   if (conflicting)
-    return make("CONTRADICTED", "NO_SUPPORT_AND_CONTRADICTION_PROPOSED");
+    // One reader's NLI contradiction is not an independently corroborated
+    // logical refutation. Retain it only as a model proposal.
+    return make(
+      "CONTRADICTION_PROPOSED",
+      "NO_SUPPORT_AND_UNCORROBORATED_CONTRADICTION",
+    );
   return make("INSUFFICIENT", "NO_ORIGINAL_WINDOW_ENTAILS_COMPLETE_CLAIM");
 }
 
@@ -187,6 +224,8 @@ export async function assessS2MultiGranularityClaim(
     checks: [],
     supportedEvidence: 0,
     contradictedEvidence: 0,
+    exhaustiveEvidenceScan: false,
+    unexaminedWindows: 0,
     questionFocusVerified: false,
     completeAnswerVerified: false,
     independentEvaluation: false,
@@ -211,29 +250,51 @@ export async function assessS2MultiGranularityClaim(
   ]);
   if (results.some((x) => x.status === "REJECTED"))
     return denied("MULTIGRANULARITY_SOURCE_OR_TOKENIZER_INVALID");
-  const combined = new Map<string, S2EvidenceWindow>();
-  // Interleave both ranking arms so the first segmentation cannot exhaust
-  // the window budget before the other arm contributes candidates.
+  const combined = new Map<
+    string,
+    { window: S2EvidenceWindow; start: number; end: number; sha: string }
+  >();
+  // Interleave both strategies. If one bound quote completely includes
+  // another from the same original, verify the larger context once rather
+  // than invoking the reader repeatedly for redundant substrings.
+  // Partially overlapping windows are NOT discarded: the missing region
+  // might contain conditions, negations, or a different factual relation.
   for (let i = 0; i < selector.maxWindows; i++) {
     for (const result of results) {
       const window = result.windows[i];
       if (!window) continue;
-      // A retrievable heading or short label is not necessarily an
-      // attributable quote. The F3 source contract requires >=12 chars.
       const literal = window.exactText.trim();
       if (literal.length < 12 || literal.length > 12000) continue;
-      // Validate the original before accepting a candidate. A tampered
-      // SHA/span must stop the comparison, not be silently skipped.
       const bound = bindS2VerbatimWindowQuote(original, window);
       if (!bound) return denied("MULTIGRANULARITY_ORIGINAL_QUOTE_INVALID");
-      // Different segmentation modes can produce the same literal quote
-      // with different outer whitespace. Deduplicate after exact rebinding.
       const key =
         bound.sourceSha256 + ":" + bound.startUtf16 + ":" + bound.endUtf16;
-      if (!combined.has(key)) combined.set(key, window);
+      const covered = [...combined.values()].some(
+        (item) =>
+          item.sha === bound.sourceSha256 &&
+          bound.startUtf16 >= item.start &&
+          bound.endUtf16 <= item.end,
+      );
+      if (covered) continue;
+      for (const [existingKey, item] of combined) {
+        if (
+          item.sha === bound.sourceSha256 &&
+          item.start >= bound.startUtf16 &&
+          item.end <= bound.endUtf16
+        )
+          combined.delete(existingKey);
+      }
+      combined.set(key, {
+        window,
+        start: bound.startUtf16,
+        end: bound.endUtf16,
+        sha: bound.sourceSha256,
+      });
     }
   }
-  const eligible = [...combined.values()].slice(0, selector.maxWindows * 2);
+  const eligible = [...combined.values()]
+    .map((x) => x.window)
+    .slice(0, selector.maxWindows * 2);
   if (!eligible.length)
     return {
       ...denied("NO_ATTRIBUTABLE_QUOTE_FROM_BOTH_SEGMENTATIONS"),

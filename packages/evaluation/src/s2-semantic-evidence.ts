@@ -229,9 +229,15 @@ export async function assessS2QuoteSemantics(
   if (question.error) return make("ERROR", "QUESTION_PROBE_ERROR");
   const relevance = question.result!;
   if (relevance.decision !== "SUPPORTS")
+    // An interrogative question cannot logically be contradicted by a quote.
+    // A reader's CONTRADICTS verdict at the relevance stage is merely an
+    // unsuccessful attempt to locate the requested answer. Preserve the raw
+    // probe verdict for diagnostics, without manufacturing source conflict.
     return make(
-      relevance.decision === "CONTRADICTS" ? "CONTRADICTED" : "INSUFFICIENT",
-      "QUESTION_RELEVANCE_" + relevance.decision,
+      "INSUFFICIENT",
+      relevance.decision === "CONTRADICTS"
+        ? "QUESTION_RELEVANCE_CONTRADICTION_NOT_PROOF"
+        : "QUESTION_RELEVANCE_INSUFFICIENT",
       relevance,
     );
 

@@ -3117,6 +3117,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-paired-semantic-probe.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-pipeline-stage-ledger.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3323,6 +3328,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-owner-review-audit.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-paired-semantic-probe.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

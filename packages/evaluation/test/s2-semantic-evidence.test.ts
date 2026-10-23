@@ -77,6 +77,22 @@ describe("S2 experimental quote→question→claim verification", () => {
     expect(out.status).toBe("INSUFFICIENT");
     expect(conf.claimEntailmentProbe.verify).not.toHaveBeenCalled();
   });
+  it("does not misclassify an interrogative relevance judgement as factual source contradiction", async () => {
+    const conf = config();
+    conf.questionRelevanceProbe = port("qa@frozen", {
+      decision: "CONTRADICTS",
+      reason: "MODEL_QUESTION_STAGE_MISCLASSIFIED",
+      evidenceSpan: span,
+    });
+    const observed = await run(undefined, undefined, conf);
+    expect(observed).toMatchObject({
+      status: "INSUFFICIENT",
+      reason: "QUESTION_RELEVANCE_CONTRADICTION_NOT_PROOF",
+      questionRelevance: { decision: "CONTRADICTS" },
+      productionAdmission: false,
+    });
+    expect(conf.claimEntailmentProbe.verify).not.toHaveBeenCalled();
+  });
   it("rejects a reversed subject/object relationship", async () => {
     const conf = config();
     conf.claimEntailmentProbe = port("nli@frozen", {
