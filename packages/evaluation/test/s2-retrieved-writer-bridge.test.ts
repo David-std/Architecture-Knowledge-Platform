@@ -95,6 +95,112 @@ describe("S2 retrieved writer bridge (no gold oracle)", () => {
       gateAccepted: false,
     });
   });
+  it("freezes small original windows of an otherwise overlimit full document", () => {
+    const longText =
+      "Header. " + "a".repeat(22000) + " Answer: two signatures.";
+    const longBytes = Buffer.from(longText);
+    const longOriginal = {
+      ...original,
+      fileBytes: longBytes,
+      fileSha256: sha(longBytes),
+      bodyEndUtf16: longText.length,
+    };
+    const windowStart = longText.indexOf("Answer:");
+    const window = {
+      vaultId,
+      documentId,
+      path,
+      revision,
+      startUtf16: windowStart,
+      endUtf16: longText.length,
+    };
+    expect(build([hit], [longOriginal]).status).toBe(
+      "NO_AUTHORITATIVE_RETRIEVAL_EVIDENCE",
+    );
+    const out = freezeWriterFromRetrievedHits({
+      scope,
+      rankedAuthorizedHits: [hit],
+      originalFiles: [longOriginal],
+      sourceWindows: [window],
+      pathAuthorizer: (p, v) => p === path && v === vaultId,
+    });
+    expect(out.status).toBe("RETRIEVAL_BOUND_WRITER_READY");
+    expect(out.sourceSelection).toBe(
+      "RANKED_AUTHORIZED_QUERY_KNOWLEDGE_WINDOWS_ONLY",
+    );
+    expect(out.selectedEvidence).toMatchObject([
+      { bodyStartUtf16: windowStart, bodyEndUtf16: longText.length },
+    ]);
+    const payload = JSON.parse(
+      Buffer.from(out.exactProviderRequest!.requestBytes).toString(),
+    );
+    expect(payload.messages[1].content).toContain("Answer: two signatures.");
+    expect(payload.messages[1].content).not.toContain("a".repeat(22000));
+    expect(out.exactProviderRequest?.freeze.sourcePassages).toMatchObject([
+      { source: "ORIGINAL_LITERAL_MATCH" },
+    ]);
+    expect(out.gateAccepted).toBe(false);
+  });
+
+  it("cannot promote windows for unadmitted or stale hits", () => {
+    const window = {
+      vaultId,
+      documentId,
+      path,
+      revision,
+      startUtf16: 0,
+      endUtf16: 13,
+    };
+    const selection = (hits: RetrievalBridgeHit[]) =>
+      freezeWriterFromRetrievedHits({
+        scope,
+        rankedAuthorizedHits: hits,
+        originalFiles: [original],
+        sourceWindows: [window],
+        pathAuthorizer: (p, v) => p === path && v === vaultId,
+      });
+    expect(selection([]).status).toBe("NO_AUTHORITATIVE_RETRIEVAL_EVIDENCE");
+    expect(selection([{ ...hit, revision: "stale" }]).status).toBe(
+      "NO_AUTHORITATIVE_RETRIEVAL_EVIDENCE",
+    );
+    expect(selection([{ ...hit, vaultId: randomUUID() }]).status).toBe(
+      "NO_AUTHORITATIVE_RETRIEVAL_EVIDENCE",
+    );
+  });
+
+  it("fails closed for forged, duplicate, oversized and broken UTF-16 windows", () => {
+    const base = {
+      vaultId,
+      documentId,
+      path,
+      revision,
+      startUtf16: 0,
+      endUtf16: 13,
+    };
+    const attempt = (windows: (typeof base)[]) =>
+      freezeWriterFromRetrievedHits({
+        scope,
+        rankedAuthorizedHits: [hit],
+        originalFiles: [original],
+        sourceWindows: windows,
+        pathAuthorizer: (p, v) => p === path && v === vaultId,
+      });
+    expect(() => attempt([{ ...base, vaultId: randomUUID() }])).toThrow(
+      "SOURCE_WINDOW_NOT_ORIGINAL_BOUND",
+    );
+    expect(() => attempt([{ ...base, revision: "stale" }])).toThrow(
+      "SOURCE_WINDOW_NOT_ORIGINAL_BOUND",
+    );
+    expect(() => attempt([{ ...base, endUtf16: body.length + 1 }])).toThrow(
+      "SOURCE_WINDOW_NOT_ORIGINAL_BOUND",
+    );
+    expect(() => attempt([base, base])).toThrow("DUPLICATE_SOURCE_WINDOW");
+    const emoji = body.indexOf("😀");
+    expect(() => attempt([{ ...base, startUtf16: emoji + 1 }])).toThrow(
+      "SOURCE_WINDOW_NOT_ORIGINAL_BOUND",
+    );
+  });
+
   it("does not fabricate evidence from an empty result", () => {
     expect(build([])).toMatchObject({
       status: "NO_AUTHORITATIVE_RETRIEVAL_EVIDENCE",

@@ -38,6 +38,15 @@ const boundary = (s: string, n: number) =>
     s.charCodeAt(n) >= 0xdc00 &&
     s.charCodeAt(n) <= 0xdfff
   );
+/** Optional, evaluation-only, source-bound windows of an already admitted document. */
+export interface FrozenRetrievedSourceWindow {
+  vaultId: string;
+  documentId: string;
+  path: string;
+  revision: string;
+  startUtf16: number;
+  endUtf16: number;
+}
 export interface FrozenRetrievedOriginal {
   vaultId: string;
   documentId: string;
@@ -85,7 +94,9 @@ export interface RetrievalWriterBridgeResult {
   authorizedHitsSeen: number;
   candidateCount: number;
   excludedHits: number;
-  sourceSelection: "RANKED_AUTHORIZED_QUERY_KNOWLEDGE_HITS_ONLY";
+  sourceSelection:
+    | "RANKED_AUTHORIZED_QUERY_KNOWLEDGE_HITS_ONLY"
+    | "RANKED_AUTHORIZED_QUERY_KNOWLEDGE_WINDOWS_ONLY";
   ownerGoldLoaded: false;
   independentGroundTruthMeasured: false;
   applicationHttpP95Measured: false;
@@ -100,16 +111,26 @@ export function freezeWriterFromRetrievedHits(input: {
   scope: RetrievalWriterBridgeScope;
   rankedAuthorizedHits: readonly RetrievalBridgeHit[];
   originalFiles: readonly FrozenRetrievedOriginal[];
+  /** Undefined retains the historical full-document selection. */
+  sourceWindows?: readonly FrozenRetrievedSourceWindow[];
   pathAuthorizer: (path: string, vaultId: string) => boolean;
 }): RetrievalWriterBridgeResult {
-  const { scope, rankedAuthorizedHits, originalFiles, pathAuthorizer } = input;
+  const {
+    scope,
+    rankedAuthorizedHits,
+    originalFiles,
+    pathAuthorizer,
+    sourceWindows,
+  } = input;
   if (
     !/^[0-9a-f-]{36}$/u.test(scope.vaultId) ||
     !Number.isSafeInteger(scope.maxRetrievedDocuments) ||
     scope.maxRetrievedDocuments < 1 ||
     scope.maxRetrievedDocuments > 3 ||
     rankedAuthorizedHits.length > 100 ||
-    originalFiles.length > 100
+    originalFiles.length > 100 ||
+    (sourceWindows !== undefined &&
+      (!Array.isArray(sourceWindows) || sourceWindows.length > 100))
   )
     fail("INVALID_SCOPE_OR_BOUNDS");
   const originals = new Map<
@@ -163,6 +184,44 @@ export function freezeWriterFromRetrievedHits(input: {
       },
     });
   }
+  // Prevalidate every requested original window before matching it to a hit.
+  // Window proposals never confer authority; only the ranked authorized hit does.
+  const windowsBySource = new Map<string, FrozenRetrievedSourceWindow[]>();
+  for (const window of sourceWindows ?? []) {
+    const key =
+      window.vaultId +
+      "|" +
+      window.documentId +
+      "|" +
+      window.path +
+      "|" +
+      window.revision;
+    const source = originals.get(key);
+    if (!source) {
+      throw new Error("S2_RETRIEVED_WRITER_SOURCE_WINDOW_NOT_ORIGINAL_BOUND");
+    }
+    if (
+      !boundary(source.raw, window.startUtf16) ||
+      !boundary(source.raw, window.endUtf16) ||
+      window.startUtf16 < source.item.bodyStartUtf16 ||
+      window.endUtf16 > source.item.bodyEndUtf16 ||
+      window.startUtf16 >= window.endUtf16
+    )
+      fail("SOURCE_WINDOW_NOT_ORIGINAL_BOUND");
+    const span = source.raw.slice(window.startUtf16, window.endUtf16);
+    if (span.length > 4000 || Buffer.byteLength(span, "utf8") > 6000)
+      fail("SOURCE_WINDOW_SIZE_INVALID");
+    const list = windowsBySource.get(key) ?? [];
+    if (
+      list.some(
+        (v) =>
+          v.startUtf16 === window.startUtf16 && v.endUtf16 === window.endUtf16,
+      )
+    )
+      fail("DUPLICATE_SOURCE_WINDOW");
+    list.push(window);
+    windowsBySource.set(key, list);
+  }
   const selected = new Set<string>();
   const passages: S2Passage[] = [];
   const boundOriginals: FrozenOriginalReference[] = [];
@@ -193,40 +252,55 @@ export function freezeWriterFromRetrievedHits(input: {
       continue;
     }
     if (selected.has(key)) continue;
-    const text = source.raw.slice(
-      source.item.bodyStartUtf16,
-      source.item.bodyEndUtf16,
-    );
-    if (text.length > 18000 || Buffer.byteLength(text, "utf8") > 16000) {
+    const spans =
+      sourceWindows === undefined
+        ? [
+            {
+              startUtf16: source.item.bodyStartUtf16,
+              endUtf16: source.item.bodyEndUtf16,
+            },
+          ]
+        : (windowsBySource.get(key) ?? []).slice(0, 2);
+    if (!spans.length) {
       excludedHits++;
       continue;
     }
-    const passageId = "SRC" + (passages.length + 1);
-    passages.push({
-      id: passageId,
-      text,
-      original: {
+    let acceptedSpans = 0;
+    for (const span of spans) {
+      const text = source.raw.slice(span.startUtf16, span.endUtf16);
+      // Retain the full-document limits as well as the stricter window limits.
+      if (text.length > 18000 || Buffer.byteLength(text, "utf8") > 16000) {
+        excludedHits++;
+        continue;
+      }
+      const passageId = "SRC" + (passages.length + 1);
+      passages.push({
+        id: passageId,
+        text,
+        original: {
+          documentKeySha256: source.ref.documentKeySha256,
+          fileSha256: source.item.fileSha256,
+          startUtf16: span.startUtf16,
+          endUtf16: span.endUtf16,
+        },
+      });
+      if (acceptedSpans === 0) boundOriginals.push(source.ref);
+      acceptedSpans++;
+      evidence.push({
+        passageId,
         documentKeySha256: source.ref.documentKeySha256,
-        fileSha256: source.item.fileSha256,
-        startUtf16: source.item.bodyStartUtf16,
-        endUtf16: source.item.bodyEndUtf16,
-      },
-    });
-    boundOriginals.push(source.ref);
-    evidence.push({
-      passageId,
-      documentKeySha256: source.ref.documentKeySha256,
-      vaultKeySha256: sha(hit.vaultId),
-      pathSha256: sha(path),
-      revisionSha256: sha(hit.revision),
-      sourceSha256: source.item.fileSha256,
-      childUnitIdSha256: sha(hit.unitId),
-      hitRank: rank,
-      bodyStartUtf16: source.item.bodyStartUtf16,
-      bodyEndUtf16: source.item.bodyEndUtf16,
-    });
-    selected.add(key);
-    if (passages.length >= scope.maxRetrievedDocuments) break;
+        vaultKeySha256: sha(hit.vaultId),
+        pathSha256: sha(path),
+        revisionSha256: sha(hit.revision),
+        sourceSha256: source.item.fileSha256,
+        childUnitIdSha256: sha(hit.unitId),
+        hitRank: rank,
+        bodyStartUtf16: span.startUtf16,
+        bodyEndUtf16: span.endUtf16,
+      });
+    }
+    if (acceptedSpans > 0) selected.add(key);
+    if (selected.size >= scope.maxRetrievedDocuments) break;
   }
   const base = {
     schemaVersion: "akp.s2.retrieval-writer-bridge.v1" as const,
@@ -234,7 +308,10 @@ export function freezeWriterFromRetrievedHits(input: {
     authorizedHitsSeen,
     candidateCount: rankedAuthorizedHits.length,
     excludedHits,
-    sourceSelection: "RANKED_AUTHORIZED_QUERY_KNOWLEDGE_HITS_ONLY" as const,
+    sourceSelection:
+      sourceWindows === undefined
+        ? ("RANKED_AUTHORIZED_QUERY_KNOWLEDGE_HITS_ONLY" as const)
+        : ("RANKED_AUTHORIZED_QUERY_KNOWLEDGE_WINDOWS_ONLY" as const),
     ownerGoldLoaded: false as const,
     independentGroundTruthMeasured: false as const,
     applicationHttpP95Measured: false as const,

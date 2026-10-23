@@ -103,6 +103,57 @@ describe("S2 authenticated HTTP bridge, pure fail-closed", () => {
       gateAccepted: false,
     });
   });
+  it("binds source windows only when the authenticated HTTP hit was admitted", () => {
+    const longText =
+      "Protocol. " + "z".repeat(22000) + " The answer is ultraviolet.";
+    const bytes = Buffer.from(longText);
+    const longOriginal = {
+      ...original,
+      fileSha256: sha(bytes),
+      fileBytes: bytes,
+      bodyEndUtf16: longText.length,
+    };
+    const window = {
+      vaultId,
+      documentId: docId,
+      path: original.path,
+      revision: original.revision,
+      startUtf16: longText.indexOf("The answer"),
+      endUtf16: longText.length,
+    };
+    const freeze = (result: typeof response) =>
+      freezeWriterFromAuthenticatedSearchResponse({
+        expectedSpaceId: spaceId,
+        expectedVaultId: vaultId,
+        expectedQuestion: question,
+        requestBytes: Buffer.from(JSON.stringify(request)),
+        responseBytes: Buffer.from(JSON.stringify(result)),
+        responseStatus: 200,
+        authorizationReportedByCaller: true,
+        bridgeScope: scope,
+        originals: [longOriginal],
+        sourceWindows: [window],
+        pathAuthorizer: (p, v) => p === original.path && v === vaultId,
+      });
+    const admitted = freeze(response);
+    expect(admitted.status).toBe("HTTP_ADMITTED_WRITER_READY");
+    expect(admitted.bridge.sourceSelection).toBe(
+      "RANKED_AUTHORIZED_QUERY_KNOWLEDGE_WINDOWS_ONLY",
+    );
+    expect(
+      admitted.bridge.exactProviderRequest?.freeze.sourcePassages,
+    ).toMatchObject([{ source: "ORIGINAL_LITERAL_MATCH" }]);
+    const exploratory = freeze({
+      ...response,
+      hits: [],
+      exploratoryHits: [hit],
+      retrievalOutcome: "EXPLORATORY_ONLY",
+      noAnswer: { status: "INSUFFICIENT_KNOWLEDGE" },
+    });
+    expect(exploratory.status).toBe("HTTP_NO_ADMITTED_EVIDENCE");
+    expect(exploratory.bridge.exactProviderRequest).toBeNull();
+  });
+
   it("does not pass exploratory hits to model when no admission", () => {
     const out = build({
       ...response,

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   freezeWriterFromRetrievedHits,
   type FrozenRetrievedOriginal,
+  type FrozenRetrievedSourceWindow,
   type RetrievalBridgeHit,
   type RetrievalWriterBridgeResult,
   type RetrievalWriterBridgeScope,
@@ -56,6 +57,8 @@ export function freezeWriterFromAuthenticatedSearchResponse(input: {
   authorizationReportedByCaller: true;
   bridgeScope: RetrievalWriterBridgeScope;
   originals: readonly FrozenRetrievedOriginal[];
+  /** Opt-in original windows; only an HTTP-admitted hit may authorize them. */
+  sourceWindows?: readonly FrozenRetrievedSourceWindow[];
   pathAuthorizer: (path: string, vaultId: string) => boolean;
 }): AuthenticatedSearchBridgeResult {
   const {
@@ -164,6 +167,9 @@ export function freezeWriterFromAuthenticatedSearchResponse(input: {
     scope: bridgeScope,
     rankedAuthorizedHits: admitted,
     originalFiles: input.originals,
+    ...(input.sourceWindows === undefined
+      ? {}
+      : { sourceWindows: input.sourceWindows }),
     pathAuthorizer: input.pathAuthorizer,
   });
   const isReady = bridge.status === "RETRIEVAL_BOUND_WRITER_READY";
