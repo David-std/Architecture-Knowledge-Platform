@@ -1,5 +1,7 @@
 # S2 retrieval-to-writer pipeline: internal development diagnosis
 
+> **Continuity entrypoint (PR #38):** [S2 master experiment ledger and integration architecture](s2-semantic-experiments-and-integration-ledger.md). Read that register before repeating historical experiments or promoting a semantic candidate. The document below retains the original detailed development observations.
+
 **Status:** evaluation-only, no production or gate changes. AKP S2 OPEN, E5 SHADOW, S3–S5 BLOCKED; PR #38 must remain DRAFT/unmerged.
 
 ## Why the owner asked to stop repeated reviewer cycles

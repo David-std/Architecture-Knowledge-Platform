@@ -2282,6 +2282,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/s2-semantic-experiments-and-integration-ledger.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/selective-semantic-admission.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
