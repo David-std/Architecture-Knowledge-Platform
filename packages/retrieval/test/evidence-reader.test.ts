@@ -279,6 +279,128 @@ describe("reader evidence verifier", () => {
     });
   });
 
+  it("optionally rejects answers whose extracted value is missing from the original cited span", async () => {
+    const reader = readerReturning(() => ({
+      answers: true,
+      quote: "The description is used for messages.",
+      requestedFact: "which object provides Tracers",
+      extractedAnswer: "TracerProvider",
+    }));
+    const item = input(
+      "The description is used for messages. A TracerProvider provides Tracers.",
+      "Which object provides Tracers?",
+    );
+    const legacy = new ReaderEvidenceVerifier({ reader });
+    expect((await legacy.verify(item)).decision).toBe("SUPPORTS");
+    const bound = new ReaderEvidenceVerifier({
+      reader,
+      requireExtractedAnswerInQuote: true,
+    });
+    const checked = await bound.verify(item);
+    expect(checked).toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "READER_EXTRACTED_ANSWER_NOT_IN_CITED_SPAN",
+    });
+    expect(bound.id).toContain("answer-value-bound");
+    expect("extractedAnswer" in checked).toBe(false);
+  });
+
+  it("retains an explicit answer inside a cited table row with the opt-in binding", async () => {
+    const verifier = new ReaderEvidenceVerifier({
+      reader: readerReturning(() => ({
+        answers: true,
+        quote: "Class: II; Deadline: 24 hours",
+        requestedFact: "Class II deadline",
+        extractedAnswer: "24 hours",
+      })),
+      requireExtractedAnswerInQuote: true,
+    });
+    expect(await verifier.verify(input(table))).toMatchObject({
+      decision: "SUPPORTS",
+      reason: "READER_QUOTED_ANSWER",
+    });
+  });
+
+  it("does not mistake a digit or identifier substring for the extracted answer", async () => {
+    const attempts = [
+      { passage: "The audit was conducted in 2024.", answer: "4" },
+      { passage: "TracerProvider provides the tracing API.", answer: "Tracer" },
+    ];
+    for (const { passage, answer } of attempts) {
+      const verifier = new ReaderEvidenceVerifier({
+        reader: readerReturning(() => ({
+          answers: true,
+          quote: passage,
+          requestedFact: "the exact requested name or number",
+          extractedAnswer: answer,
+        })),
+        requireExtractedAnswerInQuote: true,
+      });
+      expect(await verifier.verify(input(passage))).toMatchObject({
+        decision: "INSUFFICIENT",
+        reason: "READER_EXTRACTED_ANSWER_NOT_IN_CITED_SPAN",
+      });
+    }
+  });
+
+  it("normalizes Unicode and whitespace without inventing a missing answer", async () => {
+    const quote = "The café  renewal\n   policy is effective.";
+    const verifier = new ReaderEvidenceVerifier({
+      reader: readerReturning(() => ({
+        answers: true,
+        quote,
+        requestedFact: "which renewal policy is effective",
+        extractedAnswer: "cafe\u0301 renewal policy",
+      })),
+      requireExtractedAnswerInQuote: true,
+    });
+    expect(
+      (
+        await verifier.verify(
+          input(quote, "Which renewal policy is effective?"),
+        )
+      ).decision,
+    ).toBe("SUPPORTS");
+  });
+
+  it("fails closed when structured extraction metadata is missing", async () => {
+    const verifier = new ReaderEvidenceVerifier({
+      reader: readerReturning(() => ({
+        answers: true,
+        quote: "Blue foxes require two signatures.",
+      })),
+      requireExtractedAnswerInQuote: true,
+    });
+    expect(
+      await verifier.verify(input("Blue foxes require two signatures.")),
+    ).toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "READER_EXTRACTED_ANSWER_UNAVAILABLE",
+    });
+  });
+
+  it("does not require literal yes/no words in a correctly quoted polarity response", async () => {
+    const verifier = new ReaderEvidenceVerifier({
+      reader: readerReturning(() => ({
+        answers: true,
+        quote: "Renewal is prohibited for overdue loans.",
+        requestedFact: "whether an overdue loan can be renewed",
+        extractedAnswer: "No",
+      })),
+      requireExtractedAnswerInQuote: true,
+    });
+    expect(
+      (
+        await verifier.verify(
+          input(
+            "Renewal is prohibited for overdue loans.",
+            "Can an overdue loan be renewed?",
+          ),
+        )
+      ).decision,
+    ).toBe("SUPPORTS");
+  });
+
   it("rejects an invented quote and a negative judgment", async () => {
     const invented = new ReaderEvidenceVerifier({
       reader: readerReturning(() => ({ answers: true, quote: "within a day" })),
