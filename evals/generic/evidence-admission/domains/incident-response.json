@@ -1,0 +1,413 @@
+{
+  "id": "incident-response",
+  "split": "heldout",
+  "language": "en",
+  "description": "Software incident response: severity, on-call, escalation, communication and postmortems.",
+  "units": [
+    {
+      "id": "ir-severity",
+      "documentType": "decision-rule",
+      "unitType": "TABLE",
+      "title": "Incident severity levels",
+      "headingPath": ["Classification", "Incident severity levels"],
+      "text": "| Severity | Criteria | First response |\n|---|---|---|\n| SEV1 | Full outage or data loss affecting customers | Page on-call immediately; incident commander assigned within 15 minutes |\n| SEV2 | Major feature degraded for many users | Page on-call; acknowledge within 30 minutes |\n| SEV3 | Minor defect with a workaround | Ticket for the next business day |"
+    },
+    {
+      "id": "ir-commander",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Incident commander",
+      "headingPath": ["Roles", "Incident commander"],
+      "text": "The person who coordinates the response to a major incident: assigns roles, decides on mitigations and owns communication. While holding the role they do not debug the system themselves."
+    },
+    {
+      "id": "ir-escalation",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Escalation",
+      "headingPath": ["Paging", "Escalation"],
+      "text": "If the primary on-call engineer does not acknowledge a page within 10 minutes, it escalates to the secondary on-call. After another 10 minutes without acknowledgement it goes to the engineering manager."
+    },
+    {
+      "id": "ir-postmortem",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Postmortems",
+      "headingPath": ["Learning", "Postmortems"],
+      "text": "Every SEV1 and SEV2 incident gets a written postmortem within five business days. Postmortems are blameless: they describe what the system allowed to happen, not who made a mistake."
+    },
+    {
+      "id": "ir-blameless",
+      "documentType": "claim",
+      "unitType": "EVIDENCE",
+      "title": "Blameless reviews surface more causes",
+      "headingPath": ["Learning", "Blameless reviews surface more causes"],
+      "text": "When people are not afraid of punishment they report in detail what they did and saw, which reveals contributing factors that a blame-focused review would hide."
+    },
+    {
+      "id": "ir-status-page",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Customer communication",
+      "headingPath": ["Communication", "Customer communication"],
+      "text": "For a SEV1 the status page is updated within 20 minutes of declaring the incident and then at least every hour until it is resolved. SEV3 incidents are not posted on the status page."
+    },
+    {
+      "id": "ir-rotation",
+      "documentType": "note",
+      "unitType": "PARAGRAPH",
+      "title": "On-call rotation",
+      "headingPath": ["Paging", "On-call rotation"],
+      "text": "Each engineer is on call for one week out of every six. The handover takes place on Mondays at 10:00 and includes a short review of open alerts."
+    },
+    {
+      "id": "ir-rollback",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Roll back before you debug",
+      "headingPath": ["Mitigation", "Roll back before you debug"],
+      "text": "When a deploy is suspected of causing an incident, the first mitigation is to return to the previous version. The investigation of the root cause continues afterwards, once customers are no longer affected."
+    },
+    {
+      "id": "ir-freeze",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Change freeze",
+      "headingPath": ["Mitigation", "Change freeze"],
+      "text": "While a SEV1 is active, all non-emergency deploys are frozen. Only changes approved by the incident commander may be released."
+    },
+    {
+      "id": "ir-runbook",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Runbook",
+      "headingPath": ["Glossary", "Runbook"],
+      "text": "A step-by-step guide attached to a known alert that tells the on-call engineer how to diagnose and mitigate it without needing to understand the whole system."
+    },
+    {
+      "id": "ir-metrics",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Reliability metrics",
+      "headingPath": ["Reporting", "Reliability metrics"],
+      "text": "| Metric | Target | Last quarter |\n|---|---|---|\n| Mean time to acknowledge | 5 min | 7 min |\n| Mean time to resolve a SEV1 | 2 h | 3.5 h |\n| Postmortems delivered on time | 100% | 92% |"
+    },
+    {
+      "id": "ir-compensation",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "On-call compensation",
+      "headingPath": ["Paging", "On-call compensation"],
+      "text": "Engineers receive a fixed stipend for each on-call week, plus an extra day off after any night in which they were paged for more than two hours."
+    },
+    {
+      "id": "ir-security",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Security incidents",
+      "headingPath": ["Classification", "Security incidents"],
+      "text": "Suspected security breaches are handled by the security team, not by the regular on-call rotation. The on-call engineer only preserves the logs and notifies security."
+    },
+    {
+      "id": "ir-downgrade",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Changing severity",
+      "headingPath": ["Classification", "Changing severity"],
+      "text": "The incident commander may lower the severity once customer impact is mitigated, but the postmortem requirement follows the highest severity the incident reached."
+    }
+  ],
+  "questions": [
+    {
+      "id": "ir-q01",
+      "family": "commander-debugs",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Does the incident commander debug the system during the incident?",
+      "gold": ["ir-commander"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "ir-q02",
+      "family": "sev3-postmortem",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Do SEV3 incidents require a postmortem?",
+      "gold": ["ir-postmortem"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "ir-q03",
+      "family": "sev3-status-page",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Are minor SEV3 incidents published on the status page?",
+      "gold": ["ir-status-page"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "ir-q04",
+      "family": "deploy-during-sev1",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Can regular deploys continue while a SEV1 is open?",
+      "gold": ["ir-freeze"],
+      "challenges": ["NEGATIVE_ANSWER", "PARAPHRASE"]
+    },
+    {
+      "id": "ir-q05",
+      "family": "rollback-first",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Should we find the root cause before rolling back a bad deploy?",
+      "gold": ["ir-rollback"],
+      "challenges": ["NEGATIVE_ANSWER", "TITLE_CONTEXT"]
+    },
+    {
+      "id": "ir-q06",
+      "family": "on-call-security",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿El ingeniero de guardia gestiona las brechas de seguridad?",
+      "gold": ["ir-security"],
+      "challenges": ["CROSS_LINGUAL", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "ir-q07",
+      "family": "downgrade-postmortem",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "If a SEV1 is downgraded to SEV3 after mitigation, is a postmortem still needed?",
+      "gold": ["ir-downgrade"],
+      "acceptable": ["ir-postmortem"],
+      "challenges": ["COMPOUND"]
+    },
+    {
+      "id": "ir-q08",
+      "family": "rough-night-day-off",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Do on-call engineers get time off after a rough night of pages?",
+      "gold": ["ir-compensation"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ir-q09",
+      "family": "commander-definition",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is an incident commander?",
+      "gold": ["ir-commander"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "ir-q10",
+      "family": "runbook-definition",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "what's a runbook",
+      "gold": ["ir-runbook"],
+      "challenges": ["INFORMAL", "TITLE_CONTEXT"]
+    },
+    {
+      "id": "ir-q11",
+      "family": "blameless-definition",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué significa que un postmortem sea sin culpables?",
+      "gold": ["ir-postmortem"],
+      "acceptable": ["ir-blameless"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "ir-q12",
+      "family": "manager-escalation",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "When does a page escalate to the engineering manager?",
+      "gold": ["ir-escalation"],
+      "challenges": []
+    },
+    {
+      "id": "ir-q13",
+      "family": "page-immediately",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "In which cases is the on-call engineer paged immediately?",
+      "gold": ["ir-severity"],
+      "challenges": ["TABLE_ROW"]
+    },
+    {
+      "id": "ir-q14",
+      "family": "security-team-scope",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "Which incidents does the security team handle instead of on-call?",
+      "gold": ["ir-security"],
+      "challenges": []
+    },
+    {
+      "id": "ir-q15",
+      "family": "blameless-rationale",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why are postmortems blameless?",
+      "gold": ["ir-blameless"],
+      "acceptable": ["ir-postmortem"],
+      "challenges": []
+    },
+    {
+      "id": "ir-q16",
+      "family": "rollback-rationale",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why do we roll back first instead of debugging?",
+      "gold": ["ir-rollback"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "ir-q17",
+      "family": "breach-steps",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "What should the on-call engineer do when a security breach is suspected?",
+      "gold": ["ir-security"],
+      "challenges": []
+    },
+    {
+      "id": "ir-q18",
+      "family": "handover",
+      "intent": "PROCEDURE",
+      "language": "es",
+      "query": "¿Cómo se hace el traspaso de la guardia?",
+      "gold": ["ir-rotation"],
+      "challenges": ["CROSS_LINGUAL", "PARAPHRASE"]
+    },
+    {
+      "id": "ir-q19",
+      "family": "status-page-first-update",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How quickly must the status page be updated after a SEV1 is declared?",
+      "gold": ["ir-status-page"],
+      "challenges": []
+    },
+    {
+      "id": "ir-q20",
+      "family": "rotation-frequency",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How often is each engineer on call?",
+      "gold": ["ir-rotation"],
+      "challenges": []
+    },
+    {
+      "id": "ir-q21",
+      "family": "postmortem-deadline",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How many days do we have to write a postmortem?",
+      "gold": ["ir-postmortem"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ir-q22",
+      "family": "mttr-sev1",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What was the mean time to resolve SEV1 incidents last quarter?",
+      "gold": ["ir-metrics"],
+      "challenges": ["TABLE_ROW"]
+    },
+    {
+      "id": "ir-q23",
+      "family": "ack-window",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántos minutos tiene el ingeniero principal para reconocer una alerta antes de que escale?",
+      "gold": ["ir-escalation"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "ir-q24",
+      "family": "freeze-approver",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who can approve a release during a SEV1?",
+      "gold": ["ir-freeze"],
+      "challenges": []
+    },
+    {
+      "id": "ir-q25",
+      "family": "secondary-escalation",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who gets the page if the primary on-call does not answer?",
+      "gold": ["ir-escalation"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "ir-q26",
+      "family": "stipend-amount",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How much is the on-call stipend per week?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "ir-q27",
+      "family": "paging-tool",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Which tool do we use to send pages?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "ir-q28",
+      "family": "mtta-older-quarter",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What was the mean time to acknowledge two quarters ago?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "TABLE_ROW"]
+    },
+    {
+      "id": "ir-q29",
+      "family": "manager-pages-secondary",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Does the engineering manager page the secondary on-call?",
+      "gold": [],
+      "challenges": ["INVERTED_RELATION"]
+    },
+    {
+      "id": "ir-q30",
+      "family": "sev4-ack",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How fast must SEV4 incidents be acknowledged?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    },
+    {
+      "id": "ir-q31",
+      "family": "pm-on-call",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Do product managers take part in the on-call rotation?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "ir-q32",
+      "family": "sev2-status-frequency",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cada cuánto se actualiza la página de estado durante un incidente SEV2?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "CROSS_LINGUAL"]
+    }
+  ]
+}

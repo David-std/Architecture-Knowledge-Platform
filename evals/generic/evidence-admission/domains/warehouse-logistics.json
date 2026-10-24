@@ -1,0 +1,420 @@
+{
+  "id": "warehouse-logistics",
+  "split": "development",
+  "language": "en",
+  "description": "Distribution warehouse operations: receiving, putaway, picking, counting, hazardous goods and returns.",
+  "units": [
+    {
+      "id": "wl-receiving-asn",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Receiving against an ASN",
+      "headingPath": ["Inbound", "Receiving against an ASN"],
+      "text": "Inbound trucks are unloaded only when an advance shipping notice (ASN) exists in the system. A delivery without an ASN waits in the yard until purchasing creates one or rejects the load."
+    },
+    {
+      "id": "wl-asn",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Advance shipping notice",
+      "headingPath": ["Glossary", "Advance shipping notice"],
+      "text": "An electronic message sent by the supplier before dispatch that lists the pallets, SKUs, quantities and lot numbers of a shipment. Receiving staff scan each pallet against it."
+    },
+    {
+      "id": "wl-putaway",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Putaway",
+      "headingPath": ["Inbound", "Putaway"],
+      "text": "After receipt, the warehouse management system proposes a location based on SKU velocity and pallet height. The operator scans the pallet label and then the location label; a putaway without the location scan is blocked."
+    },
+    {
+      "id": "wl-fefo",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Picking follows FEFO, not FIFO",
+      "headingPath": ["Outbound", "Picking follows FEFO, not FIFO"],
+      "text": "For products with an expiry date, pickers take the lot that expires first, even when a newer lot arrived earlier. FIFO applies only to items without an expiry date."
+    },
+    {
+      "id": "wl-cycle-count",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Cycle counting",
+      "headingPath": ["Inventory control", "Cycle counting"],
+      "text": "Fast-moving A items are counted every month, B items every quarter and C items twice a year. A location with a variance above 2% is recounted by a different operator before any adjustment is posted."
+    },
+    {
+      "id": "wl-hazmat",
+      "documentType": "decision-rule",
+      "unitType": "TABLE",
+      "title": "Hazardous goods segregation",
+      "headingPath": ["Safety", "Hazardous goods segregation"],
+      "text": "| Hazard class | Storage rule |\n|---|---|\n| Flammable liquids (class 3) | Fire-rated cabinet, at most 250 litres per aisle |\n| Oxidisers (class 5.1) | At least 3 metres away from flammable liquids |\n| Corrosives (class 8) | Bunded floor area with a spill kit |"
+    },
+    {
+      "id": "wl-returns",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Customer returns",
+      "headingPath": ["Returns", "Customer returns"],
+      "text": "Returned goods are inspected within 48 hours. Undamaged items in their original packaging go back to stock; opened or damaged items are graded B and sold through the outlet channel."
+    },
+    {
+      "id": "wl-forklift",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Forklift operation",
+      "headingPath": ["Safety", "Forklift operation"],
+      "text": "Only certified operators may drive forklifts, and the certification is renewed every three years. Pedestrians may not enter an aisle while a forklift is working in it."
+    },
+    {
+      "id": "wl-dock-slots",
+      "documentType": "note",
+      "unitType": "PARAGRAPH",
+      "title": "Dock appointments",
+      "headingPath": ["Inbound", "Dock appointments"],
+      "text": "Carriers book 60-minute unloading slots through the carrier portal. A truck that arrives more than 30 minutes late loses its slot and is rescheduled."
+    },
+    {
+      "id": "wl-kpis",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Warehouse KPIs",
+      "headingPath": ["Performance", "Warehouse KPIs"],
+      "text": "| KPI | Target | Q3 |\n|---|---|---|\n| Order picking accuracy | 99.8% | 99.6% |\n| Dock-to-stock time | 24 h | 31 h |\n| Inventory record accuracy | 98% | 98.4% |"
+    },
+    {
+      "id": "wl-cross-dock",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Cross-docking",
+      "headingPath": ["Glossary", "Cross-docking"],
+      "text": "Goods move from the inbound dock straight to an outbound dock without being put away in storage, usually within a few hours. It suits pre-allocated orders whose destination is already known at receipt."
+    },
+    {
+      "id": "wl-chilled-dock",
+      "documentType": "claim",
+      "unitType": "PARAGRAPH",
+      "title": "Chilled goods never wait on the open dock",
+      "headingPath": ["Inbound", "Chilled goods never wait on the open dock"],
+      "text": "Chilled products must reach the cold room within 20 minutes of unloading. The open dock is not temperature controlled, so leaving pallets there breaks the cold chain."
+    },
+    {
+      "id": "wl-lot-capture",
+      "documentType": "claim",
+      "unitType": "EVIDENCE",
+      "title": "Lot numbers are captured at receipt",
+      "headingPath": ["Inbound", "Lot numbers are captured at receipt"],
+      "text": "Recording the lot number of every pallet at receipt lets the warehouse locate and block all affected stock within minutes when a supplier issues a recall."
+    },
+    {
+      "id": "wl-damaged-inbound",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Damaged inbound pallets",
+      "headingPath": ["Inbound", "Damaged inbound pallets"],
+      "text": "When a pallet arrives damaged, the receiver photographs it, writes the damage on the delivery note before the driver signs, and moves the pallet to the quarantine lane."
+    }
+  ],
+  "questions": [
+    {
+      "id": "wl-q01",
+      "family": "unload-without-asn",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Can a truck be unloaded when there is no ASN?",
+      "gold": ["wl-receiving-asn"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "wl-q02",
+      "family": "unload-without-asn",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Se puede descargar un camión que llega sin aviso de envío?",
+      "gold": ["wl-receiving-asn"],
+      "challenges": ["CROSS_LINGUAL", "NEGATIVE_ANSWER", "PARAPHRASE"]
+    },
+    {
+      "id": "wl-q03",
+      "family": "oldest-lot-first",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Do pickers always take the oldest lot first?",
+      "gold": ["wl-fefo"],
+      "challenges": ["NEGATIVE_ANSWER", "PARAPHRASE"]
+    },
+    {
+      "id": "wl-q04",
+      "family": "putaway-location-scan",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Is putaway allowed without scanning the location label?",
+      "gold": ["wl-putaway"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "wl-q05",
+      "family": "pedestrians-aisle",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "May people walk through an aisle while a forklift is working there?",
+      "gold": ["wl-forklift"],
+      "challenges": ["PARAPHRASE", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "wl-q06",
+      "family": "chilled-dock-wait",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Can chilled pallets sit on the dock for an hour after unloading?",
+      "gold": ["wl-chilled-dock"],
+      "challenges": ["NEGATIVE_ANSWER", "TITLE_CONTEXT"]
+    },
+    {
+      "id": "wl-q07",
+      "family": "returns-to-stock",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Do returned items in their original packaging go back to stock?",
+      "gold": ["wl-returns"],
+      "challenges": []
+    },
+    {
+      "id": "wl-q08",
+      "family": "forklift-certification",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Es obligatorio tener certificación para conducir una carretilla elevadora?",
+      "gold": ["wl-forklift"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "wl-q09",
+      "family": "asn-definition",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is an ASN?",
+      "gold": ["wl-asn"],
+      "acceptable": ["wl-receiving-asn"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "wl-q10",
+      "family": "cross-dock-definition",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "Explain cross-docking",
+      "gold": ["wl-cross-dock"],
+      "challenges": ["INFORMAL", "TITLE_CONTEXT"]
+    },
+    {
+      "id": "wl-q11",
+      "family": "cross-dock-definition",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué es el cross-docking?",
+      "gold": ["wl-cross-dock"],
+      "challenges": ["CROSS_LINGUAL", "TITLE_CONTEXT"]
+    },
+    {
+      "id": "wl-q12",
+      "family": "recount-trigger",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "When is a location recounted before the inventory is adjusted?",
+      "gold": ["wl-cycle-count"],
+      "challenges": []
+    },
+    {
+      "id": "wl-q13",
+      "family": "slot-loss",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "Under what conditions does a carrier lose its unloading slot?",
+      "gold": ["wl-dock-slots"],
+      "challenges": []
+    },
+    {
+      "id": "wl-q14",
+      "family": "cross-dock-when",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "When is cross-docking a good fit?",
+      "gold": ["wl-cross-dock"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "wl-q15",
+      "family": "oxidiser-distance",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Where must oxidisers be stored relative to flammable liquids?",
+      "gold": ["wl-hazmat"],
+      "challenges": ["TABLE_ROW"]
+    },
+    {
+      "id": "wl-q16",
+      "family": "lot-capture-rationale",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why are lot numbers recorded when goods are received?",
+      "gold": ["wl-lot-capture"],
+      "challenges": []
+    },
+    {
+      "id": "wl-q17",
+      "family": "chilled-dock-rationale",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why can't chilled goods wait on the open dock?",
+      "gold": ["wl-chilled-dock"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "wl-q18",
+      "family": "fefo-rationale",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué no se usa FIFO para los productos con fecha de caducidad?",
+      "gold": ["wl-fefo"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "wl-q19",
+      "family": "damaged-pallet-steps",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "What should the receiver do when a pallet arrives damaged?",
+      "gold": ["wl-damaged-inbound"],
+      "challenges": []
+    },
+    {
+      "id": "wl-q20",
+      "family": "putaway-steps",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "How does putaway work?",
+      "gold": ["wl-putaway"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "wl-q21",
+      "family": "c-item-frequency",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How often are C items counted?",
+      "gold": ["wl-cycle-count"],
+      "challenges": []
+    },
+    {
+      "id": "wl-q22",
+      "family": "flammable-limit",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What is the maximum amount of flammable liquid allowed per aisle?",
+      "gold": ["wl-hazmat"],
+      "challenges": ["TABLE_ROW"]
+    },
+    {
+      "id": "wl-q23",
+      "family": "slot-length",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How long is an unloading slot?",
+      "gold": ["wl-dock-slots"],
+      "challenges": []
+    },
+    {
+      "id": "wl-q24",
+      "family": "forklift-renewal",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cada cuánto se renueva la certificación de los operadores de carretilla?",
+      "gold": ["wl-forklift"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "wl-q25",
+      "family": "dock-to-stock-q3",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What was the dock-to-stock time in Q3?",
+      "gold": ["wl-kpis"],
+      "challenges": ["TABLE_ROW"]
+    },
+    {
+      "id": "wl-q26",
+      "family": "returns-inspection-window",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "Within how many hours are customer returns inspected?",
+      "gold": ["wl-returns"],
+      "challenges": []
+    },
+    {
+      "id": "wl-q27",
+      "family": "operator-wage",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What is the hourly wage of a forklift operator?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "wl-q28",
+      "family": "warehouse-manager",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "Who is the warehouse manager?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT"]
+    },
+    {
+      "id": "wl-q29",
+      "family": "radioactive-storage",
+      "intent": "ENTITY",
+      "language": "en",
+      "query": "What are the storage rules for radioactive material (class 7)?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    },
+    {
+      "id": "wl-q30",
+      "family": "crane-certification",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How long is a crane operator certification valid?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "wl-q31",
+      "family": "picking-accuracy-q2",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "What was the order picking accuracy in Q2?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "TABLE_ROW"]
+    },
+    {
+      "id": "wl-q32",
+      "family": "frozen-cross-dock",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Is cross-docking used for frozen goods?",
+      "gold": [],
+      "challenges": ["SAME_VOCABULARY"]
+    },
+    {
+      "id": "wl-q33",
+      "family": "receiving-hours",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿En qué horario se recibe mercancía en el almacén?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "CROSS_LINGUAL"]
+    }
+  ]
+}

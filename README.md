@@ -5,13 +5,15 @@
 ![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)
 ![Fastify](https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20%2B%20pgvector-4169E1?logo=postgresql&logoColor=white)
-![MCP](https://img.shields.io/badge/Model%20Context%20Protocol-1.30-6B5BFF)
+![MCP](https://img.shields.io/badge/Model%20Context%20Protocol-1.31-6B5BFF)
 
 Architecture Knowledge Platform (AKP) is a local-first, governed **Context Workspace and Context Fabric** for software teams, humans and AI agents. It connects approved knowledge, software structure, work state, runtime observations and external systems without replacing their authority.
 
 Approved Markdown in managed Git is canonical knowledge. PostgreSQL, lexical/vector indexes, specialized graphs, community/PPR state, ContextPackets and caches are operational or derived state that can be rebuilt.
 
 > **AKP is the context workspace between systems of record and AI agents.** It connects authorized work activity to approved knowledge, code structure, runtime evidence and decisions without turning retrieval output into authority.
+
+The current [core redesign roadmap](docs/architecture/core-redesign-roadmap.md) and [agent execution specification](docs/architecture/core-redesign-execution-spec.md) prioritize the shared engineering knowledge and agent-coordination workflow, a smaller supported provider surface and enforceable [repository architecture standards](docs/architecture/repository-standards.md). Optional graph/RAG integrations are not evidence of superior retrieval until evaluated against a plain vault baseline.
 
 ## Architecture at a glance
 

@@ -1,0 +1,2401 @@
+{
+  "schemaVersion": "akp.r5.functional-holdout.v1",
+  "frozenAt": "2026-10-08",
+  "frozen": true,
+  "sourceHead": "a4dbdfff6ea836c87726177f4b4fd071907b2b2b",
+  "contract": "section-21.4-and-21.5-F5",
+  "provenance": "newly authored standalone source-unit and EN/ES question fixtures; not from private corpus or inspected previous development packs",
+  "questionFamilyDisjointRule": "No source-domain lineages or family identifiers shared with previously used R5 development/heldout packs; repeat faceted queries of one scenario remain in its own heldout lineage.",
+  "source": [
+    {
+      "id": "glacier-samples",
+      "title": "glacier samples",
+      "sourceLanguage": "en",
+      "units": [
+        {
+          "id": "glacier-samples-u1",
+          "excerpt": "Ice cores from ridge A remain sealed at minus eighteen degrees until isotope sampling.",
+          "headingPath": [
+            "glacier-samples"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "glacier-samples-u2",
+          "excerpt": "The field team labels each vial before the helicopter leaves the glacier.",
+          "headingPath": [
+            "glacier-samples"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "glacier-samples-u3",
+          "excerpt": "Dust layers above the blue marker are excluded from the annual melt estimate.",
+          "headingPath": [
+            "glacier-samples"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "glacier-samples-u4",
+          "excerpt": "The isotope laboratory returns a custody receipt to the expedition coordinator.",
+          "headingPath": [
+            "glacier-samples"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "glacier-samples-u5",
+          "excerpt": "An orange tag means that the sample seal was inspected but not opened.",
+          "headingPath": [
+            "glacier-samples"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        }
+      ]
+    },
+    {
+      "id": "botanical-seedbank",
+      "title": "botanical seedbank",
+      "sourceLanguage": "es",
+      "units": [
+        {
+          "id": "botanical-seedbank-u1",
+          "excerpt": "Las semillas de la colección alpina ingresan al congelador después de la prueba de humedad.",
+          "headingPath": [
+            "botanical-seedbank"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "botanical-seedbank-u2",
+          "excerpt": "La bóveda norte conserva lotes de reserva, pero no distribuye material a investigadores.",
+          "headingPath": [
+            "botanical-seedbank"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "botanical-seedbank-u3",
+          "excerpt": "El código P-17 identifica una muestra con germinación inferior al cuarenta por ciento.",
+          "headingPath": [
+            "botanical-seedbank"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "botanical-seedbank-u4",
+          "excerpt": "La reposición de etiquetas requiere la firma conjunta de la curadora y el técnico.",
+          "headingPath": [
+            "botanical-seedbank"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "botanical-seedbank-u5",
+          "excerpt": "Los duplicados de la colección se trasladan en cajas opacas para evitar la exposición solar.",
+          "headingPath": [
+            "botanical-seedbank"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        }
+      ]
+    },
+    {
+      "id": "reef-acoustics",
+      "title": "reef acoustics",
+      "sourceLanguage": "en",
+      "units": [
+        {
+          "id": "reef-acoustics-u1",
+          "excerpt": "Hydrophone station Delta discards recordings made during engine maintenance.",
+          "headingPath": [
+            "reef-acoustics"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "reef-acoustics-u2",
+          "excerpt": "Whale calls are reviewed in two-minute windows by the marine acoustics team.",
+          "headingPath": [
+            "reef-acoustics"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "reef-acoustics-u3",
+          "excerpt": "The southern buoy transmits its checksum before uploading the audio segment.",
+          "headingPath": [
+            "reef-acoustics"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "reef-acoustics-u4",
+          "excerpt": "A missing tide reading triggers an annotation rather than deletion of the recording.",
+          "headingPath": [
+            "reef-acoustics"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "reef-acoustics-u5",
+          "excerpt": "Calibration chirps are stored separately from ambient reef sounds.",
+          "headingPath": [
+            "reef-acoustics"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        }
+      ]
+    },
+    {
+      "id": "archivo-mapoteca",
+      "title": "archivo mapoteca",
+      "sourceLanguage": "es",
+      "units": [
+        {
+          "id": "archivo-mapoteca-u1",
+          "excerpt": "Los mapas con pigmento de cobre se consultan bajo iluminación de treinta lux.",
+          "headingPath": [
+            "archivo-mapoteca"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "archivo-mapoteca-u2",
+          "excerpt": "Las anotaciones a lápiz no se eliminan porque forman parte de la historia material del plano.",
+          "headingPath": [
+            "archivo-mapoteca"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "archivo-mapoteca-u3",
+          "excerpt": "El registro fotográfico se completa antes de retirar el papel del soporte antiguo.",
+          "headingPath": [
+            "archivo-mapoteca"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "archivo-mapoteca-u4",
+          "excerpt": "La restauradora principal aprueba únicamente las uniones reversibles.",
+          "headingPath": [
+            "archivo-mapoteca"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "archivo-mapoteca-u5",
+          "excerpt": "Las hojas con manchas activas se aíslan en sobres transpirables.",
+          "headingPath": [
+            "archivo-mapoteca"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        }
+      ]
+    },
+    {
+      "id": "observatory-mirrors",
+      "title": "observatory mirrors",
+      "sourceLanguage": "en",
+      "units": [
+        {
+          "id": "observatory-mirrors-u1",
+          "excerpt": "The small telescope mirror is re-coated only if its reflectance falls below eighty-two percent.",
+          "headingPath": [
+            "observatory-mirrors"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "observatory-mirrors-u2",
+          "excerpt": "The optical crew measures alignment before exposing the detector to starlight.",
+          "headingPath": [
+            "observatory-mirrors"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "observatory-mirrors-u3",
+          "excerpt": "Temperature readings from dome C are retained for six months after calibration.",
+          "headingPath": [
+            "observatory-mirrors"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "observatory-mirrors-u4",
+          "excerpt": "A violet sticker indicates that the actuator has passed its vibration test.",
+          "headingPath": [
+            "observatory-mirrors"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "observatory-mirrors-u5",
+          "excerpt": "Only the observatory director can release the final mirror acceptance record.",
+          "headingPath": [
+            "observatory-mirrors"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        }
+      ]
+    },
+    {
+      "id": "teatro-mecanica",
+      "title": "teatro mecanica",
+      "sourceLanguage": "es",
+      "units": [
+        {
+          "id": "teatro-mecanica-u1",
+          "excerpt": "Las poleas del escenario se inspeccionan antes de cada función con cambios de decorado.",
+          "headingPath": [
+            "teatro-mecanica"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "teatro-mecanica-u2",
+          "excerpt": "Un testigo rojo en la consola prohíbe mover el telón principal.",
+          "headingPath": [
+            "teatro-mecanica"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "teatro-mecanica-u3",
+          "excerpt": "La maquinaria auxiliar opera con dos técnicos presentes en la cabina.",
+          "headingPath": [
+            "teatro-mecanica"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "teatro-mecanica-u4",
+          "excerpt": "La cuerda deshilachada se retira del servicio sin intentar repararla con cinta.",
+          "headingPath": [
+            "teatro-mecanica"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "teatro-mecanica-u5",
+          "excerpt": "El jefe de escena conserva el registro de pruebas del sistema de contrapesos.",
+          "headingPath": [
+            "teatro-mecanica"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        }
+      ]
+    },
+    {
+      "id": "desert-robotics",
+      "title": "desert robotics",
+      "sourceLanguage": "en",
+      "units": [
+        {
+          "id": "desert-robotics-u1",
+          "excerpt": "Survey rover Echo enters sleep mode when the dust sensor reports three consecutive alarms.",
+          "headingPath": [
+            "desert-robotics"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "desert-robotics-u2",
+          "excerpt": "The navigation team uploads a route only after a terrain hazard review.",
+          "headingPath": [
+            "desert-robotics"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "desert-robotics-u3",
+          "excerpt": "A broken wheel encoder is reported to maintenance instead of being recalibrated remotely.",
+          "headingPath": [
+            "desert-robotics"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "desert-robotics-u4",
+          "excerpt": "Nightly rover logs are archived in the station's isolated storage volume.",
+          "headingPath": [
+            "desert-robotics"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "desert-robotics-u5",
+          "excerpt": "The red beacon flashes twice to indicate a failed radio handshake.",
+          "headingPath": [
+            "desert-robotics"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        }
+      ]
+    },
+    {
+      "id": "taller-ceramica",
+      "title": "taller ceramica",
+      "sourceLanguage": "es",
+      "units": [
+        {
+          "id": "taller-ceramica-u1",
+          "excerpt": "La arcilla de alta porosidad se seca lentamente en estantes sin ventilación directa.",
+          "headingPath": [
+            "taller-ceramica"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "taller-ceramica-u2",
+          "excerpt": "Las piezas esmaltadas se inspeccionan después de enfriarse a menos de cuarenta grados.",
+          "headingPath": [
+            "taller-ceramica"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "taller-ceramica-u3",
+          "excerpt": "Un defecto de burbujeo obliga a repetir la prueba en una placa testigo.",
+          "headingPath": [
+            "taller-ceramica"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "taller-ceramica-u4",
+          "excerpt": "El horno número dos permanece reservado para pigmentos libres de plomo.",
+          "headingPath": [
+            "taller-ceramica"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "taller-ceramica-u5",
+          "excerpt": "La responsable del taller firma el registro de cada cocción experimental.",
+          "headingPath": [
+            "taller-ceramica"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        }
+      ]
+    },
+    {
+      "id": "airship-weather",
+      "title": "airship weather",
+      "sourceLanguage": "en",
+      "units": [
+        {
+          "id": "airship-weather-u1",
+          "excerpt": "The balloon launch is delayed if the surface wind exceeds twelve knots.",
+          "headingPath": [
+            "airship-weather"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "airship-weather-u2",
+          "excerpt": "The helium regulator is checked by two operators before valve opening.",
+          "headingPath": [
+            "airship-weather"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "airship-weather-u3",
+          "excerpt": "The flight team records cloud thickness every fifteen minutes during ascent.",
+          "headingPath": [
+            "airship-weather"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "airship-weather-u4",
+          "excerpt": "A yellow flight card requires a second meteorological briefing.",
+          "headingPath": [
+            "airship-weather"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "airship-weather-u5",
+          "excerpt": "Telemetry is copied to ground storage before the payload is recovered.",
+          "headingPath": [
+            "airship-weather"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        }
+      ]
+    },
+    {
+      "id": "invernadero-barrial",
+      "title": "invernadero barrial",
+      "sourceLanguage": "es",
+      "units": [
+        {
+          "id": "invernadero-barrial-u1",
+          "excerpt": "Las bandejas de semillero se riegan por goteo al amanecer.",
+          "headingPath": [
+            "invernadero-barrial"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "invernadero-barrial-u2",
+          "excerpt": "Si la humedad supera el ochenta por ciento, las ventanas superiores se abren diez minutos.",
+          "headingPath": [
+            "invernadero-barrial"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "invernadero-barrial-u3",
+          "excerpt": "Los cultivos de prueba no se mezclan con la cosecha destinada al comedor comunitario.",
+          "headingPath": [
+            "invernadero-barrial"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "invernadero-barrial-u4",
+          "excerpt": "La coordinadora registra los cambios de sustrato en la libreta verde.",
+          "headingPath": [
+            "invernadero-barrial"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "invernadero-barrial-u5",
+          "excerpt": "Las plantas con señales de hongo pasan a la mesa de observación del extremo oeste.",
+          "headingPath": [
+            "invernadero-barrial"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        }
+      ]
+    },
+    {
+      "id": "lake-sediment",
+      "title": "lake sediment",
+      "sourceLanguage": "en",
+      "units": [
+        {
+          "id": "lake-sediment-u1",
+          "excerpt": "Sediment tube nine is capped underwater before the sample is raised.",
+          "headingPath": [
+            "lake-sediment"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "lake-sediment-u2",
+          "excerpt": "The north basin is sampled only on days with stable water levels.",
+          "headingPath": [
+            "lake-sediment"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "lake-sediment-u3",
+          "excerpt": "The laboratory weighs dried sediment twice to check measurement drift.",
+          "headingPath": [
+            "lake-sediment"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "lake-sediment-u4",
+          "excerpt": "A silver tray marks samples that have completed contaminant screening.",
+          "headingPath": [
+            "lake-sediment"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "lake-sediment-u5",
+          "excerpt": "The hydrology lead validates the chain-of-custody sheet after transport.",
+          "headingPath": [
+            "lake-sediment"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        }
+      ]
+    },
+    {
+      "id": "biblioteca-robotizada",
+      "title": "biblioteca robotizada",
+      "sourceLanguage": "es",
+      "units": [
+        {
+          "id": "biblioteca-robotizada-u1",
+          "excerpt": "Los libros frágiles se mueven con carros manuales y no con el brazo automatizado.",
+          "headingPath": [
+            "biblioteca-robotizada"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "biblioteca-robotizada-u2",
+          "excerpt": "El robot devuelve los préstamos al depósito solo después de leer dos veces su código.",
+          "headingPath": [
+            "biblioteca-robotizada"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "biblioteca-robotizada-u3",
+          "excerpt": "Los errores de escaneo se envían al bibliotecario de guardia.",
+          "headingPath": [
+            "biblioteca-robotizada"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "biblioteca-robotizada-u4",
+          "excerpt": "Las estanterías móviles se inmovilizan durante la revisión de sensores.",
+          "headingPath": [
+            "biblioteca-robotizada"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "biblioteca-robotizada-u5",
+          "excerpt": "Las baterías reemplazadas se etiquetan antes de entrar al almacén de reciclaje.",
+          "headingPath": [
+            "biblioteca-robotizada"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        }
+      ]
+    },
+    {
+      "id": "community-sirens",
+      "title": "community sirens",
+      "sourceLanguage": "en",
+      "units": [
+        {
+          "id": "community-sirens-u1",
+          "excerpt": "Flood siren sector Three performs a silent diagnostic every Tuesday morning.",
+          "headingPath": [
+            "community-sirens"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "community-sirens-u2",
+          "excerpt": "An amber siren dashboard signals a battery anomaly, not a flood evacuation.",
+          "headingPath": [
+            "community-sirens"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "community-sirens-u3",
+          "excerpt": "The disaster coordinator may issue a public warning after verifying the river gauge.",
+          "headingPath": [
+            "community-sirens"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "community-sirens-u4",
+          "excerpt": "Residents on the upper slope receive warnings through text messages only.",
+          "headingPath": [
+            "community-sirens"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "community-sirens-u5",
+          "excerpt": "The warning log is transferred to the city archive at the end of each drill.",
+          "headingPath": [
+            "community-sirens"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        }
+      ]
+    },
+    {
+      "id": "microred-rural",
+      "title": "microred rural",
+      "sourceLanguage": "es",
+      "units": [
+        {
+          "id": "microred-rural-u1",
+          "excerpt": "El inversor de la microred desconecta la carga no esencial al caer la reserva bajo el veinte por ciento.",
+          "headingPath": [
+            "microred-rural"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "microred-rural-u2",
+          "excerpt": "Los medidores de la escuela transmiten sus lecturas al concentrador al mediodía.",
+          "headingPath": [
+            "microred-rural"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "microred-rural-u3",
+          "excerpt": "El equipo local inspecciona los fusibles antes de restablecer el suministro.",
+          "headingPath": [
+            "microred-rural"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "microred-rural-u4",
+          "excerpt": "Un estado azul en el panel indica que la batería está equilibrando sus celdas.",
+          "headingPath": [
+            "microred-rural"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "microred-rural-u5",
+          "excerpt": "Los registros de interrupción se guardan en el servidor de la cooperativa.",
+          "headingPath": [
+            "microred-rural"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        }
+      ]
+    },
+    {
+      "id": "mountain-rescue",
+      "title": "mountain rescue",
+      "sourceLanguage": "en",
+      "units": [
+        {
+          "id": "mountain-rescue-u1",
+          "excerpt": "Rescue team Beta leaves the trail only after its location beacon is acknowledged.",
+          "headingPath": [
+            "mountain-rescue"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "mountain-rescue-u2",
+          "excerpt": "A stretcher marked green has passed the anchor-load inspection.",
+          "headingPath": [
+            "mountain-rescue"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "mountain-rescue-u3",
+          "excerpt": "The weather officer updates ridge conditions every thirty minutes.",
+          "headingPath": [
+            "mountain-rescue"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "mountain-rescue-u4",
+          "excerpt": "All oxygen canisters are weighed before entering the transport helicopter.",
+          "headingPath": [
+            "mountain-rescue"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "mountain-rescue-u5",
+          "excerpt": "An injured climber's identification is confirmed by the medical team, not the dispatcher.",
+          "headingPath": [
+            "mountain-rescue"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        }
+      ]
+    },
+    {
+      "id": "monitor-polinicos",
+      "title": "monitor polinicos",
+      "sourceLanguage": "es",
+      "units": [
+        {
+          "id": "monitor-polinicos-u1",
+          "excerpt": "El sensor de polen de la plaza central se limpia cada tercer día de muestreo.",
+          "headingPath": [
+            "monitor-polinicos"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "monitor-polinicos-u2",
+          "excerpt": "Las lecturas con humedad extrema se marcan como provisionales.",
+          "headingPath": [
+            "monitor-polinicos"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "monitor-polinicos-u3",
+          "excerpt": "Las muestras de control viajan al laboratorio en contenedores sellados.",
+          "headingPath": [
+            "monitor-polinicos"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "monitor-polinicos-u4",
+          "excerpt": "El informe semanal compara primero las estaciones cercanas al río.",
+          "headingPath": [
+            "monitor-polinicos"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        },
+        {
+          "id": "monitor-polinicos-u5",
+          "excerpt": "La bióloga responsable autoriza la publicación de los valores corregidos.",
+          "headingPath": [
+            "monitor-polinicos"
+          ],
+          "unitType": "CLAIM",
+          "documentType": "CLAIM"
+        }
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "glacier-samples-p1",
+      "family": "NEW_SCENARIO_GLACIER_SAMPLES_FACET_1",
+      "sourceDomain": "glacier-samples",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿A qué temperatura se conservan sellados los núcleos del sector A?",
+      "goldUnitId": "glacier-samples-u1",
+      "answerBearingSpan": {
+        "unitId": "glacier-samples-u1",
+        "quote": "Ice cores from ridge A remain sealed at minus eighteen degrees until isotope sampling.",
+        "startOffset": 0,
+        "endOffset": 86
+      },
+      "expected": "ANSWERS",
+      "challenge": "CROSS_LANGUAGE_FACT"
+    },
+    {
+      "id": "glacier-samples-p2",
+      "family": "NEW_SCENARIO_GLACIER_SAMPLES_FACET_2",
+      "sourceDomain": "glacier-samples",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "When are individual vials labeled?",
+      "goldUnitId": "glacier-samples-u2",
+      "answerBearingSpan": {
+        "unitId": "glacier-samples-u2",
+        "quote": "The field team labels each vial before the helicopter leaves the glacier.",
+        "startOffset": 0,
+        "endOffset": 73
+      },
+      "expected": "ANSWERS",
+      "challenge": "CONDITION_OR_TIMING"
+    },
+    {
+      "id": "glacier-samples-p3",
+      "family": "NEW_SCENARIO_GLACIER_SAMPLES_FACET_3",
+      "sourceDomain": "glacier-samples",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Qué capas se excluyen del cálculo de deshielo anual?",
+      "goldUnitId": "glacier-samples-u3",
+      "answerBearingSpan": {
+        "unitId": "glacier-samples-u3",
+        "quote": "Dust layers above the blue marker are excluded from the annual melt estimate.",
+        "startOffset": 0,
+        "endOffset": 77
+      },
+      "expected": "ANSWERS",
+      "challenge": "RELATION_BINDING"
+    },
+    {
+      "id": "glacier-samples-p4",
+      "family": "NEW_SCENARIO_GLACIER_SAMPLES_FACET_4",
+      "sourceDomain": "glacier-samples",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "Who receives the laboratory custody receipt?",
+      "goldUnitId": "glacier-samples-u4",
+      "answerBearingSpan": {
+        "unitId": "glacier-samples-u4",
+        "quote": "The isotope laboratory returns a custody receipt to the expedition coordinator.",
+        "startOffset": 0,
+        "endOffset": 79
+      },
+      "expected": "ANSWERS",
+      "challenge": "PROCESS"
+    },
+    {
+      "id": "glacier-samples-p5",
+      "family": "NEW_SCENARIO_GLACIER_SAMPLES_FACET_5",
+      "sourceDomain": "glacier-samples",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Qué indica la etiqueta naranja?",
+      "goldUnitId": "glacier-samples-u5",
+      "answerBearingSpan": {
+        "unitId": "glacier-samples-u5",
+        "quote": "An orange tag means that the sample seal was inspected but not opened.",
+        "startOffset": 0,
+        "endOffset": 70
+      },
+      "expected": "ANSWERS",
+      "challenge": "ROLE_OR_STATUS"
+    },
+    {
+      "id": "botanical-seedbank-p1",
+      "family": "NEW_SCENARIO_BOTANICAL_SEEDBANK_FACET_1",
+      "sourceDomain": "botanical-seedbank",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "When are alpine collection seeds moved to the freezer?",
+      "goldUnitId": "botanical-seedbank-u1",
+      "answerBearingSpan": {
+        "unitId": "botanical-seedbank-u1",
+        "quote": "Las semillas de la colección alpina ingresan al congelador después de la prueba de humedad.",
+        "startOffset": 0,
+        "endOffset": 91
+      },
+      "expected": "ANSWERS",
+      "challenge": "CROSS_LANGUAGE_FACT"
+    },
+    {
+      "id": "botanical-seedbank-p2",
+      "family": "NEW_SCENARIO_BOTANICAL_SEEDBANK_FACET_2",
+      "sourceDomain": "botanical-seedbank",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "¿Qué uso se permite para los lotes de la bóveda norte?",
+      "goldUnitId": "botanical-seedbank-u2",
+      "answerBearingSpan": {
+        "unitId": "botanical-seedbank-u2",
+        "quote": "La bóveda norte conserva lotes de reserva, pero no distribuye material a investigadores.",
+        "startOffset": 0,
+        "endOffset": 88
+      },
+      "expected": "ANSWERS",
+      "challenge": "CONDITION_OR_TIMING"
+    },
+    {
+      "id": "botanical-seedbank-p3",
+      "family": "NEW_SCENARIO_BOTANICAL_SEEDBANK_FACET_3",
+      "sourceDomain": "botanical-seedbank",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "What does label P-17 signify?",
+      "goldUnitId": "botanical-seedbank-u3",
+      "answerBearingSpan": {
+        "unitId": "botanical-seedbank-u3",
+        "quote": "El código P-17 identifica una muestra con germinación inferior al cuarenta por ciento.",
+        "startOffset": 0,
+        "endOffset": 86
+      },
+      "expected": "ANSWERS",
+      "challenge": "RELATION_BINDING"
+    },
+    {
+      "id": "botanical-seedbank-p4",
+      "family": "NEW_SCENARIO_BOTANICAL_SEEDBANK_FACET_4",
+      "sourceDomain": "botanical-seedbank",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "¿Quiénes deben firmar un reemplazo de etiquetas?",
+      "goldUnitId": "botanical-seedbank-u4",
+      "answerBearingSpan": {
+        "unitId": "botanical-seedbank-u4",
+        "quote": "La reposición de etiquetas requiere la firma conjunta de la curadora y el técnico.",
+        "startOffset": 0,
+        "endOffset": 82
+      },
+      "expected": "ANSWERS",
+      "challenge": "PROCESS"
+    },
+    {
+      "id": "botanical-seedbank-p5",
+      "family": "NEW_SCENARIO_BOTANICAL_SEEDBANK_FACET_5",
+      "sourceDomain": "botanical-seedbank",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "How are duplicate collection lots protected during transfer?",
+      "goldUnitId": "botanical-seedbank-u5",
+      "answerBearingSpan": {
+        "unitId": "botanical-seedbank-u5",
+        "quote": "Los duplicados de la colección se trasladan en cajas opacas para evitar la exposición solar.",
+        "startOffset": 0,
+        "endOffset": 92
+      },
+      "expected": "ANSWERS",
+      "challenge": "ROLE_OR_STATUS"
+    },
+    {
+      "id": "reef-acoustics-p1",
+      "family": "NEW_SCENARIO_REEF_ACOUSTICS_FACET_1",
+      "sourceDomain": "reef-acoustics",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Qué grabaciones descarta el hidrófono Delta?",
+      "goldUnitId": "reef-acoustics-u1",
+      "answerBearingSpan": {
+        "unitId": "reef-acoustics-u1",
+        "quote": "Hydrophone station Delta discards recordings made during engine maintenance.",
+        "startOffset": 0,
+        "endOffset": 76
+      },
+      "expected": "ANSWERS",
+      "challenge": "CROSS_LANGUAGE_FACT"
+    },
+    {
+      "id": "reef-acoustics-p2",
+      "family": "NEW_SCENARIO_REEF_ACOUSTICS_FACET_2",
+      "sourceDomain": "reef-acoustics",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "How long is each whale-call review window?",
+      "goldUnitId": "reef-acoustics-u2",
+      "answerBearingSpan": {
+        "unitId": "reef-acoustics-u2",
+        "quote": "Whale calls are reviewed in two-minute windows by the marine acoustics team.",
+        "startOffset": 0,
+        "endOffset": 76
+      },
+      "expected": "ANSWERS",
+      "challenge": "CONDITION_OR_TIMING"
+    },
+    {
+      "id": "reef-acoustics-p3",
+      "family": "NEW_SCENARIO_REEF_ACOUSTICS_FACET_3",
+      "sourceDomain": "reef-acoustics",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Qué se transmite antes de cargar el segmento de audio?",
+      "goldUnitId": "reef-acoustics-u3",
+      "answerBearingSpan": {
+        "unitId": "reef-acoustics-u3",
+        "quote": "The southern buoy transmits its checksum before uploading the audio segment.",
+        "startOffset": 0,
+        "endOffset": 76
+      },
+      "expected": "ANSWERS",
+      "challenge": "RELATION_BINDING"
+    },
+    {
+      "id": "reef-acoustics-p4",
+      "family": "NEW_SCENARIO_REEF_ACOUSTICS_FACET_4",
+      "sourceDomain": "reef-acoustics",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "What happens when a tide reading is missing?",
+      "goldUnitId": "reef-acoustics-u4",
+      "answerBearingSpan": {
+        "unitId": "reef-acoustics-u4",
+        "quote": "A missing tide reading triggers an annotation rather than deletion of the recording.",
+        "startOffset": 0,
+        "endOffset": 84
+      },
+      "expected": "ANSWERS",
+      "challenge": "PROCESS"
+    },
+    {
+      "id": "reef-acoustics-p5",
+      "family": "NEW_SCENARIO_REEF_ACOUSTICS_FACET_5",
+      "sourceDomain": "reef-acoustics",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Cómo se almacenan los pulsos de calibración respecto al sonido ambiental?",
+      "goldUnitId": "reef-acoustics-u5",
+      "answerBearingSpan": {
+        "unitId": "reef-acoustics-u5",
+        "quote": "Calibration chirps are stored separately from ambient reef sounds.",
+        "startOffset": 0,
+        "endOffset": 66
+      },
+      "expected": "ANSWERS",
+      "challenge": "ROLE_OR_STATUS"
+    },
+    {
+      "id": "archivo-mapoteca-p1",
+      "family": "NEW_SCENARIO_ARCHIVO_MAPOTECA_FACET_1",
+      "sourceDomain": "archivo-mapoteca",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "What illumination is used for maps containing copper pigment?",
+      "goldUnitId": "archivo-mapoteca-u1",
+      "answerBearingSpan": {
+        "unitId": "archivo-mapoteca-u1",
+        "quote": "Los mapas con pigmento de cobre se consultan bajo iluminación de treinta lux.",
+        "startOffset": 0,
+        "endOffset": 77
+      },
+      "expected": "ANSWERS",
+      "challenge": "CROSS_LANGUAGE_FACT"
+    },
+    {
+      "id": "archivo-mapoteca-p2",
+      "family": "NEW_SCENARIO_ARCHIVO_MAPOTECA_FACET_2",
+      "sourceDomain": "archivo-mapoteca",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "¿Por qué no se borran las anotaciones a lápiz?",
+      "goldUnitId": "archivo-mapoteca-u2",
+      "answerBearingSpan": {
+        "unitId": "archivo-mapoteca-u2",
+        "quote": "Las anotaciones a lápiz no se eliminan porque forman parte de la historia material del plano.",
+        "startOffset": 0,
+        "endOffset": 93
+      },
+      "expected": "ANSWERS",
+      "challenge": "CONDITION_OR_TIMING"
+    },
+    {
+      "id": "archivo-mapoteca-p3",
+      "family": "NEW_SCENARIO_ARCHIVO_MAPOTECA_FACET_3",
+      "sourceDomain": "archivo-mapoteca",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "When is the photographic record completed?",
+      "goldUnitId": "archivo-mapoteca-u3",
+      "answerBearingSpan": {
+        "unitId": "archivo-mapoteca-u3",
+        "quote": "El registro fotográfico se completa antes de retirar el papel del soporte antiguo.",
+        "startOffset": 0,
+        "endOffset": 82
+      },
+      "expected": "ANSWERS",
+      "challenge": "RELATION_BINDING"
+    },
+    {
+      "id": "archivo-mapoteca-p4",
+      "family": "NEW_SCENARIO_ARCHIVO_MAPOTECA_FACET_4",
+      "sourceDomain": "archivo-mapoteca",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "¿Qué tipo de uniones aprueba la restauradora principal?",
+      "goldUnitId": "archivo-mapoteca-u4",
+      "answerBearingSpan": {
+        "unitId": "archivo-mapoteca-u4",
+        "quote": "La restauradora principal aprueba únicamente las uniones reversibles.",
+        "startOffset": 0,
+        "endOffset": 69
+      },
+      "expected": "ANSWERS",
+      "challenge": "PROCESS"
+    },
+    {
+      "id": "archivo-mapoteca-p5",
+      "family": "NEW_SCENARIO_ARCHIVO_MAPOTECA_FACET_5",
+      "sourceDomain": "archivo-mapoteca",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "How are sheets with active stains isolated?",
+      "goldUnitId": "archivo-mapoteca-u5",
+      "answerBearingSpan": {
+        "unitId": "archivo-mapoteca-u5",
+        "quote": "Las hojas con manchas activas se aíslan en sobres transpirables.",
+        "startOffset": 0,
+        "endOffset": 64
+      },
+      "expected": "ANSWERS",
+      "challenge": "ROLE_OR_STATUS"
+    },
+    {
+      "id": "observatory-mirrors-p1",
+      "family": "NEW_SCENARIO_OBSERVATORY_MIRRORS_FACET_1",
+      "sourceDomain": "observatory-mirrors",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Qué condición activa el nuevo recubrimiento del espejo pequeño?",
+      "goldUnitId": "observatory-mirrors-u1",
+      "answerBearingSpan": {
+        "unitId": "observatory-mirrors-u1",
+        "quote": "The small telescope mirror is re-coated only if its reflectance falls below eighty-two percent.",
+        "startOffset": 0,
+        "endOffset": 95
+      },
+      "expected": "ANSWERS",
+      "challenge": "CROSS_LANGUAGE_FACT"
+    },
+    {
+      "id": "observatory-mirrors-p2",
+      "family": "NEW_SCENARIO_OBSERVATORY_MIRRORS_FACET_2",
+      "sourceDomain": "observatory-mirrors",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "What precedes detector exposure to starlight?",
+      "goldUnitId": "observatory-mirrors-u2",
+      "answerBearingSpan": {
+        "unitId": "observatory-mirrors-u2",
+        "quote": "The optical crew measures alignment before exposing the detector to starlight.",
+        "startOffset": 0,
+        "endOffset": 78
+      },
+      "expected": "ANSWERS",
+      "challenge": "CONDITION_OR_TIMING"
+    },
+    {
+      "id": "observatory-mirrors-p3",
+      "family": "NEW_SCENARIO_OBSERVATORY_MIRRORS_FACET_3",
+      "sourceDomain": "observatory-mirrors",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Durante cuánto tiempo conservan las lecturas de temperatura?",
+      "goldUnitId": "observatory-mirrors-u3",
+      "answerBearingSpan": {
+        "unitId": "observatory-mirrors-u3",
+        "quote": "Temperature readings from dome C are retained for six months after calibration.",
+        "startOffset": 0,
+        "endOffset": 79
+      },
+      "expected": "ANSWERS",
+      "challenge": "RELATION_BINDING"
+    },
+    {
+      "id": "observatory-mirrors-p4",
+      "family": "NEW_SCENARIO_OBSERVATORY_MIRRORS_FACET_4",
+      "sourceDomain": "observatory-mirrors",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "What does a violet actuator sticker indicate?",
+      "goldUnitId": "observatory-mirrors-u4",
+      "answerBearingSpan": {
+        "unitId": "observatory-mirrors-u4",
+        "quote": "A violet sticker indicates that the actuator has passed its vibration test.",
+        "startOffset": 0,
+        "endOffset": 75
+      },
+      "expected": "ANSWERS",
+      "challenge": "PROCESS"
+    },
+    {
+      "id": "observatory-mirrors-p5",
+      "family": "NEW_SCENARIO_OBSERVATORY_MIRRORS_FACET_5",
+      "sourceDomain": "observatory-mirrors",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Quién puede liberar el acta final del espejo?",
+      "goldUnitId": "observatory-mirrors-u5",
+      "answerBearingSpan": {
+        "unitId": "observatory-mirrors-u5",
+        "quote": "Only the observatory director can release the final mirror acceptance record.",
+        "startOffset": 0,
+        "endOffset": 77
+      },
+      "expected": "ANSWERS",
+      "challenge": "ROLE_OR_STATUS"
+    },
+    {
+      "id": "teatro-mecanica-p1",
+      "family": "NEW_SCENARIO_TEATRO_MECANICA_FACET_1",
+      "sourceDomain": "teatro-mecanica",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "When are stage pulleys inspected?",
+      "goldUnitId": "teatro-mecanica-u1",
+      "answerBearingSpan": {
+        "unitId": "teatro-mecanica-u1",
+        "quote": "Las poleas del escenario se inspeccionan antes de cada función con cambios de decorado.",
+        "startOffset": 0,
+        "endOffset": 87
+      },
+      "expected": "ANSWERS",
+      "challenge": "CROSS_LANGUAGE_FACT"
+    },
+    {
+      "id": "teatro-mecanica-p2",
+      "family": "NEW_SCENARIO_TEATRO_MECANICA_FACET_2",
+      "sourceDomain": "teatro-mecanica",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "¿Qué impide el indicador rojo de la consola?",
+      "goldUnitId": "teatro-mecanica-u2",
+      "answerBearingSpan": {
+        "unitId": "teatro-mecanica-u2",
+        "quote": "Un testigo rojo en la consola prohíbe mover el telón principal.",
+        "startOffset": 0,
+        "endOffset": 63
+      },
+      "expected": "ANSWERS",
+      "challenge": "CONDITION_OR_TIMING"
+    },
+    {
+      "id": "teatro-mecanica-p3",
+      "family": "NEW_SCENARIO_TEATRO_MECANICA_FACET_3",
+      "sourceDomain": "teatro-mecanica",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "How many technicians must be in the booth for auxiliary machinery?",
+      "goldUnitId": "teatro-mecanica-u3",
+      "answerBearingSpan": {
+        "unitId": "teatro-mecanica-u3",
+        "quote": "La maquinaria auxiliar opera con dos técnicos presentes en la cabina.",
+        "startOffset": 0,
+        "endOffset": 69
+      },
+      "expected": "ANSWERS",
+      "challenge": "RELATION_BINDING"
+    },
+    {
+      "id": "teatro-mecanica-p4",
+      "family": "NEW_SCENARIO_TEATRO_MECANICA_FACET_4",
+      "sourceDomain": "teatro-mecanica",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "¿Qué se hace con una cuerda deshilachada?",
+      "goldUnitId": "teatro-mecanica-u4",
+      "answerBearingSpan": {
+        "unitId": "teatro-mecanica-u4",
+        "quote": "La cuerda deshilachada se retira del servicio sin intentar repararla con cinta.",
+        "startOffset": 0,
+        "endOffset": 79
+      },
+      "expected": "ANSWERS",
+      "challenge": "PROCESS"
+    },
+    {
+      "id": "teatro-mecanica-p5",
+      "family": "NEW_SCENARIO_TEATRO_MECANICA_FACET_5",
+      "sourceDomain": "teatro-mecanica",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "Who keeps the counterweight test record?",
+      "goldUnitId": "teatro-mecanica-u5",
+      "answerBearingSpan": {
+        "unitId": "teatro-mecanica-u5",
+        "quote": "El jefe de escena conserva el registro de pruebas del sistema de contrapesos.",
+        "startOffset": 0,
+        "endOffset": 77
+      },
+      "expected": "ANSWERS",
+      "challenge": "ROLE_OR_STATUS"
+    },
+    {
+      "id": "desert-robotics-p1",
+      "family": "NEW_SCENARIO_DESERT_ROBOTICS_FACET_1",
+      "sourceDomain": "desert-robotics",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Cuándo pasa el rover Echo al modo de reposo?",
+      "goldUnitId": "desert-robotics-u1",
+      "answerBearingSpan": {
+        "unitId": "desert-robotics-u1",
+        "quote": "Survey rover Echo enters sleep mode when the dust sensor reports three consecutive alarms.",
+        "startOffset": 0,
+        "endOffset": 90
+      },
+      "expected": "ANSWERS",
+      "challenge": "CROSS_LANGUAGE_FACT"
+    },
+    {
+      "id": "desert-robotics-p2",
+      "family": "NEW_SCENARIO_DESERT_ROBOTICS_FACET_2",
+      "sourceDomain": "desert-robotics",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "What must happen before a rover route is uploaded?",
+      "goldUnitId": "desert-robotics-u2",
+      "answerBearingSpan": {
+        "unitId": "desert-robotics-u2",
+        "quote": "The navigation team uploads a route only after a terrain hazard review.",
+        "startOffset": 0,
+        "endOffset": 71
+      },
+      "expected": "ANSWERS",
+      "challenge": "CONDITION_OR_TIMING"
+    },
+    {
+      "id": "desert-robotics-p3",
+      "family": "NEW_SCENARIO_DESERT_ROBOTICS_FACET_3",
+      "sourceDomain": "desert-robotics",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Cómo se gestiona un codificador de rueda averiado?",
+      "goldUnitId": "desert-robotics-u3",
+      "answerBearingSpan": {
+        "unitId": "desert-robotics-u3",
+        "quote": "A broken wheel encoder is reported to maintenance instead of being recalibrated remotely.",
+        "startOffset": 0,
+        "endOffset": 89
+      },
+      "expected": "ANSWERS",
+      "challenge": "RELATION_BINDING"
+    },
+    {
+      "id": "desert-robotics-p4",
+      "family": "NEW_SCENARIO_DESERT_ROBOTICS_FACET_4",
+      "sourceDomain": "desert-robotics",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "Where are nightly rover logs archived?",
+      "goldUnitId": "desert-robotics-u4",
+      "answerBearingSpan": {
+        "unitId": "desert-robotics-u4",
+        "quote": "Nightly rover logs are archived in the station's isolated storage volume.",
+        "startOffset": 0,
+        "endOffset": 73
+      },
+      "expected": "ANSWERS",
+      "challenge": "PROCESS"
+    },
+    {
+      "id": "desert-robotics-p5",
+      "family": "NEW_SCENARIO_DESERT_ROBOTICS_FACET_5",
+      "sourceDomain": "desert-robotics",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Qué significa que la baliza roja parpadee dos veces?",
+      "goldUnitId": "desert-robotics-u5",
+      "answerBearingSpan": {
+        "unitId": "desert-robotics-u5",
+        "quote": "The red beacon flashes twice to indicate a failed radio handshake.",
+        "startOffset": 0,
+        "endOffset": 66
+      },
+      "expected": "ANSWERS",
+      "challenge": "ROLE_OR_STATUS"
+    },
+    {
+      "id": "taller-ceramica-p1",
+      "family": "NEW_SCENARIO_TALLER_CERAMICA_FACET_1",
+      "sourceDomain": "taller-ceramica",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "How is highly porous clay dried?",
+      "goldUnitId": "taller-ceramica-u1",
+      "answerBearingSpan": {
+        "unitId": "taller-ceramica-u1",
+        "quote": "La arcilla de alta porosidad se seca lentamente en estantes sin ventilación directa.",
+        "startOffset": 0,
+        "endOffset": 84
+      },
+      "expected": "ANSWERS",
+      "challenge": "CROSS_LANGUAGE_FACT"
+    },
+    {
+      "id": "taller-ceramica-p2",
+      "family": "NEW_SCENARIO_TALLER_CERAMICA_FACET_2",
+      "sourceDomain": "taller-ceramica",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "¿Cuándo se inspeccionan las piezas esmaltadas?",
+      "goldUnitId": "taller-ceramica-u2",
+      "answerBearingSpan": {
+        "unitId": "taller-ceramica-u2",
+        "quote": "Las piezas esmaltadas se inspeccionan después de enfriarse a menos de cuarenta grados.",
+        "startOffset": 0,
+        "endOffset": 86
+      },
+      "expected": "ANSWERS",
+      "challenge": "CONDITION_OR_TIMING"
+    },
+    {
+      "id": "taller-ceramica-p3",
+      "family": "NEW_SCENARIO_TALLER_CERAMICA_FACET_3",
+      "sourceDomain": "taller-ceramica",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "What happens when glaze bubbling is detected?",
+      "goldUnitId": "taller-ceramica-u3",
+      "answerBearingSpan": {
+        "unitId": "taller-ceramica-u3",
+        "quote": "Un defecto de burbujeo obliga a repetir la prueba en una placa testigo.",
+        "startOffset": 0,
+        "endOffset": 71
+      },
+      "expected": "ANSWERS",
+      "challenge": "RELATION_BINDING"
+    },
+    {
+      "id": "taller-ceramica-p4",
+      "family": "NEW_SCENARIO_TALLER_CERAMICA_FACET_4",
+      "sourceDomain": "taller-ceramica",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "¿Para qué materiales se reserva el segundo horno?",
+      "goldUnitId": "taller-ceramica-u4",
+      "answerBearingSpan": {
+        "unitId": "taller-ceramica-u4",
+        "quote": "El horno número dos permanece reservado para pigmentos libres de plomo.",
+        "startOffset": 0,
+        "endOffset": 71
+      },
+      "expected": "ANSWERS",
+      "challenge": "PROCESS"
+    },
+    {
+      "id": "taller-ceramica-p5",
+      "family": "NEW_SCENARIO_TALLER_CERAMICA_FACET_5",
+      "sourceDomain": "taller-ceramica",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "Who signs the record of each experimental firing?",
+      "goldUnitId": "taller-ceramica-u5",
+      "answerBearingSpan": {
+        "unitId": "taller-ceramica-u5",
+        "quote": "La responsable del taller firma el registro de cada cocción experimental.",
+        "startOffset": 0,
+        "endOffset": 73
+      },
+      "expected": "ANSWERS",
+      "challenge": "ROLE_OR_STATUS"
+    },
+    {
+      "id": "airship-weather-p1",
+      "family": "NEW_SCENARIO_AIRSHIP_WEATHER_FACET_1",
+      "sourceDomain": "airship-weather",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Qué velocidad del viento superficial retrasa el lanzamiento?",
+      "goldUnitId": "airship-weather-u1",
+      "answerBearingSpan": {
+        "unitId": "airship-weather-u1",
+        "quote": "The balloon launch is delayed if the surface wind exceeds twelve knots.",
+        "startOffset": 0,
+        "endOffset": 71
+      },
+      "expected": "ANSWERS",
+      "challenge": "CROSS_LANGUAGE_FACT"
+    },
+    {
+      "id": "airship-weather-p2",
+      "family": "NEW_SCENARIO_AIRSHIP_WEATHER_FACET_2",
+      "sourceDomain": "airship-weather",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "Who checks the helium regulator before opening the valve?",
+      "goldUnitId": "airship-weather-u2",
+      "answerBearingSpan": {
+        "unitId": "airship-weather-u2",
+        "quote": "The helium regulator is checked by two operators before valve opening.",
+        "startOffset": 0,
+        "endOffset": 70
+      },
+      "expected": "ANSWERS",
+      "challenge": "CONDITION_OR_TIMING"
+    },
+    {
+      "id": "airship-weather-p3",
+      "family": "NEW_SCENARIO_AIRSHIP_WEATHER_FACET_3",
+      "sourceDomain": "airship-weather",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Cada cuánto registran el espesor de las nubes?",
+      "goldUnitId": "airship-weather-u3",
+      "answerBearingSpan": {
+        "unitId": "airship-weather-u3",
+        "quote": "The flight team records cloud thickness every fifteen minutes during ascent.",
+        "startOffset": 0,
+        "endOffset": 76
+      },
+      "expected": "ANSWERS",
+      "challenge": "RELATION_BINDING"
+    },
+    {
+      "id": "airship-weather-p4",
+      "family": "NEW_SCENARIO_AIRSHIP_WEATHER_FACET_4",
+      "sourceDomain": "airship-weather",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "What does a yellow flight card require?",
+      "goldUnitId": "airship-weather-u4",
+      "answerBearingSpan": {
+        "unitId": "airship-weather-u4",
+        "quote": "A yellow flight card requires a second meteorological briefing.",
+        "startOffset": 0,
+        "endOffset": 63
+      },
+      "expected": "ANSWERS",
+      "challenge": "PROCESS"
+    },
+    {
+      "id": "airship-weather-p5",
+      "family": "NEW_SCENARIO_AIRSHIP_WEATHER_FACET_5",
+      "sourceDomain": "airship-weather",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Qué hacen con la telemetría antes de recuperar la carga útil?",
+      "goldUnitId": "airship-weather-u5",
+      "answerBearingSpan": {
+        "unitId": "airship-weather-u5",
+        "quote": "Telemetry is copied to ground storage before the payload is recovered.",
+        "startOffset": 0,
+        "endOffset": 70
+      },
+      "expected": "ANSWERS",
+      "challenge": "ROLE_OR_STATUS"
+    },
+    {
+      "id": "invernadero-barrial-p1",
+      "family": "NEW_SCENARIO_INVERNADERO_BARRIAL_FACET_1",
+      "sourceDomain": "invernadero-barrial",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "How are seedling trays watered and at what time?",
+      "goldUnitId": "invernadero-barrial-u1",
+      "answerBearingSpan": {
+        "unitId": "invernadero-barrial-u1",
+        "quote": "Las bandejas de semillero se riegan por goteo al amanecer.",
+        "startOffset": 0,
+        "endOffset": 58
+      },
+      "expected": "ANSWERS",
+      "challenge": "CROSS_LANGUAGE_FACT"
+    },
+    {
+      "id": "invernadero-barrial-p2",
+      "family": "NEW_SCENARIO_INVERNADERO_BARRIAL_FACET_2",
+      "sourceDomain": "invernadero-barrial",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "¿Qué se hace cuando la humedad supera el límite?",
+      "goldUnitId": "invernadero-barrial-u2",
+      "answerBearingSpan": {
+        "unitId": "invernadero-barrial-u2",
+        "quote": "Si la humedad supera el ochenta por ciento, las ventanas superiores se abren diez minutos.",
+        "startOffset": 0,
+        "endOffset": 90
+      },
+      "expected": "ANSWERS",
+      "challenge": "CONDITION_OR_TIMING"
+    },
+    {
+      "id": "invernadero-barrial-p3",
+      "family": "NEW_SCENARIO_INVERNADERO_BARRIAL_FACET_3",
+      "sourceDomain": "invernadero-barrial",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "Which harvest is kept separate from the community kitchen supply?",
+      "goldUnitId": "invernadero-barrial-u3",
+      "answerBearingSpan": {
+        "unitId": "invernadero-barrial-u3",
+        "quote": "Los cultivos de prueba no se mezclan con la cosecha destinada al comedor comunitario.",
+        "startOffset": 0,
+        "endOffset": 85
+      },
+      "expected": "ANSWERS",
+      "challenge": "RELATION_BINDING"
+    },
+    {
+      "id": "invernadero-barrial-p4",
+      "family": "NEW_SCENARIO_INVERNADERO_BARRIAL_FACET_4",
+      "sourceDomain": "invernadero-barrial",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "Who records changes of substrate?",
+      "goldUnitId": "invernadero-barrial-u4",
+      "answerBearingSpan": {
+        "unitId": "invernadero-barrial-u4",
+        "quote": "La coordinadora registra los cambios de sustrato en la libreta verde.",
+        "startOffset": 0,
+        "endOffset": 69
+      },
+      "expected": "ANSWERS",
+      "challenge": "PROCESS"
+    },
+    {
+      "id": "invernadero-barrial-p5",
+      "family": "NEW_SCENARIO_INVERNADERO_BARRIAL_FACET_5",
+      "sourceDomain": "invernadero-barrial",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "¿Dónde se colocan las plantas con posibles hongos?",
+      "goldUnitId": "invernadero-barrial-u5",
+      "answerBearingSpan": {
+        "unitId": "invernadero-barrial-u5",
+        "quote": "Las plantas con señales de hongo pasan a la mesa de observación del extremo oeste.",
+        "startOffset": 0,
+        "endOffset": 82
+      },
+      "expected": "ANSWERS",
+      "challenge": "ROLE_OR_STATUS"
+    },
+    {
+      "id": "lake-sediment-p1",
+      "family": "NEW_SCENARIO_LAKE_SEDIMENT_FACET_1",
+      "sourceDomain": "lake-sediment",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Cuándo se tapa el tubo de sedimento nueve?",
+      "goldUnitId": "lake-sediment-u1",
+      "answerBearingSpan": {
+        "unitId": "lake-sediment-u1",
+        "quote": "Sediment tube nine is capped underwater before the sample is raised.",
+        "startOffset": 0,
+        "endOffset": 68
+      },
+      "expected": "ANSWERS",
+      "challenge": "CROSS_LANGUAGE_FACT"
+    },
+    {
+      "id": "lake-sediment-p2",
+      "family": "NEW_SCENARIO_LAKE_SEDIMENT_FACET_2",
+      "sourceDomain": "lake-sediment",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "What water-level condition permits sampling in the north basin?",
+      "goldUnitId": "lake-sediment-u2",
+      "answerBearingSpan": {
+        "unitId": "lake-sediment-u2",
+        "quote": "The north basin is sampled only on days with stable water levels.",
+        "startOffset": 0,
+        "endOffset": 65
+      },
+      "expected": "ANSWERS",
+      "challenge": "CONDITION_OR_TIMING"
+    },
+    {
+      "id": "lake-sediment-p3",
+      "family": "NEW_SCENARIO_LAKE_SEDIMENT_FACET_3",
+      "sourceDomain": "lake-sediment",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Cuántas veces se pesa el sedimento seco?",
+      "goldUnitId": "lake-sediment-u3",
+      "answerBearingSpan": {
+        "unitId": "lake-sediment-u3",
+        "quote": "The laboratory weighs dried sediment twice to check measurement drift.",
+        "startOffset": 0,
+        "endOffset": 70
+      },
+      "expected": "ANSWERS",
+      "challenge": "RELATION_BINDING"
+    },
+    {
+      "id": "lake-sediment-p4",
+      "family": "NEW_SCENARIO_LAKE_SEDIMENT_FACET_4",
+      "sourceDomain": "lake-sediment",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "What does the silver sample tray indicate?",
+      "goldUnitId": "lake-sediment-u4",
+      "answerBearingSpan": {
+        "unitId": "lake-sediment-u4",
+        "quote": "A silver tray marks samples that have completed contaminant screening.",
+        "startOffset": 0,
+        "endOffset": 70
+      },
+      "expected": "ANSWERS",
+      "challenge": "PROCESS"
+    },
+    {
+      "id": "lake-sediment-p5",
+      "family": "NEW_SCENARIO_LAKE_SEDIMENT_FACET_5",
+      "sourceDomain": "lake-sediment",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Quién valida la cadena de custodia tras el traslado?",
+      "goldUnitId": "lake-sediment-u5",
+      "answerBearingSpan": {
+        "unitId": "lake-sediment-u5",
+        "quote": "The hydrology lead validates the chain-of-custody sheet after transport.",
+        "startOffset": 0,
+        "endOffset": 72
+      },
+      "expected": "ANSWERS",
+      "challenge": "ROLE_OR_STATUS"
+    },
+    {
+      "id": "biblioteca-robotizada-p1",
+      "family": "NEW_SCENARIO_BIBLIOTECA_ROBOTIZADA_FACET_1",
+      "sourceDomain": "biblioteca-robotizada",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "How are fragile books moved?",
+      "goldUnitId": "biblioteca-robotizada-u1",
+      "answerBearingSpan": {
+        "unitId": "biblioteca-robotizada-u1",
+        "quote": "Los libros frágiles se mueven con carros manuales y no con el brazo automatizado.",
+        "startOffset": 0,
+        "endOffset": 81
+      },
+      "expected": "ANSWERS",
+      "challenge": "CROSS_LANGUAGE_FACT"
+    },
+    {
+      "id": "biblioteca-robotizada-p2",
+      "family": "NEW_SCENARIO_BIBLIOTECA_ROBOTIZADA_FACET_2",
+      "sourceDomain": "biblioteca-robotizada",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "¿Qué verificación precede al retorno automático al depósito?",
+      "goldUnitId": "biblioteca-robotizada-u2",
+      "answerBearingSpan": {
+        "unitId": "biblioteca-robotizada-u2",
+        "quote": "El robot devuelve los préstamos al depósito solo después de leer dos veces su código.",
+        "startOffset": 0,
+        "endOffset": 85
+      },
+      "expected": "ANSWERS",
+      "challenge": "CONDITION_OR_TIMING"
+    },
+    {
+      "id": "biblioteca-robotizada-p3",
+      "family": "NEW_SCENARIO_BIBLIOTECA_ROBOTIZADA_FACET_3",
+      "sourceDomain": "biblioteca-robotizada",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "Who receives scanning errors?",
+      "goldUnitId": "biblioteca-robotizada-u3",
+      "answerBearingSpan": {
+        "unitId": "biblioteca-robotizada-u3",
+        "quote": "Los errores de escaneo se envían al bibliotecario de guardia.",
+        "startOffset": 0,
+        "endOffset": 61
+      },
+      "expected": "ANSWERS",
+      "challenge": "RELATION_BINDING"
+    },
+    {
+      "id": "biblioteca-robotizada-p4",
+      "family": "NEW_SCENARIO_BIBLIOTECA_ROBOTIZADA_FACET_4",
+      "sourceDomain": "biblioteca-robotizada",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "¿Qué ocurre con las estanterías durante la inspección de sensores?",
+      "goldUnitId": "biblioteca-robotizada-u4",
+      "answerBearingSpan": {
+        "unitId": "biblioteca-robotizada-u4",
+        "quote": "Las estanterías móviles se inmovilizan durante la revisión de sensores.",
+        "startOffset": 0,
+        "endOffset": 71
+      },
+      "expected": "ANSWERS",
+      "challenge": "PROCESS"
+    },
+    {
+      "id": "biblioteca-robotizada-p5",
+      "family": "NEW_SCENARIO_BIBLIOTECA_ROBOTIZADA_FACET_5",
+      "sourceDomain": "biblioteca-robotizada",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "When are replaced batteries labeled?",
+      "goldUnitId": "biblioteca-robotizada-u5",
+      "answerBearingSpan": {
+        "unitId": "biblioteca-robotizada-u5",
+        "quote": "Las baterías reemplazadas se etiquetan antes de entrar al almacén de reciclaje.",
+        "startOffset": 0,
+        "endOffset": 79
+      },
+      "expected": "ANSWERS",
+      "challenge": "ROLE_OR_STATUS"
+    },
+    {
+      "id": "community-sirens-p1",
+      "family": "NEW_SCENARIO_COMMUNITY_SIRENS_FACET_1",
+      "sourceDomain": "community-sirens",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Cuándo ejecuta su diagnóstico la sirena del sector tres?",
+      "goldUnitId": "community-sirens-u1",
+      "answerBearingSpan": {
+        "unitId": "community-sirens-u1",
+        "quote": "Flood siren sector Three performs a silent diagnostic every Tuesday morning.",
+        "startOffset": 0,
+        "endOffset": 76
+      },
+      "expected": "ANSWERS",
+      "challenge": "CROSS_LANGUAGE_FACT"
+    },
+    {
+      "id": "community-sirens-p2",
+      "family": "NEW_SCENARIO_COMMUNITY_SIRENS_FACET_2",
+      "sourceDomain": "community-sirens",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "What does an amber siren dashboard mean?",
+      "goldUnitId": "community-sirens-u2",
+      "answerBearingSpan": {
+        "unitId": "community-sirens-u2",
+        "quote": "An amber siren dashboard signals a battery anomaly, not a flood evacuation.",
+        "startOffset": 0,
+        "endOffset": 75
+      },
+      "expected": "ANSWERS",
+      "challenge": "CONDITION_OR_TIMING"
+    },
+    {
+      "id": "community-sirens-p3",
+      "family": "NEW_SCENARIO_COMMUNITY_SIRENS_FACET_3",
+      "sourceDomain": "community-sirens",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Qué se debe comprobar antes de emitir una alerta pública?",
+      "goldUnitId": "community-sirens-u3",
+      "answerBearingSpan": {
+        "unitId": "community-sirens-u3",
+        "quote": "The disaster coordinator may issue a public warning after verifying the river gauge.",
+        "startOffset": 0,
+        "endOffset": 84
+      },
+      "expected": "ANSWERS",
+      "challenge": "RELATION_BINDING"
+    },
+    {
+      "id": "community-sirens-p4",
+      "family": "NEW_SCENARIO_COMMUNITY_SIRENS_FACET_4",
+      "sourceDomain": "community-sirens",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "How do upper-slope residents receive warnings?",
+      "goldUnitId": "community-sirens-u4",
+      "answerBearingSpan": {
+        "unitId": "community-sirens-u4",
+        "quote": "Residents on the upper slope receive warnings through text messages only.",
+        "startOffset": 0,
+        "endOffset": 73
+      },
+      "expected": "ANSWERS",
+      "challenge": "PROCESS"
+    },
+    {
+      "id": "community-sirens-p5",
+      "family": "NEW_SCENARIO_COMMUNITY_SIRENS_FACET_5",
+      "sourceDomain": "community-sirens",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Cuándo se transfiere el registro de alertas al archivo?",
+      "goldUnitId": "community-sirens-u5",
+      "answerBearingSpan": {
+        "unitId": "community-sirens-u5",
+        "quote": "The warning log is transferred to the city archive at the end of each drill.",
+        "startOffset": 0,
+        "endOffset": 76
+      },
+      "expected": "ANSWERS",
+      "challenge": "ROLE_OR_STATUS"
+    },
+    {
+      "id": "microred-rural-p1",
+      "family": "NEW_SCENARIO_MICRORED_RURAL_FACET_1",
+      "sourceDomain": "microred-rural",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "What happens when reserve capacity drops below twenty percent?",
+      "goldUnitId": "microred-rural-u1",
+      "answerBearingSpan": {
+        "unitId": "microred-rural-u1",
+        "quote": "El inversor de la microred desconecta la carga no esencial al caer la reserva bajo el veinte por ciento.",
+        "startOffset": 0,
+        "endOffset": 104
+      },
+      "expected": "ANSWERS",
+      "challenge": "CROSS_LANGUAGE_FACT"
+    },
+    {
+      "id": "microred-rural-p2",
+      "family": "NEW_SCENARIO_MICRORED_RURAL_FACET_2",
+      "sourceDomain": "microred-rural",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "¿A qué hora transmiten los medidores escolares?",
+      "goldUnitId": "microred-rural-u2",
+      "answerBearingSpan": {
+        "unitId": "microred-rural-u2",
+        "quote": "Los medidores de la escuela transmiten sus lecturas al concentrador al mediodía.",
+        "startOffset": 0,
+        "endOffset": 80
+      },
+      "expected": "ANSWERS",
+      "challenge": "CONDITION_OR_TIMING"
+    },
+    {
+      "id": "microred-rural-p3",
+      "family": "NEW_SCENARIO_MICRORED_RURAL_FACET_3",
+      "sourceDomain": "microred-rural",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "What must be checked before restoring power?",
+      "goldUnitId": "microred-rural-u3",
+      "answerBearingSpan": {
+        "unitId": "microred-rural-u3",
+        "quote": "El equipo local inspecciona los fusibles antes de restablecer el suministro.",
+        "startOffset": 0,
+        "endOffset": 76
+      },
+      "expected": "ANSWERS",
+      "challenge": "RELATION_BINDING"
+    },
+    {
+      "id": "microred-rural-p4",
+      "family": "NEW_SCENARIO_MICRORED_RURAL_FACET_4",
+      "sourceDomain": "microred-rural",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "¿Qué significa el estado azul de la batería?",
+      "goldUnitId": "microred-rural-u4",
+      "answerBearingSpan": {
+        "unitId": "microred-rural-u4",
+        "quote": "Un estado azul en el panel indica que la batería está equilibrando sus celdas.",
+        "startOffset": 0,
+        "endOffset": 78
+      },
+      "expected": "ANSWERS",
+      "challenge": "PROCESS"
+    },
+    {
+      "id": "microred-rural-p5",
+      "family": "NEW_SCENARIO_MICRORED_RURAL_FACET_5",
+      "sourceDomain": "microred-rural",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "Where are interruption logs stored?",
+      "goldUnitId": "microred-rural-u5",
+      "answerBearingSpan": {
+        "unitId": "microred-rural-u5",
+        "quote": "Los registros de interrupción se guardan en el servidor de la cooperativa.",
+        "startOffset": 0,
+        "endOffset": 74
+      },
+      "expected": "ANSWERS",
+      "challenge": "ROLE_OR_STATUS"
+    },
+    {
+      "id": "mountain-rescue-p1",
+      "family": "NEW_SCENARIO_MOUNTAIN_RESCUE_FACET_1",
+      "sourceDomain": "mountain-rescue",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Qué confirmación necesita Beta antes de salir del sendero?",
+      "goldUnitId": "mountain-rescue-u1",
+      "answerBearingSpan": {
+        "unitId": "mountain-rescue-u1",
+        "quote": "Rescue team Beta leaves the trail only after its location beacon is acknowledged.",
+        "startOffset": 0,
+        "endOffset": 81
+      },
+      "expected": "ANSWERS",
+      "challenge": "CROSS_LANGUAGE_FACT"
+    },
+    {
+      "id": "mountain-rescue-p2",
+      "family": "NEW_SCENARIO_MOUNTAIN_RESCUE_FACET_2",
+      "sourceDomain": "mountain-rescue",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "What does a green stretcher label signify?",
+      "goldUnitId": "mountain-rescue-u2",
+      "answerBearingSpan": {
+        "unitId": "mountain-rescue-u2",
+        "quote": "A stretcher marked green has passed the anchor-load inspection.",
+        "startOffset": 0,
+        "endOffset": 63
+      },
+      "expected": "ANSWERS",
+      "challenge": "CONDITION_OR_TIMING"
+    },
+    {
+      "id": "mountain-rescue-p3",
+      "family": "NEW_SCENARIO_MOUNTAIN_RESCUE_FACET_3",
+      "sourceDomain": "mountain-rescue",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Con qué frecuencia se actualizan las condiciones de la cresta?",
+      "goldUnitId": "mountain-rescue-u3",
+      "answerBearingSpan": {
+        "unitId": "mountain-rescue-u3",
+        "quote": "The weather officer updates ridge conditions every thirty minutes.",
+        "startOffset": 0,
+        "endOffset": 66
+      },
+      "expected": "ANSWERS",
+      "challenge": "RELATION_BINDING"
+    },
+    {
+      "id": "mountain-rescue-p4",
+      "family": "NEW_SCENARIO_MOUNTAIN_RESCUE_FACET_4",
+      "sourceDomain": "mountain-rescue",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "When are oxygen canisters weighed?",
+      "goldUnitId": "mountain-rescue-u4",
+      "answerBearingSpan": {
+        "unitId": "mountain-rescue-u4",
+        "quote": "All oxygen canisters are weighed before entering the transport helicopter.",
+        "startOffset": 0,
+        "endOffset": 74
+      },
+      "expected": "ANSWERS",
+      "challenge": "PROCESS"
+    },
+    {
+      "id": "mountain-rescue-p5",
+      "family": "NEW_SCENARIO_MOUNTAIN_RESCUE_FACET_5",
+      "sourceDomain": "mountain-rescue",
+      "sourceLanguage": "en",
+      "questionLanguage": "es",
+      "query": "¿Qué equipo confirma la identidad de una persona lesionada?",
+      "goldUnitId": "mountain-rescue-u5",
+      "answerBearingSpan": {
+        "unitId": "mountain-rescue-u5",
+        "quote": "An injured climber's identification is confirmed by the medical team, not the dispatcher.",
+        "startOffset": 0,
+        "endOffset": 89
+      },
+      "expected": "ANSWERS",
+      "challenge": "ROLE_OR_STATUS"
+    },
+    {
+      "id": "monitor-polinicos-p1",
+      "family": "NEW_SCENARIO_MONITOR_POLINICOS_FACET_1",
+      "sourceDomain": "monitor-polinicos",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "How often is the central plaza pollen sensor cleaned?",
+      "goldUnitId": "monitor-polinicos-u1",
+      "answerBearingSpan": {
+        "unitId": "monitor-polinicos-u1",
+        "quote": "El sensor de polen de la plaza central se limpia cada tercer día de muestreo.",
+        "startOffset": 0,
+        "endOffset": 77
+      },
+      "expected": "ANSWERS",
+      "challenge": "CROSS_LANGUAGE_FACT"
+    },
+    {
+      "id": "monitor-polinicos-p2",
+      "family": "NEW_SCENARIO_MONITOR_POLINICOS_FACET_2",
+      "sourceDomain": "monitor-polinicos",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "¿Cómo se clasifican las lecturas bajo humedad extrema?",
+      "goldUnitId": "monitor-polinicos-u2",
+      "answerBearingSpan": {
+        "unitId": "monitor-polinicos-u2",
+        "quote": "Las lecturas con humedad extrema se marcan como provisionales.",
+        "startOffset": 0,
+        "endOffset": 62
+      },
+      "expected": "ANSWERS",
+      "challenge": "CONDITION_OR_TIMING"
+    },
+    {
+      "id": "monitor-polinicos-p3",
+      "family": "NEW_SCENARIO_MONITOR_POLINICOS_FACET_3",
+      "sourceDomain": "monitor-polinicos",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "How are control samples transported to the laboratory?",
+      "goldUnitId": "monitor-polinicos-u3",
+      "answerBearingSpan": {
+        "unitId": "monitor-polinicos-u3",
+        "quote": "Las muestras de control viajan al laboratorio en contenedores sellados.",
+        "startOffset": 0,
+        "endOffset": 71
+      },
+      "expected": "ANSWERS",
+      "challenge": "RELATION_BINDING"
+    },
+    {
+      "id": "monitor-polinicos-p4",
+      "family": "NEW_SCENARIO_MONITOR_POLINICOS_FACET_4",
+      "sourceDomain": "monitor-polinicos",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "¿Qué estaciones se comparan primero en el informe semanal?",
+      "goldUnitId": "monitor-polinicos-u4",
+      "answerBearingSpan": {
+        "unitId": "monitor-polinicos-u4",
+        "quote": "El informe semanal compara primero las estaciones cercanas al río.",
+        "startOffset": 0,
+        "endOffset": 66
+      },
+      "expected": "ANSWERS",
+      "challenge": "PROCESS"
+    },
+    {
+      "id": "monitor-polinicos-p5",
+      "family": "NEW_SCENARIO_MONITOR_POLINICOS_FACET_5",
+      "sourceDomain": "monitor-polinicos",
+      "sourceLanguage": "es",
+      "questionLanguage": "en",
+      "query": "Who approves publication of corrected values?",
+      "goldUnitId": "monitor-polinicos-u5",
+      "answerBearingSpan": {
+        "unitId": "monitor-polinicos-u5",
+        "quote": "La bióloga responsable autoriza la publicación de los valores corregidos.",
+        "startOffset": 0,
+        "endOffset": 73
+      },
+      "expected": "ANSWERS",
+      "challenge": "ROLE_OR_STATUS"
+    },
+    {
+      "id": "glacier-samples-n",
+      "family": "NEW_SCENARIO_GLACIER_SAMPLES_MISSING_FACT",
+      "sourceDomain": "glacier-samples",
+      "sourceLanguage": "en",
+      "questionLanguage": "en",
+      "query": "Who authorized disposal of the remaining cores?",
+      "goldUnitId": null,
+      "answerBearingSpan": null,
+      "expected": "INSUFFICIENT",
+      "challenge": "SAME_SUBJECT_MISSING_FACT"
+    },
+    {
+      "id": "botanical-seedbank-n",
+      "family": "NEW_SCENARIO_BOTANICAL_SEEDBANK_MISSING_FACT",
+      "sourceDomain": "botanical-seedbank",
+      "sourceLanguage": "es",
+      "questionLanguage": "es",
+      "query": "¿Cuánto cuesta el transporte de las semillas?",
+      "goldUnitId": null,
+      "answerBearingSpan": null,
+      "expected": "INSUFFICIENT",
+      "challenge": "SAME_SUBJECT_MISSING_FACT"
+    },
+    {
+      "id": "reef-acoustics-n",
+      "family": "NEW_SCENARIO_REEF_ACOUSTICS_MISSING_FACT",
+      "sourceDomain": "reef-acoustics",
+      "sourceLanguage": "en",
+      "questionLanguage": "en",
+      "query": "Which ship's captain approved the southern buoy?",
+      "goldUnitId": null,
+      "answerBearingSpan": null,
+      "expected": "INSUFFICIENT",
+      "challenge": "SAME_SUBJECT_MISSING_FACT"
+    },
+    {
+      "id": "archivo-mapoteca-n",
+      "family": "NEW_SCENARIO_ARCHIVO_MAPOTECA_MISSING_FACT",
+      "sourceDomain": "archivo-mapoteca",
+      "sourceLanguage": "es",
+      "questionLanguage": "es",
+      "query": "¿En qué año se inauguró la nueva sala de mapas?",
+      "goldUnitId": null,
+      "answerBearingSpan": null,
+      "expected": "INSUFFICIENT",
+      "challenge": "SAME_SUBJECT_MISSING_FACT"
+    },
+    {
+      "id": "observatory-mirrors-n",
+      "family": "NEW_SCENARIO_OBSERVATORY_MIRRORS_MISSING_FACT",
+      "sourceDomain": "observatory-mirrors",
+      "sourceLanguage": "en",
+      "questionLanguage": "en",
+      "query": "What insurance company covers the observatory's telescopes?",
+      "goldUnitId": null,
+      "answerBearingSpan": null,
+      "expected": "INSUFFICIENT",
+      "challenge": "SAME_SUBJECT_MISSING_FACT"
+    },
+    {
+      "id": "teatro-mecanica-n",
+      "family": "NEW_SCENARIO_TEATRO_MECANICA_MISSING_FACT",
+      "sourceDomain": "teatro-mecanica",
+      "sourceLanguage": "es",
+      "questionLanguage": "es",
+      "query": "¿Qué artista diseñó las butacas del teatro?",
+      "goldUnitId": null,
+      "answerBearingSpan": null,
+      "expected": "INSUFFICIENT",
+      "challenge": "SAME_SUBJECT_MISSING_FACT"
+    },
+    {
+      "id": "desert-robotics-n",
+      "family": "NEW_SCENARIO_DESERT_ROBOTICS_MISSING_FACT",
+      "sourceDomain": "desert-robotics",
+      "sourceLanguage": "en",
+      "questionLanguage": "en",
+      "query": "When did rover Echo receive a new battery supplier?",
+      "goldUnitId": null,
+      "answerBearingSpan": null,
+      "expected": "INSUFFICIENT",
+      "challenge": "SAME_SUBJECT_MISSING_FACT"
+    },
+    {
+      "id": "taller-ceramica-n",
+      "family": "NEW_SCENARIO_TALLER_CERAMICA_MISSING_FACT",
+      "sourceDomain": "taller-ceramica",
+      "sourceLanguage": "es",
+      "questionLanguage": "es",
+      "query": "¿Cuántos kilovatios consume el horno principal?",
+      "goldUnitId": null,
+      "answerBearingSpan": null,
+      "expected": "INSUFFICIENT",
+      "challenge": "SAME_SUBJECT_MISSING_FACT"
+    },
+    {
+      "id": "airship-weather-n",
+      "family": "NEW_SCENARIO_AIRSHIP_WEATHER_MISSING_FACT",
+      "sourceDomain": "airship-weather",
+      "sourceLanguage": "en",
+      "questionLanguage": "en",
+      "query": "Who manufactured the balloon's onboard camera?",
+      "goldUnitId": null,
+      "answerBearingSpan": null,
+      "expected": "INSUFFICIENT",
+      "challenge": "SAME_SUBJECT_MISSING_FACT"
+    },
+    {
+      "id": "invernadero-barrial-n",
+      "family": "NEW_SCENARIO_INVERNADERO_BARRIAL_MISSING_FACT",
+      "sourceDomain": "invernadero-barrial",
+      "sourceLanguage": "es",
+      "questionLanguage": "es",
+      "query": "¿Cuántos voluntarios participaron en enero?",
+      "goldUnitId": null,
+      "answerBearingSpan": null,
+      "expected": "INSUFFICIENT",
+      "challenge": "SAME_SUBJECT_MISSING_FACT"
+    },
+    {
+      "id": "lake-sediment-n",
+      "family": "NEW_SCENARIO_LAKE_SEDIMENT_MISSING_FACT",
+      "sourceDomain": "lake-sediment",
+      "sourceLanguage": "en",
+      "questionLanguage": "en",
+      "query": "When will the lake's new boardwalk open?",
+      "goldUnitId": null,
+      "answerBearingSpan": null,
+      "expected": "INSUFFICIENT",
+      "challenge": "SAME_SUBJECT_MISSING_FACT"
+    },
+    {
+      "id": "biblioteca-robotizada-n",
+      "family": "NEW_SCENARIO_BIBLIOTECA_ROBOTIZADA_MISSING_FACT",
+      "sourceDomain": "biblioteca-robotizada",
+      "sourceLanguage": "es",
+      "questionLanguage": "es",
+      "query": "¿Qué editorial patrocina la biblioteca móvil?",
+      "goldUnitId": null,
+      "answerBearingSpan": null,
+      "expected": "INSUFFICIENT",
+      "challenge": "SAME_SUBJECT_MISSING_FACT"
+    },
+    {
+      "id": "community-sirens-n",
+      "family": "NEW_SCENARIO_COMMUNITY_SIRENS_MISSING_FACT",
+      "sourceDomain": "community-sirens",
+      "sourceLanguage": "en",
+      "questionLanguage": "en",
+      "query": "Which telecom provider donated the sirens?",
+      "goldUnitId": null,
+      "answerBearingSpan": null,
+      "expected": "INSUFFICIENT",
+      "challenge": "SAME_SUBJECT_MISSING_FACT"
+    },
+    {
+      "id": "microred-rural-n",
+      "family": "NEW_SCENARIO_MICRORED_RURAL_MISSING_FACT",
+      "sourceDomain": "microred-rural",
+      "sourceLanguage": "es",
+      "questionLanguage": "es",
+      "query": "¿Qué tarifa mensual se aplica a los usuarios comerciales?",
+      "goldUnitId": null,
+      "answerBearingSpan": null,
+      "expected": "INSUFFICIENT",
+      "challenge": "SAME_SUBJECT_MISSING_FACT"
+    },
+    {
+      "id": "mountain-rescue-n",
+      "family": "NEW_SCENARIO_MOUNTAIN_RESCUE_MISSING_FACT",
+      "sourceDomain": "mountain-rescue",
+      "sourceLanguage": "en",
+      "questionLanguage": "en",
+      "query": "Who designed the mountain rescue organization's logo?",
+      "goldUnitId": null,
+      "answerBearingSpan": null,
+      "expected": "INSUFFICIENT",
+      "challenge": "SAME_SUBJECT_MISSING_FACT"
+    }
+  ],
+  "evaluation": {
+    "minimumAnswerable": 80,
+    "minimumUnanswerable": 15,
+    "pairedCurrentConfig": "assessRetrievalAnswerability",
+    "candidateConfig": "production LAYERED 7B reader BGE shortlist 4 window16",
+    "primary": "bound-gold admission",
+    "test": "exact two-sided McNemar p<0.05 for candidate superiority",
+    "guardrails": {
+      "negativeFARMax": 0.1,
+      "negativeFARNonInferiorityToBaseline": true,
+      "admittedPrecisionMinimum": 0.8,
+      "admittedPrecisionWilson95LowerMinimum": 0.7
+    },
+    "noTuneOnInspected": true,
+    "noDefaultChange": true
+  }
+}

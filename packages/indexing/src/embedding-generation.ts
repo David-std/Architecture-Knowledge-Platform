@@ -70,6 +70,8 @@ export interface WriteEmbeddingInput {
   generationId: string;
   unitId: string;
   contentHash: string;
+  /** SHA-256 of the exact prepared passage; required for contextual strategies. */
+  inputHash?: string;
   embedding: readonly number[] | string;
 }
 
@@ -110,6 +112,7 @@ interface DatabaseUnitEmbeddingRow {
   generation_id: string;
   unit_id: string;
   content_hash: string;
+  input_hash: string | null;
   embedding: string;
   embedding_dimensions: number;
   created_at: Date | string;
@@ -474,6 +477,11 @@ export class EmbeddingGenerationManager {
     if (!input.generationId.trim()) throw new Error("GENERATION_ID_REQUIRED");
     if (!input.unitId.trim()) throw new Error("UNIT_ID_REQUIRED");
     if (!input.contentHash.trim()) throw new Error("CONTENT_HASH_REQUIRED");
+    if (
+      input.inputHash !== undefined &&
+      !/^[0-9a-f]{64}$/u.test(input.inputHash)
+    )
+      throw new Error("EMBEDDING_INPUT_HASH_INVALID");
     const values = vectorValues(input.embedding);
     const dimensions = values.length;
     const generation = await this.db.pool.query<{
@@ -505,19 +513,26 @@ export class EmbeddingGenerationManager {
     const inserted = await this.db.pool.query<DatabaseUnitEmbeddingRow>(
       `
       insert into unit_embeddings(
-        unit_id,generation_id,content_hash,embedding,embedding_dimensions
-      ) values($1,$2,$3,$4::vector,$5)
+        unit_id,generation_id,content_hash,embedding,embedding_dimensions,input_hash
+      ) values($1,$2,$3,$4::vector,$5,$6)
       on conflict(unit_id,generation_id) do nothing
-      returning id,generation_id,unit_id,content_hash,embedding::text embedding,
+      returning id,generation_id,unit_id,content_hash,input_hash,embedding::text embedding,
                 embedding_dimensions,created_at
       `,
-      [input.unitId, input.generationId, input.contentHash, vector, dimensions],
+      [
+        input.unitId,
+        input.generationId,
+        input.contentHash,
+        vector,
+        dimensions,
+        input.inputHash ?? null,
+      ],
     );
     if (inserted.rows[0]) return embeddingFromRow(inserted.rows[0]);
 
     const existing = await this.db.pool.query<DatabaseUnitEmbeddingRow>(
       `
-      select id,generation_id,unit_id,content_hash,embedding::text embedding,
+      select id,generation_id,unit_id,content_hash,input_hash,embedding::text embedding,
              embedding_dimensions,created_at
         from unit_embeddings
        where unit_id=$1 and generation_id=$2
@@ -528,6 +543,8 @@ export class EmbeddingGenerationManager {
     if (!row) throw new Error("EMBEDDING_WRITE_RACE");
     if (row.content_hash !== input.contentHash)
       throw new Error("EMBEDDING_CONTENT_HASH_MISMATCH");
+    if (input.inputHash !== undefined && row.input_hash !== input.inputHash)
+      throw new Error("EMBEDDING_INPUT_HASH_MISMATCH");
     return embeddingFromRow(row);
   }
 

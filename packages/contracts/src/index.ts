@@ -5,6 +5,9 @@ export * from "./model-role-policy.js";
 import { z } from "zod";
 import { ModelResidency } from "./model-role-policy.js";
 
+// Zod 4's `.uuid()` rejects versionless GUIDs already persisted by AKP's
+// original PostgreSQL migrations. `.guid()` retains the historical lexical
+// identifier contract; scope, existence and authorization are checked later.
 export const TrustTier = z.enum([
   "UNVERIFIED",
   "MACHINE_SUPPORTED",
@@ -103,7 +106,7 @@ export type GraphRelationType = z.infer<typeof GraphRelationType>;
 
 export const ContextRevisionEntry = z
   .object({
-    vaultId: z.string().uuid(),
+    vaultId: z.string().guid(),
     corpusRevision: z.string().min(1),
     lexicalRevision: z.string().min(1).nullable().optional(),
     vectorRevision: z.string().min(1).nullable().optional(),
@@ -116,7 +119,7 @@ export type ContextRevisionEntry = z.infer<typeof ContextRevisionEntry>;
 
 export const ContextRevisionSet = z
   .object({
-    spaceId: z.string().uuid(),
+    spaceId: z.string().guid(),
     vaults: z.array(ContextRevisionEntry).min(1).max(20),
     retrievalConfigurationVersion: z.string().min(1).optional(),
     capturedAt: z.string().datetime(),
@@ -241,7 +244,7 @@ export const ReasoningStep = z.discriminatedUnion("operator", [
       ...ReasoningStepBase,
       operator: z.literal("SEARCH_CODE"),
       args: QueryArgs.extend({
-        projectId: z.string().uuid().optional(),
+        projectId: z.string().guid().optional(),
       }).strict(),
     })
     .strict(),
@@ -305,7 +308,7 @@ export const ReasoningStep = z.discriminatedUnion("operator", [
       args: z
         .object({
           inputStepId: z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/),
-          vaultIds: z.array(z.string().uuid()).max(20).default([]),
+          vaultIds: z.array(z.string().guid()).max(20).default([]),
           pathPrefixes: z
             .array(z.string().min(1).max(2048))
             .max(64)
@@ -401,7 +404,7 @@ export const ReasoningStep = z.discriminatedUnion("operator", [
             .string()
             .regex(/^[a-z][a-z0-9_-]{0,63}$/)
             .optional(),
-          sourceIds: z.array(z.string().uuid()).max(100).default([]),
+          sourceIds: z.array(z.string().guid()).max(100).default([]),
           maxBytes: z.number().int().min(1).max(10_000_000).default(1_000_000),
         })
         .strict(),
@@ -448,12 +451,12 @@ export type ReasoningPlan = z.infer<typeof ReasoningPlan>;
 export const SearchRequest = z.object({
   query: z.string().min(1),
   intent: QueryIntent.optional(),
-  organizationId: z.string().uuid().optional(),
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid().optional(),
-  vaultIds: z.array(z.string().uuid()).max(20).default([]),
+  organizationId: z.string().guid().optional(),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid().optional(),
+  vaultIds: z.array(z.string().guid()).max(20).default([]),
   federated: z.boolean().default(false),
-  projectId: z.string().uuid().optional(),
+  projectId: z.string().guid().optional(),
   truthConsistency: z.enum(["STRICT", "BEST_EFFORT"]).optional(),
   types: z.array(z.string()).default([]),
   minimumTrust: TrustTier.default("MACHINE_SUPPORTED"),
@@ -471,7 +474,7 @@ export const SearchRequest = z.object({
 export type SearchRequest = z.infer<typeof SearchRequest>;
 
 export const GraphPathNode = z.object({
-  documentId: z.string().uuid(),
+  documentId: z.string().guid(),
   document: z.string().min(1),
   relation: GraphRelationType.optional(),
   direction: z.enum(["outgoing", "incoming"]).optional(),
@@ -480,8 +483,8 @@ export type GraphPathNode = z.infer<typeof GraphPathNode>;
 
 export const GraphPathProvenance = z.object({
   channel: z.literal("graph"),
-  seedDocumentId: z.string().uuid(),
-  targetDocumentId: z.string().uuid(),
+  seedDocumentId: z.string().guid(),
+  targetDocumentId: z.string().guid(),
   path: z.array(GraphPathNode).min(2),
   hops: z.number().int().min(1),
   graphScore: z.number().min(0),
@@ -513,7 +516,7 @@ export type RetrievalTraceGeneration = z.infer<typeof RetrievalTraceGeneration>;
 export const RetrievalTraceQueryTransform = z
   .object({
     transformerId: z.string().min(1).max(512),
-    traceId: z.string().uuid().optional(),
+    traceId: z.string().guid().optional(),
     kind: z.enum(["DECOMPOSITION", "MULTI_QUERY", "HYDE"]),
     ordinal: z.number().int().positive(),
     reason: z.string().min(1).max(1024),
@@ -545,8 +548,8 @@ export const RetrievalTrace = z
     authorization: z
       .object({
         decision: z.enum(["ALLOW", "SCOPED_INTERNAL"]),
-        spaceId: z.string().uuid(),
-        vaultId: z.string().uuid(),
+        spaceId: z.string().guid(),
+        vaultId: z.string().guid(),
         pathRestricted: z.boolean(),
       })
       .strict(),
@@ -590,18 +593,20 @@ export const RetrievalTrace = z
 export type RetrievalTrace = z.infer<typeof RetrievalTrace>;
 
 export const SearchHit = z.object({
-  documentId: z.string().uuid(),
-  vaultId: z.string().uuid(),
-  unitId: z.string().uuid().optional(),
+  documentId: z.string().guid(),
+  vaultId: z.string().guid(),
+  unitId: z.string().guid().optional(),
   unitType: z.string().optional(),
-  parentUnitId: z.string().uuid().optional(),
+  parentUnitId: z.string().guid().optional(),
   parentUnitType: z.string().optional(),
   headingPath: z.array(z.string()).optional(),
+  structuralOrder: z.number().int().nonnegative().optional(),
   parentContext: z.string().optional(),
   document: z.object({
     externalId: z.string().nullable(),
     path: z.string(),
     title: z.string(),
+    aliases: z.array(z.string()).optional(),
   }),
   revision: z.string(),
   title: z.string(),
@@ -665,7 +670,7 @@ export type FederationRemoteQueryBudget = z.infer<
 
 export const FederationRevisionPreference = z
   .object({
-    vaultId: z.string().uuid(),
+    vaultId: z.string().guid(),
     corpusRevision: z.string().min(1).max(512),
   })
   .strict();
@@ -688,8 +693,8 @@ export type FederationRemoteSearchInput = z.infer<
 
 const FederationRemoteScope = z
   .object({
-    spaceId: z.string().uuid(),
-    vaultIds: z.array(z.string().uuid()).min(1).max(20),
+    spaceId: z.string().guid(),
+    vaultIds: z.array(z.string().guid()).min(1).max(20),
   })
   .strict()
   .superRefine((scope, context) => {
@@ -708,7 +713,7 @@ const FederationRemoteQueryRequestBase = z
     caller: z
       .object({
         nodeId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/),
-        requestId: z.string().uuid(),
+        requestId: z.string().guid(),
       })
       .strict(),
     scope: FederationRemoteScope,
@@ -744,7 +749,7 @@ export const FederationPeerQueryRequest = FederationRemoteQueryRequestBase.omit(
   },
 )
   .extend({
-    requestId: z.string().uuid().optional(),
+    requestId: z.string().guid().optional(),
   })
   .superRefine((value, context) => {
     const scoped = new Set(value.scope.vaultIds);
@@ -800,7 +805,7 @@ export type FederationRemoteHit = z.infer<typeof FederationRemoteHit>;
 export const FederationRemoteQueryResponse = z
   .object({
     schemaVersion: z.literal(1),
-    requestId: z.string().uuid(),
+    requestId: z.string().guid(),
     remote: z
       .object({
         nodeId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/),
@@ -810,8 +815,8 @@ export const FederationRemoteQueryResponse = z
       .strict(),
     scope: z
       .object({
-        spaceId: z.string().uuid(),
-        vaultIds: z.array(z.string().uuid()).min(1).max(20),
+        spaceId: z.string().guid(),
+        vaultIds: z.array(z.string().guid()).min(1).max(20),
       })
       .strict(),
     partial: z.boolean(),
@@ -828,7 +833,7 @@ export type FederationRemoteQueryResponse = z.infer<
 
 export const FederationFanoutPeerRequest = z
   .object({
-    peerId: z.string().uuid(),
+    peerId: z.string().guid(),
     query: FederationPeerQueryRequest,
   })
   .strict();
@@ -872,7 +877,7 @@ export const FederationFanoutResponse = z
       .array(
         z
           .object({
-            peerId: z.string().uuid(),
+            peerId: z.string().guid(),
             response: FederationRemoteQueryResponse,
           })
           .strict(),
@@ -882,7 +887,7 @@ export const FederationFanoutResponse = z
       .array(
         z
           .object({
-            peerId: z.string().uuid(),
+            peerId: z.string().guid(),
             code: z.string().regex(/^[A-Z][A-Z0-9_]*$/),
           })
           .strict(),
@@ -912,10 +917,10 @@ export const ContextSection = z.object({
   contextLevel: ContextDisclosureLevel,
   title: z.string(),
   content: z.string(),
-  documentId: z.string().uuid(),
-  vaultId: z.string().uuid(),
-  unitId: z.string().uuid().optional(),
-  parentUnitId: z.string().uuid().optional(),
+  documentId: z.string().guid(),
+  vaultId: z.string().guid(),
+  unitId: z.string().guid().optional(),
+  parentUnitId: z.string().guid().optional(),
   unitType: z.string().optional(),
   parentUnitType: z.string().optional(),
   headingPath: z.array(z.string()).optional(),
@@ -942,8 +947,8 @@ export const ContextRequest = SearchRequest.extend({
   packetMode: ContextPacketMode.default("FULL_CONTEXT_PACKET"),
   contextLevel: ContextDisclosureLevel.default("L2"),
   reasoningMode: z.enum(["DIRECT", "PLAN"]).default("DIRECT"),
-  sessionId: z.string().uuid().optional(),
-  objectRefId: z.string().uuid().optional(),
+  sessionId: z.string().guid().optional(),
+  objectRefId: z.string().guid().optional(),
 });
 export type ContextRequest = z.infer<typeof ContextRequest>;
 
@@ -975,8 +980,8 @@ export type ContextContinuation = z.infer<typeof ContextContinuation>;
 
 export const ContextPacket = z.object({
   packetMode: z.literal("FULL_CONTEXT_PACKET"),
-  packetId: z.string().uuid(),
-  vaultId: z.string().uuid().optional(),
+  packetId: z.string().guid(),
+  vaultId: z.string().guid().optional(),
   query: z.string(),
   intent: z.string(),
   corpusRevision: z.string(),
@@ -984,9 +989,9 @@ export const ContextPacket = z.object({
   indexRevisions: z.record(z.string(), z.string().nullable()),
   retrievalConfiguration: z.record(z.string(), z.unknown()),
   scope: z.object({
-    organizationId: z.string().uuid().optional(),
-    spaceId: z.string().uuid(),
-    vaultIds: z.array(z.string().uuid()).min(1),
+    organizationId: z.string().guid().optional(),
+    spaceId: z.string().guid(),
+    vaultIds: z.array(z.string().guid()).min(1),
     federated: z.boolean().default(false),
   }),
   generatedAt: z.string().datetime(),
@@ -1006,7 +1011,7 @@ export const ContextPacket = z.object({
 export type ContextPacket = z.infer<typeof ContextPacket>;
 
 export const ContextContinuationResponse = z.object({
-  packetId: z.string().uuid(),
+  packetId: z.string().guid(),
   packetHash: z.string(),
   corpusRevision: z.string(),
   scope: ContextPacket.shape.scope,
@@ -1021,12 +1026,12 @@ export const CompactContextSection = z.object({
   kind: ContextSection.shape.kind,
   contextLevel: ContextDisclosureLevel,
   identity: z.object({
-    documentId: z.string().uuid(),
-    vaultId: z.string().uuid(),
+    documentId: z.string().guid(),
+    vaultId: z.string().guid(),
     title: z.string(),
     revision: z.string(),
-    unitId: z.string().uuid().optional(),
-    parentUnitId: z.string().uuid().optional(),
+    unitId: z.string().guid().optional(),
+    parentUnitId: z.string().guid().optional(),
     unitType: z.string().optional(),
     parentUnitType: z.string().optional(),
     headingPath: z.array(z.string()).optional(),
@@ -1047,7 +1052,7 @@ export type CompactContextSection = z.infer<typeof CompactContextSection>;
 export const CompactAgentPacket = z.object({
   packetMode: z.literal("COMPACT_AGENT_PACKET"),
   identity: z.object({
-    packetId: z.string().uuid(),
+    packetId: z.string().guid(),
     query: z.string(),
     intent: z.string(),
     corpusRevision: z.string(),
@@ -1127,8 +1132,8 @@ export type DocumentIntelligenceRequest = z.infer<
 >;
 
 export const IngestRequest = z.object({
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid(),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid(),
   sourceUri: z.string(),
   expectedSha256: z
     .string()
@@ -1156,7 +1161,7 @@ export type VaultEvalPack = z.infer<typeof VaultEvalPack>;
 export const VaultRegistration = z.object({
   vaultKey: z.string().regex(/^[a-z0-9][a-z0-9-]{1,62}$/),
   name: z.string().min(1).max(200),
-  spaceId: z.string().uuid(),
+  spaceId: z.string().guid(),
   visibility: z.enum(["PRIVATE", "TEAM", "CENTRAL"]).default("PRIVATE"),
   gitRepository: z.string().min(1).nullable().default(null),
   defaultBranch: z.string().min(1).default("main"),
@@ -1214,13 +1219,13 @@ export const IntegrationEventType = z.enum([
 export type IntegrationEventType = z.infer<typeof IntegrationEventType>;
 
 export const EventEnvelope = z.object({
-  eventId: z.string().uuid(),
+  eventId: z.string().guid(),
   eventType: IntegrationEventType,
   eventVersion: z.number().int().positive(),
   resourceId: z.string().min(1),
-  organizationId: z.string().uuid().nullable().default(null),
-  spaceId: z.string().uuid().nullable().default(null),
-  vaultId: z.string().uuid().nullable().default(null),
+  organizationId: z.string().guid().nullable().default(null),
+  spaceId: z.string().guid().nullable().default(null),
+  vaultId: z.string().guid().nullable().default(null),
   correlationId: z.string().min(1).nullable().default(null),
   causationId: z.string().min(1).nullable().default(null),
   occurredAt: z.string().datetime(),
@@ -1365,4 +1370,22 @@ export const DocumentArtifact = z
   });
 export type DocumentArtifact = z.infer<typeof DocumentArtifact>;
 
+/**
+ * Shared JSON canonicalization for persisted source-artifact content hashes.
+ * The worker and both source-read endpoints must use identical serialization.
+ */
+export function canonicalSourceArtifactJson(value: unknown): string {
+  const canonical = (item: unknown): unknown => {
+    if (Array.isArray(item)) return item.map(canonical);
+    if (!item || typeof item !== "object") return item;
+    return Object.fromEntries(
+      Object.entries(item as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, child]) => [key, canonical(child)]),
+    );
+  };
+  return JSON.stringify(canonical(value));
+}
+
 export * from "./federated-graph.js";
+export * from "./source-markdown-renderer.js";

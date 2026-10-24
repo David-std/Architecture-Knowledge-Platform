@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "akp.fresh-source-exact-citation-transit.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-04",
+  "baselineSha": "851e28aea8cce15b6eafe25d13f83cab2e09f5d3",
+  "upstream": {
+    "r2r7Oracle": {
+      "path": "evals/registered/r2-r7-fresh-source-e2e.json",
+      "gitBlobSha": "c228b7e478bb07e315a1f995d379026749f8f3f5"
+    },
+    "sourceFixture": {
+      "path": "test/fixtures/r2-r7-fresh-source/fidelity-probe.md",
+      "gitBlobSha": "60976a702589513d3802dc84d5c15c518bc3bd25",
+      "sha256": "37c8796f0ea78be77dec9f7ac99b478d5bbc66dae49f3227c49a9befebb55548"
+    },
+    "answerableCaseId": "answerable-atlas-recovery",
+    "noAnswerCaseId": "no-answer-atlas-tls-serial"
+  },
+  "measurement": {
+    "independentVariable": "Measurement only. Re-run the existing frozen fresh-source maintained path and score exact evidence-locator transit from validated persisted evidence through admitted SearchHit citations into selected ContextPacket section and packet citations.",
+    "evidenceCitationPrefix": "evidence:",
+    "documentPathRevisionCitationsAreEvidenceLocators": false,
+    "goldConstruction": [
+      "Persisted evidence locator belongs to the validated source artifact.",
+      "Locator source_hash equals the frozen source SHA-256.",
+      "Persisted evidence excerpt equals the frozen raw source oracle text.",
+      "Persisted evidence content_hash equals SHA-256(excerpt).",
+      "The exact locator is present in the validated DocumentArtifact locator set."
+    ],
+    "productionBehaviorChanged": false,
+    "retrievalChanged": false,
+    "admissionChanged": false,
+    "contextPacketChanged": false
+  },
+  "gates": {
+    "searchEvidenceLocatorPrecision": 1,
+    "searchExactLocatorRecall": 1,
+    "contextSectionEvidenceLocatorPrecision": 1,
+    "contextSectionExactLocatorRecall": 1,
+    "packetEvidenceLocatorPrecision": 1,
+    "packetExactLocatorRecall": 1,
+    "noAnswerEvidenceFalseAcceptance": 0,
+    "crossVaultLeakageCount": 0
+  },
+  "outcomes": {
+    "pass": "PROVEN_FRESH_EXACT_EVIDENCE_CITATION_TRANSIT",
+    "fail": "FAILED_FRESH_EXACT_EVIDENCE_CITATION_TRANSIT"
+  },
+  "claimBoundary": "This measures exact evidence-locator citation transit on one frozen public maintained-path fixture. It does not establish broad/private citation precision, generation claim-to-citation correctness, or fresh private replay."
+}

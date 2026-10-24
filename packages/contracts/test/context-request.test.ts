@@ -3,7 +3,7 @@ import { ContextRequest } from "../src/index.js";
 
 const base = {
   query: "bounded context",
-  spaceId: "00000000-0000-0000-0000-000000000003",
+  spaceId: "00000000-0000-4000-8000-000000000003",
 };
 
 describe("ContextRequest", () => {

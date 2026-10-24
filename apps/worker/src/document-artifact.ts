@@ -1,10 +1,14 @@
 import { createHash } from "node:crypto";
 import {
   DocumentArtifact as DocumentArtifactSchema,
+  SOURCE_MARKDOWN_RENDERER_VERSION,
+  canonicalSourceArtifactJson,
+  renderSourceArtifactMarkdown,
   type DocumentArtifact,
 } from "@akp/contracts";
 
 export const DOCUMENT_ARTIFACT_SCHEMA_VERSION = "1.0";
+export { SOURCE_MARKDOWN_RENDERER_VERSION } from "@akp/contracts";
 
 export interface ExpectedDocumentArtifactIdentity {
   sourceId: string;
@@ -159,18 +163,8 @@ export function sanitizeDocumentArtifact(
   });
 }
 
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, child]) => [key, canonicalize(child)]),
-  );
-}
-
 export function canonicalJson(value: unknown): string {
-  return JSON.stringify(canonicalize(value));
+  return canonicalSourceArtifactJson(value);
 }
 
 export function documentArtifactConfigurationHash(
@@ -238,86 +232,58 @@ export function parseCanonicalExtractionResponse(
   };
 }
 
-function artifactItems(artifact: DocumentArtifact): DocumentArtifact["blocks"] {
-  const candidates = artifact.blocks.length
-    ? artifact.blocks
-    : [
-        ...artifact.headings,
-        ...artifact.paragraphs,
-        ...artifact.lists,
-        ...artifact.tables,
-        ...artifact.figures,
-        ...artifact.equations,
-        ...artifact.code,
-      ];
-  const byId = new Map(
-    candidates
-      .filter((item) => item.id)
-      .map((item) => [String(item.id), item] as const),
-  );
-  const ordered = artifact.reading_order
-    .map((id) => byId.get(id))
-    .filter((item): item is DocumentArtifact["blocks"][number] =>
-      Boolean(item),
-    );
-  const seen = new Set(ordered.map((item) => item.id).filter(Boolean));
-  return [
-    ...ordered,
-    ...candidates.filter((item) => !item.id || !seen.has(item.id)),
-  ];
+/** Shared deterministic renderer; UI previews never define original source text. */
+export function renderDocumentArtifactMarkdown(
+  artifact: DocumentArtifact,
+): string {
+  return renderSourceArtifactMarkdown(artifact);
 }
 
-function escapeTableCell(value: string): string {
-  return value.replaceAll("|", "\\|").replaceAll(/\r?\n/g, " ").trim();
+export interface FaithfulSourceMarkdown {
+  content: string;
+  sha256: string;
+  rendererVersion: string;
 }
 
-function locatorComment(locator: DocumentArtifact["locators"][number]): string {
-  const fields = [
-    locator.page == null ? null : `page=${locator.page}`,
-    locator.slide == null ? null : `slide=${locator.slide}`,
-    locator.sheet == null ? null : `sheet=${locator.sheet}`,
-    locator.row == null ? null : `row=${locator.row}`,
-    locator.start_line == null ? null : `line=${locator.start_line}`,
-    locator.heading_path.length
-      ? `heading=${locator.heading_path.join(" / ")}`
-      : null,
-  ].filter((entry): entry is string => Boolean(entry));
-  return fields.length ? `<!-- akp-locator: ${fields.join("; ")} -->\n` : "";
+/** Deterministic, complete derived projection of the sanitized source artifact. */
+export function buildFaithfulSourceMarkdown(
+  artifact: DocumentArtifact,
+): FaithfulSourceMarkdown {
+  const content = renderDocumentArtifactMarkdown(artifact);
+  return {
+    content,
+    sha256: createHash("sha256").update(content, "utf8").digest("hex"),
+    rendererVersion: SOURCE_MARKDOWN_RENDERER_VERSION,
+  };
 }
 
-function renderItem(item: DocumentArtifact["blocks"][number]): string {
-  const text = item.text?.trim() ?? "";
-  const locator = locatorComment(item.locator);
-  if (item.kind === "heading") {
-    const rawLevel = Number(item.metadata.level ?? 2);
-    const level = Math.min(6, Math.max(2, rawLevel + 1));
-    return text ? `${locator}${"#".repeat(level)} ${text}` : "";
+/**
+ * Reject a stale, altered or separately rendered source projection before it
+ * can enter either compilation mode. The database SHA constraint verifies
+ * stored bytes; this check additionally binds them to the structured artifact.
+ */
+export function assertFaithfulSourceMarkdown(
+  artifact: DocumentArtifact,
+  projection: FaithfulSourceMarkdown,
+): void {
+  if (
+    !projection ||
+    typeof projection.content !== "string" ||
+    typeof projection.sha256 !== "string" ||
+    typeof projection.rendererVersion !== "string"
+  ) {
+    throw new Error("SOURCE_MARKDOWN_PROJECTION_INVALID");
   }
-  if (item.kind === "list" || item.kind === "list-item") {
-    return text ? `${locator}- ${text}` : "";
+  if (projection.rendererVersion !== SOURCE_MARKDOWN_RENDERER_VERSION) {
+    throw new Error("SOURCE_MARKDOWN_RENDERER_VERSION_MISMATCH");
   }
-  if (item.kind === "table" && item.headers?.length) {
-    const headers = item.headers.map(escapeTableCell);
-    const rows = (item.rows ?? []).map(
-      (row) => `| ${row.map(escapeTableCell).join(" | ")} |`,
-    );
-    return `${locator}| ${headers.join(" | ")} |\n| ${headers
-      .map(() => "---")
-      .join(" | ")} |${rows.length ? `\n${rows.join("\n")}` : ""}`;
+  const expected = buildFaithfulSourceMarkdown(artifact);
+  if (projection.sha256 !== expected.sha256) {
+    throw new Error("SOURCE_MARKDOWN_ARTIFACT_HASH_MISMATCH");
   }
-  if (item.kind === "code") {
-    const language = String(item.metadata.language ?? "")
-      .replaceAll(/[^a-zA-Z0-9_+#.-]/g, "")
-      .slice(0, 32);
-    return text ? `${locator}\`\`\`${language}\n${text}\n\`\`\`` : "";
+  if (projection.content !== expected.content) {
+    throw new Error("SOURCE_MARKDOWN_ARTIFACT_CONTENT_MISMATCH");
   }
-  if (item.kind === "equation") {
-    return text ? `${locator}$$\n${text}\n$$` : "";
-  }
-  if (item.kind === "figure") {
-    return `${locator}> Figure${text ? `: ${text}` : " (no caption extracted)"}`;
-  }
-  return text ? `${locator}${text}` : "";
 }
 
 export function renderDocumentArtifactPreview(
@@ -327,10 +293,7 @@ export function renderDocumentArtifactPreview(
   if (!Number.isInteger(maximumCharacters) || maximumCharacters < 1_000) {
     throw new Error("DOCUMENT_ARTIFACT_PREVIEW_LIMIT_INVALID");
   }
-  const rendered = artifactItems(artifact)
-    .map(renderItem)
-    .filter(Boolean)
-    .join("\n\n");
+  const rendered = renderDocumentArtifactMarkdown(artifact);
   if (rendered.length <= maximumCharacters) {
     return { markdown: rendered, truncated: false };
   }
@@ -349,7 +312,7 @@ export interface DocumentArtifactDraftInput {
   mediaType: string;
   extractor: string;
   extractorVersion: string;
-  artifact: DocumentArtifact;
+  sourceMarkdown: FaithfulSourceMarkdown;
 }
 
 /**
@@ -360,7 +323,7 @@ export interface DocumentArtifactDraftInput {
 export function renderDocumentArtifactDraft(
   input: DocumentArtifactDraftInput,
 ): string {
-  const preview = renderDocumentArtifactPreview(input.artifact, 6_000);
+  const markdown = input.sourceMarkdown.content;
   const yamlString = (value: string): string =>
     `'${value.replaceAll("'", "''")}'`;
   return `---
@@ -391,7 +354,7 @@ document_artifact_schema_version: ${yamlString(DOCUMENT_ARTIFACT_SCHEMA_VERSION)
 
 ## Machine extract
 
-${preview.markdown.trim() || "_No textual material was extracted._"}
+${markdown.trim() || "_No textual material was extracted._"}
 
 ## Uncertainty
 

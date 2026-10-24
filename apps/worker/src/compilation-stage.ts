@@ -21,7 +21,11 @@ import {
 } from "@akp/contracts";
 import { OpenTelemetryBridge, withSpan } from "@akp/observability";
 import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
-import { renderDocumentArtifactDraft } from "./document-artifact.js";
+import {
+  assertFaithfulSourceMarkdown,
+  renderDocumentArtifactDraft,
+  type FaithfulSourceMarkdown,
+} from "./document-artifact.js";
 import { assertEvidenceFragmentIntegrity } from "./evidence-fragment.js";
 import {
   executePreparedGroundedKnowledgeCompilation,
@@ -81,12 +85,15 @@ export interface CompilationStageInput {
   extractor: string;
   extractorVersion: string;
   artifact: DocumentArtifact;
+  sourceMarkdown: FaithfulSourceMarkdown;
   vectorEnabled: boolean;
   requesterId?: string | null;
 }
 
 export interface CompilationStageMetadata {
   mode: "GENERATIVE" | "SOURCE_SUMMARY_FALLBACK";
+  sourceMarkdownHash: string;
+  sourceMarkdownRendererVersion: string;
   provider?: ConfiguredKnowledgeCompiler["descriptor"];
   modelRoute?: {
     role: "KNOWLEDGE_COMPILE";
@@ -410,7 +417,7 @@ async function sourceSummaryFallback(
     mediaType: input.mediaType,
     extractor: input.extractor,
     extractorVersion: input.extractorVersion,
-    artifact: input.artifact,
+    sourceMarkdown: input.sourceMarkdown,
   });
   return CompilationPlan.parse({
     sourceId: input.sourceId,
@@ -447,6 +454,7 @@ export async function buildCompilationStage(
   input: CompilationStageInput,
   candidates?: KnowledgeCompilerRouteCandidate[] | null,
 ): Promise<CompilationStageOutput> {
+  assertFaithfulSourceMarkdown(input.artifact, input.sourceMarkdown);
   const vault = await loadVaultContext(db, input.spaceId, input.vaultId);
   const boundary = await loadCompilerRoutingBoundary(
     db,
@@ -492,6 +500,8 @@ export async function buildCompilationStage(
           plan: await validateCompilationPlan(plan, "SOURCE_SUMMARY_FALLBACK"),
           metadata: {
             mode: "SOURCE_SUMMARY_FALLBACK",
+            sourceMarkdownHash: input.sourceMarkdown.sha256,
+            sourceMarkdownRendererVersion: input.sourceMarkdown.rendererVersion,
             modelRoute: routeMetadata,
             reason:
               routeCandidates.length === 0
@@ -618,6 +628,8 @@ export async function buildCompilationStage(
     plan: await validateCompilationPlan(compiled.plan, "GENERATIVE"),
     metadata: {
       mode: "GENERATIVE",
+      sourceMarkdownHash: input.sourceMarkdown.sha256,
+      sourceMarkdownRendererVersion: input.sourceMarkdown.rendererVersion,
       provider: compiled.provider,
       modelRoute: routeMetadata,
       retrievalChannels: compiled.retrievalChannels,

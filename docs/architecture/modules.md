@@ -1,30 +1,31 @@
 # Module and dependency model
 
-The platform is a modular monolith with adapters around deterministic cores.
+AKP is a modular monolith: the **module dependency graph** is distinct from the **runtime request graph**. See [repository standards](repository-standards.md) and [core-product redesign roadmap](core-redesign-roadmap.md) for rules and known debt.
 
 ```mermaid
 flowchart BT
-  Domain["@akp/domain"]
-  Application["@akp/application"] --> Domain
-  Compiler["@akp/compiler"] --> Domain
-  Policy["@akp/policy"] --> Domain
-  Retrieval["@akp/retrieval"] --> Contracts["@akp/contracts"]
+  Application["@akp/application"] --> Contracts["@akp/contracts"]
+  Application --> Domain["@akp/domain"]
+  Retrieval["@akp/retrieval"] --> Contracts
+  Compiler["@akp/compiler"] --> Contracts
+  Policy["@akp/policy"] --> Contracts
   Graph["@akp/graph"] --> Domain
+  Postgres["@akp/postgres"] --> Domain
+  Postgres --> Contracts
+  Indexing["@akp/indexing"] --> Retrieval
+  Indexing --> Postgres
   API["apps/api"] --> Application
   API --> Retrieval
+  API --> Postgres
   Worker["apps/worker"] --> Compiler
-  Worker --> GitStore["@akp/git-store"]
-  Worker --> ObjectStore["@akp/object-store"]
-  API --> Postgres["@akp/postgres"]
   Worker --> Postgres
-  MCP["apps/mcp"] --> API
-  CLI["apps/cli"] --> API
-  Web["apps/web"] --> API
 ```
 
-`dependency-cruiser.cjs` is the executable boundary gate. Shared packages contain technical primitives only. The Python extractor implements an external protocol and does not duplicate the domain model.
+The diagram is a **selected subset** of actual import dependencies, not a complete ownership or execution map. The MCP runtime communicates with the API via HTTP while importing application/contracts modules locally. The CLI currently imports PostgreSQL and vault-importer directly for operational tasks; its status as a "thin API client" is a **known architectural mismatch** to be migrated rather than hidden in diagrams. The Web communicates with the API over HTTP.
 
-Primary modules map to identity, sources, ingestion, knowledge, review, retrieval, governance, evaluation and integration. They are currently deployed together; splitting them into microservices is not a goal.
+`dependency-cruiser.cjs` checks source imports; `scripts/validate-module-boundaries.mjs` checks declared internal package graph, cycles, missing packages and pure-module restrictions; `scripts/validate-import-surfaces.mjs` checks declared public subpath exports and prohibits relative cross-module production imports. All run via `pnpm boundaries`. The [S0 inventory](s0-architecture-inventory.md) records known large modules and possible dead exports; gates do not prove semantic business ownership.
+
+A Python extractor is an external document-intelligence boundary; it must not duplicate publication authority. Splitting the monolith into extra microservices is not a design goal.
 
 ## Federated graph substrate
 

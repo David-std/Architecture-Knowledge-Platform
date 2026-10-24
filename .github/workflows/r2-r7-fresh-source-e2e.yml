@@ -1,0 +1,114 @@
+name: r2-r7-fresh-source-e2e
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fresh-source-e2e:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'experiment/r2-r7-fresh-source-e2e'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      AKP_RUN_REAL_MODEL_TESTS: "1"
+      AKP_RUN_R2_R7_FRESH_E2E: "1"
+      AKP_VECTOR_ENABLED: "true"
+      AKP_EMBEDDING_PROVIDER: local-multilingual-e5
+      AKP_MODEL_CACHE_DIR: /tmp/akp-model-cache
+      AKP_LOCAL_FILES_ONLY: "1"
+      AKP_EXTRACTOR_URL: http://127.0.0.1:8090
+      AKP_EXTRACTOR_TOKEN: local-extractor-development-token
+      AKP_RAW_ENDPOINT: http://127.0.0.1:19000
+      AKP_RAW_BUCKET: akp-raw
+      AKP_RAW_ACCESS_KEY: akp
+      AKP_RAW_SECRET_KEY: change-me
+      AKP_R2_R7_FRESH_E2E_REPORT: reports/ci/r2-r7-fresh-source-e2e.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate frozen source and harness
+        shell: bash
+        run: |
+          git merge-base --is-ancestor \
+            a2d53f977ece55db445acff13c5826c357bfc755 HEAD
+          pnpm exec prettier --check \
+            test/fixtures/r2-r7-fresh-source/fidelity-probe.md \
+            evals/registered/r2-r7-fresh-source-e2e.json \
+            apps/api/test/product-lifecycle.integration.test.ts \
+            .github/workflows/r2-r7-fresh-source-e2e.yml
+          pnpm check
+      - name: Warm pinned multilingual semantic model cache
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci "$AKP_MODEL_CACHE_DIR"
+          AKP_LOCAL_FILES_ONLY=0 pnpm exec tsx scripts/preload-semantic-model.ts \
+            2>&1 | tee reports/ci/r2-r7-semantic-model-prefetch.log
+      - run: pnpm build
+      - name: Start disposable source pipeline services
+        run: docker compose up -d --wait postgres minio extractor
+      - run: pnpm db:migrate
+      - name: Execute frozen raw-source to ContextPacket oracle
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm exec vitest run \
+            apps/api/test/product-lifecycle.integration.test.ts \
+            -t "proves the frozen R2/R7 fresh source oracle" \
+            2>&1 | tee reports/ci/r2-r7-fresh-source-e2e.log
+      - name: Validate evidence report
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const report = JSON.parse(
+            readFileSync("reports/ci/r2-r7-fresh-source-e2e.json", "utf8"),
+          );
+          if (report.outcome !== "PUBLIC_FRESH_E2E_PROVEN") {
+            throw new Error("Fresh source E2E outcome is not PROVEN.");
+          }
+          if (report.claimBoundary?.privateReplayStillRequired !== true) {
+            throw new Error("Public E2E must not claim private replay closure.");
+          }
+          for (const [name, value] of Object.entries(report.gates ?? {})) {
+            const expected = name === "crossVaultLeakageCount" ? 0 : true;
+            if (value !== expected) {
+              throw new Error("Fresh source E2E gate failed: " + name);
+            }
+          }
+          console.log(JSON.stringify({
+            outcome: report.outcome,
+            revision: report.publication?.revision,
+            units: report.units,
+            vector: report.vector,
+            retrieval: report.retrieval,
+            gates: report.gates,
+          }, null, 2));
+          NODE
+      - name: Upload fresh source E2E evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: r2-r7-fresh-source-e2e-${{ github.run_id }}
+          path: |
+            reports/ci/r2-r7-fresh-source-e2e.json
+            reports/ci/r2-r7-fresh-source-e2e.log
+            reports/ci/r2-r7-semantic-model-prefetch.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans

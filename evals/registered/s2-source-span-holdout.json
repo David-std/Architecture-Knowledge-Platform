@@ -1,0 +1,698 @@
+{
+  "schemaVersion": "akp.s2.source-span-holdout.v1",
+  "status": "FROZEN_PRE_IMPLEMENTATION",
+  "frozenAt": "2026-10-13",
+  "parentBaselineSha": "3969cd6f11bbd247981ccf630b2a7469ba78d306",
+  "reviewStatus": "AUTHOR_CONSTRUCTED_NOT_INDEPENDENTLY_ADJUDICATED",
+  "eligibleForTuning": false,
+  "privateCustomerDataIncluded": false,
+  "measurementBoundary": "New synthetic domain-disjoint heldout source spans and negatives. Source text and gold citations are public; do not tune heuristics, models or thresholds on these 48 cases. Not a blind human-reviewed or real-document benchmark.",
+  "thresholdsPreRegistered": {
+    "precisionMin": 0.8,
+    "wilsonSimpleLowerDiagnosticMin": 0.7,
+    "falseAdmissionRateMax": 0.1,
+    "p95LatencyMsMax": 25000,
+    "degradedCallRateMax": 0.05,
+    "answerCorrectnessNonRegression": true
+  },
+  "sourceDocuments": [
+    {
+      "id": "marine-beacon",
+      "domain": "maritime-sensor-telemetry",
+      "format": "text/markdown",
+      "units": [
+        {
+          "id": "mb-battery",
+          "text": "On 2026-09-30, Seabright buoy M-7 reported 81% battery; Seabright buoy M-8 reported 63% battery."
+        },
+        {
+          "id": "mb-firmware",
+          "text": "The approved firmware for buoy M-7 is v3.2.1; buoy M-8 remains on v3.1.9."
+        },
+        {
+          "id": "mb-alert",
+          "text": "Buoy M-7 sends a high-wave alert only after three consecutive readings above 3.4 metres. A single high reading does not trigger an alert."
+        },
+        {
+          "id": "mb-calibration",
+          "text": "The M-7 optical sensor is calibrated every 14 days. The M-8 sensor is calibrated every 21 days."
+        },
+        {
+          "id": "mb-recipient",
+          "text": "The marine operations team receives M-7 wave alerts. A hardware contractor inspects M-8 devices but does not receive M-7 alerts."
+        },
+        {
+          "id": "mb-report",
+          "text": "The September audit reports battery charge and wave height for both buoys; it contains no salinity or wind-direction measurements."
+        }
+      ]
+    },
+    {
+      "id": "optical-observatory",
+      "domain": "astronomical-optics",
+      "format": "text/markdown",
+      "units": [
+        {
+          "id": "oo-exposure",
+          "text": "At the Arden Observatory, camera R-4 uses a 45-second exposure; camera R-5 uses a 90-second exposure."
+        },
+        {
+          "id": "oo-firmware",
+          "text": "Camera R-4 runs controller firmware 5.6.2; camera R-5 runs controller firmware 5.6.1."
+        },
+        {
+          "id": "oo-temperature",
+          "text": "R-4 observation is suspended above 32 °C sensor temperature. The R-5 suspension threshold is 29 °C."
+        },
+        {
+          "id": "oo-access",
+          "text": "Only certified night operators may change the R-4 focus settings. Visiting researchers may request images but cannot change focus."
+        },
+        {
+          "id": "oo-backup",
+          "text": "The R-4 raw images are copied to archive node L-2 every six hours. The R-5 raw images are copied every twelve hours."
+        },
+        {
+          "id": "oo-release",
+          "text": "The public catalog contains R-4 processed images after a 48-hour embargo. R-5 processed images remain internal for seven days."
+        }
+      ]
+    },
+    {
+      "id": "heritage-vault",
+      "domain": "cultural-heritage-conservation",
+      "format": "text/markdown",
+      "units": [
+        {
+          "id": "hv-humidity",
+          "text": "The Stonebridge archive keeps Collection A at 45% relative humidity and Collection B at 55% relative humidity."
+        },
+        {
+          "id": "hv-retention",
+          "text": "Collection A digitized access copies are retained for 12 years. Collection B access copies are retained for 6 years."
+        },
+        {
+          "id": "hv-checksum",
+          "text": "The Collection A export manifest records SHA-256 checksums; the Collection B export manifest records SHA-512 checksums."
+        },
+        {
+          "id": "hv-authorization",
+          "text": "A senior conservator must approve Collection A physical retrieval. Collection B physical retrieval needs two archive staff signatures."
+        },
+        {
+          "id": "hv-export",
+          "text": "Collection A images are exported as TIFF at 600 dpi; Collection B images are exported as PNG at 300 dpi."
+        },
+        {
+          "id": "hv-restriction",
+          "text": "Collection A digital previews are available on reading-room terminals only. Remote access is explicitly disabled for Collection A previews."
+        }
+      ]
+    },
+    {
+      "id": "campus-microgrid",
+      "domain": "distributed-energy-operations",
+      "format": "text/markdown",
+      "units": [
+        {
+          "id": "cm-capacity",
+          "text": "At the Juniper campus microgrid, inverter S-2 has a 48 kW continuous limit; inverter S-3 has a 36 kW continuous limit."
+        },
+        {
+          "id": "cm-controller",
+          "text": "Inverter S-2 uses controller 2.8.4; inverter S-3 uses controller 2.7.9."
+        },
+        {
+          "id": "cm-storage",
+          "text": "The S-2 storage bank preserves a minimum 25% state of charge; the S-3 bank preserves a minimum 30%."
+        },
+        {
+          "id": "cm-islanding",
+          "text": "Automatic islanding is permitted only after two consecutive grid-loss checks. A single voltage dip is not sufficient for islanding."
+        },
+        {
+          "id": "cm-safety",
+          "text": "Only the electrical operations lead may reset the S-2 protection relay. Maintenance trainees may observe but cannot reset the relay."
+        },
+        {
+          "id": "cm-report",
+          "text": "The August energy report includes exported kWh and fault counts, but does not state grid tariff prices or generator fuel consumption."
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "s2-marine-beacon-p01",
+      "sourceId": "marine-beacon",
+      "language": "en",
+      "answerable": true,
+      "challenge": "EXACT_VALUE",
+      "query": "What was M-7 battery charge on September 30, 2026?",
+      "gold": [
+        {
+          "unitId": "mb-battery",
+          "quote": "Seabright buoy M-7 reported 81% battery"
+        }
+      ]
+    },
+    {
+      "id": "s2-marine-beacon-p02",
+      "sourceId": "marine-beacon",
+      "language": "es",
+      "answerable": true,
+      "challenge": "VERSION_BINDING",
+      "query": "¿Qué versión de firmware está aprobada para la boya M-7?",
+      "gold": [
+        {
+          "unitId": "mb-firmware",
+          "quote": "The approved firmware for buoy M-7 is v3.2.1"
+        }
+      ]
+    },
+    {
+      "id": "s2-marine-beacon-p03",
+      "sourceId": "marine-beacon",
+      "language": "en",
+      "answerable": true,
+      "challenge": "CONDITION_SCOPE",
+      "query": "How many consecutive high readings trigger the M-7 high-wave alert?",
+      "gold": [
+        {
+          "unitId": "mb-alert",
+          "quote": "Buoy M-7 sends a high-wave alert only after three consecutive readings above 3.4 metres."
+        }
+      ]
+    },
+    {
+      "id": "s2-marine-beacon-p04",
+      "sourceId": "marine-beacon",
+      "language": "es",
+      "answerable": true,
+      "challenge": "SUBJECT_BINDING",
+      "query": "¿Cada cuántos días se calibra el sensor M-8?",
+      "gold": [
+        {
+          "unitId": "mb-calibration",
+          "quote": "The M-8 sensor is calibrated every 21 days."
+        }
+      ]
+    },
+    {
+      "id": "s2-marine-beacon-p05",
+      "sourceId": "marine-beacon",
+      "language": "en",
+      "answerable": true,
+      "challenge": "ROLE_BINDING",
+      "query": "Who receives M-7 wave alerts?",
+      "gold": [
+        {
+          "unitId": "mb-recipient",
+          "quote": "The marine operations team receives M-7 wave alerts."
+        }
+      ]
+    },
+    {
+      "id": "s2-marine-beacon-p06",
+      "sourceId": "marine-beacon",
+      "language": "es",
+      "answerable": true,
+      "challenge": "NEGATION_SCOPE",
+      "query": "¿Una sola lectura alta activa la alerta de M-7?",
+      "gold": [
+        {
+          "unitId": "mb-alert",
+          "quote": "A single high reading does not trigger an alert."
+        }
+      ]
+    },
+    {
+      "id": "s2-marine-beacon-n01",
+      "sourceId": "marine-beacon",
+      "language": "en",
+      "answerable": false,
+      "challenge": "MISSING_SLOT",
+      "query": "What was the salinity of buoy M-7 in the September audit?",
+      "gold": []
+    },
+    {
+      "id": "s2-marine-beacon-n02",
+      "sourceId": "marine-beacon",
+      "language": "es",
+      "answerable": false,
+      "challenge": "MISSING_SLOT",
+      "query": "¿Cuál es el número telefónico de notificación de M-7?",
+      "gold": []
+    },
+    {
+      "id": "s2-marine-beacon-n03",
+      "sourceId": "marine-beacon",
+      "language": "en",
+      "answerable": false,
+      "challenge": "WRONG_SUBJECT",
+      "query": "What was the M-9 battery reading on September 30, 2026?",
+      "gold": []
+    },
+    {
+      "id": "s2-marine-beacon-n04",
+      "sourceId": "marine-beacon",
+      "language": "es",
+      "answerable": false,
+      "challenge": "WRONG_VERSION",
+      "query": "¿Cuál fue el firmware de M-7 durante agosto de 2025?",
+      "gold": []
+    },
+    {
+      "id": "s2-marine-beacon-n05",
+      "sourceId": "marine-beacon",
+      "language": "en",
+      "answerable": false,
+      "challenge": "RELATION_DIRECTION",
+      "query": "Which contractor calibrated M-7 in September?",
+      "gold": []
+    },
+    {
+      "id": "s2-marine-beacon-n06",
+      "sourceId": "marine-beacon",
+      "language": "es",
+      "answerable": false,
+      "challenge": "UNSUPPORTED_INFERENCE",
+      "query": "¿Cuánto costó la calibración del sensor M-8?",
+      "gold": []
+    },
+    {
+      "id": "s2-optical-observatory-p01",
+      "sourceId": "optical-observatory",
+      "language": "en",
+      "answerable": true,
+      "challenge": "SUBJECT_BINDING",
+      "query": "What exposure time does Arden camera R-4 use?",
+      "gold": [
+        {
+          "unitId": "oo-exposure",
+          "quote": "camera R-4 uses a 45-second exposure"
+        }
+      ]
+    },
+    {
+      "id": "s2-optical-observatory-p02",
+      "sourceId": "optical-observatory",
+      "language": "es",
+      "answerable": true,
+      "challenge": "VERSION_BINDING",
+      "query": "¿Cuál es el firmware de controladora de R-5?",
+      "gold": [
+        {
+          "unitId": "oo-firmware",
+          "quote": "camera R-5 runs controller firmware 5.6.1"
+        }
+      ]
+    },
+    {
+      "id": "s2-optical-observatory-p03",
+      "sourceId": "optical-observatory",
+      "language": "en",
+      "answerable": true,
+      "challenge": "NUMERICAL_THRESHOLD",
+      "query": "Above what temperature is R-4 observing suspended?",
+      "gold": [
+        {
+          "unitId": "oo-temperature",
+          "quote": "R-4 observation is suspended above 32 °C sensor temperature."
+        }
+      ]
+    },
+    {
+      "id": "s2-optical-observatory-p04",
+      "sourceId": "optical-observatory",
+      "language": "es",
+      "answerable": true,
+      "challenge": "ROLE_BINDING",
+      "query": "¿Quién puede modificar el enfoque de R-4?",
+      "gold": [
+        {
+          "unitId": "oo-access",
+          "quote": "Only certified night operators may change the R-4 focus settings."
+        }
+      ]
+    },
+    {
+      "id": "s2-optical-observatory-p05",
+      "sourceId": "optical-observatory",
+      "language": "en",
+      "answerable": true,
+      "challenge": "DIFFERENT_FREQUENCY",
+      "query": "How often are R-5 raw images copied to storage?",
+      "gold": [
+        {
+          "unitId": "oo-backup",
+          "quote": "The R-5 raw images are copied every twelve hours."
+        }
+      ]
+    },
+    {
+      "id": "s2-optical-observatory-p06",
+      "sourceId": "optical-observatory",
+      "language": "es",
+      "answerable": true,
+      "challenge": "EMBARGO_SCOPE",
+      "query": "¿Cuánto demora la publicación de las imágenes procesadas de R-4?",
+      "gold": [
+        {
+          "unitId": "oo-release",
+          "quote": "The public catalog contains R-4 processed images after a 48-hour embargo."
+        }
+      ]
+    },
+    {
+      "id": "s2-optical-observatory-n01",
+      "sourceId": "optical-observatory",
+      "language": "en",
+      "answerable": false,
+      "challenge": "WRONG_SUBJECT",
+      "query": "What is the exposure duration of camera R-6?",
+      "gold": []
+    },
+    {
+      "id": "s2-optical-observatory-n02",
+      "sourceId": "optical-observatory",
+      "language": "es",
+      "answerable": false,
+      "challenge": "MISSING_SLOT",
+      "query": "¿Cuál es el fabricante del sensor térmico de R-4?",
+      "gold": []
+    },
+    {
+      "id": "s2-optical-observatory-n03",
+      "sourceId": "optical-observatory",
+      "language": "en",
+      "answerable": false,
+      "challenge": "UNSUPPORTED_INFERENCE",
+      "query": "How much does Arden Observatory charge for public R-4 images?",
+      "gold": []
+    },
+    {
+      "id": "s2-optical-observatory-n04",
+      "sourceId": "optical-observatory",
+      "language": "es",
+      "answerable": false,
+      "challenge": "MISSING_DATE",
+      "query": "¿En qué fecha de octubre se calibró la cámara R-5?",
+      "gold": []
+    },
+    {
+      "id": "s2-optical-observatory-n05",
+      "sourceId": "optical-observatory",
+      "language": "en",
+      "answerable": false,
+      "challenge": "INVERTED_RELATION",
+      "query": "Which camera sends its raw images to the visiting researchers' laptops?",
+      "gold": []
+    },
+    {
+      "id": "s2-optical-observatory-n06",
+      "sourceId": "optical-observatory",
+      "language": "es",
+      "answerable": false,
+      "challenge": "WRONG_VERSION",
+      "query": "¿Cuál era el firmware de R-4 durante 2023?",
+      "gold": []
+    },
+    {
+      "id": "s2-heritage-vault-p01",
+      "sourceId": "heritage-vault",
+      "language": "en",
+      "answerable": true,
+      "challenge": "TABLE_STYLE_BINDING",
+      "query": "What humidity is specified for Stonebridge Collection A?",
+      "gold": [
+        {
+          "unitId": "hv-humidity",
+          "quote": "Collection A at 45% relative humidity"
+        }
+      ]
+    },
+    {
+      "id": "s2-heritage-vault-p02",
+      "sourceId": "heritage-vault",
+      "language": "es",
+      "answerable": true,
+      "challenge": "SUBJECT_BINDING",
+      "query": "¿Cuántos años se conservan las copias de acceso de la Colección B?",
+      "gold": [
+        {
+          "unitId": "hv-retention",
+          "quote": "Collection B access copies are retained for 6 years."
+        }
+      ]
+    },
+    {
+      "id": "s2-heritage-vault-p03",
+      "sourceId": "heritage-vault",
+      "language": "en",
+      "answerable": true,
+      "challenge": "ALGORITHM_BINDING",
+      "query": "Which checksum algorithm protects Collection A's export manifest?",
+      "gold": [
+        {
+          "unitId": "hv-checksum",
+          "quote": "The Collection A export manifest records SHA-256 checksums"
+        }
+      ]
+    },
+    {
+      "id": "s2-heritage-vault-p04",
+      "sourceId": "heritage-vault",
+      "language": "es",
+      "answerable": true,
+      "challenge": "ROLE_BINDING",
+      "query": "¿Quién autoriza la retirada física de la Colección A?",
+      "gold": [
+        {
+          "unitId": "hv-authorization",
+          "quote": "A senior conservator must approve Collection A physical retrieval."
+        }
+      ]
+    },
+    {
+      "id": "s2-heritage-vault-p05",
+      "sourceId": "heritage-vault",
+      "language": "en",
+      "answerable": true,
+      "challenge": "FORMAT_AND_UNIT",
+      "query": "At what resolution are Collection B images exported?",
+      "gold": [
+        {
+          "unitId": "hv-export",
+          "quote": "Collection B images are exported as PNG at 300 dpi."
+        }
+      ]
+    },
+    {
+      "id": "s2-heritage-vault-p06",
+      "sourceId": "heritage-vault",
+      "language": "es",
+      "answerable": true,
+      "challenge": "NEGATIVE_ANSWER",
+      "query": "¿Se permite el acceso remoto a las vistas previas de la Colección A?",
+      "gold": [
+        {
+          "unitId": "hv-restriction",
+          "quote": "Remote access is explicitly disabled for Collection A previews."
+        }
+      ]
+    },
+    {
+      "id": "s2-heritage-vault-n01",
+      "sourceId": "heritage-vault",
+      "language": "en",
+      "answerable": false,
+      "challenge": "MISSING_SLOT",
+      "query": "What is the insurance valuation of Collection A?",
+      "gold": []
+    },
+    {
+      "id": "s2-heritage-vault-n02",
+      "sourceId": "heritage-vault",
+      "language": "es",
+      "answerable": false,
+      "challenge": "WRONG_SUBJECT",
+      "query": "¿Qué nivel de humedad tiene la Colección C?",
+      "gold": []
+    },
+    {
+      "id": "s2-heritage-vault-n03",
+      "sourceId": "heritage-vault",
+      "language": "en",
+      "answerable": false,
+      "challenge": "MISSING_DATE",
+      "query": "When did Stonebridge buy the TIFF scanning hardware?",
+      "gold": []
+    },
+    {
+      "id": "s2-heritage-vault-n04",
+      "sourceId": "heritage-vault",
+      "language": "es",
+      "answerable": false,
+      "challenge": "UNSUPPORTED_INFERENCE",
+      "query": "¿Cuánto cuesta almacenar las copias PNG de la Colección B?",
+      "gold": []
+    },
+    {
+      "id": "s2-heritage-vault-n05",
+      "sourceId": "heritage-vault",
+      "language": "en",
+      "answerable": false,
+      "challenge": "MISSING_ENTITY",
+      "query": "Who manufactured the Collection B scanners?",
+      "gold": []
+    },
+    {
+      "id": "s2-heritage-vault-n06",
+      "sourceId": "heritage-vault",
+      "language": "es",
+      "answerable": false,
+      "challenge": "WRONG_VERSION",
+      "query": "¿Qué algoritmo de checksum se utilizó para la Colección A en 2021?",
+      "gold": []
+    },
+    {
+      "id": "s2-campus-microgrid-p01",
+      "sourceId": "campus-microgrid",
+      "language": "en",
+      "answerable": true,
+      "challenge": "DIFFERENT_VALUE",
+      "query": "What is Juniper inverter S-3's continuous output limit?",
+      "gold": [
+        {
+          "unitId": "cm-capacity",
+          "quote": "inverter S-3 has a 36 kW continuous limit."
+        }
+      ]
+    },
+    {
+      "id": "s2-campus-microgrid-p02",
+      "sourceId": "campus-microgrid",
+      "language": "es",
+      "answerable": true,
+      "challenge": "VERSION_BINDING",
+      "query": "¿Qué versión de controladora utiliza el inversor S-2?",
+      "gold": [
+        {
+          "unitId": "cm-controller",
+          "quote": "Inverter S-2 uses controller 2.8.4"
+        }
+      ]
+    },
+    {
+      "id": "s2-campus-microgrid-p03",
+      "sourceId": "campus-microgrid",
+      "language": "en",
+      "answerable": true,
+      "challenge": "THRESHOLD_BINDING",
+      "query": "What minimum state of charge must the S-2 storage bank maintain?",
+      "gold": [
+        {
+          "unitId": "cm-storage",
+          "quote": "The S-2 storage bank preserves a minimum 25% state of charge"
+        }
+      ]
+    },
+    {
+      "id": "s2-campus-microgrid-p04",
+      "sourceId": "campus-microgrid",
+      "language": "es",
+      "answerable": true,
+      "challenge": "CONDITION_SCOPE",
+      "query": "¿Cuántas comprobaciones consecutivas de pérdida de red exige el modo isla automático?",
+      "gold": [
+        {
+          "unitId": "cm-islanding",
+          "quote": "Automatic islanding is permitted only after two consecutive grid-loss checks."
+        }
+      ]
+    },
+    {
+      "id": "s2-campus-microgrid-p05",
+      "sourceId": "campus-microgrid",
+      "language": "en",
+      "answerable": true,
+      "challenge": "ROLE_BINDING",
+      "query": "Who is authorized to reset the S-2 protection relay?",
+      "gold": [
+        {
+          "unitId": "cm-safety",
+          "quote": "Only the electrical operations lead may reset the S-2 protection relay."
+        }
+      ]
+    },
+    {
+      "id": "s2-campus-microgrid-p06",
+      "sourceId": "campus-microgrid",
+      "language": "es",
+      "answerable": true,
+      "challenge": "NEGATIVE_ANSWER",
+      "query": "¿Basta una única caída de tensión para activar el modo isla?",
+      "gold": [
+        {
+          "unitId": "cm-islanding",
+          "quote": "A single voltage dip is not sufficient for islanding."
+        }
+      ]
+    },
+    {
+      "id": "s2-campus-microgrid-n01",
+      "sourceId": "campus-microgrid",
+      "language": "en",
+      "answerable": false,
+      "challenge": "MISSING_SLOT",
+      "query": "What was the grid tariff price per kWh in August?",
+      "gold": []
+    },
+    {
+      "id": "s2-campus-microgrid-n02",
+      "sourceId": "campus-microgrid",
+      "language": "es",
+      "answerable": false,
+      "challenge": "WRONG_SUBJECT",
+      "query": "¿Cuál es el límite de potencia continua del inversor S-4?",
+      "gold": []
+    },
+    {
+      "id": "s2-campus-microgrid-n03",
+      "sourceId": "campus-microgrid",
+      "language": "en",
+      "answerable": false,
+      "challenge": "MISSING_METRIC",
+      "query": "How many litres of generator fuel were consumed in August?",
+      "gold": []
+    },
+    {
+      "id": "s2-campus-microgrid-n04",
+      "sourceId": "campus-microgrid",
+      "language": "es",
+      "answerable": false,
+      "challenge": "WRONG_DATE",
+      "query": "¿Qué firmware usaba S-2 en junio de 2024?",
+      "gold": []
+    },
+    {
+      "id": "s2-campus-microgrid-n05",
+      "sourceId": "campus-microgrid",
+      "language": "en",
+      "answerable": false,
+      "challenge": "UNSUPPORTED_INFERENCE",
+      "query": "What warranty period applies to S-3?",
+      "gold": []
+    },
+    {
+      "id": "s2-campus-microgrid-n06",
+      "sourceId": "campus-microgrid",
+      "language": "es",
+      "answerable": false,
+      "challenge": "MISSING_ENTITY",
+      "query": "¿Qué proveedor instaló los bancos de almacenamiento S-2?",
+      "gold": []
+    }
+  ]
+}

@@ -12,7 +12,7 @@ import {
 } from "@akp/postgres";
 import { actorOf, audit, requirePermission, type Permission } from "../auth.js";
 
-const UUID = z.string().uuid();
+const UUID = z.string().guid();
 const RunBody = z
   .object({
     spaceId: UUID,

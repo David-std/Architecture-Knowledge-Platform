@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "akp.optional-semantic-layer-rollback.v1",
+  "frozen": true,
+  "frozenAt": "2026-10-05",
+  "baselineSha": "5b3c64733e521064f99e5dd3669298324f2e00d9",
+  "scope": "R10_DEGRADED_MODE_AND_ROLLBACK",
+  "independentVariable": "Surface a stable sanitized degradation warning when an explicitly injected query-conditioned evidence verifier returns verifier errors. Admission/ranking semantics remain unchanged.",
+  "defaults": {
+    "evidenceVerifierWiredByDefault": false,
+    "rerankerWiredByDefault": false,
+    "providerDefaultsChanged": false
+  },
+  "scenarios": [
+    "OPTIONAL_LAYER_OFF_BASELINE",
+    "EVIDENCE_VERIFIER_SHADOW_PROVIDER_ERROR",
+    "EVIDENCE_VERIFIER_ENFORCE_PROVIDER_ERROR",
+    "OPTIONAL_LAYER_ROLLBACK_TO_OFF",
+    "RERANKER_PROVIDER_ERROR"
+  ],
+  "invariants": {
+    "shadowProviderErrorPreservesBaselineSupport": true,
+    "shadowProviderErrorEmitsSanitizedStableWarning": true,
+    "enforceProviderErrorFailsClosed": true,
+    "rollbackToOffExactlyRestoresBaseline": true,
+    "rerankerProviderErrorPreservesAuthorizedFusedOrder": true,
+    "rawProviderErrorDetailsNotExposed": true,
+    "noPersistentVerifierState": true,
+    "providerDefaultsChanged": false,
+    "rankingChanged": false,
+    "admissionPolicyChanged": false
+  },
+  "promotionRule": {
+    "outcome": "PROMOTE_RESILIENCE_OBSERVABILITY",
+    "requireAllInvariants": true,
+    "runtimeSemanticChangeAllowed": false
+  },
+  "claimBoundary": [
+    "This worker proves degraded-mode observability and rollback semantics only.",
+    "It does not promote any semantic verifier or reranker.",
+    "SHADOW verifier failure must preserve the deterministic baseline.",
+    "ENFORCE verifier failure remains fail-closed and is not degraded to deterministic support.",
+    "Turning the optional verifier back off must reproduce the original deterministic baseline without persisted semantic state.",
+    "Provider exception details must never be exposed in response warnings."
+  ]
+}

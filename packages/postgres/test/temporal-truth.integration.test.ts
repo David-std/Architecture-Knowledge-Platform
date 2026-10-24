@@ -643,14 +643,14 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
       vaultId,
       sourceId: sourceA,
       sourceArtifactId: artifactA,
-      sourceHash: "e".repeat(64),
+      sourceHash: "a".repeat(64),
       locatorRefs: ["source:a#future-derived"],
     });
     const support = await store.createSupportSet({
       spaceId,
       vaultId,
       sourceEpisodeIds: [episode.id],
-      sourceRevisionHashes: ["e".repeat(64)],
+      sourceRevisionHashes: ["a".repeat(64)],
     });
     const historical = await store.recordFact({
       spaceId,
@@ -682,7 +682,7 @@ describe.skipIf(!databaseUrl)("temporal truth store", () => {
       derivedStoreKind: "VECTOR",
       derivedItemRef: "vector:generation-future:unit-future",
       supportSetId: support.id,
-      sourceRevisionHashes: ["e".repeat(64)],
+      sourceRevisionHashes: ["a".repeat(64)],
       truthRevisionHash: current.revision.revisionHash,
       projectionRevision: "vector:future",
     });

@@ -134,7 +134,7 @@ describe("query planner", () => {
     });
   });
 
-  it("uses an available vector generation for conceptual questions without changing exact lookups", () => {
+  it("retains an available vector generation across retrieval intents", () => {
     expect(
       planQuery("¿Qué significa responsabilidad única?", "CONCEPTUAL", {
         vectorAvailable: true,
@@ -142,13 +142,36 @@ describe("query planner", () => {
     ).toEqual(["exact", "lexical", "vector"]);
     expect(
       planQuery("CON-SRP", "EXACT_LOOKUP", { vectorAvailable: true }).channels,
-    ).toEqual(["exact", "lexical"]);
+    ).toEqual(["exact", "lexical", "vector"]);
     for (const intent of ["CONCEPTUAL", "COMPARISON"] as const) {
       expect(planQuery("responsabilidad única", intent)).toMatchObject({
         channels: ["exact", "lexical"],
         omittedChannels: [],
       });
     }
+  });
+
+  it("does not lose semantic recall when a question selects a specialized tool", () => {
+    for (const intent of [
+      "EXACT_LOOKUP",
+      "WORKFLOW_EXECUTION",
+      "SOURCE_VERIFICATION",
+      "PROJECT_CODE",
+      "IMPACT_ANALYSIS",
+    ] as const) {
+      const plan = planQuery("requested information", intent, {
+        vectorAvailable: true,
+      });
+      expect(plan.intent).toBe(intent);
+      expect(plan.channels).toContain("vector");
+      expect(plan.channels).not.toContain("raw");
+      expect(plan.channels).not.toContain("code");
+    }
+    expect(
+      planQuery("requested information", "NO_RETRIEVAL_REQUIRED", {
+        vectorAvailable: true,
+      }).channels,
+    ).toEqual([]);
   });
 
   it("classifies Deep Spec query-shape signals independently from intent", () => {

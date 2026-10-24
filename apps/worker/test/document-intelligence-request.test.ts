@@ -5,8 +5,8 @@ import { documentIntelligenceFormFields } from "../src/document-intelligence-req
 describe("document intelligence ingest controls", () => {
   it("preserves provider-neutral policy and bounded explicit provider controls", () => {
     const parsed = IngestRequest.parse({
-      spaceId: "00000000-0000-0000-0000-000000000003",
-      vaultId: "00000000-0000-0000-0000-000000000004",
+      spaceId: "00000000-0000-4000-8000-000000000003",
+      vaultId: "00000000-0000-4000-8000-000000000004",
       sourceUri: "/allowed/source.pdf",
       documentIntelligence: {
         complexity: "scanned",

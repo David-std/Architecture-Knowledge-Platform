@@ -1,0 +1,140 @@
+name: fresh-source-exact-citation-transit
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fresh-source-exact-citation-transit:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'eval/fresh-source-exact-citation-transit'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      DATABASE_URL: postgres://akp:akp@localhost:55432/akp
+      AKP_RUN_REAL_MODEL_TESTS: "1"
+      AKP_RUN_R2_R7_FRESH_E2E: "1"
+      AKP_VECTOR_ENABLED: "true"
+      AKP_EMBEDDING_PROVIDER: local-multilingual-e5
+      AKP_MODEL_CACHE_DIR: /tmp/akp-model-cache
+      AKP_LOCAL_FILES_ONLY: "1"
+      AKP_EXTRACTOR_URL: http://127.0.0.1:8090
+      AKP_EXTRACTOR_TOKEN: local-extractor-development-token
+      AKP_RAW_ENDPOINT: http://127.0.0.1:19000
+      AKP_RAW_BUCKET: akp-raw
+      AKP_RAW_ACCESS_KEY: akp
+      AKP_RAW_SECRET_KEY: change-me
+      AKP_R2_R7_FRESH_E2E_REPORT: reports/ci/r2-r7-fresh-source-e2e.json
+      AKP_FRESH_EXACT_CITATION_TRANSIT_REPORT: reports/ci/fresh-source-exact-citation-transit.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate frozen citation transit source and harness
+        shell: bash
+        run: |
+          git merge-base --is-ancestor \
+            851e28aea8cce15b6eafe25d13f83cab2e09f5d3 HEAD
+          pnpm exec prettier --check \
+            evals/registered/fresh-source-exact-citation-transit.json \
+            apps/api/test/product-lifecycle.integration.test.ts \
+            .github/workflows/fresh-source-exact-citation-transit.yml
+          pnpm check
+      - name: Warm pinned multilingual semantic model cache
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci "$AKP_MODEL_CACHE_DIR"
+          AKP_LOCAL_FILES_ONLY=0 pnpm exec tsx scripts/preload-semantic-model.ts \
+            2>&1 | tee reports/ci/fresh-source-exact-citation-model-prefetch.log
+      - run: pnpm build
+      - name: Start disposable source pipeline services
+        run: docker compose up -d --wait postgres minio extractor
+      - run: pnpm db:migrate
+      - name: Execute frozen fresh-source citation transit oracle
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm exec vitest run \
+            apps/api/test/product-lifecycle.integration.test.ts \
+            -t "proves the frozen R2/R7 fresh source oracle" \
+            2>&1 | tee reports/ci/fresh-source-exact-citation-transit.log
+      - name: Validate upstream fresh-source and exact citation reports
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const upstream = JSON.parse(
+            readFileSync("reports/ci/r2-r7-fresh-source-e2e.json", "utf8"),
+          );
+          if (upstream.outcome !== "PUBLIC_FRESH_E2E_PROVEN") {
+            throw new Error("Upstream fresh-source E2E no longer passes.");
+          }
+
+          const report = JSON.parse(
+            readFileSync(
+              "reports/ci/fresh-source-exact-citation-transit.json",
+              "utf8",
+            ),
+          );
+          if (
+            report.outcome !==
+            "PROVEN_FRESH_EXACT_EVIDENCE_CITATION_TRANSIT"
+          ) {
+            throw new Error(
+              "Exact evidence citation transit is not proven: " +
+                String(report.outcome),
+            );
+          }
+          if (
+            report.productionBehaviorChanged !== false ||
+            report.retrievalChanged !== false ||
+            report.admissionChanged !== false ||
+            report.contextPacketChanged !== false
+          ) {
+            throw new Error("Citation evaluation crossed its claim boundary.");
+          }
+          for (const [name, value] of Object.entries(report.gates ?? {})) {
+            if (value !== true) {
+              throw new Error("Exact citation gate failed: " + name);
+            }
+          }
+          console.log(
+            JSON.stringify(
+              {
+                outcome: report.outcome,
+                gold: report.gold,
+                metrics: report.metrics,
+                observations: report.observations,
+                gates: report.gates,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Upload exact citation transit evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fresh-source-exact-citation-transit-${{ github.run_id }}
+          path: |
+            reports/ci/r2-r7-fresh-source-e2e.json
+            reports/ci/fresh-source-exact-citation-transit.json
+            reports/ci/fresh-source-exact-citation-transit.log
+            reports/ci/fresh-source-exact-citation-model-prefetch.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Stop disposable services
+        if: always()
+        run: docker compose down -v --remove-orphans
