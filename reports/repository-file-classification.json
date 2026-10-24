@@ -3312,6 +3312,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/evaluation/test/s2-atomic-evidence-portfolio.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/evaluation/test/s2-authenticated-http-writer-bridge.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"

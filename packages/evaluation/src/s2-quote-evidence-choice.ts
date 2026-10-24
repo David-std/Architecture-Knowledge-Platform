@@ -162,3 +162,56 @@ export function resolveS2QuoteEvidenceChoice(
     evidenceSpan: { startUtf16: opt.startUtf16, endUtf16: opt.endUtf16 },
   };
 }
+
+/**
+ * Atomic decision+evidence token. Unlike the legacy two-independent-fields
+ * provider schema, a single enum value CANNOT express INSUFFICIENT with a
+ * supporting Q1 citation. The source/UTF-16 resolver remains the canonical
+ * verifier: a legal token does not imply the claim is semantically true.
+ */
+export function buildS2PairedQuoteEvidenceTokenFormat(
+  exactQuote: string,
+  frozen: S2FrozenQuoteEvidenceOptions,
+) {
+  // This reuses the existing original/hash/freeze verifier; tokens are derived
+  // solely from the same immutable, pre-inference source quote IDs.
+  const base = buildS2QuoteEvidenceChoiceFormat(exactQuote, frozen);
+  const ids = base.properties.evidenceId.enum.filter((id) => id !== "NONE");
+  const tokens = [
+    "INSUFFICIENT@NONE",
+    ...ids.flatMap((id) => ["SUPPORTS@" + id, "CONTRADICTS@" + id]),
+  ];
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["questionToken", "claimToken"],
+    properties: {
+      questionToken: { type: "string", enum: tokens },
+      claimToken: { type: "string", enum: tokens },
+    },
+  } as const;
+}
+
+/** Literal token syntax only; no heuristic backfill or model-text repair. */
+export function resolveS2QuoteEvidenceToken(
+  exactQuote: string,
+  frozen: S2FrozenQuoteEvidenceOptions,
+  token: unknown,
+): S2SemanticProbeResult {
+  const fail: S2SemanticProbeResult = {
+    decision: "INSUFFICIENT",
+    reason: "MODEL_LITERAL_EVIDENCE_CHOICE_INVALID",
+  };
+  if (typeof token !== "string" || token.length > 32) return fail;
+  if (token === "INSUFFICIENT@NONE")
+    return resolveS2QuoteEvidenceChoice(exactQuote, frozen, {
+      decision: "INSUFFICIENT",
+      evidenceId: "NONE",
+    });
+  const match = /^(SUPPORTS|CONTRADICTS)@(Q[1-9][0-9]*)$/u.exec(token);
+  if (!match) return fail;
+  return resolveS2QuoteEvidenceChoice(exactQuote, frozen, {
+    decision: match[1],
+    evidenceId: match[2],
+  });
+}

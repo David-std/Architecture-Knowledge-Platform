@@ -3,6 +3,8 @@ import {
   freezeS2QuoteEvidenceOptions,
   buildS2QuoteEvidenceChoiceFormat,
   resolveS2QuoteEvidenceChoice,
+  buildS2PairedQuoteEvidenceTokenFormat,
+  resolveS2QuoteEvidenceToken,
 } from "../src/s2-quote-evidence-choice.js";
 const text =
   "Original source: the `volume-nocopy` option prevents copying files.";
@@ -114,5 +116,101 @@ describe("frozen literal quote choices: no model-generated evidence text", () =>
     expect(() => freezeS2QuoteEvidenceOptions("z".repeat(12001))).toThrow();
     expect(() => freezeS2QuoteEvidenceOptions(text, 7)).toThrow();
     expect(() => freezeS2QuoteEvidenceOptions(" ")).toThrow();
+  });
+});
+
+describe("single enum token binds a decision to a source ID structurally", () => {
+  it("offers ONLY legal decisions+frozen IDs and no contradictory combinations", () => {
+    const frozen = freezeS2QuoteEvidenceOptions(text);
+    const schema = buildS2PairedQuoteEvidenceTokenFormat(text, frozen);
+    expect(schema.properties.questionToken.enum).toEqual([
+      "INSUFFICIENT@NONE",
+      "SUPPORTS@Q1",
+      "CONTRADICTS@Q1",
+    ]);
+    expect(schema.properties.claimToken.enum).toEqual(
+      schema.properties.questionToken.enum,
+    );
+    expect(schema.additionalProperties).toBe(false);
+    expect(schema.required).toEqual(["questionToken", "claimToken"]);
+    expect(
+      schema.properties.claimToken.enum.some((x) => x === "INSUFFICIENT@Q1"),
+    ).toBe(false);
+    expect(() =>
+      buildS2PairedQuoteEvidenceTokenFormat(text + " changed", frozen),
+    ).toThrow();
+  });
+  it("retains exact literal citation UTF-16 positions and preserves unsupported abstention", () => {
+    const frozen = freezeS2QuoteEvidenceOptions(text);
+    expect(
+      resolveS2QuoteEvidenceToken(text, frozen, "SUPPORTS@Q1"),
+    ).toMatchObject({
+      decision: "SUPPORTS",
+      evidenceSpan: { startUtf16: 0, endUtf16: text.length },
+    });
+    expect(
+      resolveS2QuoteEvidenceToken(text, frozen, "CONTRADICTS@Q1"),
+    ).toMatchObject({
+      decision: "CONTRADICTS",
+      evidenceSpan: { startUtf16: 0, endUtf16: text.length },
+    });
+    expect(
+      resolveS2QuoteEvidenceToken(text, frozen, "INSUFFICIENT@NONE"),
+    ).toMatchObject({ decision: "INSUFFICIENT", reason: "MODEL_INSUFFICIENT" });
+  });
+  it("rejects invented, malformed, mixed, repeated and forged schema tokens", () => {
+    const frozen = freezeS2QuoteEvidenceOptions(text);
+    for (const token of [
+      "INSUFFICIENT@Q1",
+      "SUPPORTS@NONE",
+      "SUPPORTS@Q2",
+      "CONTRADICTS@Q42",
+      "SUPPORTS@Q01",
+      "SUPPORTS@Q1.EXTRA",
+      "supports@Q1",
+      "INSUFFICIENT@NONE@Q1",
+      3,
+      null,
+      {},
+      ["SUPPORTS@Q1"],
+    ]) {
+      expect(resolveS2QuoteEvidenceToken(text, frozen, token)).toMatchObject({
+        decision: "INSUFFICIENT",
+        reason: "MODEL_LITERAL_EVIDENCE_CHOICE_INVALID",
+      });
+    }
+  });
+  it("rejects changed original bytes or mutated source evidence options with no repair", () => {
+    const frozen = freezeS2QuoteEvidenceOptions(text);
+    expect(
+      resolveS2QuoteEvidenceToken(text + "!", frozen, "SUPPORTS@Q1"),
+    ).toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "MODEL_LITERAL_EVIDENCE_CHOICE_INVALID",
+    });
+    expect(
+      resolveS2QuoteEvidenceToken(
+        text,
+        { ...frozen, options: [{ ...frozen.options[0]!, startUtf16: 1 }] },
+        "SUPPORTS@Q1",
+      ),
+    ).toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "MODEL_LITERAL_EVIDENCE_CHOICE_INVALID",
+    });
+  });
+  it("handles source quotes that yield multiple immutable token positions", () => {
+    const source = "X".repeat(1400) + "\n" + "Y".repeat(700);
+    const frozen = freezeS2QuoteEvidenceOptions(source);
+    const menu = buildS2PairedQuoteEvidenceTokenFormat(source, frozen);
+    expect(menu.properties.claimToken.enum).toContain("SUPPORTS@Q2");
+    const review = resolveS2QuoteEvidenceToken(source, frozen, "SUPPORTS@Q2");
+    expect(review).toMatchObject({
+      decision: "SUPPORTS",
+      evidenceSpan: {
+        startUtf16: frozen.options[1]!.startUtf16,
+        endUtf16: frozen.options[1]!.endUtf16,
+      },
+    });
   });
 });
