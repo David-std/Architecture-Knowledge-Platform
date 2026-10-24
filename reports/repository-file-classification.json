@@ -3082,6 +3082,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-discovery-review-plan.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-dual-axis.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3318,6 +3323,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-complete-answer-evidence.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-discovery-review-plan.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
