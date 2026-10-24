@@ -3072,6 +3072,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-claim-corroboration.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-claim-numeric-integrity.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3317,6 +3322,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/evaluation/test/s2-claim-corroboration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/evaluation/test/s2-claim-numeric-integrity.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -3443,6 +3453,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-writer-citation-reconciliation.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-writer-corroboration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
