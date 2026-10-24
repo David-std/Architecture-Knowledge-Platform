@@ -75,7 +75,7 @@ const CaptureInput = z
       "DECISION_CANDIDATE",
       "NOTE",
     ]),
-    payload: z.record(z.unknown()).default({}),
+    payload: z.record(z.string(), z.unknown()).default({}),
     claimId: UUID.optional(),
     fencingToken: z.number().int().min(1).optional(),
   })

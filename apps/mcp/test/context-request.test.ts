@@ -4,8 +4,8 @@ import { McpContextRequest } from "../src/context-request.js";
 
 const base = {
   query: "dependency inversion architecture",
-  spaceId: "00000000-0000-0000-0000-000000000003",
-  vaultIds: ["11111111-1111-1111-1111-111111111111"],
+  spaceId: "00000000-0000-4000-8000-000000000003",
+  vaultIds: ["11111111-1111-4111-8111-111111111111"],
 };
 
 describe("MCP context request defaults", () => {

@@ -208,7 +208,7 @@ const WebhookBody = z
             aclFingerprint: z.string().max(1024).nullable().optional(),
           })
           .strict(),
-        metadata: z.record(z.unknown()).default({}),
+        metadata: z.record(z.string(), z.unknown()).default({}),
       })
       .strict(),
   })

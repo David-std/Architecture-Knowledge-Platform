@@ -81,17 +81,17 @@
     "@types/node": "^24.0.0",
     "@types/pg": "^8.11.0",
     "dependency-cruiser": "^16.0.0",
+    "playwright": "1.63.0",
     "prettier": "^3.0.0",
     "tsx": "^4.0.0",
     "turbo": "^2.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^4.1.10",
-    "playwright": "1.63.0"
+    "vitest": "^4.1.10"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.0",
     "@fastify/cors": "^11.3.0",
     "@fastify/rate-limit": "^11.2.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "commander": "^15.0.0",
     "dotenv": "^17.4.2",
     "gray-matter": "^4.0.3",
