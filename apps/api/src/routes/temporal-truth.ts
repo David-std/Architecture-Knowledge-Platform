@@ -16,8 +16,8 @@ import {
 const HASH64 = /^[a-f0-9]{64}$/;
 
 const TruthFactsQuery = z.object({
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid(),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid(),
   subjectRef: z.string().trim().min(1).max(2048).optional(),
   predicate: z.string().trim().min(1).max(512).optional(),
   mode: z.enum(["CURRENT", "HISTORY"]).default("CURRENT"),
@@ -29,12 +29,12 @@ const TruthFactsQuery = z.object({
 });
 
 const TruthHistoryParams = z.object({
-  factId: z.string().uuid(),
+  factId: z.string().guid(),
 });
 
 const TruthHistoryQuery = z.object({
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid(),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid(),
 });
 
 function truthStatus(code: string): number {

@@ -12,7 +12,7 @@ const Sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 export const CompilerKnowledgeProfileContext = z
   .object({
     source: z.enum(["DURABLE_REVISION", "V03_DEFAULT"]),
-    revisionId: z.string().uuid().nullable(),
+    revisionId: z.string().guid().nullable(),
     profileHash: Sha256,
     profile: KnowledgeProfileV1,
   })

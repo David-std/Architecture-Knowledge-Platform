@@ -5,8 +5,8 @@ import type { Postgres } from "@akp/postgres";
 import { z } from "zod";
 
 const ProviderTaskUpdate = z.object({
-  jobId: z.string().uuid().optional(),
-  sourceId: z.string().uuid().optional(),
+  jobId: z.string().guid().optional(),
+  sourceId: z.string().guid().optional(),
   provider: z
     .string()
     .min(1)

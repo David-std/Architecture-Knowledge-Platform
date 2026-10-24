@@ -29,9 +29,9 @@ import {
 const CODE_COMMIT = /^[a-f0-9]{40}$/i;
 
 const CodeScope = z.object({
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid().optional(),
-  vaultIds: z.array(z.string().uuid()).max(100).default([]),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid().optional(),
+  vaultIds: z.array(z.string().guid()).max(100).default([]),
   federated: z.boolean().default(false),
   freshnessPolicy: z.enum(["FRESH_ONLY", "ALLOW_STALE"]).default("FRESH_ONLY"),
 });

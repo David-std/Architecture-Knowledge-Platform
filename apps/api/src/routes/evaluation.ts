@@ -37,8 +37,8 @@ function intersectionSize(
 }
 
 const EvaluationTarget = z.object({
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid(),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid(),
   evalPack: z
     .string()
     .regex(/^[a-z0-9][a-z0-9-]{1,62}$/)
@@ -600,7 +600,7 @@ export function registerEvaluationRoutes(
         return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
       }
       const query = z
-        .object({ vaultId: z.string().uuid().optional() })
+        .object({ vaultId: z.string().guid().optional() })
         .safeParse(request.query);
       if (!query.success) {
         return reply.code(400).send({ code: "INVALID_EVAL_QUERY" });

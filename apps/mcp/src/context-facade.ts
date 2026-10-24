@@ -20,7 +20,7 @@ export const AkpContextAction = z.enum([
 ]);
 export type AkpContextAction = z.infer<typeof AkpContextAction>;
 
-const UUID = z.string().uuid();
+const UUID = z.string().guid();
 
 const CodeSelector = z
   .object({

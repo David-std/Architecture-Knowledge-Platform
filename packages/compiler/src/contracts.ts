@@ -20,8 +20,8 @@ export type KnowledgeKind = z.infer<typeof KnowledgeKind>;
 
 export const CompilerEvidence = z
   .object({
-    id: z.string().uuid(),
-    sourceArtifactId: z.string().uuid(),
+    id: z.string().guid(),
+    sourceArtifactId: z.string().guid(),
     locator: StructuralLocator,
     excerpt: z.string().min(1).max(12_000),
     excerptHash: Sha256,
@@ -32,7 +32,7 @@ export type CompilerEvidence = z.infer<typeof CompilerEvidence>;
 
 export const ExistingKnowledgeCandidate = z
   .object({
-    documentId: z.string().uuid(),
+    documentId: z.string().guid(),
     externalId: z.string().nullable().default(null),
     path: z.string().min(1).max(1_024),
     title: z.string().min(1).max(500),
@@ -89,8 +89,8 @@ export const KnowledgeCompilerInput = z
   .object({
     source: z
       .object({
-        sourceId: z.string().uuid(),
-        sourceArtifactId: z.string().uuid(),
+        sourceId: z.string().guid(),
+        sourceArtifactId: z.string().guid(),
         sha256: Sha256,
         title: z.string().min(1).max(500),
         mediaType: z.string().min(1).max(200),
@@ -106,8 +106,8 @@ export const KnowledgeCompilerInput = z
     policy: CompilerPolicy.prefault({}),
     budget: CompilerBudget.prefault({}),
     corpusRevision: z.string().min(1).max(200),
-    spaceId: z.string().uuid(),
-    vaultId: z.string().uuid(),
+    spaceId: z.string().guid(),
+    vaultId: z.string().guid(),
   })
   .strict()
   .superRefine((input, context) => {
@@ -176,8 +176,8 @@ export type IdentityClassification = z.infer<typeof IdentityClassification>;
 export const IdentityAssessment = z
   .object({
     classification: IdentityClassification,
-    candidates: z.array(z.string().uuid()).max(20).default([]),
-    existingDocumentId: z.string().uuid().optional(),
+    candidates: z.array(z.string().guid()).max(20).default([]),
+    existingDocumentId: z.string().guid().optional(),
     reason: z.string().min(1).max(4_000),
   })
   .strict();
@@ -185,7 +185,7 @@ export type IdentityAssessment = z.infer<typeof IdentityAssessment>;
 
 export const EvidenceCandidate = z
   .object({
-    sourceArtifactId: z.string().uuid(),
+    sourceArtifactId: z.string().guid(),
     locator: StructuralLocator,
     excerptHash: Sha256,
   })
@@ -206,9 +206,9 @@ export const KnowledgeCandidate = z
     kind: KnowledgeKind,
     statement: BoundedText,
     scope: z.string().min(1).max(2_000),
-    evidenceIds: z.array(z.string().uuid()).min(1).max(20),
+    evidenceIds: z.array(z.string().guid()).min(1).max(20),
     confidence: z.number().min(0).max(1),
-    existingDocumentId: z.string().uuid().optional(),
+    existingDocumentId: z.string().guid().optional(),
     proposedAction: ProposedKnowledgeAction,
   })
   .strict();
@@ -217,10 +217,10 @@ export type KnowledgeCandidate = z.infer<typeof KnowledgeCandidate>;
 export const KnowledgeContradiction = z
   .object({
     candidateId: z.string().min(1).max(128),
-    existingDocumentId: z.string().uuid(),
+    existingDocumentId: z.string().guid(),
     explanation: z.string().min(1).max(8_000),
     severity: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]).default("HIGH"),
-    evidenceIds: z.array(z.string().uuid()).min(1).max(20),
+    evidenceIds: z.array(z.string().guid()).min(1).max(20),
   })
   .strict();
 export type KnowledgeContradiction = z.infer<typeof KnowledgeContradiction>;
@@ -233,7 +233,7 @@ export const ProposedKnowledgeFileChange = z
     baseContentHash: Sha256.optional(),
     content: BoundedText,
     reasons: z.array(z.string().min(1).max(2_000)).min(1).max(20),
-    evidenceIds: z.array(z.string().uuid()).min(1).max(20),
+    evidenceIds: z.array(z.string().guid()).min(1).max(20),
   })
   .strict();
 export type ProposedKnowledgeFileChange = z.infer<
@@ -244,7 +244,7 @@ export const CompilerProbe = z
   .object({
     question: z.string().min(1).max(4_000),
     criticality: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
-    evidenceIds: z.array(z.string().uuid()).min(1).max(20),
+    evidenceIds: z.array(z.string().guid()).min(1).max(20),
   })
   .strict();
 export type CompilerProbe = z.infer<typeof CompilerProbe>;
@@ -256,7 +256,7 @@ export const KnowledgeCompilerResult = z
     knowledgeCandidates: z.array(KnowledgeCandidate).max(50),
     contradictions: z.array(KnowledgeContradiction).max(50),
     proposedFileChanges: z.array(ProposedKnowledgeFileChange).max(20),
-    impactedDocumentIds: z.array(z.string().uuid()).max(50),
+    impactedDocumentIds: z.array(z.string().guid()).max(50),
     probes: z.array(CompilerProbe).max(20),
     warnings: z.array(z.string().min(1).max(2_000)).max(50),
     summary: z.string().min(1).max(8_000),
@@ -287,7 +287,7 @@ export const EffectiveReviewPolicy = z
     minimumApprovals: z.number().int().min(1).max(20),
     allowedRoles: z.array(z.string().min(1).max(100)).min(1),
     profileSource: z.enum(["DURABLE_REVISION", "V03_DEFAULT"]),
-    profileRevisionId: z.string().uuid().nullable(),
+    profileRevisionId: z.string().guid().nullable(),
     profileHash: Sha256,
     profileId: z.string().min(1).max(100),
     profileVersion: z.string().min(1).max(100),

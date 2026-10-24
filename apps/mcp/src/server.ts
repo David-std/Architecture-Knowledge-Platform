@@ -95,9 +95,9 @@ function compactTextResult(value: unknown) {
 }
 
 const codeScopeInput = {
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid().optional(),
-  vaultIds: z.array(z.string().uuid()).max(100).default([]),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid().optional(),
+  vaultIds: z.array(z.string().guid()).max(100).default([]),
   federated: z.boolean().default(false),
   freshnessPolicy: z.enum(["FRESH_ONLY", "ALLOW_STALE"]).default("FRESH_ONLY"),
 };
@@ -220,9 +220,9 @@ export function createMcpServer(): McpServer {
       inputSchema: {
         purpose: z.string().min(1),
         contextBudget: z.number().int().min(256).max(32000).default(6000),
-        spaceId: z.string().uuid(),
-        vaultId: z.string().uuid(),
-        projectId: z.string().uuid().optional(),
+        spaceId: z.string().guid(),
+        vaultId: z.string().guid(),
+        projectId: z.string().guid().optional(),
         idempotencyKey: z.string().min(8).max(200),
       },
     },
@@ -245,7 +245,7 @@ export function createMcpServer(): McpServer {
     {
       description:
         "Read durable structured workspace state so an authorized participant can resume without prior chat history.",
-      inputSchema: { sessionId: z.string().uuid() },
+      inputSchema: { sessionId: z.string().guid() },
     },
     async ({ sessionId }) =>
       textResult(
@@ -258,7 +258,7 @@ export function createMcpServer(): McpServer {
     {
       description:
         "List external ticket/work references linked to a workspace session. These are coordination references, not approved knowledge.",
-      inputSchema: { sessionId: z.string().uuid() },
+      inputSchema: { sessionId: z.string().guid() },
     },
     async ({ sessionId }) =>
       textResult(
@@ -274,7 +274,7 @@ export function createMcpServer(): McpServer {
       description:
         "Link or update a Jira/Linear/other external reference relayed by the agent. AKP records it as REFERENCE with providerVerified=false; the agent must not represent relayed data as provider-verified.",
       inputSchema: {
-        sessionId: z.string().uuid(),
+        sessionId: z.string().guid(),
         provider: z.string().trim().min(1).max(80),
         objectType: z.string().trim().min(1).max(80),
         externalId: z.string().trim().min(1).max(512),
@@ -303,7 +303,7 @@ export function createMcpServer(): McpServer {
       description:
         "List active Jira/Linear objects synchronized through authenticated read-only provider adapters for one workspace session. Returned objects are external projections, not approved AKP knowledge.",
       inputSchema: {
-        sessionId: z.string().uuid(),
+        sessionId: z.string().guid(),
         limit: z.number().int().min(1).max(100).default(50),
       },
     },
@@ -321,8 +321,8 @@ export function createMcpServer(): McpServer {
       description:
         "Link an authenticated Jira/Linear provider projection into a workspace session. The client supplies only connector/object identity; AKP derives provider, revision, URL, metadata and MIRRORED_PROJECTION authority from its authenticated connector state.",
       inputSchema: {
-        sessionId: z.string().uuid(),
-        connectorId: z.string().uuid(),
+        sessionId: z.string().guid(),
+        connectorId: z.string().guid(),
         objectId: z.string().trim().min(1).max(2048),
         workObjectClass: z.string().trim().min(1).max(120).optional(),
         idempotencyKey: z.string().min(8).max(200),
@@ -344,7 +344,7 @@ export function createMcpServer(): McpServer {
       description:
         "Bootstrap a workspace session with its pinned revision, durable work context, knowledge profile, and authorized context packet.",
       inputSchema: {
-        sessionId: z.string().uuid(),
+        sessionId: z.string().guid(),
         query: z.string().max(4096).optional(),
         intent: QueryIntent.default("WORKFLOW_EXECUTION"),
         packetMode: z
@@ -367,7 +367,7 @@ export function createMcpServer(): McpServer {
       description:
         "Update durable WorkContext lifecycle state, outcome, follow-ups, and touched resources without turning coordination memory into canonical knowledge.",
       inputSchema: {
-        sessionId: z.string().uuid(),
+        sessionId: z.string().guid(),
         status: z.enum(["OPEN", "BLOCKED", "COMPLETED", "ABANDONED"]),
         outcome: z.string().min(1).max(12000).nullable().optional(),
         followUps: z.array(z.string().min(1).max(2000)).max(50).optional(),
@@ -394,7 +394,7 @@ export function createMcpServer(): McpServer {
       description:
         "Acquire a bounded exact or recursive workspace claim with a lease and fencing token.",
       inputSchema: {
-        sessionId: z.string().uuid(),
+        sessionId: z.string().guid(),
         workKey: z.string().min(1).max(200),
         leaseSeconds: z.number().int().min(15).max(900).default(120),
         idempotencyKey: z.string().min(8).max(200),
@@ -416,7 +416,7 @@ export function createMcpServer(): McpServer {
       description:
         "Renew an owned workspace claim only when its current fencing token matches.",
       inputSchema: {
-        sessionId: z.string().uuid(),
+        sessionId: z.string().guid(),
         workKey: z.string().min(1).max(200),
         fencingToken: z.number().int().min(1),
         leaseSeconds: z.number().int().min(15).max(900).default(120),
@@ -439,7 +439,7 @@ export function createMcpServer(): McpServer {
       description:
         "Release an owned live workspace claim and advance its fencing token so stale writers cannot continue.",
       inputSchema: {
-        sessionId: z.string().uuid(),
+        sessionId: z.string().guid(),
         workKey: z.string().min(1).max(200),
         fencingToken: z.number().int().min(1),
         idempotencyKey: z.string().min(8).max(200),
@@ -461,10 +461,10 @@ export function createMcpServer(): McpServer {
       description:
         "Transfer an owned fenced workspace claim to another authorized participant or exact agent principal with bounded machine-readable handoff state.",
       inputSchema: {
-        sessionId: z.string().uuid(),
+        sessionId: z.string().guid(),
         workKey: z.string().min(1).max(200),
-        toUserId: z.string().uuid(),
-        toPrincipalId: z.string().uuid().optional(),
+        toUserId: z.string().guid(),
+        toPrincipalId: z.string().guid().optional(),
         fencingToken: z.number().int().min(1),
         leaseSeconds: z.number().int().min(15).max(900).default(120),
         summary: z.string().min(1).max(4096).optional(),
@@ -497,7 +497,7 @@ export function createMcpServer(): McpServer {
       description:
         "Append a bounded finding, blocker, question, artifact, decision candidate, or note to the durable workspace blackboard.",
       inputSchema: {
-        sessionId: z.string().uuid(),
+        sessionId: z.string().guid(),
         eventType: z.enum([
           "FINDING",
           "BLOCKER",
@@ -506,7 +506,7 @@ export function createMcpServer(): McpServer {
           "DECISION_CANDIDATE",
           "NOTE",
         ]),
-        claimId: z.string().uuid().optional(),
+        claimId: z.string().guid().optional(),
         fencingToken: z.number().int().min(1).optional(),
         payload: z.record(z.string(), z.unknown()).default({}),
         idempotencyKey: z.string().min(8).max(200),
@@ -528,7 +528,7 @@ export function createMcpServer(): McpServer {
       description:
         "Request governed promotion of durable workspace evidence into Git-backed review; this never bypasses human review policy.",
       inputSchema: {
-        sessionId: z.string().uuid(),
+        sessionId: z.string().guid(),
         evidenceEventIds: z
           .array(z.string().regex(/^[1-9][0-9]*$/))
           .min(1)
@@ -625,7 +625,7 @@ export function createMcpServer(): McpServer {
     {
       description:
         "Read a generated full ContextPacket by packet ID with current authorization and revision checks.",
-      inputSchema: { packetId: z.string().uuid() },
+      inputSchema: { packetId: z.string().guid() },
     },
     async ({ packetId }) =>
       textResult(
@@ -641,7 +641,7 @@ export function createMcpServer(): McpServer {
       description:
         "Fetch the omitted sections behind a generated ContextPacket continuation handle.",
       inputSchema: {
-        packetId: z.string().uuid(),
+        packetId: z.string().guid(),
         handle: z.string().regex(/^[a-f0-9]{64}$/),
       },
     },
@@ -838,8 +838,8 @@ export function createMcpServer(): McpServer {
       description:
         "Submit a local captured source for durable, immutable ingestion.",
       inputSchema: {
-        spaceId: z.string().uuid(),
-        vaultId: z.string().uuid(),
+        spaceId: z.string().guid(),
+        vaultId: z.string().guid(),
         sourceUri: z.string().min(1),
         mediaType: z.string().optional(),
         title: z.string().optional(),
@@ -864,7 +864,7 @@ export function createMcpServer(): McpServer {
     "akp_ingest_status",
     {
       description: "Read durable ingest state and transition history.",
-      inputSchema: { jobId: z.string().uuid() },
+      inputSchema: { jobId: z.string().guid() },
     },
     async ({ jobId }) => textResult(await api(`/v1/ingest/${jobId}`)),
   );
@@ -875,8 +875,8 @@ export function createMcpServer(): McpServer {
       description:
         "Create a Git-backed review proposal. This never bypasses validation or review.",
       inputSchema: {
-        spaceId: z.string().uuid(),
-        vaultId: z.string().uuid(),
+        spaceId: z.string().guid(),
+        vaultId: z.string().guid(),
         summary: z.string().min(1),
         path: z.string().min(1),
         content: z.string().min(1),
@@ -908,7 +908,7 @@ export function createMcpServer(): McpServer {
     {
       description:
         "Read the deterministic validation report and diff for a draft review.",
-      inputSchema: { reviewId: z.string().uuid() },
+      inputSchema: { reviewId: z.string().guid() },
     },
     async ({ reviewId }) => textResult(await api(`/v1/reviews/${reviewId}`)),
   );
@@ -918,7 +918,7 @@ export function createMcpServer(): McpServer {
     {
       description: "Submit or resubmit a validated draft to the review queue.",
       inputSchema: {
-        reviewId: z.string().uuid(),
+        reviewId: z.string().guid(),
         idempotencyKey: z.string().min(8).max(200),
       },
     },
@@ -934,7 +934,7 @@ export function createMcpServer(): McpServer {
       description:
         "Create a new validated Git draft revision after a reviewer requested changes.",
       inputSchema: {
-        reviewId: z.string().uuid(),
+        reviewId: z.string().guid(),
         summary: z.string().min(1),
         path: z.string().min(1),
         content: z.string().min(1),
@@ -957,7 +957,7 @@ export function createMcpServer(): McpServer {
       description:
         "Approve a pending review and merge its Git branch. Requires reviewer permission.",
       inputSchema: {
-        reviewId: z.string().uuid(),
+        reviewId: z.string().guid(),
         reason: z.string().min(1),
         idempotencyKey: z.string().min(8).max(200),
       },
@@ -976,7 +976,7 @@ export function createMcpServer(): McpServer {
     {
       description: "Reject a pending review with a mandatory reason.",
       inputSchema: {
-        reviewId: z.string().uuid(),
+        reviewId: z.string().guid(),
         reason: z.string().min(1),
         idempotencyKey: z.string().min(8).max(200),
       },
@@ -995,8 +995,8 @@ export function createMcpServer(): McpServer {
     {
       description: "Run the checked-in critical retrieval evaluation suite.",
       inputSchema: {
-        spaceId: z.string().uuid(),
-        vaultId: z.string().uuid(),
+        spaceId: z.string().guid(),
+        vaultId: z.string().guid(),
         evalPack: z.string().default("generic"),
         idempotencyKey: z.string().min(8).max(200),
       },
@@ -1011,8 +1011,8 @@ export function createMcpServer(): McpServer {
       description:
         "Rebuild one explicitly selected authorized vault from the canonical corpus. Requires admin permission with pathPrefix null. Use REBUILD_DERIVED_PROJECTIONS for projections only or REIMPORT_AND_REBUILD to import that vault first.",
       inputSchema: {
-        spaceId: z.string().uuid(),
-        vaultId: z.string().uuid(),
+        spaceId: z.string().guid(),
+        vaultId: z.string().guid(),
         confirm: z.enum([
           "REBUILD_DERIVED_PROJECTIONS",
           "REIMPORT_AND_REBUILD",
@@ -1046,8 +1046,8 @@ export function createMcpServer(): McpServer {
     {
       description: "Execute the retrieval configuration comparison matrix.",
       inputSchema: {
-        spaceId: z.string().uuid(),
-        vaultId: z.string().uuid(),
+        spaceId: z.string().guid(),
+        vaultId: z.string().guid(),
         evalPack: z.string().default("generic"),
         idempotencyKey: z.string().min(8).max(200),
       },
@@ -1062,7 +1062,7 @@ export function createMcpServer(): McpServer {
       description:
         "Inspect bounded audit-bundle revision/count/hash metadata. ZIP data and private record content never enter MCP context; use the authenticated HTTP/CLI export for delivery.",
       inputSchema: {
-        vaultId: z.string().uuid(),
+        vaultId: z.string().guid(),
         confirm: z.literal("EXPORT_SANITIZED_AUDIT_BUNDLE"),
       },
     },

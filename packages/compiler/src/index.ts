@@ -13,7 +13,7 @@ export const ProposedFileChange = z.object({
 });
 
 export const CompilationPlan = z.object({
-  sourceId: z.string().uuid(),
+  sourceId: z.string().guid(),
   corpusRevision: z.string().min(1),
   disposition: Disposition,
   summary: z.string(),

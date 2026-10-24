@@ -24,11 +24,11 @@ export const TemporalFactLifecycle = z.enum(["ACTIVE", "DISPUTED"]);
 export type TemporalFactLifecycle = z.infer<typeof TemporalFactLifecycle>;
 
 export const SourceEpisode = z.object({
-  id: z.string().uuid(),
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid(),
-  sourceId: z.string().uuid(),
-  sourceArtifactId: z.string().uuid(),
+  id: z.string().guid(),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid(),
+  sourceId: z.string().guid(),
+  sourceArtifactId: z.string().guid(),
   sourceHash: z.string().regex(/^[a-f0-9]{64}$/),
   observedAt: z.string().datetime().nullable(),
   ingestedAt: z.string().datetime(),
@@ -38,15 +38,15 @@ export type SourceEpisode = z.infer<typeof SourceEpisode>;
 
 export const TruthSupportSet = z.object({
   schemaVersion: z.literal(1),
-  id: z.string().uuid(),
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid(),
+  id: z.string().guid(),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid(),
   state: TruthSupportState,
-  factIds: z.array(z.string().uuid()).max(500),
-  evidenceIds: z.array(z.string().uuid()).max(500),
-  sourceArtifactIds: z.array(z.string().uuid()).max(500),
+  factIds: z.array(z.string().guid()).max(500),
+  evidenceIds: z.array(z.string().guid()).max(500),
+  sourceArtifactIds: z.array(z.string().guid()).max(500),
   sourceRevisionHashes: z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(500),
-  sourceEpisodeIds: z.array(z.string().uuid()).max(500),
+  sourceEpisodeIds: z.array(z.string().guid()).max(500),
   alternativeSupportGroups: z
     .array(z.array(z.string().min(1).max(2200)).min(1).max(100))
     .max(100),
@@ -55,9 +55,9 @@ export const TruthSupportSet = z.object({
 export type TruthSupportSet = z.infer<typeof TruthSupportSet>;
 
 export const TruthRevision = z.object({
-  id: z.string().uuid(),
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid(),
+  id: z.string().guid(),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid(),
   revisionSeq: z.number().int().positive(),
   revisionHash: z.string().regex(/^[a-f0-9]{64}$/),
   parentRevisionHash: z
@@ -72,9 +72,9 @@ export const TruthRevision = z.object({
 export type TruthRevision = z.infer<typeof TruthRevision>;
 
 export const TemporalFact = z.object({
-  id: z.string().uuid(),
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid(),
+  id: z.string().guid(),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid(),
   scopeId: z.string().min(1).max(512),
   authorizationPath: z.string().min(1).max(4096),
   subjectRef: z.string().min(1).max(2048),
@@ -83,8 +83,8 @@ export const TemporalFact = z.object({
   validFrom: z.string().datetime(),
   validTo: z.string().datetime().nullable(),
   recordedAt: z.string().datetime(),
-  sourceEpisodeId: z.string().uuid().nullable(),
-  supportSetId: z.string().uuid(),
+  sourceEpisodeId: z.string().guid().nullable(),
+  supportSetId: z.string().guid(),
   lifecycle: TemporalFactLifecycle,
   truthRevisionHash: z.string().regex(/^[a-f0-9]{64}$/),
   truthRevisionSeq: z.number().int().positive(),
@@ -103,10 +103,10 @@ export const TemporalFactView = TemporalFact.extend({
 export type TemporalFactView = z.infer<typeof TemporalFactView>;
 
 export const CreateSourceEpisodeInput = z.object({
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid(),
-  sourceId: z.string().uuid(),
-  sourceArtifactId: z.string().uuid(),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid(),
+  sourceId: z.string().guid(),
+  sourceArtifactId: z.string().guid(),
   sourceHash: z.string().regex(/^[a-f0-9]{64}$/),
   observedAt: z.string().datetime().nullable().optional(),
   ingestedAt: z.string().datetime().optional(),
@@ -115,17 +115,17 @@ export const CreateSourceEpisodeInput = z.object({
 export type CreateSourceEpisodeInput = z.infer<typeof CreateSourceEpisodeInput>;
 
 export const CreateTruthSupportSetInput = z.object({
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid(),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid(),
   state: TruthSupportState.default("SUPPORTED"),
-  factIds: z.array(z.string().uuid()).max(500).default([]),
-  evidenceIds: z.array(z.string().uuid()).max(500).default([]),
-  sourceArtifactIds: z.array(z.string().uuid()).max(500).default([]),
+  factIds: z.array(z.string().guid()).max(500).default([]),
+  evidenceIds: z.array(z.string().guid()).max(500).default([]),
+  sourceArtifactIds: z.array(z.string().guid()).max(500).default([]),
   sourceRevisionHashes: z
     .array(z.string().regex(/^[a-f0-9]{64}$/))
     .max(500)
     .default([]),
-  sourceEpisodeIds: z.array(z.string().uuid()).max(500).default([]),
+  sourceEpisodeIds: z.array(z.string().guid()).max(500).default([]),
   alternativeSupportGroups: z
     .array(z.array(z.string().min(1).max(2200)).min(1).max(100))
     .max(100)
@@ -137,8 +137,8 @@ export type CreateTruthSupportSetInput = z.infer<
 
 export const RecordTemporalFactInput = z
   .object({
-    spaceId: z.string().uuid(),
-    vaultId: z.string().uuid(),
+    spaceId: z.string().guid(),
+    vaultId: z.string().guid(),
     scopeId: z.string().min(1).max(512),
     authorizationPath: z.string().min(1).max(4096),
     subjectRef: z.string().min(1).max(2048),
@@ -147,10 +147,10 @@ export const RecordTemporalFactInput = z
     validFrom: z.string().datetime(),
     validTo: z.string().datetime().nullable().optional(),
     recordedAt: z.string().datetime().optional(),
-    sourceEpisodeId: z.string().uuid().nullable().optional(),
-    supportSetId: z.string().uuid(),
+    sourceEpisodeId: z.string().guid().nullable().optional(),
+    supportSetId: z.string().guid(),
     lifecycle: TemporalFactLifecycle.default("ACTIVE"),
-    supersedesFactId: z.string().uuid().optional(),
+    supersedesFactId: z.string().guid().optional(),
   })
   .superRefine((value, context) => {
     if (
@@ -167,8 +167,8 @@ export const RecordTemporalFactInput = z
 export type RecordTemporalFactInput = z.infer<typeof RecordTemporalFactInput>;
 
 export const TemporalTruthQuery = z.object({
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid(),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid(),
   subjectRef: z.string().min(1).max(2048).optional(),
   predicate: z.string().min(1).max(512).optional(),
   mode: z.enum(["CURRENT", "HISTORY"]).default("CURRENT"),
@@ -198,12 +198,12 @@ export const DerivedTruthStoreKind = z.enum([
 export type DerivedTruthStoreKind = z.infer<typeof DerivedTruthStoreKind>;
 
 export const DerivedTruthDependency = z.object({
-  id: z.string().uuid(),
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid(),
+  id: z.string().guid(),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid(),
   derivedStoreKind: DerivedTruthStoreKind,
   derivedItemRef: z.string().min(1).max(4096),
-  supportSetId: z.string().uuid(),
+  supportSetId: z.string().guid(),
   sourceRevisionHashes: z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(500),
   truthRevisionHash: z.string().regex(/^[a-f0-9]{64}$/),
   projectionRevision: z.string().min(1).max(2048).nullable(),
@@ -212,11 +212,11 @@ export const DerivedTruthDependency = z.object({
 export type DerivedTruthDependency = z.infer<typeof DerivedTruthDependency>;
 
 export const RegisterDerivedTruthDependencyInput = z.object({
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid(),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid(),
   derivedStoreKind: DerivedTruthStoreKind,
   derivedItemRef: z.string().trim().min(1).max(4096),
-  supportSetId: z.string().uuid(),
+  supportSetId: z.string().guid(),
   sourceRevisionHashes: z
     .array(z.string().regex(/^[a-f0-9]{64}$/))
     .max(500)
@@ -229,7 +229,7 @@ export type RegisterDerivedTruthDependencyInput = z.infer<
 >;
 
 export const TruthSnapshotEntry = z.object({
-  vaultId: z.string().uuid(),
+  vaultId: z.string().guid(),
   revisionHash: z
     .string()
     .regex(/^[a-f0-9]{64}$/)
@@ -239,7 +239,7 @@ export const TruthSnapshotEntry = z.object({
 export type TruthSnapshotEntry = z.infer<typeof TruthSnapshotEntry>;
 
 export const TruthSnapshot = z.object({
-  spaceId: z.string().uuid(),
+  spaceId: z.string().guid(),
   capturedAt: z.string().datetime(),
   vaults: z.array(TruthSnapshotEntry).max(100),
 });
