@@ -77,6 +77,83 @@ describe("S2 experimental quote→question→claim verification", () => {
     expect(out.status).toBe("INSUFFICIENT");
     expect(conf.claimEntailmentProbe.verify).not.toHaveBeenCalled();
   });
+  it("continues independent full-claim evidence inspection only when explicitly requested", async () => {
+    const conf = {
+      ...config(),
+      inspectClaimWhenQuestionUncertain: true,
+    };
+    conf.questionRelevanceProbe = port("qa@frozen", {
+      decision: "INSUFFICIENT",
+      reason: "QUESTION_ROLE_NOT_ESTABLISHED",
+    });
+    const out = await run(undefined, undefined, conf);
+    expect(out).toMatchObject({
+      status: "CLAIM_SUPPORT_QUESTION_DISPUTED",
+      reason: "CLAIM_SUPPORT_PROPOSED_BUT_ANSWER_ROLE_UNVERIFIED",
+      questionRelevance: { decision: "INSUFFICIENT" },
+      claimEntailment: { decision: "SUPPORTS" },
+      productionAdmission: false,
+      releaseGateAccepted: false,
+    });
+    expect(conf.claimEntailmentProbe.verify).toHaveBeenCalledOnce();
+  });
+  it("records claim contradiction as a proposal rather than a failed-question proof", async () => {
+    const conf = {
+      ...config(),
+      inspectClaimWhenQuestionUncertain: true,
+    };
+    conf.questionRelevanceProbe = port("qa@frozen", {
+      decision: "CONTRADICTS",
+      reason: "QUESTION_RELEVANCE_MODEL_MISCLASSIFIED",
+      evidenceSpan: span,
+    });
+    conf.claimEntailmentProbe = port("nli@frozen", {
+      decision: "CONTRADICTS",
+      reason: "MODEL_DIRECTLY_REFUTES",
+      evidenceSpan: span,
+    });
+    expect(await run(undefined, undefined, conf)).toMatchObject({
+      status: "CLAIM_CONTRADICTION_QUESTION_DISPUTED",
+      questionRelevance: { decision: "CONTRADICTS" },
+      claimEntailment: { decision: "CONTRADICTS" },
+      productionAdmission: false,
+    });
+  });
+  it("never converts an optional uncertain claim verdict into source support", async () => {
+    const conf = { ...config(), inspectClaimWhenQuestionUncertain: true };
+    conf.questionRelevanceProbe = port("qa@frozen", {
+      decision: "INSUFFICIENT",
+      reason: "QUESTION_UNCERTAIN",
+    });
+    conf.claimEntailmentProbe = port("nli@frozen", {
+      decision: "INSUFFICIENT",
+      reason: "CLAIM_UNCERTAIN",
+    });
+    expect(await run(undefined, undefined, conf)).toMatchObject({
+      status: "INSUFFICIENT",
+      reason: "QUESTION_AND_CLAIM_PROBES_INSUFFICIENT",
+    });
+  });
+  it("does not send a mismatched explicit number to a second model even in optional mode", async () => {
+    const conf = { ...config(), inspectClaimWhenQuestionUncertain: true };
+    const out = await run(
+      undefined,
+      { ...response, answerText: "99 crates" },
+      conf,
+    );
+    expect(out.reason).toBe("EXPLICIT_CLAIM_NUMBER_NOT_IN_QUOTE");
+    expect(conf.questionRelevanceProbe.verify).not.toHaveBeenCalled();
+    expect(conf.claimEntailmentProbe.verify).not.toHaveBeenCalled();
+  });
+  it("rejects malformed optional continuation without invoking models", async () => {
+    const conf = {
+      ...config(),
+      inspectClaimWhenQuestionUncertain: "yes" as never,
+    };
+    const result = await run(undefined, undefined, conf);
+    expect(result.status).toBe("REJECTED");
+    expect(conf.claimEntailmentProbe.verify).not.toHaveBeenCalled();
+  });
   it("does not misclassify an interrogative relevance judgement as factual source contradiction", async () => {
     const conf = config();
     conf.questionRelevanceProbe = port("qa@frozen", {
@@ -206,6 +283,16 @@ describe("S2 experimental quote→question→claim verification", () => {
     expect((await run(undefined, undefined, conf)).reason).toBe(
       "CLAIM_PROBE_ERROR",
     );
+  });
+  it("requires distinct revision-pinned stage IDs, even for wrapped functions", async () => {
+    const conf = config();
+    conf.claimEntailmentProbe = port("qa@frozen");
+    const out = await run(undefined, undefined, conf);
+    expect(out.status).toBe("REJECTED");
+    expect(conf.questionRelevanceProbe.verify).not.toHaveBeenCalled();
+    expect(conf.claimEntailmentProbe.verify).not.toHaveBeenCalled();
+    conf.claimEntailmentProbe = port("claim_without_revision");
+    expect((await run(undefined, undefined, conf)).status).toBe("REJECTED");
   });
   it("refuses a second use of the same semantic probe", async () => {
     const conf = config();

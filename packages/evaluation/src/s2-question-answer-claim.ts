@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   checkS2ClaimAnswerAnchor,
   type S2ClaimAnswerAnchor,
@@ -23,7 +24,6 @@ export interface S2DeclarativeClaimProjector {
     readonly originalQuestion: string;
     readonly proposedAnswer: string;
   }): Promise<{
-    readonly answerEcho: string;
     readonly declarativeClaim: string;
     readonly reason: string;
   }>;
@@ -37,6 +37,8 @@ export interface S2QuestionClaimCandidate {
     | "REJECTED";
   readonly reason: string;
   readonly claimText: string | null;
+  /** Immutable identifier of the deterministic question/answer input pair. */
+  readonly questionAnswerSha256: string | null;
   /** Value-in-claim lexical diagnostic, NOT projection equivalence or a veto. */
   readonly claimAnswerAnchor: S2ClaimAnswerAnchor | null;
   readonly roleDecision: "MATCH" | "MISMATCH" | "UNCERTAIN" | null;
@@ -72,6 +74,14 @@ export async function prepareS2QuestionAnswerClaim(
     status,
     reason,
     claimText,
+    questionAnswerSha256:
+      bound(originalQuestion, 2048) && bound(proposedAnswer, 2048)
+        ? createHash("sha256")
+            .update(originalQuestion)
+            .update(Buffer.from([0]))
+            .update(proposedAnswer)
+            .digest("hex")
+        : null,
     claimAnswerAnchor:
       claimText === null
         ? null
@@ -112,11 +122,11 @@ export async function prepareS2QuestionAnswerClaim(
       !claim ||
       !bound(claim.declarativeClaim, 4096) ||
       !code(claim.reason) ||
-      claim.answerEcho !== proposedAnswer ||
+      Object.keys(claim).sort().join(",") !== "declarativeClaim,reason" ||
       claim.declarativeClaim.trim() !== claim.declarativeClaim ||
       claim.declarativeClaim.length < 12
     )
-      return make("INSUFFICIENT", "CLAIM_ECHO_OR_PROJECTION_INVALID");
+      return make("INSUFFICIENT", "CLAIM_PROJECTION_INVALID");
     return make(
       role.decision === "MATCH"
         ? "CLAIM_CANDIDATE"

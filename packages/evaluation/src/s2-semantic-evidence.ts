@@ -42,11 +42,20 @@ export interface S2SemanticEvidenceConfig {
   readonly claimEntailmentProbe: S2SemanticProbe;
   readonly timeoutMs?: number;
   readonly maxBodyContextUtf16?: number;
+  /**
+   * Shadow-only independent claim observation after an uncertain relevance
+   * verdict. This is NOT an instruction to admit a question-disputed answer:
+   * a claim-level support proposal still needs question/answer-slot proof.
+   * Default false preserves the historically conservative cascade.
+   */
+  readonly inspectClaimWhenQuestionUncertain?: boolean;
 }
 
 export interface S2SemanticEvidenceAssessment {
   readonly status:
     | "SUPPORTED_CANDIDATE"
+    | "CLAIM_SUPPORT_QUESTION_DISPUTED"
+    | "CLAIM_CONTRADICTION_QUESTION_DISPUTED"
     | "CONTRADICTED"
     | "INSUFFICIENT"
     | "ERROR"
@@ -169,9 +178,12 @@ export async function assessS2QuoteSemantics(
     !originalQuestion.trim() ||
     originalQuestion.length > 2048 ||
     output.answerText.length > 4096 ||
-    !config.questionRelevanceProbe?.id?.trim() ||
-    !config.claimEntailmentProbe?.id?.trim() ||
-    config.questionRelevanceProbe === config.claimEntailmentProbe
+    !config.questionRelevanceProbe?.id?.includes("@") ||
+    !config.claimEntailmentProbe?.id?.includes("@") ||
+    config.questionRelevanceProbe === config.claimEntailmentProbe ||
+    config.questionRelevanceProbe.id === config.claimEntailmentProbe.id ||
+    (config.inspectClaimWhenQuestionUncertain !== undefined &&
+      typeof config.inspectClaimWhenQuestionUncertain !== "boolean")
   )
     return make("REJECTED", "SEMANTIC_INPUT_OR_PROBE_INVALID");
 
@@ -228,7 +240,10 @@ export async function assessS2QuoteSemantics(
   );
   if (question.error) return make("ERROR", "QUESTION_PROBE_ERROR");
   const relevance = question.result!;
-  if (relevance.decision !== "SUPPORTS")
+  if (
+    relevance.decision !== "SUPPORTS" &&
+    config.inspectClaimWhenQuestionUncertain !== true
+  )
     // An interrogative question cannot logically be contradicted by a quote.
     // A reader's CONTRADICTS verdict at the relevance stage is merely an
     // unsuccessful attempt to locate the requested answer. Preserve the raw
@@ -244,6 +259,31 @@ export async function assessS2QuoteSemantics(
   const claim = await runProbe(config.claimEntailmentProbe, input, timeoutMs);
   if (claim.error) return make("ERROR", "CLAIM_PROBE_ERROR", relevance);
   const entailment = claim.result!;
+  if (relevance.decision !== "SUPPORTS") {
+    // A broken question-focus model previously suppressed a claim-level
+    // observation altogether. This optional trace recovers that information
+    // without treating direct entailment as an answer to the user's question.
+    if (entailment.decision === "SUPPORTS")
+      return make(
+        "CLAIM_SUPPORT_QUESTION_DISPUTED",
+        "CLAIM_SUPPORT_PROPOSED_BUT_ANSWER_ROLE_UNVERIFIED",
+        relevance,
+        entailment,
+      );
+    if (entailment.decision === "CONTRADICTS")
+      return make(
+        "CLAIM_CONTRADICTION_QUESTION_DISPUTED",
+        "CLAIM_CONTRADICTION_PROPOSED_QUESTION_UNVERIFIED",
+        relevance,
+        entailment,
+      );
+    return make(
+      "INSUFFICIENT",
+      "QUESTION_AND_CLAIM_PROBES_INSUFFICIENT",
+      relevance,
+      entailment,
+    );
+  }
   if (entailment.decision !== "SUPPORTS")
     return make(
       entailment.decision === "CONTRADICTS" ? "CONTRADICTED" : "INSUFFICIENT",

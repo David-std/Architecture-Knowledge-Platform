@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  buildS2NativeWriterSchema,
   freezeNativeStructuredWriter,
   observeNativeStructuredWriter,
   type NativeWriterBuild,
@@ -103,12 +104,23 @@ describe("S2 native structured writer fail-closed", () => {
       num_ctx: 4096,
       num_predict: 512,
     });
-    expect(r.messages[1].content).toContain("[SRC1]");
+    expect(r.messages[1].content).toContain('"sourceId":"SRC1"');
+    expect(r.format.properties.citations.items.enum).toEqual(["SRC1"]);
+    expect(r.messages[1].content).toContain('citations=["SRC1"]');
     expect(r.messages[1].content).toContain(src);
     expect(b.freeze.sourcePassages).toMatchObject([
       { source: "ORIGINAL_LITERAL_MATCH" },
     ]);
     expect(b.freeze.fullContextConfirmedByProvider).toBe(false);
+  });
+  it("restricts citation JSON enum to exactly the frozen source IDs", () => {
+    expect(
+      buildS2NativeWriterSchema(["SRC1", "SECTION2"]).properties.citations.items
+        .enum,
+    ).toEqual(["SRC1", "SECTION2"]);
+    expect(() => buildS2NativeWriterSchema(["SRC1", "SRC1"])).toThrow();
+    expect(() => buildS2NativeWriterSchema(["[SRC1]"])).toThrow();
+    expect(() => buildS2NativeWriterSchema([])).toThrow();
   });
   it("accepts structural answer with known citation ID, no semantic certification", () => {
     const b = make();

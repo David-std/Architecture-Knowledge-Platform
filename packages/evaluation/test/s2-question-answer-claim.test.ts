@@ -11,11 +11,9 @@ const role = (decision: "MATCH" | "MISMATCH" | "UNCERTAIN" = "MATCH") => ({
 });
 const claim = (
   s = "The access control proxy grants access to a resource.",
-  echo = "access control proxy",
 ) => ({
   id: "claim-projector@pinned-v1",
   project: vi.fn(async () => ({
-    answerEcho: echo,
     declarativeClaim: s,
     reason: "ATOMIC_CLAIM_PROJECTED",
   })),
@@ -45,10 +43,7 @@ describe("question answer role and full declarative claim shadow bridge", () => 
   });
   it("does not turn an unreliable answer-type mismatch into a semantic veto", async () => {
     const rv = role("MISMATCH");
-    const projection = claim(
-      "El método establece una cabecera.",
-      "Establece una cabecera.",
-    );
+    const projection = claim("El método establece una cabecera.");
     const result = await prepareS2QuestionAnswerClaim(
       "¿Qué método establece una cabecera?",
       "Establece una cabecera.",
@@ -66,36 +61,42 @@ describe("question answer role and full declarative claim shadow bridge", () => 
       "¿Qué opción se activa solo después de aprobar una solicitud?",
       "yes",
       role("UNCERTAIN"),
-      claim("La opción se activa después de aprobar una solicitud.", "yes"),
+      claim("La opción se activa después de aprobar una solicitud."),
     );
     expect(r.status).toBe("ROLE_DISPUTED_CLAIM_CANDIDATE");
     expect(r.claimAnswerAnchor?.status).toBe(
       "BOOLEAN_VALUE_REQUIRES_SEMANTIC_REWRITE",
     );
   });
-  it("exposes omitted answer values even with a correct answerEcho and MATCH role", async () => {
+  it("exposes omitted answer values even with a MATCH role", async () => {
     const result = await prepareS2QuestionAnswerClaim(
       question,
       "access control proxy",
       role(),
-      claim(
-        "The administrator grants access to a resource.",
-        "access control proxy",
-      ),
+      claim("The administrator grants access to a resource."),
     );
     expect(result.status).toBe("CLAIM_CANDIDATE");
     expect(result.claimAnswerAnchor?.status).toBe("LITERAL_VALUE_NOT_FOUND");
     expect(result.claimAnswerAnchor?.claimEquivalenceVerified).toBe(false);
     expect(result.sourceEntailmentVerified).toBe(false);
   });
-  it("rejects a hallucinated answer rewrite even when the role model passed", async () => {
+  it("rejects a projector that attempts to reintroduce an untrusted answer echo", async () => {
+    const injecting = claim();
+    injecting.project.mockResolvedValue({
+      declarativeClaim: "The administrator grants access to a resource.",
+      reason: "ATOMIC_CLAIM_PROJECTED",
+      answerEcho: "administrator",
+    } as never);
     const result = await prepareS2QuestionAnswerClaim(
       question,
       "access control proxy",
       role(),
-      claim("The administrator grants access to a resource.", "administrator"),
+      injecting,
     );
-    expect(result.status).toBe("INSUFFICIENT");
+    expect(result).toMatchObject({
+      status: "INSUFFICIENT",
+      reason: "CLAIM_PROJECTION_INVALID",
+    });
   });
   it("preserves a disputed question-role hypothesis only as a non-authoritative diagnostic", async () => {
     const answer = "access control proxy";
@@ -115,18 +116,17 @@ describe("question answer role and full declarative claim shadow bridge", () => 
     });
     expect(r.status).not.toBe("CLAIM_CANDIDATE");
   });
-  it("rejects a paraphrased answer echo even if the claim incidentally contains the answer", async () => {
+  it("permits lexical paraphrases as unverified claims rather than demanding an exact model echo", async () => {
     const result = await prepareS2QuestionAnswerClaim(
       "Are the directives case-sensitive?",
       "case-insensitive",
       role("UNCERTAIN"),
-      claim(
-        "The directives are case-insensitive.",
-        "The directives are not case-sensitive.",
-      ),
+      claim("The directives are not case sensitive."),
     );
-    expect(result.status).toBe("INSUFFICIENT");
-    expect(result.claimText).toBeNull();
+    expect(result.status).toBe("ROLE_DISPUTED_CLAIM_CANDIDATE");
+    expect(result.claimText).toBe("The directives are not case sensitive.");
+    expect(result.claimAnswerAnchor?.status).toBe("LITERAL_VALUE_NOT_FOUND");
+    expect(result.sourceEntailmentVerified).toBe(false);
   });
   it("does not accept malformed inference, errors, or unpinned same verifier identities", async () => {
     const bad = await prepareS2QuestionAnswerClaim(
@@ -173,7 +173,7 @@ describe("question answer role and full declarative claim shadow bridge", () => 
       "Who holds the revocation key?",
       "operator",
       role(),
-      claim("operator", "operator"),
+      claim("operator"),
     );
     expect(result.status).toBe("INSUFFICIENT");
   });

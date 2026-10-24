@@ -86,7 +86,11 @@ describe("S2 retrieved writer bridge (no gold oracle)", () => {
     const parsed = JSON.parse(
       Buffer.from(out.exactProviderRequest!.requestBytes).toString(),
     );
-    expect(parsed.messages[1].content).toContain(body);
+    const sourceRecord = parsed.messages[1].content
+      .split("\n\n")
+      .find((section: string) => section.startsWith('{"sourceId"'));
+    expect(JSON.parse(sourceRecord)).toEqual({ sourceId: "SRC1", text: body });
+    expect(parsed.format.properties.citations.items.enum).toEqual(["SRC1"]);
     expect(parsed.messages[1].content).toContain(question);
     expect(out).toMatchObject({
       ownerGoldLoaded: false,
