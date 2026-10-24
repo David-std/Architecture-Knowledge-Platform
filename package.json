@@ -86,7 +86,7 @@
     "tsx": "^4.0.0",
     "turbo": "^2.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.12"
   },
   "dependencies": {
     "@fastify/cors": "^11.3.0",

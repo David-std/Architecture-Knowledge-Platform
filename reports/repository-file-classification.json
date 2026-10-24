@@ -2967,6 +2967,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/contracts/test/legacy-guid-compat.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/contracts/test/model-role-policy.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"

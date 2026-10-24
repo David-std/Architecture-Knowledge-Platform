@@ -19,6 +19,13 @@ export interface S2ActorBindingResult {
   readonly claimActor: string | null;
   readonly sourceBound: boolean;
   readonly claimBound: boolean;
+  /** Only reports literal predicate correspondence, never synonymous meaning or entailment. */
+  readonly relationSurfaceStatus:
+    | "LEXICALLY_ALIGNED"
+    | "LEXICALLY_DIVERGENT"
+    | "PREDICATE_UNBOUND"
+    | "PREDICATE_NOT_PROVIDED";
+  readonly relationSurfaceReason: string;
   readonly sourceEntailmentVerified: false;
   readonly productionAdmission: false;
   readonly releaseGateAccepted: false;
@@ -47,6 +54,47 @@ const unique = (body: string, actor: string): boolean => {
     normalizedAt >= 0 && sourceFold.indexOf(actorFold, normalizedAt + 1) < 0
   );
 };
+/**
+ * A source can name the correct actor while saying nothing about the claimed
+ * relation. Predicate comparison is a source/claim *surface diagnostic* only:
+ * lexical divergence may be paraphrase, negation or a genuine wrong relation.
+ * Do not infer a contradiction or veto a complete-claim verifier from this.
+ */
+function predicateSurface(input: {
+  readonly sourceQuote: string;
+  readonly fullDeclarativeClaim: string;
+  readonly extraction: S2ActorPairExtraction;
+}): {
+  status: S2ActorBindingResult["relationSurfaceStatus"];
+  reason: string;
+} {
+  const { sourcePredicate, claimPredicate } = input.extraction;
+  if (sourcePredicate == null && claimPredicate == null)
+    return {
+      status: "PREDICATE_NOT_PROVIDED",
+      reason: "NO_PREDICATE_PROPOSED",
+    };
+  if (
+    !allowed(sourcePredicate, 256) ||
+    !allowed(claimPredicate, 256) ||
+    !unique(input.sourceQuote, sourcePredicate) ||
+    !unique(input.fullDeclarativeClaim, claimPredicate)
+  )
+    return {
+      status: "PREDICATE_UNBOUND",
+      reason: "PREDICATE_SPAN_NOT_UNIQUE_OR_VERBATIM",
+    };
+  return fold(sourcePredicate) === fold(claimPredicate)
+    ? {
+        status: "LEXICALLY_ALIGNED",
+        reason: "PREDICATE_SURFACE_ONLY_NOT_ENTAILMENT",
+      }
+    : {
+        status: "LEXICALLY_DIVERGENT",
+        reason: "PREDICATE_SURFACES_DIFFER_SEMANTICS_UNVERIFIED",
+      };
+}
+
 export function checkS2SourceClaimActorBinding(input: {
   readonly sourceQuote: string;
   readonly fullDeclarativeClaim: string;
@@ -66,6 +114,18 @@ export function checkS2SourceClaimActorBinding(input: {
     claimActor,
     sourceBound,
     claimBound,
+    relationSurfaceStatus:
+      input?.extraction &&
+      typeof input.sourceQuote === "string" &&
+      typeof input.fullDeclarativeClaim === "string"
+        ? predicateSurface(input).status
+        : "PREDICATE_UNBOUND",
+    relationSurfaceReason:
+      input?.extraction &&
+      typeof input.sourceQuote === "string" &&
+      typeof input.fullDeclarativeClaim === "string"
+        ? predicateSurface(input).reason
+        : "PREDICATE_INPUT_INVALID",
     sourceEntailmentVerified: false,
     productionAdmission: false,
     releaseGateAccepted: false,
