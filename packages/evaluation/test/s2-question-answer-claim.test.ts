@@ -31,6 +31,11 @@ describe("question answer role and full declarative claim shadow bridge", () => 
     expect(v).toMatchObject({
       status: "CLAIM_CANDIDATE",
       claimText: "The access control proxy grants access to a resource.",
+      claimAnswerAnchor: {
+        status: "UNIQUE_LITERAL_VALUE",
+        claimEquivalenceVerified: false,
+        sourceEntailmentVerified: false,
+      },
       semanticsVerified: false,
       sourceEntailmentVerified: false,
       productionAdmission: false,
@@ -52,6 +57,7 @@ describe("question answer role and full declarative claim shadow bridge", () => 
     );
     expect(result.status).toBe("ROLE_DISPUTED_CLAIM_CANDIDATE");
     expect(result.roleDecision).toBe("MISMATCH");
+    expect(result.claimAnswerAnchor?.status).toBe("UNIQUE_LITERAL_VALUE");
     expect(projection.project).toHaveBeenCalledOnce();
     expect(result.sourceEntailmentVerified).toBe(false);
   });
@@ -63,6 +69,24 @@ describe("question answer role and full declarative claim shadow bridge", () => 
       claim("La opción se activa después de aprobar una solicitud.", "yes"),
     );
     expect(r.status).toBe("ROLE_DISPUTED_CLAIM_CANDIDATE");
+    expect(r.claimAnswerAnchor?.status).toBe(
+      "BOOLEAN_VALUE_REQUIRES_SEMANTIC_REWRITE",
+    );
+  });
+  it("exposes omitted answer values even with a correct answerEcho and MATCH role", async () => {
+    const result = await prepareS2QuestionAnswerClaim(
+      question,
+      "access control proxy",
+      role(),
+      claim(
+        "The administrator grants access to a resource.",
+        "access control proxy",
+      ),
+    );
+    expect(result.status).toBe("CLAIM_CANDIDATE");
+    expect(result.claimAnswerAnchor?.status).toBe("LITERAL_VALUE_NOT_FOUND");
+    expect(result.claimAnswerAnchor?.claimEquivalenceVerified).toBe(false);
+    expect(result.sourceEntailmentVerified).toBe(false);
   });
   it("rejects a hallucinated answer rewrite even when the role model passed", async () => {
     const result = await prepareS2QuestionAnswerClaim(

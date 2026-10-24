@@ -1,3 +1,8 @@
+import {
+  checkS2ClaimAnswerAnchor,
+  type S2ClaimAnswerAnchor,
+} from "./s2-claim-answer-anchor.js";
+
 /** Shadow-only question/answer role binding before full-claim F3.
  * A bare lexical answer in a quote need not fill the requested answer slot.
  * Neither a model's role decision nor its claim rewrite establishes truth.
@@ -32,6 +37,8 @@ export interface S2QuestionClaimCandidate {
     | "REJECTED";
   readonly reason: string;
   readonly claimText: string | null;
+  /** Value-in-claim lexical diagnostic, NOT projection equivalence or a veto. */
+  readonly claimAnswerAnchor: S2ClaimAnswerAnchor | null;
   readonly roleDecision: "MATCH" | "MISMATCH" | "UNCERTAIN" | null;
   readonly roleProbeId: string | null;
   readonly claimProjectorId: string | null;
@@ -65,6 +72,10 @@ export async function prepareS2QuestionAnswerClaim(
     status,
     reason,
     claimText,
+    claimAnswerAnchor:
+      claimText === null
+        ? null
+        : checkS2ClaimAnswerAnchor(proposedAnswer, claimText),
     roleDecision,
     roleProbeId: roleProbe?.id ?? null,
     claimProjectorId: projector?.id ?? null,
