@@ -3087,6 +3087,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-end-to-end-evidence-trace.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-evidence-portfolio.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3138,6 +3143,11 @@
     },
     {
       "path": "packages/evaluation/src/s2-question-answer-claim.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/evaluation/src/s2-quote-evidence-choice.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -3312,6 +3322,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/evaluation/test/s2-end-to-end-evidence-trace.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/evaluation/test/s2-evidence-portfolio.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -3363,6 +3378,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-question-answer-claim.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-quote-evidence-choice.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

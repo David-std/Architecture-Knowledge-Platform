@@ -35,6 +35,8 @@ export * from "./s2-complete-answer-evidence.js";
 export * from "./s2-writer-citation-reconciliation.js";
 export * from "./s2-question-answer-claim.js";
 export * from "./s2-semantic-pipeline-trace.js";
+export * from "./s2-end-to-end-evidence-trace.js";
+export * from "./s2-quote-evidence-choice.js";
 export * from "./s2-claim-answer-anchor.js";
 export * from "./s2-actor-binding.js";
 export * from "./s2-evidence-portfolio.js";
