@@ -183,6 +183,27 @@ describe("S2 full HTTP→writer→source→semantic shadow provenance", () => {
       productionAdmission: false,
     });
   });
+  it("exposes applicable-relation disagreement after HTTP binding without turning it into release admission", () => {
+    const f = fixture();
+    f.httpOriginalReplay = { status: "REPLAY_VERIFIED" } as never;
+    f.wholeAnswer = {
+      status: "INSUFFICIENT",
+      relationFacetAudit: "RELATION_CONFLICT_PROPOSED",
+      relationFacetIndependentAdjudicationVerified: false,
+      productionAdmission: false,
+    } as never;
+    expect(traceS2EndToEndEvidence(f)).toMatchObject({
+      status: "SEMANTIC_DOWNSTREAM_UNPROVEN",
+      firstUnprovenStage: "COMPLETE_ANSWER",
+      optionalHttpOriginalQuoteReplay: "REPLAY_VERIFIED",
+      downstream: {
+        status: "WHOLE_ANSWER_NOT_VERIFIED",
+        stageStatuses: { relationFacets: "RELATION_CONFLICT_PROPOSED" },
+        productionAdmission: false,
+      },
+      releaseGateAccepted: false,
+    });
+  });
   it("preserves a downstream claim dispute and independent replay diagnostics", () => {
     const f = fixture();
     f.claimSemantics = {

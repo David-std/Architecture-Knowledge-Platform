@@ -207,6 +207,38 @@ describe("semantic pipeline evidence-lineage diagnostics", () => {
       stageStatuses: { question: "SUPPORTS", claim: "INSUFFICIENT" },
     });
   });
+  it("does not allow an optimistic whole-answer status to mask an invalid facet review", () => {
+    for (const facet of [
+      "SOURCE_OR_REVIEW_BINDING_INVALID",
+      "APPLICABILITY_REVIEW_REQUIRED",
+      "RELATION_CONFLICT_PROPOSED",
+      "APPLICABLE_OBSERVATION_UNCERTAIN",
+    ]) {
+      const f = fixture();
+      f.wholeAnswer = {
+        status: "COMPLETE_SUPPORTED_CANDIDATE",
+        relationFacetAudit: facet,
+      } as never;
+      expect(traceS2SemanticPipeline(f)).toMatchObject({
+        status: "WHOLE_ANSWER_NOT_VERIFIED",
+        firstUnprovenStage: "COMPLETE_ANSWER",
+        stageStatuses: { relationFacets: facet },
+        productionAdmission: false,
+      });
+    }
+    const valid = fixture();
+    valid.wholeAnswer = {
+      status: "COMPLETE_SUPPORTED_CANDIDATE",
+      relationFacetAudit: "ALL_APPLICABLE_FACETS_ALIGNED_PROPOSAL_ONLY",
+    } as never;
+    expect(traceS2SemanticPipeline(valid)).toMatchObject({
+      status: "SHADOW_CANDIDATE_NOT_RELEASE",
+      stageStatuses: {
+        relationFacets: "ALL_APPLICABLE_FACETS_ALIGNED_PROPOSAL_ONLY",
+      },
+      releaseGateAccepted: false,
+    });
+  });
   it("distinguishes citation reconciliation from the final whole-answer check", () => {
     const f = fixture();
     f.citations = { status: "WITHHELD_UNSUPPORTED_CITATION" } as never;

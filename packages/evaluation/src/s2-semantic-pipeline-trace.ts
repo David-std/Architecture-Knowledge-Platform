@@ -59,6 +59,7 @@ export interface S2SemanticPipelineTrace {
     readonly claim: string | null;
     readonly citations: string | null;
     readonly completeAnswer: string | null;
+    readonly relationFacets: string | null;
   };
   readonly sourceBoundUtf16Observed: boolean;
   readonly completeAnswerCandidateObserved: boolean;
@@ -86,6 +87,7 @@ export function traceS2SemanticPipeline(
     claim: s?.claimEntailment?.decision ?? null,
     citations: c?.status ?? null,
     completeAnswer: a?.status ?? null,
+    relationFacets: a?.relationFacetAudit ?? null,
   } as const;
   const sourceBoundUtf16Observed =
     s?.attribution?.status === "VERBATIM_UNIQUE_SOURCE_BOUND" &&
@@ -159,7 +161,12 @@ export function traceS2SemanticPipeline(
     return make("CLAIM_ENTAILMENT_UNPROVEN", "CLAIM");
   if (c?.status !== "SOURCE_BOUND_CANDIDATE")
     return make("CITATIONS_NOT_RECONCILED", "CITATIONS");
-  if (!completeAnswerCandidateObserved)
+  if (
+    !completeAnswerCandidateObserved ||
+    (a.relationFacetAudit !== undefined &&
+      a.relationFacetAudit !== "NOT_REQUESTED" &&
+      a.relationFacetAudit !== "ALL_APPLICABLE_FACETS_ALIGNED_PROPOSAL_ONLY")
+  )
     return make("WHOLE_ANSWER_NOT_VERIFIED", "COMPLETE_ANSWER");
   // Even an all-positive shadow trace is not a certification of model truth,
   // independent adjudication, HTTP admission or release readiness.

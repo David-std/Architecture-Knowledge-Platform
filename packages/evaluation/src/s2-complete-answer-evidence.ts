@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   assessS2QuoteSemantics,
   type S2SemanticEvidenceConfig,
@@ -50,6 +51,144 @@ export interface S2WholeAnswerCheck {
   ): Promise<"SUPPORTS" | "CONTRADICTS" | "INSUFFICIENT">;
 }
 
+/**
+ * Supplemental opt-in S2.7 claim/slot diagnostics. Applicability is supplied
+ * by a separate frozen review packet; it must NOT be inferred from the same
+ * model's ALIGNED/UNKNOWN judgments. The reviewer identity is an audit hint,
+ * never proof of independent human adjudication.
+ */
+export const S2_RELATION_FACETS = [
+  "subject",
+  "predicate",
+  "direction",
+  "polarity",
+  "modality",
+  "temporal",
+  "conditions",
+  "answerRole",
+] as const;
+export type S2RelationFacet = (typeof S2_RELATION_FACETS)[number];
+export type S2RelationFacetApplicability =
+  "APPLICABLE" | "NOT_APPLICABLE" | "UNRESOLVED";
+export type S2RelationFacetModelObservation =
+  "ALIGNED" | "CONFLICT" | "UNKNOWN";
+
+export interface S2SourceBoundRelationFacetReview {
+  /** One packet per exact writer claim; no reusing a decision across claims. */
+  readonly claimIndex: number;
+  readonly questionSha256: string;
+  readonly claimSha256: string;
+  readonly exactQuoteSha256: string;
+  readonly sourceSha256: string;
+  readonly reviewerId: string;
+  readonly facets: readonly {
+    readonly facet: S2RelationFacet;
+    /** This scope is an external annotation, not a model prediction. */
+    readonly applicability: S2RelationFacetApplicability;
+    readonly modelObservation: S2RelationFacetModelObservation;
+  }[];
+}
+
+export type S2RelationFacetAuditStatus =
+  | "NOT_REQUESTED"
+  | "SOURCE_OR_REVIEW_BINDING_INVALID"
+  | "APPLICABILITY_REVIEW_REQUIRED"
+  | "RELATION_CONFLICT_PROPOSED"
+  | "APPLICABLE_OBSERVATION_UNCERTAIN"
+  | "ALL_APPLICABLE_FACETS_ALIGNED_PROPOSAL_ONLY";
+const digest = (text: string) =>
+  createHash("sha256").update(text, "utf8").digest("hex");
+const wellFormedUtf16 = (text: string): boolean => {
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code >= 0xdc00 && code <= 0xdfff) return false;
+    if (code >= 0xd800 && code <= 0xdbff) {
+      if (++i >= text.length) return false;
+      const low = text.charCodeAt(i);
+      if (low < 0xdc00 || low > 0xdfff) return false;
+    }
+  }
+  return true;
+};
+
+/**
+ * Runs only after F3 has bound each quote against an authorized original.
+ * Neither NOT_APPLICABLE nor ALIGNED is a semantic verdict: annotation origin
+ * and actual entailment still require independent checks outside this port.
+ */
+export function inspectS2SourceBoundRelationFacets(
+  input: S2CompleteAnswerInput,
+  claimResults: readonly S2SemanticEvidenceAssessment[],
+  reviews: readonly S2SourceBoundRelationFacetReview[],
+): S2RelationFacetAuditStatus {
+  if (
+    !Array.isArray(reviews) ||
+    !Array.isArray(input?.claims) ||
+    reviews.length !== input.claims.length ||
+    claimResults.length !== input.claims.length ||
+    typeof input.originalQuestion !== "string" ||
+    !wellFormedUtf16(input.originalQuestion)
+  )
+    return "SOURCE_OR_REVIEW_BINDING_INVALID";
+  let applicableCount = 0;
+  let unresolved = false,
+    conflict = false,
+    unknown = false;
+  for (let i = 0; i < input.claims.length; i++) {
+    const claim = input.claims[i]!;
+    const review = reviews[i];
+    const attribution = claimResults[i]?.attribution;
+    if (
+      !review ||
+      review.claimIndex !== i ||
+      !attribution ||
+      attribution.status !== "VERBATIM_UNIQUE_SOURCE_BOUND" ||
+      attribution.sourceSha256 !== review.sourceSha256 ||
+      typeof claim.claimText !== "string" ||
+      typeof claim.evidenceQuote !== "string" ||
+      typeof review.reviewerId !== "string" ||
+      !/^[A-Za-z0-9_.:-]{1,100}@[A-Za-z0-9_.:-]{1,100}$/u.test(
+        review.reviewerId,
+      ) ||
+      !wellFormedUtf16(claim.claimText) ||
+      !wellFormedUtf16(claim.evidenceQuote) ||
+      review.questionSha256 !== digest(input.originalQuestion) ||
+      review.claimSha256 !== digest(claim.claimText) ||
+      review.exactQuoteSha256 !== digest(claim.evidenceQuote) ||
+      !Array.isArray(review.facets) ||
+      review.facets.length !== S2_RELATION_FACETS.length ||
+      attribution.startUtf16 === null ||
+      attribution.endUtf16 === null
+    )
+      return "SOURCE_OR_REVIEW_BINDING_INVALID";
+    const facets = new Set<string>();
+    for (const v of review.facets) {
+      if (
+        !v ||
+        !S2_RELATION_FACETS.includes(v.facet) ||
+        facets.has(v.facet) ||
+        !["APPLICABLE", "NOT_APPLICABLE", "UNRESOLVED"].includes(
+          v.applicability,
+        ) ||
+        !["ALIGNED", "CONFLICT", "UNKNOWN"].includes(v.modelObservation)
+      )
+        return "SOURCE_OR_REVIEW_BINDING_INVALID";
+      facets.add(v.facet);
+      if (v.applicability === "UNRESOLVED") unresolved = true;
+      else if (v.applicability === "APPLICABLE") {
+        applicableCount++;
+        if (v.modelObservation === "CONFLICT") conflict = true;
+        if (v.modelObservation === "UNKNOWN") unknown = true;
+      }
+    }
+  }
+  if (applicableCount === 0) return "APPLICABILITY_REVIEW_REQUIRED";
+  if (unresolved) return "APPLICABILITY_REVIEW_REQUIRED";
+  if (conflict) return "RELATION_CONFLICT_PROPOSED";
+  if (unknown) return "APPLICABLE_OBSERVATION_UNCERTAIN";
+  return "ALL_APPLICABLE_FACETS_ALIGNED_PROPOSAL_ONLY";
+}
+
 export interface S2CompleteAnswerConfig {
   readonly semantic: S2SemanticEvidenceConfig;
   /** Separate whole-answer coverage/atomicity, not a second call to the claim model. */
@@ -59,6 +198,8 @@ export interface S2CompleteAnswerConfig {
   /** Distinct check for conflicts between claims across multiple sources. */
   readonly consistencyVerifier: S2WholeAnswerCheck;
   readonly maxClaims?: number;
+  /** Optional externally annotated facet applicability, shadow-only. */
+  readonly sourceBoundRelationFacetReviews?: readonly S2SourceBoundRelationFacetReview[];
 }
 
 export interface S2CompleteAnswerAssessment {
@@ -75,6 +216,8 @@ export interface S2CompleteAnswerAssessment {
   readonly consistencyCheck: "SUPPORTS" | "CONTRADICTS" | "INSUFFICIENT" | null;
   readonly sourceContextCheck:
     "SUPPORTS" | "CONTRADICTS" | "INSUFFICIENT" | null;
+  readonly relationFacetAudit: S2RelationFacetAuditStatus;
+  readonly relationFacetIndependentAdjudicationVerified: false;
   readonly productionAdmission: false;
   readonly releaseGateAccepted: false;
 }
@@ -134,6 +277,7 @@ export async function assessS2CompleteAnswer(
   config: S2CompleteAnswerConfig,
 ): Promise<S2CompleteAnswerAssessment> {
   const results: S2SemanticEvidenceAssessment[] = [];
+  let relationFacetAudit: S2RelationFacetAuditStatus = "NOT_REQUESTED";
   const make = (
     status: S2CompleteAnswerAssessment["status"],
     reason: string,
@@ -144,6 +288,8 @@ export async function assessS2CompleteAnswer(
     status,
     reason,
     claimResults: results,
+    relationFacetAudit,
+    relationFacetIndependentAdjudicationVerified: false,
     atomicityCheck,
     consistencyCheck,
     sourceContextCheck,
@@ -211,6 +357,16 @@ export async function assessS2CompleteAnswer(
               : "INSUFFICIENT";
       return make(status, "INDIVIDUAL_CLAIM_" + assessed.status);
     }
+  }
+
+  if (config.sourceBoundRelationFacetReviews !== undefined) {
+    relationFacetAudit = inspectS2SourceBoundRelationFacets(
+      input,
+      results,
+      config.sourceBoundRelationFacetReviews,
+    );
+    if (relationFacetAudit !== "ALL_APPLICABLE_FACETS_ALIGNED_PROPOSAL_ONLY")
+      return make("INSUFFICIENT", "RELATION_FACET_" + relationFacetAudit);
   }
 
   const boundAttributions = results.map((result, i) => {
