@@ -152,6 +152,49 @@ describe("semantic pipeline evidence-lineage diagnostics", () => {
       productionAdmission: false,
     });
   });
+  it("does not let a false-positive MATCH plus F3 support rescue an interrogative projection", () => {
+    const f = fixture();
+    f.projection = {
+      ...f.projection,
+      claimText: "¿Cuál es el objeto que concede permiso, the access proxy?",
+      roleDecision: "MATCH",
+      projectedClaimRoleDecision: "MATCH",
+      status: "CLAIM_CANDIDATE",
+    } as never;
+    expect(traceS2SemanticPipeline(f)).toMatchObject({
+      status: "PROJECTION_FAILED",
+      firstUnprovenStage: "PROJECTION",
+      stageStatuses: {
+        claim: "SUPPORTS",
+        roleProbe: "MATCH",
+        projectedRoleProbe: "MATCH",
+        projectionSurface: "INTERROGATIVE_SURFACE_REQUIRES_REWRITE",
+      },
+      productionAdmission: false,
+    });
+    f.projection = {
+      ...f.projection,
+      claimText: "Is the access proxy the object that grants permission?",
+    } as never;
+    expect(traceS2SemanticPipeline(f).firstUnprovenStage).toBe("PROJECTION");
+  });
+
+  it("rejects malformed untrusted projection text rather than throwing or trusting source-model support", () => {
+    const f = fixture();
+    for (const payload of [
+      42,
+      { arbitrary: true },
+      "bad" + String.fromCharCode(0xd800),
+    ]) {
+      f.projection = { ...f.projection, claimText: payload } as never;
+      expect(traceS2SemanticPipeline(f)).toMatchObject({
+        status: "PROJECTION_FAILED",
+        firstUnprovenStage: "PROJECTION",
+        productionAdmission: false,
+      });
+    }
+  });
+
   it("does not treat claim entailment as proven by question relevance", () => {
     const f = fixture();
     f.claimSemantics = {

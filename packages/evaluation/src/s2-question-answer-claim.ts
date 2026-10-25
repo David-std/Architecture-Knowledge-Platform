@@ -46,11 +46,14 @@ export interface S2QuestionClaimCandidate {
   readonly status:
     | "CLAIM_CANDIDATE"
     | "ROLE_DISPUTED_CLAIM_CANDIDATE"
+    | "FORM_DISPUTED_CLAIM_CANDIDATE"
     | "INSUFFICIENT"
     | "ERROR"
     | "REJECTED";
   readonly reason: string;
   readonly claimText: string | null;
+  /** Surface-only, not a statement of role or source truth. */
+  readonly projectionSurfaceStatus: S2ProjectionSurfaceStatus | null;
   /** Immutable identifier of the deterministic question/answer input pair. */
   readonly questionAnswerSha256: string | null;
   /** Value-in-claim lexical diagnostic, NOT projection equivalence or a veto. */
@@ -68,6 +71,31 @@ export interface S2QuestionClaimCandidate {
   readonly productionAdmission: false;
   readonly releaseGateAccepted: false;
 }
+/** A conservative, language-neutral boundary: a question-shaped output cannot
+ * be treated as a declarative claim, even if a model says MATCH. This does
+ * NOT judge predicate, polarity or truth. Question marks in quoted statements
+ * may cause a deliberate review hold, never an automatic falsehood claim. */
+export type S2ProjectionSurfaceStatus =
+  | "NO_INTERROGATIVE_MARKER_OBSERVED"
+  | "INTERROGATIVE_SURFACE_REQUIRES_REWRITE"
+  | "INVALID_PROJECTION_SURFACE";
+
+export function inspectS2ProjectionSurface(
+  claim: unknown,
+): S2ProjectionSurfaceStatus {
+  if (
+    typeof claim !== "string" ||
+    !claim.trim() ||
+    claim.length > 4096 ||
+    !wellFormedUtf16(claim)
+  )
+    return "INVALID_PROJECTION_SURFACE";
+  const text = claim.trim();
+  return /^¿/u.test(text) || /[?？]\s*$/u.test(text)
+    ? "INTERROGATIVE_SURFACE_REQUIRES_REWRITE"
+    : "NO_INTERROGATIVE_MARKER_OBSERVED";
+}
+
 const code = (v: unknown): boolean =>
   typeof v === "string" && /^[A-Z][A-Z0-9_]{0,99}$/u.test(v);
 // Do not silently replace malformed UTF-16 with U+FFFD when the pair is
@@ -112,6 +140,8 @@ export async function prepareS2QuestionAnswerClaim(
     status,
     reason,
     claimText,
+    projectionSurfaceStatus:
+      claimText === null ? null : inspectS2ProjectionSurface(claimText),
     questionAnswerSha256:
       bound(originalQuestion, 2048) && bound(proposedAnswer, 2048)
         ? createHash("sha256")
@@ -152,8 +182,8 @@ export async function prepareS2QuestionAnswerClaim(
   )
     return make("REJECTED", "QUESTION_ANSWER_OR_PROBE_INVALID");
   try {
-    // Both independent model observations can run concurrently. Neither
-    // establishes factual support or source-level sufficiency.
+    // The role check and projection run as separate calls, but distinct
+    // IDs do NOT establish model independence, truth or source sufficiency.
     const [role, claim] = await Promise.all([
       roleProbe.verify({ originalQuestion, proposedAnswer }),
       projector.project({ originalQuestion, proposedAnswer }),
@@ -204,16 +234,25 @@ export async function prepareS2QuestionAnswerClaim(
         );
       }
     }
+    const interrogativeSurface =
+      inspectS2ProjectionSurface(claim.declarativeClaim) ===
+      "INTERROGATIVE_SURFACE_REQUIRES_REWRITE";
     const roleDisputed =
       role.decision !== "MATCH" ||
       (projectedDecision !== null && projectedDecision !== "MATCH");
     return make(
-      roleDisputed ? "ROLE_DISPUTED_CLAIM_CANDIDATE" : "CLAIM_CANDIDATE",
-      roleDisputed
-        ? projectedDecision === null
-          ? "ROLE_PROBE_DISPUTED_NOT_A_SEMANTIC_VETO"
-          : "PROJECTED_OR_ANSWER_ROLE_DISPUTED_NOT_A_SEMANTIC_VETO"
-        : "UNVERIFIED_FULL_QUESTION_CLAIM",
+      interrogativeSurface
+        ? "FORM_DISPUTED_CLAIM_CANDIDATE"
+        : roleDisputed
+          ? "ROLE_DISPUTED_CLAIM_CANDIDATE"
+          : "CLAIM_CANDIDATE",
+      interrogativeSurface
+        ? "INTERROGATIVE_PROJECTION_NOT_A_DECLARATIVE_CLAIM"
+        : roleDisputed
+          ? projectedDecision === null
+            ? "ROLE_PROBE_DISPUTED_NOT_A_SEMANTIC_VETO"
+            : "PROJECTED_OR_ANSWER_ROLE_DISPUTED_NOT_A_SEMANTIC_VETO"
+          : "UNVERIFIED_FULL_QUESTION_CLAIM",
       claim.declarativeClaim,
       role.decision,
       projectedDecision,

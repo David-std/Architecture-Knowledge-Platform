@@ -141,6 +141,47 @@ describe("post-projection role guard detects failures invisible to original QA-o
       });
     }
   });
+  it("retains a valid Spanish negation as disputed evidence, not a role-model veto", async () => {
+    const observed = await prepareS2QuestionAnswerClaim(
+      "¿A quién no beneficia la construcción de un proyecto que no se ajuste a los códigos?",
+      "al propietario",
+      before,
+      projector(
+        "La construcción de un proyecto que no se ajuste a los códigos no beneficia __AKP_ANSWER_SLOT__.",
+      ),
+      post("MISMATCH"),
+    );
+    expect(observed).toMatchObject({
+      status: "ROLE_DISPUTED_CLAIM_CANDIDATE",
+      claimText:
+        "La construcción de un proyecto que no se ajuste a los códigos no beneficia al propietario.",
+      projectionSurfaceStatus: "NO_INTERROGATIVE_MARKER_OBSERVED",
+      projectedClaimRoleDecision: "MISMATCH",
+      semanticsVerified: false,
+      productionAdmission: false,
+    });
+  });
+
+  it("holds a question-shaped Spanish projection even when both role reviewers say MATCH", async () => {
+    const observed = await prepareS2QuestionAnswerClaim(
+      "¿Cuál es la fuente de calor habitual de la máquina de vapor?",
+      "La quema de materiales combustibles",
+      before,
+      projector(
+        "¿Cuál es la fuente de calor habitual, que consiste en __AKP_ANSWER_SLOT__?",
+      ),
+      post("MATCH"),
+    );
+    expect(observed).toMatchObject({
+      status: "FORM_DISPUTED_CLAIM_CANDIDATE",
+      reason: "INTERROGATIVE_PROJECTION_NOT_A_DECLARATIVE_CLAIM",
+      projectionSurfaceStatus: "INTERROGATIVE_SURFACE_REQUIRES_REWRITE",
+      projectedClaimRoleDecision: "MATCH",
+      sourceEntailmentVerified: false,
+      productionAdmission: false,
+    });
+  });
+
   it("old four-argument calls preserve their historical status and reason", async () => {
     const x = await prepareS2QuestionAnswerClaim(
       question,

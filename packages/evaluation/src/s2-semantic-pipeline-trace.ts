@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import type { NativeWriterObservation } from "./s2-native-structured-writer.js";
-import type { S2QuestionClaimCandidate } from "./s2-question-answer-claim.js";
+import {
+  inspectS2ProjectionSurface,
+  type S2QuestionClaimCandidate,
+} from "./s2-question-answer-claim.js";
 import type { S2SemanticEvidenceAssessment } from "./s2-semantic-evidence.js";
 import type { S2WriterCitationReconciliation } from "./s2-writer-citation-reconciliation.js";
 import type { S2CompleteAnswerAssessment } from "./s2-complete-answer-evidence.js";
@@ -49,6 +52,8 @@ export interface S2SemanticPipelineTrace {
     readonly writer: string | null;
     readonly projection: string | null;
     readonly roleProbe: string | null;
+    readonly projectedRoleProbe: string | null;
+    readonly projectionSurface: string | null;
     readonly source: string | null;
     readonly question: string | null;
     readonly claim: string | null;
@@ -72,6 +77,10 @@ export function traceS2SemanticPipeline(
     writer: w?.status ?? null,
     projection: p?.status ?? null,
     roleProbe: p?.roleDecision ?? null,
+    projectedRoleProbe: p?.projectedClaimRoleDecision ?? null,
+    projectionSurface: p?.claimText
+      ? inspectS2ProjectionSurface(p.claimText)
+      : null,
     source: s?.attribution?.status ?? null,
     question: s?.questionRelevance?.decision ?? null,
     claim: s?.claimEntailment?.decision ?? null,
@@ -116,6 +125,11 @@ export function traceS2SemanticPipeline(
   if (
     !p.claimText ||
     !["CLAIM_CANDIDATE", "ROLE_DISPUTED_CLAIM_CANDIDATE"].includes(p.status)
+  )
+    return make("PROJECTION_FAILED", "PROJECTION");
+  if (
+    inspectS2ProjectionSurface(p.claimText) !==
+    "NO_INTERROGATIVE_MARKER_OBSERVED"
   )
     return make("PROJECTION_FAILED", "PROJECTION");
   // The writer's actual answer, rather than the projector's echo or a
