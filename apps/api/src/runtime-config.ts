@@ -18,6 +18,8 @@ export interface EvidenceReaderRuntimeConfig {
   /** Optional OpenAI-compatible reasoning control; null omits it. */
   reasoningEffort: "none" | "minimal" | "low" | "medium" | "high" | null;
   jsonResponseFormat: boolean;
+  /** Shadow-only option until structural and semantic outcomes are compared. */
+  structuredResponseSchema: boolean;
 }
 
 export type EvidenceVerifierMode = "SHADOW" | "ENFORCE" | "LAYERED";
@@ -295,7 +297,20 @@ export function loadApiRuntimeConfig(
         "AKP_EVIDENCE_READER_JSON_RESPONSE_FORMAT",
         true,
       ),
+      structuredResponseSchema: booleanSetting(
+        env,
+        "AKP_EVIDENCE_READER_STRUCTURED_OUTPUTS",
+        false,
+      ),
     };
+    if (
+      evidenceReader.structuredResponseSchema &&
+      !evidenceReader.jsonResponseFormat
+    ) {
+      throw new Error(
+        "AKP_EVIDENCE_READER_STRUCTURED_OUTPUTS requires AKP_EVIDENCE_READER_JSON_RESPONSE_FORMAT=true",
+      );
+    }
   }
 
   return {

@@ -11,6 +11,23 @@ import {
 
 export const EVIDENCE_READER_PROMPT_VERSION = "evidence-reader-v5";
 
+/** Transport shape only: source quotation, attribution and relation must still
+ * pass the existing fail-closed reader/verifier and admission checks. */
+export const EVIDENCE_READER_RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    needed: { type: "string" },
+    answer_span: { type: "string" },
+    answer: { type: "string" },
+    verdict: {
+      type: "string",
+      enum: ["ANSWERS", "RELATED_NOT_ANSWERING", "UNRELATED"],
+    },
+  },
+  required: ["needed", "answer_span", "answer", "verdict"],
+  additionalProperties: false,
+} as const;
+
 export interface EvidenceReaderInput {
   readonly query: string;
   /** Title and heading path of the unit. */
@@ -178,6 +195,9 @@ export interface OpenAICompatibleEvidenceReaderOptions {
    * do not support it can disable this; replies are parsed either way.
    */
   readonly jsonResponseFormat?: boolean;
+  /** Opt-in constrained output for compatible OpenAI chat endpoints. JSON
+   * shape is NOT evidence support; never repairs an incomplete answer. */
+  readonly structuredResponseSchema?: boolean;
   readonly fetch?: EvidenceReaderFetch;
 }
 
@@ -258,6 +278,7 @@ export class OpenAICompatibleEvidenceReader implements EvidenceReader {
   private readonly maxOutputTokens: number;
   private readonly reasoningEffort: EvidenceReaderReasoningEffort | undefined;
   private readonly jsonResponseFormat: boolean;
+  private readonly structuredResponseSchema: boolean;
   private readonly fetchImpl: EvidenceReaderFetch;
 
   constructor(options: OpenAICompatibleEvidenceReaderOptions) {
@@ -271,6 +292,12 @@ export class OpenAICompatibleEvidenceReader implements EvidenceReader {
     this.maxOutputTokens = options.maxOutputTokens ?? 256;
     this.reasoningEffort = options.reasoningEffort;
     this.jsonResponseFormat = options.jsonResponseFormat ?? true;
+    this.structuredResponseSchema = options.structuredResponseSchema ?? false;
+    if (this.structuredResponseSchema && !this.jsonResponseFormat) {
+      throw new Error(
+        "EVIDENCE_READER_STRUCTURED_SCHEMA_REQUIRES_JSON_RESPONSE_FORMAT",
+      );
+    }
     if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs < 1) {
       throw new Error("Evidence reader timeoutMs must be a positive integer");
     }
@@ -292,10 +319,13 @@ export class OpenAICompatibleEvidenceReader implements EvidenceReader {
     }
     this.fetchImpl = options.fetch ?? fetch;
     const baselineId = `openai-compatible:${this.model}:${EVIDENCE_READER_PROMPT_VERSION}`;
-    this.id =
+    const configuredId =
       this.maxOutputTokens === 256 && this.reasoningEffort === undefined
         ? baselineId
         : `${baselineId}:max-${this.maxOutputTokens}:reasoning-${this.reasoningEffort ?? "default"}`;
+    this.id = this.structuredResponseSchema
+      ? `${configuredId}:structured-schema`
+      : configuredId;
   }
 
   async judge(input: EvidenceReaderInput): Promise<EvidenceReaderJudgment> {
@@ -329,9 +359,20 @@ export class OpenAICompatibleEvidenceReader implements EvidenceReader {
                 ? {}
                 : { reasoning_effort: this.reasoningEffort }),
               stream: false,
-              ...(this.jsonResponseFormat
-                ? { response_format: { type: "json_object" } }
-                : {}),
+              ...(this.structuredResponseSchema
+                ? {
+                    response_format: {
+                      type: "json_schema",
+                      json_schema: {
+                        name: "source_bound_evidence_reader",
+                        strict: true,
+                        schema: EVIDENCE_READER_RESPONSE_SCHEMA,
+                      },
+                    },
+                  }
+                : this.jsonResponseFormat
+                  ? { response_format: { type: "json_object" } }
+                  : {}),
             }),
             signal: controller.signal,
           }),

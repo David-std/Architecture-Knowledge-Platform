@@ -204,6 +204,31 @@ describe("API runtime configuration", () => {
     });
   });
 
+  it("keeps schema-constrained reader output opt-in and rejects incompatible flags", () => {
+    const configured = {
+      AKP_EVIDENCE_VERIFIER_PROVIDER: "cross-encoder-reader",
+      AKP_EVIDENCE_VERIFIER_MODE: "LAYERED",
+      AKP_EVIDENCE_READER_BASE_URL: "http://127.0.0.1:11434/v1",
+      AKP_EVIDENCE_READER_MODEL: "local-reader",
+    };
+    expect(
+      loadApiRuntimeConfig(configured).evidenceReader?.structuredResponseSchema,
+    ).toBe(false);
+    expect(
+      loadApiRuntimeConfig({
+        ...configured,
+        AKP_EVIDENCE_READER_STRUCTURED_OUTPUTS: "true",
+      }).evidenceReader?.structuredResponseSchema,
+    ).toBe(true);
+    expect(() =>
+      loadApiRuntimeConfig({
+        ...configured,
+        AKP_EVIDENCE_READER_STRUCTURED_OUTPUTS: "true",
+        AKP_EVIDENCE_READER_JSON_RESPONSE_FORMAT: "false",
+      }),
+    ).toThrow("AKP_EVIDENCE_READER_STRUCTURED_OUTPUTS requires");
+  });
+
   it("selects query transformation providers explicitly", () => {
     expect(
       loadApiRuntimeConfig({ AKP_QUERY_TRANSFORM_ENABLED: "true" }),

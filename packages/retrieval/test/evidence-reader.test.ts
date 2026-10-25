@@ -523,6 +523,108 @@ describe("OpenAI-compatible evidence reader", () => {
     ).rejects.toThrow("EVIDENCE_READER_REPLY_INVALID");
   });
 
+  it("optionally constrains the four-field reader shape without admitting a claim", async () => {
+    const sent: Record<string, unknown>[] = [];
+    const reader = new OpenAICompatibleEvidenceReader({
+      baseUrl: "http://127.0.0.1:11434/v1",
+      model: "local-reader",
+      structuredResponseSchema: true,
+      fetch: async (_url, init) => {
+        sent.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                finish_reason: "stop",
+                message: {
+                  content: JSON.stringify({
+                    needed: "the requested release revision",
+                    answer_span: "",
+                    answer: "",
+                    verdict: "RELATED_NOT_ANSWERING",
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      },
+    });
+    await expect(
+      reader.judge({
+        query: "What is the approved release revision?",
+        scope: "Revision policy",
+        body: "A proposed release exists, but its approval is not recorded.",
+      }),
+    ).resolves.toEqual({ answers: false, quote: "" });
+    expect(reader.id).toContain(":structured-schema");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "source_bound_evidence_reader",
+          strict: true,
+          schema: {
+            type: "object",
+            required: ["needed", "answer_span", "answer", "verdict"],
+            additionalProperties: false,
+            properties: {
+              verdict: {
+                enum: ["ANSWERS", "RELATED_NOT_ANSWERING", "UNRELATED"],
+              },
+            },
+          },
+        },
+      },
+    });
+    expect(
+      () =>
+        new OpenAICompatibleEvidenceReader({
+          baseUrl: "http://127.0.0.1:11434",
+          model: "local-reader",
+          jsonResponseFormat: false,
+          structuredResponseSchema: true,
+        }),
+    ).toThrow(
+      "EVIDENCE_READER_STRUCTURED_SCHEMA_REQUIRES_JSON_RESPONSE_FORMAT",
+    );
+  });
+
+  it("rejects a provider response that violates its requested strict schema", async () => {
+    const reader = new OpenAICompatibleEvidenceReader({
+      baseUrl: "http://127.0.0.1:11434",
+      model: "local-reader",
+      structuredResponseSchema: true,
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                finish_reason: "stop",
+                message: {
+                  content: JSON.stringify({
+                    needed: "a release approval",
+                    answer_span: "The release is approved.",
+                    verdict: "ANSWERS",
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+    });
+    await expect(
+      reader.judge({
+        query: "Is the release approved?",
+        scope: "Review",
+        body: "The release is approved.",
+      }),
+    ).rejects.toThrow("EVIDENCE_READER_REPLY_INCOMPLETE_ANSWER");
+  });
+
   it("posts a greedy chat completion without leaking the key into its id", async () => {
     const fetch = vi.fn(
       async () =>

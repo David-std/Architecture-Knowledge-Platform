@@ -113,6 +113,8 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
                   : {}),
                 jsonResponseFormat:
                   runtimeConfig.evidenceReader.jsonResponseFormat,
+                structuredResponseSchema:
+                  runtimeConfig.evidenceReader.structuredResponseSchema,
                 ...(runtimeConfig.evidenceReader.apiKey
                   ? { apiKey: runtimeConfig.evidenceReader.apiKey }
                   : {}),
