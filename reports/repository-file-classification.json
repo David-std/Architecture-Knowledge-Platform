@@ -3382,6 +3382,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/evaluation/test/s2-immutable-answer-slot.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/evaluation/test/s2-native-structured-writer.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -3408,6 +3413,16 @@
     },
     {
       "path": "packages/evaluation/test/s2-pre-admission-source-discovery.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-projected-claim-role.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-projected-role-token.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
