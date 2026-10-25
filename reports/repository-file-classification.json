@@ -667,6 +667,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/api/test/source-policy-priority.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/api/test/symbol-lexical.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"

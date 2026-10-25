@@ -457,6 +457,20 @@ function normalizeGraphPolicy(
   };
 }
 
+/** A rule-themed source or unreviewed projection must not gain mandatory selection priority. */
+export function mayPrioritizeGovernedRule(input: {
+  kind: string;
+  layer: string;
+  trust: string;
+}): boolean {
+  return (
+    input.kind === "rule" &&
+    input.trust === "HUMAN_REVIEWED" &&
+    input.layer !== "source" &&
+    input.layer !== "resource"
+  );
+}
+
 function kindOf(
   layer: string,
   type: string,
@@ -5467,7 +5481,13 @@ export function registerSearchRoutes(
                 : {}),
               kind,
               ...(retrievalRank === undefined ? {} : { retrievalRank }),
-              ...(kind === "rule" ? { mandatory: true } : {}),
+              ...(mayPrioritizeGovernedRule({
+                kind,
+                layer: String(detail?.layer ?? ""),
+                trust: hit.trust,
+              })
+                ? { mandatory: true }
+                : {}),
             };
           }),
           gaps: [
