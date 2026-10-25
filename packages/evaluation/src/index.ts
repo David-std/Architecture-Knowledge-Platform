@@ -37,6 +37,7 @@ export * from "./s2-question-answer-claim.js";
 export * from "./s2-semantic-pipeline-trace.js";
 export * from "./s2-end-to-end-evidence-trace.js";
 export * from "./s2-quote-evidence-choice.js";
+export * from "./s2-frozen-reader-source-bridge.js";
 export * from "./s2-claim-corroboration.js";
 export * from "./s2-pre-admission-source-discovery.js";
 export * from "./s2-discovery-review-plan.js";
