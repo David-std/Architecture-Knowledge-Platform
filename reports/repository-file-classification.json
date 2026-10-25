@@ -2152,6 +2152,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/adr/0005-multilingual-retrieval-untrusted-sources-classification.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/audit-export.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
