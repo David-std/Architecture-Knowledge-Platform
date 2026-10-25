@@ -1,0 +1,118 @@
+{
+  "schemaVersion": "akp.s2.relation-dev-labels.v1",
+  "independentlyAdjudicated": false,
+  "labels": [
+    {
+      "id": "C-P1",
+      "label": "EXPLICIT_SUPPORT",
+      "expectedAnswer": "technician Niko",
+      "sourceFamily": "canal-alert",
+      "language": "en"
+    },
+    {
+      "id": "C-N1",
+      "label": "NOT_ANSWERABLE",
+      "expectedAnswer": null,
+      "sourceFamily": "canal-alert",
+      "language": "en"
+    },
+    {
+      "id": "C-P2",
+      "label": "EXPLICIT_SUPPORT",
+      "expectedAnswer": "pressure above 14 bar",
+      "sourceFamily": "canal-valve",
+      "language": "en"
+    },
+    {
+      "id": "C-N2",
+      "label": "NOT_ANSWERABLE",
+      "expectedAnswer": null,
+      "sourceFamily": "canal-valve",
+      "language": "en"
+    },
+    {
+      "id": "O-P1",
+      "label": "EXPLICIT_SUPPORT",
+      "expectedAnswer": "18 baskets",
+      "sourceFamily": "orchard-load",
+      "language": "en"
+    },
+    {
+      "id": "O-N1",
+      "label": "NOT_ANSWERABLE",
+      "expectedAnswer": null,
+      "sourceFamily": "orchard-load",
+      "language": "en"
+    },
+    {
+      "id": "O-P2",
+      "label": "EXPLICIT_SUPPORT",
+      "expectedAnswer": "courier Uma",
+      "sourceFamily": "orchard-manifest",
+      "language": "en"
+    },
+    {
+      "id": "O-N2",
+      "label": "NOT_ANSWERABLE",
+      "expectedAnswer": null,
+      "sourceFamily": "orchard-manifest",
+      "language": "en"
+    },
+    {
+      "id": "A-P1",
+      "label": "EXPLICIT_SUPPORT",
+      "expectedAnswer": "el supervisor Teo",
+      "sourceFamily": "archives-access",
+      "language": "es"
+    },
+    {
+      "id": "A-N1",
+      "label": "NOT_ANSWERABLE",
+      "expectedAnswer": null,
+      "sourceFamily": "archives-access",
+      "language": "es"
+    },
+    {
+      "id": "A-P2",
+      "label": "EXPLICIT_SUPPORT",
+      "expectedAnswer": "21 días",
+      "sourceFamily": "archives-retention",
+      "language": "es"
+    },
+    {
+      "id": "A-N2",
+      "label": "NOT_ANSWERABLE",
+      "expectedAnswer": null,
+      "sourceFamily": "archives-retention",
+      "language": "es"
+    },
+    {
+      "id": "L-P1",
+      "label": "EXPLICIT_SUPPORT",
+      "expectedAnswer": "el supervisor",
+      "sourceFamily": "lab-validation",
+      "language": "es"
+    },
+    {
+      "id": "L-N1",
+      "label": "NOT_ANSWERABLE",
+      "expectedAnswer": null,
+      "sourceFamily": "lab-validation",
+      "language": "es"
+    },
+    {
+      "id": "L-P2",
+      "label": "EXPLICIT_SUPPORT",
+      "expectedAnswer": "la ventilación",
+      "sourceFamily": "lab-threshold",
+      "language": "es"
+    },
+    {
+      "id": "L-N2",
+      "label": "NOT_ANSWERABLE",
+      "expectedAnswer": null,
+      "sourceFamily": "lab-threshold",
+      "language": "es"
+    }
+  ]
+}

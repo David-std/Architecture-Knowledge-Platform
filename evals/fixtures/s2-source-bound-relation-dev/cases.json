@@ -1,0 +1,168 @@
+{
+  "schemaVersion": "akp.s2.relation-dev-cases.v1",
+  "syntheticFictionalSources": true,
+  "independentAdjudication": false,
+  "developerAuthoredFixture": true,
+  "cases": [
+    {
+      "id": "C-P1",
+      "family": "canal-alert",
+      "language": "en",
+      "sourceId": "SRC-A",
+      "sourceText": "At the fictional Vela canal station, controller Iris-7 sends an alert to technician Niko when the water rises above 83 cm. Niko receives the alert and never sends an alert to Iris-7.",
+      "question": "Who receives the alert from Iris-7 when water exceeds 83 cm?",
+      "proposedAnswer": "technician Niko",
+      "claim": "When water exceeds 83 cm, Iris-7 sends an alert to technician Niko."
+    },
+    {
+      "id": "C-N1",
+      "family": "canal-alert",
+      "language": "en",
+      "sourceId": "SRC-A",
+      "sourceText": "At the fictional Vela canal station, controller Iris-7 sends an alert to technician Niko when the water rises above 83 cm. Niko receives the alert and never sends an alert to Iris-7.",
+      "question": "Who sends an alert to Iris-7 when water exceeds 83 cm?",
+      "proposedAnswer": "technician Niko",
+      "claim": "When water exceeds 83 cm, technician Niko sends an alert to Iris-7."
+    },
+    {
+      "id": "C-P2",
+      "family": "canal-valve",
+      "language": "en",
+      "sourceId": "SRC-B",
+      "sourceText": "At the fictional Vela canal station, valve Mesa-2 may open only after reservoir pressure exceeds 14 bar. At 14 bar or below it stays closed. Technician Niko inspects the valve on Tuesday only when the station log is signed.",
+      "question": "What pressure condition is necessary for Mesa-2 to open?",
+      "proposedAnswer": "pressure above 14 bar",
+      "claim": "Mesa-2 may open only after reservoir pressure exceeds 14 bar."
+    },
+    {
+      "id": "C-N2",
+      "family": "canal-valve",
+      "language": "en",
+      "sourceId": "SRC-B",
+      "sourceText": "At the fictional Vela canal station, valve Mesa-2 may open only after reservoir pressure exceeds 14 bar. At 14 bar or below it stays closed. Technician Niko inspects the valve on Tuesday only when the station log is signed.",
+      "question": "When may Mesa-2 open if reservoir pressure is 14 bar?",
+      "proposedAnswer": "at 14 bar",
+      "claim": "Mesa-2 may open when reservoir pressure is 14 bar."
+    },
+    {
+      "id": "O-P1",
+      "family": "orchard-load",
+      "language": "en",
+      "sourceId": "SRC-C",
+      "sourceText": "At the fictional Piper orchard, harvester Piper-4 may transport up to 18 baskets during fog; there is no minimum number of baskets. It is not required to transport exactly 18 baskets.",
+      "question": "How many baskets may Piper-4 transport at most during fog?",
+      "proposedAnswer": "18 baskets",
+      "claim": "During fog, Piper-4 may transport at most 18 baskets."
+    },
+    {
+      "id": "O-N1",
+      "family": "orchard-load",
+      "language": "en",
+      "sourceId": "SRC-C",
+      "sourceText": "At the fictional Piper orchard, harvester Piper-4 may transport up to 18 baskets during fog; there is no minimum number of baskets. It is not required to transport exactly 18 baskets.",
+      "question": "How many baskets must Piper-4 transport during fog?",
+      "proposedAnswer": "18 baskets",
+      "claim": "During fog, Piper-4 must transport exactly 18 baskets."
+    },
+    {
+      "id": "O-P2",
+      "family": "orchard-manifest",
+      "language": "en",
+      "sourceId": "SRC-D",
+      "sourceText": "At the fictional Sable packing hub, warehouse Sable hands the parcel manifest directly to courier Uma. Uma later delivers it to depot Jericho. Depot Jericho does not hand the manifest to Uma.",
+      "question": "Who receives the manifest directly from warehouse Sable?",
+      "proposedAnswer": "courier Uma",
+      "claim": "Warehouse Sable directly hands the parcel manifest to courier Uma."
+    },
+    {
+      "id": "O-N2",
+      "family": "orchard-manifest",
+      "language": "en",
+      "sourceId": "SRC-D",
+      "sourceText": "At the fictional Sable packing hub, warehouse Sable hands the parcel manifest directly to courier Uma. Uma later delivers it to depot Jericho. Depot Jericho does not hand the manifest to Uma.",
+      "question": "Who receives the manifest directly from depot Jericho?",
+      "proposedAnswer": "courier Uma",
+      "claim": "Depot Jericho directly hands the parcel manifest to courier Uma."
+    },
+    {
+      "id": "A-P1",
+      "family": "archives-access",
+      "language": "es",
+      "sourceId": "SRC-E",
+      "sourceText": "En el archivo municipal ficticio Lince, el supervisor Teo autoriza la solicitud antes de que Sara reciba acceso de lectura. Sara no concede permisos ni autoriza solicitudes.",
+      "question": "¿Quién autoriza la solicitud antes de que Sara reciba acceso de lectura?",
+      "proposedAnswer": "el supervisor Teo",
+      "claim": "El supervisor Teo autoriza la solicitud antes de que Sara reciba acceso de lectura."
+    },
+    {
+      "id": "A-N1",
+      "family": "archives-access",
+      "language": "es",
+      "sourceId": "SRC-E",
+      "sourceText": "En el archivo municipal ficticio Lince, el supervisor Teo autoriza la solicitud antes de que Sara reciba acceso de lectura. Sara no concede permisos ni autoriza solicitudes.",
+      "question": "¿A quién autoriza Sara el acceso de lectura?",
+      "proposedAnswer": "al supervisor Teo",
+      "claim": "Sara autoriza acceso de lectura al supervisor Teo."
+    },
+    {
+      "id": "A-P2",
+      "family": "archives-retention",
+      "language": "es",
+      "sourceId": "SRC-F",
+      "sourceText": "En el repositorio ficticio Azul se conservan copias de seguridad durante 21 días. Después de 21 días se eliminan. No existe una política de conservación de 12 días.",
+      "question": "¿Durante cuántos días se conservan las copias de seguridad?",
+      "proposedAnswer": "21 días",
+      "claim": "El repositorio Azul conserva copias de seguridad durante 21 días."
+    },
+    {
+      "id": "A-N2",
+      "family": "archives-retention",
+      "language": "es",
+      "sourceId": "SRC-F",
+      "sourceText": "En el repositorio ficticio Azul se conservan copias de seguridad durante 21 días. Después de 21 días se eliminan. No existe una política de conservación de 12 días.",
+      "question": "¿Durante cuántos días se conservan copias según la política de 12 días?",
+      "proposedAnswer": "12 días",
+      "claim": "El repositorio Azul conserva copias de seguridad durante 12 días."
+    },
+    {
+      "id": "L-P1",
+      "family": "lab-validation",
+      "language": "es",
+      "sourceId": "SRC-G",
+      "sourceText": "En el laboratorio ficticio Cobre, cuando la muestra está sellada, el sensor Cobre puede reportar lecturas provisionales. Solo el supervisor valida los datos definitivos; el sensor no los valida.",
+      "question": "¿Quién valida los datos definitivos?",
+      "proposedAnswer": "el supervisor",
+      "claim": "Solo el supervisor valida los datos definitivos."
+    },
+    {
+      "id": "L-N1",
+      "family": "lab-validation",
+      "language": "es",
+      "sourceId": "SRC-G",
+      "sourceText": "En el laboratorio ficticio Cobre, cuando la muestra está sellada, el sensor Cobre puede reportar lecturas provisionales. Solo el supervisor valida los datos definitivos; el sensor no los valida.",
+      "question": "¿Qué datos definitivos valida el sensor Cobre?",
+      "proposedAnswer": "los datos definitivos",
+      "claim": "El sensor Cobre valida los datos definitivos cuando la muestra está sellada."
+    },
+    {
+      "id": "L-P2",
+      "family": "lab-threshold",
+      "language": "es",
+      "sourceId": "SRC-H",
+      "sourceText": "En el laboratorio ficticio Faro, si la concentración supera 6 ppm, el laboratorio activa la ventilación. Si la concentración es de 6 ppm o menos, la ventilación permanece apagada.",
+      "question": "¿Qué se activa si la concentración supera 6 ppm?",
+      "proposedAnswer": "la ventilación",
+      "claim": "El laboratorio Faro activa la ventilación si la concentración supera 6 ppm."
+    },
+    {
+      "id": "L-N2",
+      "family": "lab-threshold",
+      "language": "es",
+      "sourceId": "SRC-H",
+      "sourceText": "En el laboratorio ficticio Faro, si la concentración supera 6 ppm, el laboratorio activa la ventilación. Si la concentración es de 6 ppm o menos, la ventilación permanece apagada.",
+      "question": "¿Qué se activa cuando la concentración es de 6 ppm o menos?",
+      "proposedAnswer": "la ventilación",
+      "claim": "El laboratorio Faro activa la ventilación cuando la concentración es de 6 ppm o menos."
+    }
+  ]
+}

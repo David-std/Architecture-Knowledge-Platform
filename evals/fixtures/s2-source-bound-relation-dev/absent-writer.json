@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "akp.s2.dev-absent-writer-cases.v1",
+  "authorPreparedNotIndependent": true,
+  "reusesRelationDevSourceFamilies": true,
+  "cases": [
+    {
+      "id": "C-ABS-A",
+      "sourceCaseId": "C-P1",
+      "language": "en",
+      "question": "At what clock time does technician Niko start his shift?",
+      "expected": "NO_EXPLICIT_ANSWER_IN_AUTHORIZED_EXCERPT"
+    },
+    {
+      "id": "C-ABS-B",
+      "sourceCaseId": "C-P2",
+      "language": "en",
+      "question": "Which manufacturer built the Mesa-2 valve?",
+      "expected": "NO_EXPLICIT_ANSWER_IN_AUTHORIZED_EXCERPT"
+    },
+    {
+      "id": "O-ABS-A",
+      "sourceCaseId": "O-P1",
+      "language": "en",
+      "question": "What color is the Piper-4 harvester painted?",
+      "expected": "NO_EXPLICIT_ANSWER_IN_AUTHORIZED_EXCERPT"
+    },
+    {
+      "id": "O-ABS-B",
+      "sourceCaseId": "O-P2",
+      "language": "en",
+      "question": "What is the street address of depot Jericho?",
+      "expected": "NO_EXPLICIT_ANSWER_IN_AUTHORIZED_EXCERPT"
+    },
+    {
+      "id": "A-ABS-A",
+      "sourceCaseId": "A-P1",
+      "language": "es",
+      "question": "¿En qué año nació el supervisor Teo?",
+      "expected": "NO_EXPLICIT_ANSWER_IN_AUTHORIZED_EXCERPT"
+    },
+    {
+      "id": "A-ABS-B",
+      "sourceCaseId": "A-P2",
+      "language": "es",
+      "question": "¿En qué país se encuentra el servidor físico del repositorio Azul?",
+      "expected": "NO_EXPLICIT_ANSWER_IN_AUTHORIZED_EXCERPT"
+    },
+    {
+      "id": "L-ABS-A",
+      "sourceCaseId": "L-P1",
+      "language": "es",
+      "question": "¿Cuál es el número de serie del sensor Cobre?",
+      "expected": "NO_EXPLICIT_ANSWER_IN_AUTHORIZED_EXCERPT"
+    },
+    {
+      "id": "L-ABS-B",
+      "sourceCaseId": "L-P2",
+      "language": "es",
+      "question": "¿Cómo se llama el técnico que instaló la ventilación del laboratorio Faro?",
+      "expected": "NO_EXPLICIT_ANSWER_IN_AUTHORIZED_EXCERPT"
+    }
+  ]
+}

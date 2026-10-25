@@ -2452,6 +2452,21 @@
       "reason": "portable test or evaluation fixture"
     },
     {
+      "path": "evals/fixtures/s2-source-bound-relation-dev/absent-writer.json",
+      "category": "FIXTURE_GENERIC",
+      "reason": "portable test or evaluation fixture"
+    },
+    {
+      "path": "evals/fixtures/s2-source-bound-relation-dev/cases.json",
+      "category": "FIXTURE_GENERIC",
+      "reason": "portable test or evaluation fixture"
+    },
+    {
+      "path": "evals/fixtures/s2-source-bound-relation-dev/dev-labels.json",
+      "category": "FIXTURE_GENERIC",
+      "reason": "portable test or evaluation fixture"
+    },
+    {
       "path": "evals/generic/code-evidence/basic.jsonl",
       "category": "PRODUCT_EVAL",
       "reason": "corpus-agnostic product evaluation"
@@ -3458,6 +3473,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-semantic-pipeline-trace.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-source-bound-relation-dev.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -5013,6 +5033,16 @@
     },
     {
       "path": "scripts/s2-score-section-paired.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/s2-source-bound-absence-study.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/s2-source-bound-relation-study.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
