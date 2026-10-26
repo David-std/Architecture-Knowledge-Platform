@@ -88,6 +88,7 @@ describe("raw HTTP and original citation replay", () => {
   it("replays literal citation through exact pinned HTTP response and UTF-16 original", () => {
     const result = replayS2RawHttpEvidence(base());
     expect(result.status).toBe("REPLAY_VERIFIED");
+    expect(result.inlineCitationMarkers).toBe("ALL_PRESENT");
     expect(result.literalQuotesVerified).toBe(1);
     expect(result.requestResponseBytesReplayed).toBe(true);
     expect(result.quotedSourceSpansReplayed).toBe(true);
@@ -96,6 +97,24 @@ describe("raw HTTP and original citation replay", () => {
     expect(result.semanticEntailmentVerified).toBe(false);
     expect(result.completeAnswerCorrectness).toBeNull();
     expect(result.releaseGateAccepted).toBe(false);
+  });
+  it("records absence of optional Fastify inline citations without inventing a marker", () => {
+    const withAbsentMarkers = responseChanged(base(), (r) => {
+      (r.hits as Record<string, unknown>[])[0]!.citations = [];
+    });
+    const replayed = replayS2RawHttpEvidence(withAbsentMarkers);
+    expect(replayed).toMatchObject({
+      status: "REPLAY_VERIFIED",
+      inlineCitationMarkers: "SOME_ABSENT",
+      quotedSourceSpansReplayed: true,
+      authorizationIndependentlyVerified: false,
+      semanticEntailmentVerified: false,
+      releaseGateAccepted: false,
+    });
+    const absentShape = responseChanged(base(), (r) => {
+      delete (r.hits as Record<string, unknown>[])[0]!.citations;
+    });
+    expect(replayS2RawHttpEvidence(absentShape).status).toBe("REJECTED");
   });
   it("rejects modified request and response bytes after pinning", () => {
     const input = base();

@@ -56,6 +56,11 @@ export interface S2RawHttpEvidenceResult {
   readonly literalQuotesVerified: number;
   readonly requestResponseBytesReplayed: boolean;
   readonly quotedSourceSpansReplayed: boolean;
+  /** Fastify SearchHit may return citations=[] while reporting verified
+   * document path/revision/excerpt. An absent inline marker is NOT an
+   * independently verified citation marker. */
+  readonly inlineCitationMarkers:
+    "ALL_PRESENT" | "SOME_ABSENT" | "NOT_VERIFIED";
   readonly externalPinCustodyAuthenticated: false;
   readonly authorizationIndependentlyVerified: false;
   readonly semanticEntailmentVerified: false;
@@ -69,12 +74,14 @@ export function replayS2RawHttpEvidence(
     status: S2RawHttpEvidenceResult["status"],
     reason: string,
     count = 0,
+    inlineCitationMarkers: S2RawHttpEvidenceResult["inlineCitationMarkers"] = "NOT_VERIFIED",
   ): S2RawHttpEvidenceResult => ({
     status,
     reason,
     literalQuotesVerified: count,
     requestResponseBytesReplayed: status === "REPLAY_VERIFIED",
     quotedSourceSpansReplayed: status === "REPLAY_VERIFIED",
+    inlineCitationMarkers,
     externalPinCustodyAuthenticated: false,
     authorizationIndependentlyVerified: false,
     semanticEntailmentVerified: false,
@@ -166,6 +173,7 @@ export function replayS2RawHttpEvidence(
     verifiedSources.set(source.documentId, { source, text });
   }
   const seen = new Set<string>();
+  let missingInlineCitationMarker = false;
   for (const citation of input.quotes) {
     if (
       !Number.isSafeInteger(citation.hitIndex) ||
@@ -189,11 +197,16 @@ export function replayS2RawHttpEvidence(
       !record(hit.document) ||
       hit.document.path !== source.path ||
       !Array.isArray(hit.citations) ||
-      !hit.citations.includes(source.path + "@" + source.revision) ||
+      (hit.citations.length > 0 &&
+        !hit.citations.includes(source.path + "@" + source.revision)) ||
       typeof hit.excerpt !== "string" ||
       !hit.excerpt.includes(citation.quote)
     )
       return reject("HTTP_HIT_CITATION_OR_EXCERPT_MISMATCH");
+    // No inline citation marker is a known SearchHit transport variant.
+    // Never manufacture one; full raw HTTP identity + source SHA + exact
+    // excerpt/body offsets still must all pass for source-byte replay.
+    if (hit.citations.length === 0) missingInlineCitationMarker = true;
     if (
       !boundary(text, citation.startUtf16) ||
       !boundary(text, citation.endUtf16) ||
@@ -218,5 +231,6 @@ export function replayS2RawHttpEvidence(
     "REPLAY_VERIFIED",
     "PINNED_HTTP_AND_ORIGINAL_SOURCE_SPANS_MATCH",
     seen.size,
+    missingInlineCitationMarker ? "SOME_ABSENT" : "ALL_PRESENT",
   );
 }

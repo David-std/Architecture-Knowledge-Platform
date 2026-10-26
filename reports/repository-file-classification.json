@@ -3152,6 +3152,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-http-admitted-frozen-reader.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-http-evidence-replay.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3408,6 +3413,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-holdout-freeze.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-http-admitted-frozen-reader.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
