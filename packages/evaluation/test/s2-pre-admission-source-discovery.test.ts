@@ -102,6 +102,52 @@ describe("Pre-admission discovery is NOT semantic evidence admission", () => {
       expect(c.authorizedForAnswerCitation).toBe(false);
     }
   });
+  it("replays actual Fastify empty citation arrays without inventing inline authority", () => {
+    const f = fixture();
+    f.resp.hits[0]!.citations = [];
+    f.resp.exploratoryHits[0]!.citations = [];
+    const found = discoverS2PreAdmissionOriginalCandidates(f.assemble());
+    expect(found).toMatchObject({
+      status: "SOURCE_DISCOVERY_ONLY",
+      admittedHitsReported: 1,
+      exploratoryHitsReported: 1,
+      inlineCitationMarkers: "SOME_ABSENT",
+      originalAuthenticationNotIndependentlyVerified: true,
+      independentClaimEntailmentVerified: false,
+      productionAdmission: false,
+      writerRequestIssued: false,
+      releaseGateAccepted: false,
+    });
+    expect(found.candidates.map((c) => c.inlineCitationMarker)).toEqual([
+      "ABSENT",
+      "ABSENT",
+    ]);
+    expect(found.candidates.every((c) => !c.authorizedForAnswerCitation)).toBe(
+      true,
+    );
+    for (const modify of [
+      (candidate: ReturnType<typeof fixture>) => {
+        candidate.resp.exploratoryHits[0]!.citations = [
+          "other/path@unapproved",
+        ];
+      },
+      (candidate: ReturnType<typeof fixture>) => {
+        delete (candidate.resp.exploratoryHits[0] as { citations?: string[] })
+          .citations;
+      },
+      (candidate: ReturnType<typeof fixture>) => {
+        candidate.resp.exploratoryHits[0]!.revision = "unauthorized-revision";
+      },
+    ]) {
+      const altered = fixture();
+      altered.resp.hits[0]!.citations = [];
+      modify(altered);
+      expect(() =>
+        discoverS2PreAdmissionOriginalCandidates(altered.assemble()),
+      ).toThrow();
+    }
+  });
+
   it("does not turn exploratory-only retrieved hits into authorized writer evidence", () => {
     const f = fixture();
     f.resp.hits = [];

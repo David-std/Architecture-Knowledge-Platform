@@ -38,6 +38,8 @@ export interface S2PreAdmissionDiscoveredSource {
   readonly revisionSha256: string;
   readonly sourceSha256: string;
   readonly excerptSha256: string;
+  /** Fastify can omit the inline citation marker while preserving source identity. */
+  readonly inlineCitationMarker: "PRESENT" | "ABSENT";
   readonly startUtf16: number;
   readonly endUtf16: number;
   readonly exactQuote: string;
@@ -56,6 +58,8 @@ export interface S2PreAdmissionDiscovery {
   readonly candidates: readonly S2PreAdmissionDiscoveredSource[];
   readonly originalLiteralMatches: number;
   readonly unmatchedOrRepeatedExcerpts: number;
+  /** Missing inline citation markers are recorded, not fabricated. */
+  readonly inlineCitationMarkers: "ALL_PRESENT" | "SOME_ABSENT";
   readonly originalAuthenticationNotIndependentlyVerified: true;
   readonly noGoldRead: true;
   readonly writerRequestIssued: false;
@@ -215,6 +219,7 @@ export function discoverS2PreAdmissionOriginalCandidates(input: {
   ];
   const candidates: S2PreAdmissionDiscoveredSource[] = [];
   let unmatched = 0;
+  let absentInlineCitation = false;
   for (const [rank, { hit, origin }] of hits.entries()) {
     if (
       !record(hit) ||
@@ -233,7 +238,8 @@ export function discoverS2PreAdmissionOriginalCandidates(input: {
       hit.vaultId !== input.expectedVaultId ||
       hit.lifecycle !== "ACTIVE" ||
       hit.refreshStatus !== "CURRENT" ||
-      !hit.citations.includes(hit.document.path + "@" + hit.revision)
+      (hit.citations.length > 0 &&
+        !hit.citations.includes(hit.document.path + "@" + hit.revision))
     )
       fail("HTTP_HIT_NOT_TRUSTWORTHY");
     const checkedHit = hit as {
@@ -242,7 +248,9 @@ export function discoverS2PreAdmissionOriginalCandidates(input: {
       document: { path: string };
       revision: string;
       excerpt: string;
+      citations: string[];
     };
+    if (checkedHit.citations.length === 0) absentInlineCitation = true;
     if (!input.pathAuthorizer(checkedHit.document.path, checkedHit.vaultId))
       fail("CURRENT_PATH_NOT_AUTHORIZED");
     const key = [
@@ -283,6 +291,8 @@ export function discoverS2PreAdmissionOriginalCandidates(input: {
       revisionSha256: sha(file.revision),
       sourceSha256: file.fileSha256,
       excerptSha256: sha(quote),
+      inlineCitationMarker:
+        checkedHit.citations.length === 0 ? "ABSENT" : "PRESENT",
       startUtf16: at,
       endUtf16: at + quote.length,
       exactQuote: quote,
@@ -304,6 +314,7 @@ export function discoverS2PreAdmissionOriginalCandidates(input: {
     candidates,
     originalLiteralMatches: candidates.length,
     unmatchedOrRepeatedExcerpts: unmatched,
+    inlineCitationMarkers: absentInlineCitation ? "SOME_ABSENT" : "ALL_PRESENT",
     originalAuthenticationNotIndependentlyVerified: true,
     noGoldRead: true,
     writerRequestIssued: false,
