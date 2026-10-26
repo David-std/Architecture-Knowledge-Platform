@@ -172,6 +172,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/api/src/governed-source-integrity.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/api/src/idempotency.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -438,6 +443,11 @@
     },
     {
       "path": "apps/api/test/governed-proposition-shadow.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/governed-source-integrity.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

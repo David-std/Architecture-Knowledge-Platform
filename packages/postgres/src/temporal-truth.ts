@@ -137,6 +137,11 @@ export interface GovernedTemporalEvidenceReference {
   locator: unknown;
   contentHash: string;
   excerpt: string;
+  /** Persisted raw SOURCE metadata; never sourced from the search hit. */
+  sourceSha256: string;
+  sourceObjectKey: string;
+  sourceByteSize: string;
+  sourceMediaType: string | null;
 }
 
 export interface GovernedTemporalFactEvidenceBundle {
@@ -1874,10 +1879,17 @@ export class PostgresTemporalTruthStore {
         locator: unknown;
         content_hash: string;
         excerpt: string;
+        source_sha256: string;
+        source_object_key: string;
+        source_byte_size: string;
+        source_media_type: string | null;
       }>(
         `select distinct
                 e.id,e.space_id,e.vault_id,e.source_id,e.artifact_id,
-                e.locator,e.content_hash,e.excerpt
+                e.locator,e.content_hash,e.excerpt,
+                s.sha256 source_sha256,s.object_key source_object_key,
+                s.byte_size::text source_byte_size,
+                s.media_type source_media_type
            from document_evidence de
            join evidence e
              on e.id=de.evidence_id
@@ -1915,6 +1927,10 @@ export class PostgresTemporalTruthStore {
           locator: row.locator,
           contentHash: row.content_hash,
           excerpt: row.excerpt,
+          sourceSha256: row.source_sha256,
+          sourceObjectKey: row.source_object_key,
+          sourceByteSize: row.source_byte_size,
+          sourceMediaType: row.source_media_type,
         })),
       });
     }

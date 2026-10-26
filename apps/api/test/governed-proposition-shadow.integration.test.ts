@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
+import type { ObjectStore, RawObjectRef } from "@akp/object-store";
 import { describe, expect, it } from "vitest";
 import type { SearchHit } from "@akp/contracts";
 import { Postgres, PostgresTemporalTruthStore } from "@akp/postgres";
@@ -19,9 +21,29 @@ describe.skipIf(!databaseUrl)("governed proposition shadow admission", () => {
     const artifactId = randomUUID();
     const documentId = randomUUID();
     const evidenceId = randomUUID();
-    const sourceHash = "a".repeat(64);
     const excerpt = "Administrative access requires MFA.";
     const body = ["# Administrative access", excerpt].join("\n");
+    const sourceHash = createHash("sha256").update(body).digest("hex");
+    const sourceKey = `sha256/${sourceHash.slice(0, 2)}/${sourceHash}`;
+    const rawRef: RawObjectRef = {
+      sha256: sourceHash,
+      bucket: "shadow-test",
+      key: sourceKey,
+      bytes: Buffer.byteLength(body),
+      mediaType: "text/markdown",
+    };
+    let rawBytes = Buffer.from(body, "utf8");
+    const rawObjectStore: ObjectStore = {
+      async putImmutable() {
+        throw new Error("No raw writes in governed shadow tests");
+      },
+      async exists(sha256) {
+        return sha256 === sourceHash ? rawRef : null;
+      },
+      async get() {
+        return Readable.from([rawBytes]);
+      },
+    };
     const documentHash = createHash("sha256").update(body).digest("hex");
     const evidenceHash = createHash("sha256").update(excerpt).digest("hex");
 
@@ -65,8 +87,8 @@ describe.skipIf(!databaseUrl)("governed proposition shadow admission", () => {
           vaultId,
           "https://example.test/admin-policy",
           sourceHash,
-          body.length,
-          "shadow/admin-policy.md",
+          Buffer.byteLength(body),
+          sourceKey,
         ],
       );
       await db.pool.query(
@@ -100,7 +122,7 @@ describe.skipIf(!databaseUrl)("governed proposition shadow admission", () => {
           JSON.stringify({
             kind: "source",
             source_hash: sourceHash,
-            path: "security/admin.md",
+            path: `source:${sourceId}`,
             heading_path: [],
           }),
           evidenceHash,
@@ -161,6 +183,7 @@ describe.skipIf(!databaseUrl)("governed proposition shadow admission", () => {
 
       const allowed = await evaluateGovernedTemporalPropositionShadow(db, {
         spaceId,
+        rawObjectStore,
         hit,
         query,
         queryProposition,
@@ -181,6 +204,7 @@ describe.skipIf(!databaseUrl)("governed proposition shadow admission", () => {
       const evaluateBoundEvidence = () =>
         evaluateGovernedTemporalPropositionShadow(db, {
           spaceId,
+          rawObjectStore,
           hit,
           query,
           queryProposition,
@@ -281,10 +305,55 @@ describe.skipIf(!databaseUrl)("governed proposition shadow admission", () => {
       ]);
       expect((await evaluateBoundEvidence()).decisions).toHaveLength(1);
 
+      // A matching database excerpt and digest are not sufficient when the
+      // supposedly immutable bytes no longer contain that exact fragment.
+      rawBytes = Buffer.from(
+        body.replace(excerpt, "Different access rule."),
+        "utf8",
+      );
+      expect((await evaluateBoundEvidence()).projectedFacts).toBe(0);
+      rawBytes = Buffer.from(body, "utf8");
+
+      // A raw source with a different size is rejected even if the text
+      // contains the quoted evidence; the whole object must hash correctly.
+      rawBytes = Buffer.from(body + "\nAppended forged source.", "utf8");
+      expect((await evaluateBoundEvidence()).projectedFacts).toBe(0);
+      rawBytes = Buffer.from(body, "utf8");
+
+      // Non-text/OCR sources need a separate artifact-locator attestation:
+      // searching raw binary bytes for extracted prose is not admissible.
+      await db.pool.query(
+        "update sources set media_type='application/pdf' where id=$1",
+        [sourceId],
+      );
+      expect((await evaluateBoundEvidence()).projectedFacts).toBe(0);
+      await db.pool.query(
+        "update sources set media_type='text/markdown' where id=$1",
+        [sourceId],
+      );
+
+      // Explicit lack of an immutable object store fails closed even for a
+      // current fact with apparently valid database-only provenance.
+      const noRawStore = await evaluateGovernedTemporalPropositionShadow(db, {
+        spaceId,
+        hit,
+        query,
+        queryProposition,
+        authorizationPathPrefixes: ["security"],
+      });
+      expect(noRawStore).toEqual({
+        evaluatedFacts: 0,
+        projectedFacts: 0,
+        resolvedCandidates: 0,
+        decisions: [],
+      });
+      expect((await evaluateBoundEvidence()).decisions).toHaveLength(1);
+
       const missingPolarity = await evaluateGovernedTemporalPropositionShadow(
         db,
         {
           spaceId,
+          rawObjectStore,
           hit,
           query,
           queryProposition: {
@@ -300,6 +369,7 @@ describe.skipIf(!databaseUrl)("governed proposition shadow admission", () => {
         db,
         {
           spaceId,
+          rawObjectStore,
           hit,
           query,
           queryProposition: {
@@ -315,6 +385,7 @@ describe.skipIf(!databaseUrl)("governed proposition shadow admission", () => {
         db,
         {
           spaceId,
+          rawObjectStore,
           hit: { ...hit, revision: "shadow:old" },
           query,
           queryProposition,
@@ -328,6 +399,7 @@ describe.skipIf(!databaseUrl)("governed proposition shadow admission", () => {
         db,
         {
           spaceId,
+          rawObjectStore,
           hit: {
             ...hit,
             document: { ...hit.document, path: "security/other.md" },
@@ -343,6 +415,7 @@ describe.skipIf(!databaseUrl)("governed proposition shadow admission", () => {
       // search hit whose actual document falls outside its path scope.
       const denied = await evaluateGovernedTemporalPropositionShadow(db, {
         spaceId,
+        rawObjectStore,
         hit,
         query,
         queryProposition,
@@ -358,6 +431,7 @@ describe.skipIf(!databaseUrl)("governed proposition shadow admission", () => {
 
       const ambiguous = await evaluateGovernedTemporalPropositionShadow(db, {
         spaceId,
+        rawObjectStore,
         hit: { ...hit, excerpt: excerpt + " " + excerpt },
         query,
         queryProposition,

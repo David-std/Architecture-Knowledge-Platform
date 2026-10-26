@@ -1,4 +1,5 @@
 import type { SearchHit } from "@akp/contracts";
+import type { ObjectStore } from "@akp/object-store";
 import {
   LayeredEvidenceAdmissionPipeline,
   projectSupportedTemporalFact,
@@ -12,9 +13,12 @@ import {
   type GovernedTemporalFactEvidenceBundle,
   type Postgres,
 } from "@akp/postgres";
+import { verifyGovernedRawSourceExcerpt } from "./governed-source-integrity.js";
 
 export interface GovernedTemporalPropositionShadowInput {
   readonly spaceId: string;
+  /** Required to prove that a persisted quote exists in original SOURCE bytes. */
+  readonly rawObjectStore?: ObjectStore;
   readonly hit: SearchHit;
   readonly query: string;
   readonly queryProposition: StructuredPropositionQuery & {
@@ -79,6 +83,7 @@ export async function evaluateGovernedTemporalPropositionShadow(
   // older exact matcher (which does not implement a general entailment engine).
   // Never infer polarity or qualifiers from the natural-language query.
   if (
+    !input.rawObjectStore ||
     !input.queryProposition.polarity ||
     input.queryProposition.conditions?.length ||
     input.queryProposition.temporalScope !== undefined ||
@@ -114,6 +119,18 @@ export async function evaluateGovernedTemporalPropositionShadow(
   for (const bundle of bundles) {
     const projection = projectBundle(bundle);
     if (!projection) continue;
+    // Every support evidence ID must be grounded in the verified immutable
+    // SOURCE object; a missing object or an unsupported locator abstains.
+    let rawEvidenceVerified = true;
+    for (const evidence of bundle.evidence) {
+      if (
+        !(await verifyGovernedRawSourceExcerpt(input.rawObjectStore, evidence))
+      ) {
+        rawEvidenceVerified = false;
+        break;
+      }
+    }
+    if (!rawEvidenceVerified) continue;
     projectedFacts += 1;
     const resolved = resolveTemporalFactPropositionForCandidate(
       projection,
