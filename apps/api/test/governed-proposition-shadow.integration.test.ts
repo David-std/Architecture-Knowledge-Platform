@@ -173,6 +173,66 @@ describe.skipIf(!databaseUrl)("governed proposition shadow admission", () => {
         verdict: { kind: "ANSWERS" },
       });
 
+      const missingPolarity = await evaluateGovernedTemporalPropositionShadow(
+        db,
+        {
+          spaceId,
+          hit,
+          query,
+          queryProposition: {
+            subject: queryProposition.subject,
+            predicate: queryProposition.predicate,
+            object: queryProposition.object,
+          },
+          authorizationPathPrefixes: ["security"],
+        },
+      );
+      expect(missingPolarity.evaluatedFacts).toBe(0);
+      const unprovenCondition = await evaluateGovernedTemporalPropositionShadow(
+        db,
+        {
+          spaceId,
+          hit,
+          query,
+          queryProposition: {
+            ...queryProposition,
+            conditions: ["only during the maintenance window"],
+          },
+          authorizationPathPrefixes: ["security"],
+        },
+      );
+      expect(unprovenCondition.evaluatedFacts).toBe(0);
+
+      const staleRevision = await evaluateGovernedTemporalPropositionShadow(
+        db,
+        {
+          spaceId,
+          hit: { ...hit, revision: "shadow:old" },
+          query,
+          queryProposition,
+          authorizationPathPrefixes: ["security"],
+        },
+      );
+      expect(staleRevision.decisions).toEqual([]);
+      expect(staleRevision.evaluatedFacts).toBe(0);
+
+      const differentPath = await evaluateGovernedTemporalPropositionShadow(
+        db,
+        {
+          spaceId,
+          hit: {
+            ...hit,
+            document: { ...hit.document, path: "security/other.md" },
+          },
+          query,
+          queryProposition,
+          authorizationPathPrefixes: ["security"],
+        },
+      );
+      expect(differentPath.evaluatedFacts).toBe(0);
+
+      // A token can read the fact authorization path but cannot use a
+      // search hit whose actual document falls outside its path scope.
       const denied = await evaluateGovernedTemporalPropositionShadow(db, {
         spaceId,
         hit,

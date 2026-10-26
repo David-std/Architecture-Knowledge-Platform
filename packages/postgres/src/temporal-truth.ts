@@ -149,6 +149,9 @@ export interface GovernedTemporalFactEvidenceQuery {
   spaceId: string;
   vaultId: string;
   documentId: string;
+  /** Exact persisted document identity; never trust an unrelated hit revision. */
+  documentPath: string;
+  documentRevision: string;
   authorizationPathPrefixes: Array<string | null>;
   validAt?: string;
   limit?: number;
@@ -1811,6 +1814,31 @@ export class PostgresTemporalTruthStore {
     if (rawQuery.authorizationPathPrefixes.length === 0) {
       throw new Error("TRUTH_AUTHORIZATION_SCOPE_REQUIRED");
     }
+    // The fact's authorization path is not a substitute for the document's
+    // path. Bind the candidate to one persisted, active source revision before
+    // collecting fact/evidence projections; stale or foreign hits fail closed.
+    if (
+      !rawQuery.documentPath ||
+      !rawQuery.documentRevision ||
+      !pathAllowed(rawQuery.documentPath, rawQuery.authorizationPathPrefixes)
+    ) {
+      return [];
+    }
+    const document = await this.db.pool.query<{ id: string }>(
+      `select id from knowledge_documents
+        where id=$1 and space_id=$2 and vault_id=$3
+          and path=$4 and current_revision=$5
+          and lifecycle='ACTIVE'
+        limit 1`,
+      [
+        documentId,
+        spaceId,
+        vaultId,
+        rawQuery.documentPath,
+        rawQuery.documentRevision,
+      ],
+    );
+    if (document.rows.length !== 1) return [];
     const facts = (
       await this.listFacts({
         spaceId,

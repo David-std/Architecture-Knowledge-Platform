@@ -17,7 +17,13 @@ export interface GovernedTemporalPropositionShadowInput {
   readonly spaceId: string;
   readonly hit: SearchHit;
   readonly query: string;
-  readonly queryProposition: StructuredPropositionQuery;
+  readonly queryProposition: StructuredPropositionQuery & {
+    /** Unproved semantic qualifiers are explicitly rejected in this shadow. */
+    readonly conditions?: readonly string[];
+    readonly temporalScope?: string;
+    readonly quantityUnit?: string;
+    readonly modality?: "REQUIRED" | "PERMITTED" | "PROHIBITED" | "OPTIONAL";
+  };
   readonly authorizationPathPrefixes: Array<string | null>;
   readonly validAt?: string;
 }
@@ -68,12 +74,32 @@ export async function evaluateGovernedTemporalPropositionShadow(
   db: Postgres,
   input: GovernedTemporalPropositionShadowInput,
 ): Promise<GovernedTemporalPropositionShadowResult> {
+  // This shadow projection can prove only a fully identified positive/negative
+  // temporal fact. Unsupported qualifiers must not be silently ignored by the
+  // older exact matcher (which does not implement a general entailment engine).
+  // Never infer polarity or qualifiers from the natural-language query.
+  if (
+    !input.queryProposition.polarity ||
+    input.queryProposition.conditions?.length ||
+    input.queryProposition.temporalScope !== undefined ||
+    input.queryProposition.quantityUnit !== undefined ||
+    input.queryProposition.modality !== undefined
+  ) {
+    return {
+      evaluatedFacts: 0,
+      projectedFacts: 0,
+      resolvedCandidates: 0,
+      decisions: [],
+    };
+  }
   const bundles = await new PostgresTemporalTruthStore(
     db,
   ).governedFactEvidenceForDocument({
     spaceId: input.spaceId,
     vaultId: input.hit.vaultId,
     documentId: input.hit.documentId,
+    documentPath: input.hit.document.path,
+    documentRevision: input.hit.revision,
     authorizationPathPrefixes: input.authorizationPathPrefixes,
     ...(input.validAt ? { validAt: input.validAt } : {}),
   });
