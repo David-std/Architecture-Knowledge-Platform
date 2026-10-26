@@ -226,3 +226,82 @@ describe("single retrieval answer-slot provenance contract", () => {
     });
   });
 });
+
+describe("source-bound quantitative answer is checked, not merely an incidental number", () => {
+  async function admittedByReader(
+    quote: string,
+    question: string,
+    value: string,
+  ) {
+    const hit: SearchHit = { ...principalHit(), excerpt: quote };
+    const reader = new ReaderEvidenceVerifier({
+      reader: {
+        id: "source-bound-quantity-v5-test",
+        judge: async () => ({
+          answers: true,
+          quote,
+          requestedFact: "Exact requested answer for this question",
+          extractedAnswer: value,
+        }),
+      },
+    });
+    const pipeline = new LayeredEvidenceAdmissionPipeline({
+      semanticReader: new QueryConditionedSemanticEvidenceReader({
+        verifier: reader,
+      }),
+    });
+    return pipeline.evaluate({ query: question, hit });
+  }
+
+  it("rejects unrelated numbers when the reader extracted a nonnumeric answer", async () => {
+    const result = await admittedByReader(
+      "B3 approval is required before release. An archive contains 17 files.",
+      "How many approvals are required for B3 release?",
+      "approval",
+    );
+    expect(result).toMatchObject({
+      layer: "STRUCTURAL_GUARD",
+      verdict: { kind: "INSUFFICIENT" },
+      reason: "STRUCTURAL_ANSWER_VALUE_REQUIRED_FACT_MISSING",
+    });
+  });
+
+  it("does not use another date to justify an unbound requested year", async () => {
+    const result = await admittedByReader(
+      "The release needs approval. An unrelated archive was created in 2024.",
+      "What year was the release approved?",
+      "approval",
+    );
+    expect(result).toMatchObject({
+      layer: "STRUCTURAL_GUARD",
+      verdict: { kind: "INSUFFICIENT" },
+      reason: "STRUCTURAL_ANSWER_VALUE_REQUIRED_FACT_MISSING",
+    });
+  });
+
+  it("preserves the existing digit-only veto for a genuine spelled cardinal", async () => {
+    const result = await admittedByReader(
+      "The release requires tres security approvals before publication.",
+      "How many security approvals are required before publication?",
+      "tres",
+    );
+    expect(result).toMatchObject({
+      layer: "STRUCTURAL_GUARD",
+      verdict: { kind: "INSUFFICIENT" },
+      reason: "STRUCTURAL_REQUIRED_FACT_MISSING",
+    });
+  });
+
+  it("keeps a uniquely source-bound numeric answer structurally eligible without claiming semantic truth", async () => {
+    const result = await admittedByReader(
+      "The B3 release requires 3 security approvals before publication.",
+      "How many security approvals does B3 release require?",
+      "3",
+    );
+    expect(result.verdict.kind).toBe("ANSWERS");
+    expect(result.reason).toBe("READER_QUOTED_ANSWER");
+    expect(result.layer).toBe("SEMANTIC_READER");
+    // The LAYERED reader's claim can still be wrong about roles or conditions:
+    // this only verifies structure, not independent sentence entailment.
+  });
+});

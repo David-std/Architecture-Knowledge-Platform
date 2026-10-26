@@ -217,42 +217,66 @@ function hardStructuralFactsSatisfied(
   hit: SearchHit,
   query: string,
   span: ExactSourceSpan,
-): boolean {
+  answerEvidence?: QueryConditionedAnswerEvidence,
+):
+  | "STRUCTURAL_REQUIRED_FACT_MISSING"
+  | "STRUCTURAL_ANSWER_VALUE_REQUIRED_FACT_MISSING"
+  | null {
   const evidence = contextualEvidenceSpanText(hit.excerpt, span);
-  if (!evidence.valueText.trim() || !evidence.scopedText.trim()) return false;
-  if (!explicitYearBindingsMatch(evidence.scopedText, query)) return false;
+  if (!evidence.valueText.trim() || !evidence.scopedText.trim())
+    return "STRUCTURAL_REQUIRED_FACT_MISSING";
+  if (!explicitYearBindingsMatch(evidence.scopedText, query))
+    return "STRUCTURAL_REQUIRED_FACT_MISSING";
 
-  // The legacy helper is used only to identify explicit numeric/date question
-  // requirements. Its semantic support decision is deliberately ignored.
+  // A source-bound answer VALUE is a necessary extra structural condition,
+  // never semantic evidence by itself. A numeral elsewhere in the quotation
+  // must not satisfy the count/year the reader claims to have extracted.
   const structuralRequirements = verifyDeterministicPassageSupport(
     { ...hit, excerpt: evidence.scopedText },
     query,
   ).requiredAnswerCues;
+  const selectedValue =
+    answerEvidence?.kind === "LITERAL" && answerEvidence.valueSpan
+      ? hit.excerpt.slice(
+          answerEvidence.valueSpan.startOffset,
+          answerEvidence.valueSpan.endOffset,
+        )
+      : null;
 
-  if (
-    structuralRequirements.includes("QUANTITY") &&
-    (quoteIsOnlyOrdinalListMarker(hit.excerpt, span) ||
+  if (structuralRequirements.includes("QUANTITY")) {
+    if (
+      quoteIsOnlyOrdinalListMarker(hit.excerpt, span) ||
       !quantitativeEvidenceMatches(
         evidence.valueText,
         query,
         evidence.scopedText,
-      ))
-  ) {
-    return false;
+      )
+    )
+      return "STRUCTURAL_REQUIRED_FACT_MISSING";
+    if (
+      answerEvidence !== undefined &&
+      (selectedValue === null ||
+        !quantitativeEvidenceMatches(selectedValue, query, evidence.scopedText))
+    )
+      return "STRUCTURAL_ANSWER_VALUE_REQUIRED_FACT_MISSING";
   }
-  if (
-    structuralRequirements.includes("DATE_YEAR") &&
-    !dateYearEvidenceMatches(evidence.valueText, query)
-  ) {
-    return false;
+  if (structuralRequirements.includes("DATE_YEAR")) {
+    if (!dateYearEvidenceMatches(evidence.valueText, query))
+      return "STRUCTURAL_REQUIRED_FACT_MISSING";
+    if (
+      answerEvidence !== undefined &&
+      (selectedValue === null || !dateYearEvidenceMatches(selectedValue, query))
+    )
+      return "STRUCTURAL_ANSWER_VALUE_REQUIRED_FACT_MISSING";
   }
 
   const requestedYears = explicitYearValues(query);
   if (requestedYears.length > 0) {
     const availableYears = new Set(explicitYearValues(evidence.scopedText));
-    if (requestedYears.some((year) => !availableYears.has(year))) return false;
+    if (requestedYears.some((year) => !availableYears.has(year)))
+      return "STRUCTURAL_REQUIRED_FACT_MISSING";
   }
-  return true;
+  return null;
 }
 
 /**
@@ -350,11 +374,17 @@ export class StructuralEvidenceGuard {
         reason: "STRUCTURAL_NON_ASSERTION_SPAN",
       };
     }
-    if (!hardStructuralFactsSatisfied(hit, query, verdict.quote)) {
+    const structuralFailure = hardStructuralFactsSatisfied(
+      hit,
+      query,
+      verdict.quote,
+      verdict.kind === "ANSWERS" ? verdict.answerEvidence : undefined,
+    );
+    if (structuralFailure !== null) {
       return {
         accepted: false,
         verdict: { kind: "INSUFFICIENT" },
-        reason: "STRUCTURAL_REQUIRED_FACT_MISSING",
+        reason: structuralFailure,
       };
     }
     return {
