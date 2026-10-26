@@ -72,6 +72,69 @@ export function uniqueSourceAnswerValueSpan(
   return found.length === 1 ? found[0]! : null;
 }
 
+/**
+ * A source-located answer may express an exact small cardinal in words.
+ * This is a narrowly typed value parser, NOT semantic entailment or an
+ * instruction to search unrelated source text for quantity words.
+ * Multiword numerals, ordinals, approximations and embedded identifiers
+ * deliberately remain unsupported until separately evaluated.
+ */
+const EXACT_CARDINAL_WORDS: Readonly<Record<string, number>> = Object.freeze({
+  zero: 0,
+  cero: 0,
+  one: 1,
+  uno: 1,
+  una: 1,
+  two: 2,
+  dos: 2,
+  three: 3,
+  tres: 3,
+  four: 4,
+  cuatro: 4,
+  five: 5,
+  cinco: 5,
+  six: 6,
+  seis: 6,
+  seven: 7,
+  siete: 7,
+  eight: 8,
+  ocho: 8,
+  nine: 9,
+  nueve: 9,
+  ten: 10,
+  diez: 10,
+  eleven: 11,
+  once: 11,
+  twelve: 12,
+  doce: 12,
+  thirteen: 13,
+  trece: 13,
+  fourteen: 14,
+  catorce: 14,
+  fifteen: 15,
+  quince: 15,
+  sixteen: 16,
+  dieciseis: 16,
+  dieciséis: 16,
+  seventeen: 17,
+  diecisiete: 17,
+  eighteen: 18,
+  dieciocho: 18,
+  nineteen: 19,
+  diecinueve: 19,
+  twenty: 20,
+  veinte: 20,
+});
+
+export function exactSourceCardinalWord(value: string): number | null {
+  if (!value || value.length > 24) return null;
+  const token = value.normalize("NFC").trim().toLocaleLowerCase("und");
+  if (!/^[\p{L}\p{M}]+$/u.test(token)) return null;
+  return Object.prototype.hasOwnProperty.call(EXACT_CARDINAL_WORDS, token)
+    ? EXACT_CARDINAL_WORDS[token]!
+    : null;
+}
+
 export function sourceAnswerValueMatches(
   originalValue: string,
   reportedValue: string,

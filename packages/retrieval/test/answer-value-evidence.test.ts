@@ -89,12 +89,13 @@ describe("single retrieval answer-slot provenance contract", () => {
       query: "¿Cuántas aprobaciones de seguridad exige B3?",
       hit: principalHit(),
     });
-    // This stage still uses the existing digit-only quantitative guard.
-    // Byte binding alone MUST NOT bypass that rule or assert full entailment.
+    // Explicit small cardinal words are now eligible only when their
+    // typed answer VALUE remains unique and source-bound inside this quote.
+    // This does not certify independently that the subject/relation is true.
     expect(decision).toMatchObject({
-      layer: "STRUCTURAL_GUARD",
-      verdict: { kind: "INSUFFICIENT" },
-      reason: "STRUCTURAL_REQUIRED_FACT_MISSING",
+      layer: "SEMANTIC_READER",
+      verdict: { kind: "ANSWERS", answerEvidence: { answerText: "tres" } },
+      reason: "READER_QUOTED_ANSWER",
     });
   });
 
@@ -279,16 +280,16 @@ describe("source-bound quantitative answer is checked, not merely an incidental 
     });
   });
 
-  it("preserves the existing digit-only veto for a genuine spelled cardinal", async () => {
+  it("admits a genuine source-bound spelled cardinal without scanning other numbers", async () => {
     const result = await admittedByReader(
       "The release requires tres security approvals before publication.",
       "How many security approvals are required before publication?",
       "tres",
     );
     expect(result).toMatchObject({
-      layer: "STRUCTURAL_GUARD",
-      verdict: { kind: "INSUFFICIENT" },
-      reason: "STRUCTURAL_REQUIRED_FACT_MISSING",
+      layer: "SEMANTIC_READER",
+      verdict: { kind: "ANSWERS", answerEvidence: { answerText: "tres" } },
+      reason: "READER_QUOTED_ANSWER",
     });
   });
 

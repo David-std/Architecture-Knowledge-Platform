@@ -4,6 +4,7 @@ import type {
   QueryConditionedEvidenceVerifierInput,
   QueryConditionedAnswerEvidence,
 } from "./answerability.js";
+import { exactSourceCardinalWord } from "./answer-value-evidence.js";
 import { contextualEvidenceSpanText } from "./contextual-evidence.js";
 import { markdownVisibleSource } from "./markdown-visible-source.js";
 import {
@@ -17,6 +18,7 @@ import {
   explicitYearBindingsMatch,
   explicitYearValues,
   quantitativeEvidenceMatches,
+  quantityMeasureScopeMatches,
   verifyDeterministicPassageSupport,
 } from "./support-verifier.js";
 
@@ -244,19 +246,34 @@ function hardStructuralFactsSatisfied(
       : null;
 
   if (structuralRequirements.includes("QUANTITY")) {
+    // The model has already bound one unique exact source value inside its
+    // cited quote. Cardinal *words* are eligible only at that typed value:
+    // never scan headings, document IDs (e.g. Faro-6), unrelated numbers,
+    // free-text paraphrases or untyped legacy reader output for count words.
+    const sourceBoundWordCardinal =
+      answerEvidence?.kind === "LITERAL" &&
+      selectedValue !== null &&
+      exactSourceCardinalWord(selectedValue) !== null &&
+      quantityMeasureScopeMatches(query, evidence.scopedText);
     if (
       quoteIsOnlyOrdinalListMarker(hit.excerpt, span) ||
-      !quantitativeEvidenceMatches(
+      (!quantitativeEvidenceMatches(
         evidence.valueText,
         query,
         evidence.scopedText,
-      )
+      ) &&
+        !sourceBoundWordCardinal)
     )
       return "STRUCTURAL_REQUIRED_FACT_MISSING";
     if (
       answerEvidence !== undefined &&
       (selectedValue === null ||
-        !quantitativeEvidenceMatches(selectedValue, query, evidence.scopedText))
+        (!quantitativeEvidenceMatches(
+          selectedValue,
+          query,
+          evidence.scopedText,
+        ) &&
+          !sourceBoundWordCardinal))
     )
       return "STRUCTURAL_ANSWER_VALUE_REQUIRED_FACT_MISSING";
   }

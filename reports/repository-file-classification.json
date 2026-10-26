@@ -4617,6 +4617,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/retrieval/test/source-cardinal-admission.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/retrieval/test/source-span-provenance.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"

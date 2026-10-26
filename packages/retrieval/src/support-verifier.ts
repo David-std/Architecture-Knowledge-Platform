@@ -1183,6 +1183,22 @@ function queryPredicateAnchors(
   ];
 }
 
+/** Quantity scope is independent of how the source spells its answer value. */
+export function quantityMeasureScopeMatches(
+  query: string,
+  scope: string,
+): boolean {
+  const normalizedQuery = normalizedMatchText(query);
+  const normalizedWindow = normalizedMatchText(scope);
+  const asksMonthly = /\b(month|monthly|per month|mensual|por mes|mes)\b/u.test(
+    normalizedQuery,
+  );
+  return (
+    !asksMonthly ||
+    /\b(month|monthly|per month|mensual|por mes|mes)\b/u.test(normalizedWindow)
+  );
+}
+
 export function quantitativeEvidenceMatches(
   window: string,
   query: string,
@@ -1191,19 +1207,7 @@ export function quantitativeEvidenceMatches(
   const hasNumber = /(?:^|\s)(?:[$€£S\/]\s*)?\d+(?:[.,]\d+)?(?:\s*%|\b)/u.test(
     window,
   );
-  if (!hasNumber) return false;
-  const normalizedQuery = normalizedMatchText(query);
-  const normalizedWindow = normalizedMatchText(scope);
-  const asksMonthly = /\b(month|monthly|per month|mensual|por mes|mes)\b/u.test(
-    normalizedQuery,
-  );
-  if (
-    asksMonthly &&
-    !/\b(month|monthly|per month|mensual|por mes|mes)\b/u.test(normalizedWindow)
-  ) {
-    return false;
-  }
-  return true;
+  return hasNumber && quantityMeasureScopeMatches(query, scope);
 }
 
 export function dateYearEvidenceMatches(
