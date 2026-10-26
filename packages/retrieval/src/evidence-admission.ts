@@ -713,13 +713,18 @@ export class LayeredEvidenceAdmissionPipeline {
   private readonly guard: StructuralEvidenceGuard;
   private readonly propositionMatcher: StructuredPropositionMatcher;
   private readonly semanticReader: SemanticEvidenceReader;
+  private readonly structuredMismatchPolicy: "SEMANTIC_FALLBACK" | "ABSTAIN";
 
   constructor(options: {
     semanticReader: SemanticEvidenceReader;
     guard?: StructuralEvidenceGuard;
     propositionMatcher?: StructuredPropositionMatcher;
+    /** Only governed, original-source-authorized projections may opt in. */
+    structuredMismatchPolicy?: "SEMANTIC_FALLBACK" | "ABSTAIN";
   }) {
     this.semanticReader = options.semanticReader;
+    this.structuredMismatchPolicy =
+      options.structuredMismatchPolicy ?? "SEMANTIC_FALLBACK";
     this.guard = options.guard ?? new StructuralEvidenceGuard();
     this.propositionMatcher =
       options.propositionMatcher ?? new ExactStructuredPropositionMatcher();
@@ -761,6 +766,18 @@ export class LayeredEvidenceAdmissionPipeline {
         return;
       }
 
+      if (
+        this.structuredMismatchPolicy === "ABSTAIN" &&
+        (!input.queryProposition || !input.candidateProposition)
+      ) {
+        output[index] = {
+          layer: "STRUCTURED_PROPOSITION",
+          verdict: { kind: "INSUFFICIENT" },
+          reason: "STRUCTURED_PROPOSITION_UNAVAILABLE",
+        };
+        return;
+      }
+
       if (input.queryProposition && input.candidateProposition) {
         const structured = this.propositionMatcher.match({
           query: input.queryProposition,
@@ -778,6 +795,17 @@ export class LayeredEvidenceAdmissionPipeline {
               : "STRUCTURAL_GUARD",
             verdict: constrained.verdict,
             reason: constrained.reason,
+          };
+          return;
+        }
+        // A pair of governed projections that disagrees on the asserted
+        // subject/predicate must not be promoted by an unrelated model read.
+        // Keep the generic exploratory fallback for existing frozen contracts.
+        if (this.structuredMismatchPolicy === "ABSTAIN") {
+          output[index] = {
+            layer: "STRUCTURED_PROPOSITION",
+            verdict: { kind: "INSUFFICIENT" },
+            reason: "STRUCTURED_PROPOSITION_UNRESOLVED",
           };
           return;
         }

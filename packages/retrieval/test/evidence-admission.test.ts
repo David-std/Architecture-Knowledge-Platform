@@ -638,6 +638,129 @@ describe("R5 layered evidence admission boundaries", () => {
     });
   });
 
+  it("governed structured mismatches never fall back to a model that asserts the inverse relation", async () => {
+    const passage =
+      "Restaurant staff must notify the pest-control company after finding a rodent.";
+    const candidate = hit({ excerpt: passage, title: "Pest escalation" });
+    const read = vi.fn(async () => ({
+      layer: "SEMANTIC_READER" as const,
+      verdict: {
+        kind: "ANSWERS" as const,
+        quote: { startOffset: 0, endOffset: passage.length },
+      },
+      reason: "UNTRUSTED_MODEL_SAYS_YES",
+      readerId: "fixture-unsafe-semantic",
+    }));
+    const semanticReader = { id: "fixture-unsafe-semantic", read };
+    const inverse = {
+      query:
+        "Must the pest-control company notify restaurant staff after finding a rodent?",
+      hit: candidate,
+      queryProposition: {
+        subject: "pest-control company",
+        predicate: "notifies",
+        object: "restaurant staff",
+        polarity: "POSITIVE" as const,
+      },
+      candidateProposition: {
+        subject: "restaurant staff",
+        predicate: "notifies",
+        object: "pest-control company",
+        polarity: "POSITIVE" as const,
+        quote: { startOffset: 0, endOffset: passage.length },
+      },
+    };
+    // Preserve the frozen general-purpose fallback contract.
+    const exploratory = new LayeredEvidenceAdmissionPipeline({
+      semanticReader,
+    });
+    expect((await exploratory.evaluate(inverse)).verdict.kind).toBe("ANSWERS");
+    expect(read).toHaveBeenCalledTimes(1);
+    read.mockClear();
+
+    // Only the explicitly opted-in governed path is strict.
+    const governed = new LayeredEvidenceAdmissionPipeline({
+      semanticReader,
+      structuredMismatchPolicy: "ABSTAIN",
+    });
+    expect(await governed.evaluate(inverse)).toMatchObject({
+      layer: "STRUCTURED_PROPOSITION",
+      verdict: { kind: "INSUFFICIENT" },
+      reason: "STRUCTURED_PROPOSITION_UNRESOLVED",
+    });
+    expect(read).not.toHaveBeenCalled();
+
+    const differentPredicate = {
+      ...inverse,
+      queryProposition: {
+        ...inverse.queryProposition,
+        subject: "restaurant staff",
+        predicate: "releases",
+      },
+    };
+    expect(await governed.evaluate(differentPredicate)).toMatchObject({
+      verdict: { kind: "INSUFFICIENT" },
+      reason: "STRUCTURED_PROPOSITION_UNRESOLVED",
+    });
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("governed structured evaluation rejects missing projections before any model request", async () => {
+    const passage = "The operations board requires two signatures.";
+    const candidate = hit({ excerpt: passage, title: "Operations review" });
+    const read = vi.fn(async () => ({
+      layer: "SEMANTIC_READER" as const,
+      verdict: {
+        kind: "ANSWERS" as const,
+        quote: { startOffset: 0, endOffset: passage.length },
+      },
+      reason: "UNAUTHORIZED_MODEL_FALLBACK",
+    }));
+    const governed = new LayeredEvidenceAdmissionPipeline({
+      semanticReader: { id: "should-never-run", read },
+      structuredMismatchPolicy: "ABSTAIN",
+    });
+    const queryProposition = {
+      subject: "operations board",
+      predicate: "requires",
+      object: "two signatures",
+      polarity: "POSITIVE" as const,
+    };
+    const candidateProposition = {
+      ...queryProposition,
+      quote: { startOffset: 0, endOffset: passage.length },
+    };
+    const decisions = await governed.evaluateBatch([
+      {
+        query: "Does the operations board require two signatures?",
+        hit: candidate,
+        queryProposition,
+      },
+      {
+        query: "Does the operations board require two signatures?",
+        hit: candidate,
+        candidateProposition,
+      },
+      {
+        query: "Does the operations board require two signatures?",
+        hit: candidate,
+        queryProposition,
+        candidateProposition,
+      },
+    ]);
+    expect(decisions.map((x) => x.verdict.kind)).toEqual([
+      "INSUFFICIENT",
+      "INSUFFICIENT",
+      "ANSWERS",
+    ]);
+    expect(decisions.map((x) => x.reason)).toEqual([
+      "STRUCTURED_PROPOSITION_UNAVAILABLE",
+      "STRUCTURED_PROPOSITION_UNAVAILABLE",
+      "STRUCTURAL_SOURCE_SPAN_VALID",
+    ]);
+    expect(read).not.toHaveBeenCalled();
+  });
+
   it("batches only unresolved eligible candidates through semantic ranking", async () => {
     const semantic = hit({
       title: "Retry policy",

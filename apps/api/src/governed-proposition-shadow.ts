@@ -111,6 +111,9 @@ export async function evaluateGovernedTemporalPropositionShadow(
 
   const pipeline = new LayeredEvidenceAdmissionPipeline({
     semanticReader: failClosedSemanticReader,
+    // A mismatch against source-governed fact slots is not a license to
+    // fall back to an LLM, even if a future shadow reader is attached.
+    structuredMismatchPolicy: "ABSTAIN",
   });
   const decisions: GovernedTemporalPropositionShadowDecision[] = [];
   let projectedFacts = 0;
