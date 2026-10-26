@@ -97,7 +97,12 @@ describe.skipIf(!databaseUrl)("governed proposition shadow admission", () => {
           vaultId,
           sourceId,
           artifactId,
-          JSON.stringify({ path: "security/admin.md", paragraph: 1 }),
+          JSON.stringify({
+            kind: "source",
+            source_hash: sourceHash,
+            path: "security/admin.md",
+            heading_path: [],
+          }),
           evidenceHash,
           excerpt,
         ],
@@ -221,6 +226,59 @@ describe.skipIf(!databaseUrl)("governed proposition shadow admission", () => {
         "update source_artifacts set source_hash=$2 where id=$1",
         [artifactId, sourceHash],
       );
+      expect((await evaluateBoundEvidence()).decisions).toHaveLength(1);
+
+      // The SOURCE locator must agree with the active raw-source revision.
+      await db.pool.query(
+        `update evidence
+            set locator=jsonb_set(locator,'{source_hash}',to_jsonb($2::text))
+          where id=$1`,
+        [evidenceId, "b".repeat(64)],
+      );
+      expect((await evaluateBoundEvidence()).evaluatedFacts).toBe(0);
+      await db.pool.query(
+        `update evidence
+            set locator=jsonb_set(locator,'{source_hash}',to_jsonb($2::text))
+          where id=$1`,
+        [evidenceId, sourceHash],
+      );
+      await db.pool.query(
+        "update evidence set locator=locator-'source_hash' where id=$1",
+        [evidenceId],
+      );
+      expect((await evaluateBoundEvidence()).evaluatedFacts).toBe(0);
+      await db.pool.query(
+        `update evidence
+            set locator=jsonb_set(locator,'{source_hash}',to_jsonb($2::text))
+          where id=$1`,
+        [evidenceId, sourceHash],
+      );
+
+      // A persisted fragment whose UTF-8 bytes no longer match its digest
+      // cannot become a proposition even when its original text can be found.
+      await db.pool.query("update evidence set content_hash=$2 where id=$1", [
+        evidenceId,
+        "b".repeat(64),
+      ]);
+      const corruptedDigest = await evaluateBoundEvidence();
+      expect(corruptedDigest).toMatchObject({
+        evaluatedFacts: 1,
+        projectedFacts: 0,
+        decisions: [],
+      });
+      await db.pool.query("update evidence set content_hash=$2 where id=$1", [
+        evidenceId,
+        evidenceHash,
+      ]);
+      await db.pool.query("update evidence set excerpt=$2 where id=$1", [
+        evidenceId,
+        excerpt + " tampered",
+      ]);
+      expect((await evaluateBoundEvidence()).projectedFacts).toBe(0);
+      await db.pool.query("update evidence set excerpt=$2 where id=$1", [
+        evidenceId,
+        excerpt,
+      ]);
       expect((await evaluateBoundEvidence()).decisions).toHaveLength(1);
 
       const missingPolarity = await evaluateGovernedTemporalPropositionShadow(

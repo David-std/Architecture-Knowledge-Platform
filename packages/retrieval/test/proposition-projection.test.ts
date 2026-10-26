@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { TemporalFactView, TruthSupportSet } from "@akp/contracts";
 import { describe, expect, it } from "vitest";
 import {
@@ -80,7 +81,7 @@ function evidence(
       endLine: 4,
       contentHash: "b".repeat(64),
     },
-    contentHash: "c".repeat(64),
+    contentHash: createHash("sha256").update(excerpt, "utf8").digest("hex"),
     excerpt,
     ...override,
   };
@@ -202,6 +203,25 @@ describe("temporal fact proposition projection", () => {
           evidence(EVIDENCE_B, "B"),
         ],
       }),
+    ).toBeNull();
+  });
+
+  it("requires the persisted SHA-256 digest of the exact UTF-8 evidence excerpt", () => {
+    const text = "Límites de acceso 👁️ se revisan.";
+    const valid = evidence(EVIDENCE_A, text);
+    const input = (candidate: GovernedPropositionEvidence) =>
+      projectSupportedTemporalFact({
+        fact: fact(),
+        supportSet: support({ evidenceIds: [EVIDENCE_A] }),
+        evidence: [candidate],
+      });
+
+    expect(input(valid)).not.toBeNull();
+    expect(input({ ...valid, contentHash: "0".repeat(64) })).toBeNull();
+    expect(input({ ...valid, excerpt: text + " alterado" })).toBeNull();
+    expect(input({ ...valid, excerpt: text.normalize("NFD") })).toBeNull();
+    expect(
+      input({ ...valid, contentHash: valid.contentHash.toUpperCase() }),
     ).toBeNull();
   });
 

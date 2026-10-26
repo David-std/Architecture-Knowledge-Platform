@@ -1895,6 +1895,9 @@ export class PostgresTemporalTruthStore {
           where de.document_id=$1
             and de.relation_type='supported_by'
             and e.id=any($4::uuid[])
+            -- The worker's structural/source locator must be pinned to
+            -- the active immutable raw SOURCE revision, not merely a path.
+            and e.locator->>'source_hash'=s.sha256
             and (e.artifact_id is null or a.id is not null)
           order by e.id`,
         [documentId, spaceId, vaultId, history.supportSet.evidenceIds],

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type {
   SearchHit,
   TemporalFactView,
@@ -121,8 +122,10 @@ function evidenceReferenceValid(
     evidence.vaultId === fact.vaultId &&
     Boolean(evidence.id.trim()) &&
     Boolean(evidence.sourceId.trim()) &&
-    /^[a-f0-9]{64}$/iu.test(evidence.contentHash) &&
+    /^[a-f0-9]{64}$/u.test(evidence.contentHash) &&
     Boolean(evidence.excerpt.trim()) &&
+    createHash("sha256").update(evidence.excerpt, "utf8").digest("hex") ===
+      evidence.contentHash &&
     evidence.locator !== null &&
     typeof evidence.locator === "object"
   );
