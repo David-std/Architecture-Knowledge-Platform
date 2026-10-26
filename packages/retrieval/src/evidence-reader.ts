@@ -1,9 +1,11 @@
 import type {
   QueryConditionedEvidenceBatchOptions,
   QueryConditionedEvidenceVerification,
+  QueryConditionedAnswerEvidence,
   QueryConditionedEvidenceVerifier,
   QueryConditionedEvidenceVerifierInput,
 } from "./answerability.js";
+import { uniqueSourceAnswerValueSpan } from "./answer-value-evidence.js";
 import {
   contextualEvidenceText,
   locateEvidenceQuote,
@@ -433,21 +435,6 @@ export class OpenAICompatibleEvidenceReader implements EvidenceReader {
   }
 }
 
-/** A value inside a longer identifier/year is not a bound answer value. */
-function literalAnswerValueInQuote(value: string, quote: string): boolean {
-  const tokenPart = (character: string | undefined) =>
-    character !== undefined && /[\p{L}\p{N}\p{M}_]/u.test(character);
-  for (
-    let index = quote.indexOf(value);
-    index >= 0;
-    index = quote.indexOf(value, index + 1)
-  ) {
-    if (!tokenPart(quote[index - 1]) && !tokenPart(quote[index + value.length]))
-      return true;
-  }
-  return false;
-}
-
 /** Scores candidates so only the most promising ones reach the reader. */
 export interface EvidenceShortlistScorer {
   readonly id: string;
@@ -475,12 +462,6 @@ export interface ReaderEvidenceVerifierOptions {
   readonly shortlistStrategy?: EvidenceShortlistStrategy;
   /** Re-read only the cited quote without heading or broader context. Opt-in. */
   readonly confirmQuoteSufficiency?: boolean;
-  /**
-   * Evaluation-only necessary condition: extracted short answer must be
-   * literally present in the exact source span, except polarity-only yes/no.
-   * This cannot prove entailment and can reject sound paraphrases. Opt-in.
-   */
-  readonly requireExtractedAnswerInQuote?: boolean;
   /** Shortlist score below which a candidate is never read. */
   readonly shortlistFloor?: number;
   readonly concurrency?: number;
@@ -500,7 +481,6 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
   private readonly adaptiveMaxCandidates: number;
   private readonly shortlistStrategy: EvidenceShortlistStrategy;
   private readonly confirmQuoteSufficiency: boolean;
-  private readonly requireExtractedAnswerInQuote: boolean;
   private readonly shortlistFloor: number;
   private readonly concurrency: number;
 
@@ -512,8 +492,6 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
       options.adaptiveMaxCandidates ?? this.shortlistSize;
     this.shortlistStrategy = options.shortlistStrategy ?? "score";
     this.confirmQuoteSufficiency = options.confirmQuoteSufficiency ?? false;
-    this.requireExtractedAnswerInQuote =
-      options.requireExtractedAnswerInQuote ?? false;
     if (!["score", "document-diverse"].includes(this.shortlistStrategy)) {
       throw new Error("Reader shortlistStrategy is invalid");
     }
@@ -551,7 +529,6 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
         ? ["document-diverse"]
         : []),
       ...(this.confirmQuoteSufficiency ? ["quote-confirmed"] : []),
-      ...(this.requireExtractedAnswerInQuote ? ["answer-value-bound"] : []),
       ...(this.adaptiveMaxCandidates > this.shortlistSize
         ? [`adaptive-${this.shortlistSize}-${this.adaptiveMaxCandidates}`]
         : []),
@@ -646,41 +623,6 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
         reason: "READER_QUOTE_NOT_IN_PASSAGE",
       };
     }
-    if (this.requireExtractedAnswerInQuote) {
-      // Necessary source-provenance condition only: quoted text containing
-      // a value is not evidence that the requested relation is true.
-      if (
-        !judgment.requestedFact?.trim() ||
-        !judgment.extractedAnswer?.trim()
-      ) {
-        return {
-          decision: "INSUFFICIENT",
-          ...scored,
-          reason: "READER_EXTRACTED_ANSWER_UNAVAILABLE",
-        };
-      }
-      const extracted = judgment.extractedAnswer
-        .normalize("NFKC")
-        .toLocaleLowerCase("und")
-        .replace(/\s+/gu, " ")
-        .trim();
-      const quoted = input.passage
-        .slice(span.startOffset, span.endOffset)
-        .normalize("NFKC")
-        .toLocaleLowerCase("und")
-        .replace(/\s+/gu, " ")
-        .trim();
-      // Yes/no labels generally occur as implications or denials in source
-      // prose, not as the literal words yes/no. Do not fake an entailment test.
-      const polarityOnly = /^(?:yes|no|sí|si|not|true|false)$/u.test(extracted);
-      if (!polarityOnly && !literalAnswerValueInQuote(extracted, quoted)) {
-        return {
-          decision: "INSUFFICIENT",
-          ...scored,
-          reason: "READER_EXTRACTED_ANSWER_NOT_IN_CITED_SPAN",
-        };
-      }
-    }
     if (this.confirmQuoteSufficiency) {
       // Confirm the original *source bytes inside the final citation offsets*.
       // A restated table row may contain inferred headers absent from the
@@ -715,10 +657,58 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
         };
       }
     }
+    // A v5 reader's requested fact and extracted value must survive through
+    // source verification into the layered structural boundary. Do not turn
+    // literal presence into semantic entailment or rephrase source bytes.
+    let answerEvidence: QueryConditionedAnswerEvidence | undefined;
+    if (
+      judgment.requestedFact !== undefined ||
+      judgment.extractedAnswer !== undefined
+    ) {
+      if (!judgment.requestedFact?.trim() || !judgment.extractedAnswer?.trim())
+        return {
+          decision: "INSUFFICIENT",
+          ...scored,
+          reason: "READER_EXTRACTED_ANSWER_UNAVAILABLE",
+        };
+      const value = judgment.extractedAnswer.trim();
+      const quote = input.passage.slice(span.startOffset, span.endOffset);
+      if (/^(?:yes|no|sí|si|true|false)$/iu.test(value)) {
+        answerEvidence = {
+          kind: "POLARITY",
+          requestedFact: judgment.requestedFact,
+          answerText: value,
+        };
+      } else {
+        const valueSpan = uniqueSourceAnswerValueSpan(
+          quote,
+          value,
+          span.startOffset,
+        );
+        if (valueSpan) {
+          answerEvidence = {
+            kind: "LITERAL",
+            requestedFact: judgment.requestedFact,
+            answerText: value,
+            valueSpan,
+          };
+        }
+        // A paraphrase/translation, repeated value or partial identifier has
+        // no single source-located answer slot. Keep it out of typed evidence.
+        if (!answerEvidence) {
+          return {
+            decision: "INSUFFICIENT",
+            ...scored,
+            reason: "READER_ANSWER_VALUE_NOT_UNIQUELY_SOURCE_BOUND",
+          };
+        }
+      }
+    }
     return {
       decision: "SUPPORTS",
       ...scored,
       evidenceSpan: span,
+      ...(answerEvidence ? { answerEvidence } : {}),
       reason: "READER_QUOTED_ANSWER",
     };
   }

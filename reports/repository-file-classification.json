@@ -2162,6 +2162,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/adr/0006-source-bound-answer-evidence-contract.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/audit-export.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
@@ -4162,6 +4167,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/answer-value-evidence.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/answerability.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -4375,6 +4385,11 @@
       "path": "packages/retrieval/src/table-row-projection.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/retrieval/test/answer-value-evidence.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
     },
     {
       "path": "packages/retrieval/test/answerability.test.ts",

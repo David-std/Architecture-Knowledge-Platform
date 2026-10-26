@@ -64,8 +64,20 @@ export interface QueryConditionedEvidenceSpan {
   endOffset: number;
 }
 
+/** In-memory reader value, bound to the same UTF-16 passage as evidenceSpan.
+ * Literal identity is a necessary provenance condition, never entailment.
+ * This field must not be serialized in public traces or ContextPackets. */
+export interface QueryConditionedAnswerEvidence {
+  readonly requestedFact: string;
+  readonly answerText: string;
+  readonly kind: "LITERAL" | "POLARITY";
+  /** Required for LITERAL; absent for polarity words not written in source. */
+  readonly valueSpan?: QueryConditionedEvidenceSpan;
+}
+
 export interface QueryConditionedEvidenceVerification {
   decision: QueryConditionedEvidenceDecision;
+  readonly answerEvidence?: QueryConditionedAnswerEvidence;
   /** Optional calibrated provider score. Core policy never treats it as proof. */
   score?: number;
   /** SUPPORTS and CONTRADICTS must point to an inspectable source span. */

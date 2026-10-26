@@ -1,8 +1,13 @@
 import type {
   QueryConditionedEvidenceVerification,
   QueryConditionedEvidenceSpan,
+  QueryConditionedAnswerEvidence,
 } from "./answerability.js";
 import { markdownVisibleSource } from "./markdown-visible-source.js";
+import {
+  sourceAnswerValueMatches,
+  uniqueSourceAnswerValueSpan,
+} from "./answer-value-evidence.js";
 
 /** Stable, non-sensitive failures at the verifier/source boundary. */
 export type SourceVerificationFailureCode =
@@ -14,6 +19,7 @@ export type SourceVerificationFailureCode =
   | "QUERY_CONDITIONED_EVIDENCE_SPAN_INVALID"
   | "QUERY_CONDITIONED_EVIDENCE_SPAN_HIDDEN_SOURCE"
   | "QUERY_CONDITIONED_EVIDENCE_SPAN_UNEXPECTED"
+  | "QUERY_CONDITIONED_ANSWER_EVIDENCE_INVALID"
   | "QUERY_CONDITIONED_EVIDENCE_INPUT_INVALID"
   | "QUERY_CONDITIONED_EVIDENCE_BATCH_SIZE_MISMATCH"
   | "QUERY_CONDITIONED_EVIDENCE_VERIFIER_ERROR"
@@ -104,6 +110,81 @@ function spanTouchesHiddenSource(
   );
 }
 
+/** Validate the full reader answer slot without giving it semantic authority. */
+function validateAnswerEvidence(
+  passage: string,
+  cited: QueryConditionedEvidenceSpan,
+  candidate: unknown,
+): QueryConditionedAnswerEvidence | undefined {
+  if (candidate === undefined) return undefined;
+  if (
+    !isRecord(candidate) ||
+    typeof candidate.requestedFact !== "string" ||
+    !candidate.requestedFact.trim() ||
+    candidate.requestedFact.length > 2048 ||
+    typeof candidate.answerText !== "string" ||
+    !candidate.answerText.trim() ||
+    candidate.answerText.length > 2048 ||
+    (candidate.kind !== "LITERAL" && candidate.kind !== "POLARITY")
+  ) {
+    throw new SourceVerificationError(
+      "QUERY_CONDITIONED_ANSWER_EVIDENCE_INVALID",
+    );
+  }
+  if (candidate.kind === "POLARITY") {
+    if (
+      candidate.valueSpan !== undefined ||
+      !/^(?:yes|no|sí|si|true|false)$/iu.test(candidate.answerText.trim())
+    )
+      throw new SourceVerificationError(
+        "QUERY_CONDITIONED_ANSWER_EVIDENCE_INVALID",
+      );
+    return {
+      kind: "POLARITY",
+      requestedFact: candidate.requestedFact,
+      answerText: candidate.answerText,
+    };
+  }
+  if (
+    !validSpan(passage, candidate.valueSpan) ||
+    candidate.valueSpan.startOffset < cited.startOffset ||
+    candidate.valueSpan.endOffset > cited.endOffset ||
+    spanTouchesHiddenSource(passage, candidate.valueSpan) ||
+    !sourceAnswerValueMatches(
+      passage.slice(
+        candidate.valueSpan.startOffset,
+        candidate.valueSpan.endOffset,
+      ),
+      candidate.answerText,
+    ) ||
+    (() => {
+      const uniquelyBound = uniqueSourceAnswerValueSpan(
+        passage.slice(cited.startOffset, cited.endOffset),
+        candidate.answerText,
+        cited.startOffset,
+      );
+      return (
+        !uniquelyBound ||
+        uniquelyBound.startOffset !== candidate.valueSpan.startOffset ||
+        uniquelyBound.endOffset !== candidate.valueSpan.endOffset
+      );
+    })()
+  ) {
+    throw new SourceVerificationError(
+      "QUERY_CONDITIONED_ANSWER_EVIDENCE_INVALID",
+    );
+  }
+  return {
+    kind: "LITERAL",
+    requestedFact: candidate.requestedFact,
+    answerText: candidate.answerText,
+    valueSpan: {
+      startOffset: candidate.valueSpan.startOffset,
+      endOffset: candidate.valueSpan.endOffset,
+    },
+  };
+}
+
 /**
  * Validate untrusted verifier output against the exact UTF-16 passage it was
  * asked to inspect. Both positive and contradictory decisions require a
@@ -176,14 +257,28 @@ export function validateSourceBoundVerification(
         "QUERY_CONDITIONED_EVIDENCE_SPAN_HIDDEN_SOURCE",
       );
     }
+    if (decision === "CONTRADICTS" && result.answerEvidence !== undefined)
+      throw new SourceVerificationError(
+        "QUERY_CONDITIONED_ANSWER_EVIDENCE_INVALID",
+      );
+    const answerEvidence = validateAnswerEvidence(
+      passage,
+      normalizedSpan,
+      result.answerEvidence,
+    );
     return {
       decision,
       ...(score === undefined ? {} : { score }),
       evidenceSpan: normalizedSpan,
+      ...(answerEvidence ? { answerEvidence } : {}),
       reason: reason.trim(),
     };
   }
 
+  if (result.answerEvidence !== undefined)
+    throw new SourceVerificationError(
+      "QUERY_CONDITIONED_ANSWER_EVIDENCE_INVALID",
+    );
   if (evidenceSpan !== undefined) {
     throw new SourceVerificationError(
       "QUERY_CONDITIONED_EVIDENCE_SPAN_UNEXPECTED",

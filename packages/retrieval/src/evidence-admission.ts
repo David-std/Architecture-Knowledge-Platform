@@ -2,6 +2,7 @@ import type { SearchHit } from "@akp/contracts";
 import type {
   QueryConditionedEvidenceVerifier,
   QueryConditionedEvidenceVerifierInput,
+  QueryConditionedAnswerEvidence,
 } from "./answerability.js";
 import { contextualEvidenceSpanText } from "./contextual-evidence.js";
 import { markdownVisibleSource } from "./markdown-visible-source.js";
@@ -28,7 +29,7 @@ export type EvidenceVerdict =
   | {
       readonly kind: "ANSWERS";
       readonly quote: ExactSourceSpan;
-      readonly normalizedAnswer?: string;
+      readonly answerEvidence?: QueryConditionedAnswerEvidence;
     }
   | { readonly kind: "CONTRADICTS"; readonly quote: ExactSourceSpan }
   | { readonly kind: "RELATED_NOT_ANSWERING" }
@@ -323,6 +324,24 @@ export class StructuralEvidenceGuard {
         reason: "STRUCTURAL_HIDDEN_SOURCE_SPAN",
       };
     }
+    // Revalidate the in-memory answer slot at the final authority boundary.
+    // Literal bytes/offsets are necessary, never a subject/role proof.
+    if (verdict.kind === "ANSWERS" && verdict.answerEvidence) {
+      try {
+        validateSourceBoundVerification(hit.excerpt, {
+          decision: "SUPPORTS",
+          reason: "IN_MEMORY_SOURCE_BOUND_SLOT",
+          evidenceSpan: verdict.quote,
+          answerEvidence: verdict.answerEvidence,
+        });
+      } catch {
+        return {
+          accepted: false,
+          verdict: { kind: "INSUFFICIENT" },
+          reason: "STRUCTURAL_ANSWER_SLOT_INVALID",
+        };
+      }
+    }
     const evidence = contextualEvidenceSpanText(hit.excerpt, verdict.quote);
     if (!assertionLike(evidence.valueText)) {
       return {
@@ -420,7 +439,13 @@ function verificationVerdict(
   return {
     verdict:
       verified.decision === "SUPPORTS"
-        ? { kind: "ANSWERS", quote: verified.evidenceSpan! }
+        ? {
+            kind: "ANSWERS",
+            quote: verified.evidenceSpan!,
+            ...(verified.answerEvidence
+              ? { answerEvidence: verified.answerEvidence }
+              : {}),
+          }
         : { kind: "CONTRADICTS", quote: verified.evidenceSpan! },
     reason: verified.reason,
   };

@@ -279,7 +279,7 @@ describe("reader evidence verifier", () => {
     });
   });
 
-  it("optionally rejects answers whose extracted value is missing from the original cited span", async () => {
+  it("always rejects a structured answer with a value absent from its citation", async () => {
     const reader = readerReturning(() => ({
       answers: true,
       quote: "The description is used for messages.",
@@ -290,22 +290,26 @@ describe("reader evidence verifier", () => {
       "The description is used for messages. A TracerProvider provides Tracers.",
       "Which object provides Tracers?",
     );
-    const legacy = new ReaderEvidenceVerifier({ reader });
-    expect((await legacy.verify(item)).decision).toBe("SUPPORTS");
+    // A v5 structured answer cannot pass with a value absent from its cited span,
+    // even when an older optional caller flag was not enabled.
+    const regular = new ReaderEvidenceVerifier({ reader });
+    expect(await regular.verify(item)).toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "READER_ANSWER_VALUE_NOT_UNIQUELY_SOURCE_BOUND",
+    });
     const bound = new ReaderEvidenceVerifier({
       reader,
-      requireExtractedAnswerInQuote: true,
     });
     const checked = await bound.verify(item);
     expect(checked).toMatchObject({
       decision: "INSUFFICIENT",
-      reason: "READER_EXTRACTED_ANSWER_NOT_IN_CITED_SPAN",
+      reason: "READER_ANSWER_VALUE_NOT_UNIQUELY_SOURCE_BOUND",
     });
-    expect(bound.id).toContain("answer-value-bound");
+    expect(bound.id).toBe("reader:fake");
     expect("extractedAnswer" in checked).toBe(false);
   });
 
-  it("retains an explicit answer inside a cited table row with the opt-in binding", async () => {
+  it("retains an explicit answer inside a cited table row with the unified binding", async () => {
     const verifier = new ReaderEvidenceVerifier({
       reader: readerReturning(() => ({
         answers: true,
@@ -313,7 +317,6 @@ describe("reader evidence verifier", () => {
         requestedFact: "Class II deadline",
         extractedAnswer: "24 hours",
       })),
-      requireExtractedAnswerInQuote: true,
     });
     expect(await verifier.verify(input(table))).toMatchObject({
       decision: "SUPPORTS",
@@ -334,11 +337,10 @@ describe("reader evidence verifier", () => {
           requestedFact: "the exact requested name or number",
           extractedAnswer: answer,
         })),
-        requireExtractedAnswerInQuote: true,
       });
       expect(await verifier.verify(input(passage))).toMatchObject({
         decision: "INSUFFICIENT",
-        reason: "READER_EXTRACTED_ANSWER_NOT_IN_CITED_SPAN",
+        reason: "READER_ANSWER_VALUE_NOT_UNIQUELY_SOURCE_BOUND",
       });
     }
   });
@@ -352,7 +354,6 @@ describe("reader evidence verifier", () => {
         requestedFact: "which renewal policy is effective",
         extractedAnswer: "cafe\u0301 renewal policy",
       })),
-      requireExtractedAnswerInQuote: true,
     });
     expect(
       (
@@ -368,8 +369,8 @@ describe("reader evidence verifier", () => {
       reader: readerReturning(() => ({
         answers: true,
         quote: "Blue foxes require two signatures.",
+        requestedFact: "number of signatures required by Blue foxes",
       })),
-      requireExtractedAnswerInQuote: true,
     });
     expect(
       await verifier.verify(input("Blue foxes require two signatures.")),
@@ -387,7 +388,6 @@ describe("reader evidence verifier", () => {
         requestedFact: "whether an overdue loan can be renewed",
         extractedAnswer: "No",
       })),
-      requireExtractedAnswerInQuote: true,
     });
     expect(
       (
