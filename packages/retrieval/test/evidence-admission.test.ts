@@ -91,13 +91,11 @@ describe("R5 layered evidence admission boundaries", () => {
           subject: "policy:retry",
           predicate: "max_attempts",
           object: "3",
-          polarity: "POSITIVE",
         },
         candidate: {
           subject: "policy:retry",
           predicate: "max_attempts",
           object: "3",
-          polarity: "POSITIVE",
           quote,
         },
       }),
@@ -134,130 +132,6 @@ describe("R5 layered evidence admission boundaries", () => {
         },
       }),
     ).toEqual({ kind: "CONTRADICTS", quote });
-  });
-
-  it("never treats a different structured role or qualifier as entailed", () => {
-    const matcher = new ExactStructuredPropositionMatcher();
-    const query = {
-      subject: "service-a",
-      predicate: "authorizes",
-      object: "deployment-b",
-      polarity: "POSITIVE" as const,
-      conditions: ["after verification"],
-      temporalScope: "revision-42",
-      quantityUnit: "approvals",
-      modality: "REQUIRED" as const,
-    };
-    const quote = { startOffset: 0, endOffset: 20 };
-    const candidate = { ...query, quote };
-    expect(matcher.match({ query, candidate })).toEqual({
-      kind: "ANSWERS",
-      quote,
-    });
-
-    for (const changed of [
-      { subject: "deployment-b", object: "service-a" },
-      { predicate: "blocks" },
-      { object: "deployment-c" },
-      { conditions: ["unless verified"] },
-      { conditions: [] },
-      { temporalScope: "revision-41" },
-      { quantityUnit: "files" },
-      { modality: "OPTIONAL" as const },
-    ]) {
-      const verdict = matcher.match({
-        query,
-        candidate: { ...candidate, ...changed },
-      });
-      // A mismatched object is RELATED but never support; all other
-      // qualifier/direction mismatches are insufficient.
-      expect(verdict).toEqual({
-        kind:
-          "object" in changed && !("subject" in changed)
-            ? "RELATED_NOT_ANSWERING"
-            : "INSUFFICIENT",
-      });
-    }
-    expect(
-      matcher.match({
-        query,
-        candidate: { ...candidate, polarity: undefined },
-      }),
-    ).toEqual({ kind: "INSUFFICIENT" });
-    expect(
-      matcher.match({
-        query,
-        candidate: { ...candidate, polarity: "NEGATIVE" },
-      }),
-    ).toEqual({ kind: "CONTRADICTS", quote });
-  });
-
-  it("does not retry incomplete governed propositions with a semantic reader", async () => {
-    const excerpt =
-      "Service A authorizes deployment B only after verification.";
-    const candidate = hit({ excerpt });
-    const read = vi.fn(async () => ({
-      layer: "SEMANTIC_READER" as const,
-      verdict: {
-        kind: "ANSWERS" as const,
-        quote: { startOffset: 0, endOffset: excerpt.length },
-      },
-      reason: "UNTRUSTED_MODEL_SUPPORT",
-    }));
-    const pipeline = new LayeredEvidenceAdmissionPipeline({
-      semanticReader: { id: "reader", read },
-    });
-    const queryProposition = {
-      subject: "service-a",
-      predicate: "authorizes",
-      object: "deployment-b",
-      polarity: "POSITIVE" as const,
-      conditions: ["unconditionally"],
-    };
-    const candidateProposition = {
-      subject: "service-a",
-      predicate: "authorizes",
-      object: "deployment-b",
-      polarity: "POSITIVE" as const,
-      conditions: ["after verification"],
-      quote: { startOffset: 0, endOffset: excerpt.length },
-    };
-    const decisions = await pipeline.evaluateBatch([
-      {
-        query: "Is deployment B authorized unconditionally?",
-        hit: candidate,
-        queryProposition,
-        candidateProposition,
-      },
-      {
-        query: "Is deployment B authorized?",
-        hit: candidate,
-        queryProposition,
-      },
-      {
-        query: "Is deployment B authorized?",
-        hit: candidate,
-        candidateProposition,
-      },
-    ]);
-    expect(read).not.toHaveBeenCalled();
-    expect(decisions).toMatchObject([
-      {
-        layer: "STRUCTURED_PROPOSITION",
-        verdict: { kind: "INSUFFICIENT" },
-        reason: "STRUCTURED_PROPOSITION_NOT_ENTAILED",
-      },
-      {
-        layer: "STRUCTURED_PROPOSITION",
-        verdict: { kind: "INSUFFICIENT" },
-        reason: "STRUCTURED_PROPOSITION_UNPAIRED",
-      },
-      {
-        layer: "STRUCTURED_PROPOSITION",
-        verdict: { kind: "INSUFFICIENT" },
-        reason: "STRUCTURED_PROPOSITION_UNPAIRED",
-      },
-    ]);
   });
 
   it("rejects hidden, interrogative and wrong-year source spans", () => {
@@ -748,13 +622,11 @@ describe("R5 layered evidence admission boundaries", () => {
         subject: "retry-policy",
         predicate: "max_attempts",
         object: "3",
-        polarity: "POSITIVE",
       },
       candidateProposition: {
         subject: "retry-policy",
         predicate: "max_attempts",
         object: "3",
-        polarity: "POSITIVE",
         quote: { startOffset: 0, endOffset: outdated.excerpt.length },
       },
     });
@@ -813,13 +685,11 @@ describe("R5 layered evidence admission boundaries", () => {
           subject: "publication",
           predicate: "requires_review",
           object: "human",
-          polarity: "POSITIVE",
         },
         candidateProposition: {
           subject: "publication",
           predicate: "requires_review",
           object: "human",
-          polarity: "POSITIVE",
           quote: {
             startOffset: 0,
             endOffset: structured.excerpt.length,

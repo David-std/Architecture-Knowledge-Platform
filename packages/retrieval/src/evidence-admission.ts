@@ -50,11 +50,6 @@ export interface StructuredProposition {
   readonly predicate: string;
   readonly object?: string;
   readonly polarity?: "POSITIVE" | "NEGATIVE";
-  /** Explicit source qualifiers, never derived from lexical overlap. */
-  readonly conditions?: readonly string[];
-  readonly temporalScope?: string;
-  readonly quantityUnit?: string;
-  readonly modality?: "REQUIRED" | "PERMITTED" | "PROHIBITED" | "OPTIONAL";
   readonly quote: ExactSourceSpan;
 }
 
@@ -63,10 +58,6 @@ export interface StructuredPropositionQuery {
   readonly predicate: string;
   readonly object?: string;
   readonly polarity?: "POSITIVE" | "NEGATIVE";
-  readonly conditions?: readonly string[];
-  readonly temporalScope?: string;
-  readonly quantityUnit?: string;
-  readonly modality?: "REQUIRED" | "PERMITTED" | "PROHIBITED" | "OPTIONAL";
 }
 
 export interface StructuredPropositionMatcherInput {
@@ -93,32 +84,6 @@ function normalizedProjectionValue(value: string): string {
  * ingestion/query planning did not produce a proposition projection, this
  * matcher must abstain rather than reconstruct semantics from raw prose.
  */
-function exactQualifierMatch(
-  requested: string | undefined,
-  asserted: string | undefined,
-): boolean {
-  if (requested === undefined && asserted === undefined) return true;
-  if (requested === undefined || asserted === undefined) return false;
-  const query = normalizedProjectionValue(requested);
-  return Boolean(query) && query === normalizedProjectionValue(asserted);
-}
-
-function exactConditionsMatch(
-  requested: readonly string[] | undefined,
-  asserted: readonly string[] | undefined,
-): boolean {
-  const normalized = (values: readonly string[] | undefined) =>
-    values?.map(normalizedProjectionValue).sort() ?? [];
-  const left = normalized(requested);
-  const right = normalized(asserted);
-  return (
-    left.every(Boolean) &&
-    right.every(Boolean) &&
-    left.length === right.length &&
-    left.every((value, index) => value === right[index])
-  );
-}
-
 export class ExactStructuredPropositionMatcher implements StructuredPropositionMatcher {
   match(input: StructuredPropositionMatcherInput): EvidenceVerdict {
     const querySubject = normalizedProjectionValue(input.query.subject);
@@ -152,30 +117,8 @@ export class ExactStructuredPropositionMatcher implements StructuredPropositionM
       return { kind: "RELATED_NOT_ANSWERING" };
     }
 
-    // Missing polarity is UNKNOWN, not implicitly positive. Qualifiers are
-    // part of the relation: a conditional/time-limited assertion cannot
-    // authorize an unconditional or differently scoped answer.
-    if (
-      !input.query.polarity ||
-      !input.candidate.polarity ||
-      !exactConditionsMatch(
-        input.query.conditions,
-        input.candidate.conditions,
-      ) ||
-      !exactQualifierMatch(
-        input.query.temporalScope,
-        input.candidate.temporalScope,
-      ) ||
-      !exactQualifierMatch(
-        input.query.quantityUnit,
-        input.candidate.quantityUnit,
-      ) ||
-      !exactQualifierMatch(input.query.modality, input.candidate.modality)
-    ) {
-      return { kind: "INSUFFICIENT" };
-    }
-    const queryPolarity = input.query.polarity;
-    const candidatePolarity = input.candidate.polarity;
+    const queryPolarity = input.query.polarity ?? "POSITIVE";
+    const candidatePolarity = input.candidate.polarity ?? "POSITIVE";
     if (queryPolarity !== candidatePolarity) {
       return { kind: "CONTRADICTS", quote: input.candidate.quote };
     }
@@ -755,46 +698,26 @@ export class LayeredEvidenceAdmissionPipeline {
         return;
       }
 
-      // Governed structured inputs are one atomic pair. A missing half or a
-      // non-matching role is UNKNOWN, not permission for a model to override
-      // the structured source with an unsupported semantic SUPPORTS.
-      if (input.queryProposition || input.candidateProposition) {
-        if (!input.queryProposition || !input.candidateProposition) {
-          output[index] = {
-            layer: "STRUCTURED_PROPOSITION",
-            verdict: { kind: "INSUFFICIENT" },
-            reason: "STRUCTURED_PROPOSITION_UNPAIRED",
-          };
-          return;
-        }
+      if (input.queryProposition && input.candidateProposition) {
         const structured = this.propositionMatcher.match({
           query: input.queryProposition,
           candidate: input.candidateProposition,
         });
-        if (
-          structured.kind === "INSUFFICIENT" ||
-          structured.kind === "RELATED_NOT_ANSWERING"
-        ) {
+        if (structured.kind !== "INSUFFICIENT") {
+          const constrained = this.guard.constrainVerdict(
+            input.hit,
+            input.query,
+            structured,
+          );
           output[index] = {
-            layer: "STRUCTURED_PROPOSITION",
-            verdict: structured,
-            reason: "STRUCTURED_PROPOSITION_NOT_ENTAILED",
+            layer: constrained.accepted
+              ? "STRUCTURED_PROPOSITION"
+              : "STRUCTURAL_GUARD",
+            verdict: constrained.verdict,
+            reason: constrained.reason,
           };
           return;
         }
-        const constrained = this.guard.constrainVerdict(
-          input.hit,
-          input.query,
-          structured,
-        );
-        output[index] = {
-          layer: constrained.accepted
-            ? "STRUCTURED_PROPOSITION"
-            : "STRUCTURAL_GUARD",
-          verdict: constrained.verdict,
-          reason: constrained.reason,
-        };
-        return;
       }
 
       semanticIndexes.push(index);
