@@ -572,6 +572,82 @@ describe("reader evidence verifier", () => {
     });
   });
 
+  it("continues an adaptive shortlist after an incomplete model answer but never admits its claim", async () => {
+    const calls: string[] = [];
+    const query = "How many days before the refund deadline?";
+    const first = input(
+      "The first note mentions refund policy but states no deadline.",
+      query,
+    );
+    const second = input("The refund deadline is 14 days.", query);
+    const verifier = new ReaderEvidenceVerifier({
+      reader: {
+        id: "incomplete-then-source",
+        async judge(value) {
+          calls.push(value.body);
+          if (value.body.includes("first note")) {
+            throw new Error("EVIDENCE_READER_REPLY_INCOMPLETE_ANSWER");
+          }
+          return {
+            answers: true,
+            quote: "The refund deadline is 14 days.",
+            requestedFact: "refund deadline in days",
+            extractedAnswer: "14 days",
+          };
+        },
+      },
+      shortlistSize: 1,
+      adaptiveMaxCandidates: 2,
+      concurrency: 1,
+    });
+    const results = await verifier.verifyBatch([first, second]);
+    expect(results).toHaveLength(2);
+    expect(results[0]).toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "READER_EXTRACTED_ANSWER_UNAVAILABLE",
+    });
+    expect(results[0]?.evidenceSpan).toBeUndefined();
+    expect(results[1]).toMatchObject({
+      decision: "SUPPORTS",
+      reason: "READER_QUOTED_ANSWER",
+      answerEvidence: { kind: "LITERAL", answerText: "14 days" },
+    });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("does not amplify network and timeout failures into adaptive model calls", async () => {
+    for (const failure of [
+      "EVIDENCE_READER_TIMEOUT",
+      "EVIDENCE_READER_NETWORK_ERROR",
+    ]) {
+      const calls: string[] = [];
+      const verifier = new ReaderEvidenceVerifier({
+        reader: {
+          id: "stalled-provider",
+          async judge(value) {
+            calls.push(value.body);
+            throw new Error(failure);
+          },
+        },
+        shortlistSize: 1,
+        adaptiveMaxCandidates: 2,
+      });
+      const result = await verifier.verifyBatch([
+        input("The first selected note."),
+        input("A second note that must remain unread."),
+      ]);
+      expect(result[0]).toMatchObject({
+        decision: "INSUFFICIENT",
+        reason: `READER_ERROR:${failure}`,
+      });
+      expect(result[1]).toMatchObject({
+        decision: "INSUFFICIENT",
+        reason: "NOT_SHORTLISTED_FOR_READING",
+      });
+      expect(calls).toHaveLength(1);
+    }
+  });
+
   it("keeps a candidate exploratory when its judgment fails", async () => {
     let calls = 0;
     const verifier = new ReaderEvidenceVerifier({

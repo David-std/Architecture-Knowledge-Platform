@@ -608,6 +608,22 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
         ...(exactSourceValueOnly ? { exactSourceValueOnly: true } : {}),
       });
     } catch (error) {
+      // A structurally complete transport can still carry a model claim of
+      // ANSWERS without an actual answer, quote or requested fact. This is
+      // semantic insufficiency in one candidate, NOT provider unavailability:
+      // the adaptive shortlist may inspect the next authorized source.
+      // Never admit this candidate or turn provider/network failures into a
+      // request-amplifying fallback.
+      if (
+        error instanceof Error &&
+        error.message === "EVIDENCE_READER_REPLY_INCOMPLETE_ANSWER"
+      ) {
+        return {
+          decision: "INSUFFICIENT",
+          ...scored,
+          reason: "READER_EXTRACTED_ANSWER_UNAVAILABLE",
+        };
+      }
       // One unreadable judgment leaves that candidate exploratory; it does
       // not discard the judgments of the other candidates.
       return {
