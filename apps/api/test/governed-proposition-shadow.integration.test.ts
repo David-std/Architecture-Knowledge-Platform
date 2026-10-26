@@ -173,6 +173,56 @@ describe.skipIf(!databaseUrl)("governed proposition shadow admission", () => {
         verdict: { kind: "ANSWERS" },
       });
 
+      const evaluateBoundEvidence = () =>
+        evaluateGovernedTemporalPropositionShadow(db, {
+          spaceId,
+          hit,
+          query,
+          queryProposition,
+          authorizationPathPrefixes: ["security"],
+          validAt: "2026-01-01T00:00:00.000Z",
+        });
+
+      // A quoted excerpt does not imply a supporting document relation.
+      // Replacing the only supporting edge with a conflicting edge must
+      // prevent the fact from acquiring any eligible source quote.
+      await db.pool.query(
+        `update document_evidence
+            set relation_type='contradicts'
+          where document_id=$1 and evidence_id=$2`,
+        [documentId, evidenceId],
+      );
+      expect((await evaluateBoundEvidence()).evaluatedFacts).toBe(0);
+      await db.pool.query(
+        `update document_evidence
+            set relation_type='supported_by'
+          where document_id=$1 and evidence_id=$2`,
+        [documentId, evidenceId],
+      );
+
+      // A source no longer in its active state is not current evidence,
+      // even if the excerpt still exists in a reviewed document.
+      await db.pool.query("update sources set status='WITHDRAWN' where id=$1", [
+        sourceId,
+      ]);
+      expect((await evaluateBoundEvidence()).evaluatedFacts).toBe(0);
+      await db.pool.query("update sources set status='ACTIVE' where id=$1", [
+        sourceId,
+      ]);
+
+      // A source artifact with the wrong source revision cannot justify the
+      // reviewed fact, irrespective of document text and proposition roles.
+      await db.pool.query(
+        "update source_artifacts set source_hash=$2 where id=$1",
+        [artifactId, "b".repeat(64)],
+      );
+      expect((await evaluateBoundEvidence()).evaluatedFacts).toBe(0);
+      await db.pool.query(
+        "update source_artifacts set source_hash=$2 where id=$1",
+        [artifactId, sourceHash],
+      );
+      expect((await evaluateBoundEvidence()).decisions).toHaveLength(1);
+
       const missingPolarity = await evaluateGovernedTemporalPropositionShadow(
         db,
         {

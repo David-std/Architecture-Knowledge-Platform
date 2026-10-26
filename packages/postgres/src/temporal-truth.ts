@@ -1883,8 +1883,19 @@ export class PostgresTemporalTruthStore {
              on e.id=de.evidence_id
             and e.space_id=$2
             and e.vault_id=$3
+           join sources s
+             on s.id=e.source_id
+            and s.space_id=$2
+            and s.vault_id=$3
+            and s.status='ACTIVE'
+           left join source_artifacts a
+             on a.id=e.artifact_id
+            and a.source_id=s.id
+            and a.source_hash=s.sha256
           where de.document_id=$1
+            and de.relation_type='supported_by'
             and e.id=any($4::uuid[])
+            and (e.artifact_id is null or a.id is not null)
           order by e.id`,
         [documentId, spaceId, vaultId, history.supportSet.evidenceIds],
       );
