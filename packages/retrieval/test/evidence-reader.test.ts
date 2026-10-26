@@ -309,6 +309,160 @@ describe("reader evidence verifier", () => {
     expect("extractedAnswer" in checked).toBe(false);
   });
 
+  it("does not change the original v5 prompt unless source-literal recovery is requested", () => {
+    const input = {
+      query: "How long is the window?",
+      scope: "Policy",
+      body: "The window lasts 14 days.",
+    };
+    const original = evidenceReaderMessages(input);
+    const recovery = evidenceReaderMessages({
+      ...input,
+      exactSourceValueOnly: true,
+    });
+    expect(original[0]).toEqual(recovery[0]);
+    expect(original[1]?.content).toContain('3. "answer": a short answer');
+    expect(original[1]?.content).not.toContain("CONTIGUOUS SUBSTRING");
+    expect(recovery[1]?.content).toContain("CONTIGUOUS SUBSTRING");
+    expect(recovery[1]?.content).toContain('4. "verdict":');
+    expect(recovery[1]?.content).toContain("Question: How long is the window?");
+  });
+
+  it("retries once only when a valid quote has an unbound value, without weakening source offsets", async () => {
+    const sentence = "The approval window lasts 14 days.";
+    const reader = readerReturning((request) => ({
+      answers: true,
+      quote: sentence,
+      requestedFact: "approval duration",
+      extractedAnswer: request.exactSourceValueOnly ? "14 days" : "two weeks",
+    }));
+    const regular = new ReaderEvidenceVerifier({ reader });
+    expect(
+      await regular.verify(input(sentence, "How long is the approval window?")),
+    ).toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "READER_ANSWER_VALUE_NOT_UNIQUELY_SOURCE_BOUND",
+    });
+    expect(reader.calls).toHaveLength(1);
+    const retry = new ReaderEvidenceVerifier({
+      reader,
+      retryUnboundValueOnce: true,
+    });
+    expect(retry.id).toContain("literal-value-retry");
+    const result = await retry.verify(
+      input(sentence, "How long is the approval window?"),
+    );
+    expect(result).toMatchObject({
+      decision: "SUPPORTS",
+      reason: "READER_QUOTED_ANSWER",
+      answerEvidence: {
+        kind: "LITERAL",
+        answerText: "14 days",
+        valueSpan: { startOffset: 26, endOffset: 33 },
+      },
+    });
+    expect(reader.calls).toHaveLength(3);
+    expect(reader.calls[1]).not.toHaveProperty("exactSourceValueOnly");
+    expect(reader.calls[2]).toMatchObject({
+      exactSourceValueOnly: true,
+      body: sentence,
+    });
+    expect(result.evidenceSpan).toEqual({
+      startOffset: 0,
+      // The quote mapper intentionally excludes final sentence punctuation.
+      endOffset: sentence.length - 1,
+    });
+  });
+
+  it("fails closed after a single recovery if a model still paraphrases or invents source content", async () => {
+    for (const answer of ["two weeks", "999 days"]) {
+      const reader = readerReturning((req) => ({
+        answers: true,
+        quote: req.body,
+        requestedFact: "approval duration",
+        extractedAnswer: req.exactSourceValueOnly ? answer : "two weeks",
+      }));
+      const retry = new ReaderEvidenceVerifier({
+        reader,
+        retryUnboundValueOnce: true,
+      });
+      expect(
+        await retry.verify(input("The approval window lasts 14 days.")),
+      ).toMatchObject({
+        decision: "INSUFFICIENT",
+        reason: "READER_ANSWER_VALUE_NOT_UNIQUELY_SOURCE_BOUND",
+      });
+      expect(reader.calls).toHaveLength(2);
+    }
+    const invented = readerReturning((req) => ({
+      answers: true,
+      quote: req.exactSourceValueOnly
+        ? "A forged source quote."
+        : "The approval window lasts 14 days.",
+      requestedFact: "approval duration",
+      extractedAnswer: req.exactSourceValueOnly ? "14 days" : "two weeks",
+    }));
+    expect(
+      await new ReaderEvidenceVerifier({
+        reader: invented,
+        retryUnboundValueOnce: true,
+      }).verify(input("The approval window lasts 14 days.")),
+    ).toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "READER_QUOTE_NOT_IN_PASSAGE",
+    });
+    expect(invented.calls).toHaveLength(2);
+  });
+
+  it("never amplifies a negative, missing quote, or provider failure with an extra call", async () => {
+    const defaults = [
+      {
+        answer: { answers: false, quote: "" },
+        expected: "READER_FOUND_NO_ANSWER",
+      },
+      {
+        answer: {
+          answers: true,
+          quote: "fabricated",
+          requestedFact: "duration",
+          extractedAnswer: "14 days",
+        },
+        expected: "READER_QUOTE_NOT_IN_PASSAGE",
+      },
+    ];
+    for (const item of defaults) {
+      const reader = readerReturning(() => item.answer);
+      expect(
+        await new ReaderEvidenceVerifier({
+          reader,
+          retryUnboundValueOnce: true,
+        }).verify(input("The approval window lasts 14 days.")),
+      ).toMatchObject({
+        decision: "INSUFFICIENT",
+        reason: item.expected,
+      });
+      expect(reader.calls).toHaveLength(1);
+    }
+    let calls = 0;
+    const fail: EvidenceReader = {
+      id: "failed-read",
+      async judge() {
+        calls++;
+        throw new Error("provider overloaded");
+      },
+    };
+    expect(
+      await new ReaderEvidenceVerifier({
+        reader: fail,
+        retryUnboundValueOnce: true,
+      }).verify(input("The approval window lasts 14 days.")),
+    ).toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "READER_ERROR:PROVIDER_FAILURE",
+    });
+    expect(calls).toBe(1);
+  });
+
   it("retains an explicit answer inside a cited table row with the unified binding", async () => {
     const verifier = new ReaderEvidenceVerifier({
       reader: readerReturning(() => ({

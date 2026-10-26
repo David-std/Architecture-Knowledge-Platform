@@ -130,6 +130,8 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
               shortlistStrategy: runtimeConfig.evidenceReader.shortlistStrategy,
               confirmQuoteSufficiency:
                 runtimeConfig.evidenceReader.confirmQuoteSufficiency,
+              retryUnboundValueOnce:
+                runtimeConfig.evidenceReader.retryUnboundValueOnce,
             })
           : undefined);
   // LAYERED admits only through the layered pipeline; the configured reader

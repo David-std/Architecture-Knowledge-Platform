@@ -12,6 +12,8 @@ export interface EvidenceReaderRuntimeConfig {
   adaptiveMaxCandidates: number;
   shortlistStrategy: "score" | "document-diverse";
   confirmQuoteSufficiency: boolean;
+  /** Experimental single retry on a valid quote with an unbound value; off by default. */
+  retryUnboundValueOnce: boolean;
   timeoutMs: number;
   /** Bounded completion-token budget; default 256 preserves current behavior. */
   maxOutputTokens: number;
@@ -262,6 +264,11 @@ export function loadApiRuntimeConfig(
       confirmQuoteSufficiency: booleanSetting(
         env,
         "AKP_EVIDENCE_READER_CONFIRM_QUOTE",
+        false,
+      ),
+      retryUnboundValueOnce: booleanSetting(
+        env,
+        "AKP_EVIDENCE_READER_RETRY_UNBOUND_VALUE_ONCE",
         false,
       ),
       apiKey: env.AKP_EVIDENCE_READER_API_KEY?.trim() || null,

@@ -145,7 +145,20 @@ describe("API runtime configuration", () => {
     expect(loadApiRuntimeConfig(base).evidenceReader).toMatchObject({
       maxOutputTokens: 256,
       reasoningEffort: null,
+      retryUnboundValueOnce: false,
     });
+    expect(
+      loadApiRuntimeConfig({
+        ...base,
+        AKP_EVIDENCE_READER_RETRY_UNBOUND_VALUE_ONCE: "true",
+      }).evidenceReader,
+    ).toMatchObject({ retryUnboundValueOnce: true });
+    expect(() =>
+      loadApiRuntimeConfig({
+        ...base,
+        AKP_EVIDENCE_READER_RETRY_UNBOUND_VALUE_ONCE: "sometimes",
+      }),
+    ).toThrow(/AKP_EVIDENCE_READER_RETRY_UNBOUND_VALUE_ONCE/);
     expect(
       loadApiRuntimeConfig({
         ...base,

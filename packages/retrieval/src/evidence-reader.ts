@@ -36,6 +36,8 @@ export interface EvidenceReaderInput {
   readonly scope: string;
   /** Unit body as lines; table rows are restated with their headers. */
   readonly body: string;
+  /** Optional, at most one reader retry after a failed source-literal rebind. */
+  readonly exactSourceValueOnly?: boolean;
 }
 
 export interface EvidenceReaderJudgment {
@@ -91,7 +93,9 @@ export function evidenceReaderMessages(
         "Steps:",
         '1. "needed": the information requested (a value, date, name, condition, definition, reason, or whether a relation is true OR false), as one fully qualified fact, preserving the requested subject, event, object, row, date, unit of measurement and quantifiers. Do not assume the proposition in the question is true.',
         '2. "answer_span": copy character for character the shortest self-contained passage text that answers the question, retaining its negation, qualifiers, subject and relation direction, in the passage language, or "" if there is none. Never copy the source heading.',
-        '3. "answer": a short answer grounded only in answer_span, or "" when the question cannot be settled. For yes/no questions this may be yes OR no: a prohibition, impossibility, exception, optional requirement or explicit denial can establish no. A statement about the inverse relation, an unrelated exception or silence about the requested fact cannot.',
+        input.exactSourceValueOnly
+          ? '3. "answer": For ANSWERS, extract exactly one unambiguous CONTIGUOUS SUBSTRING of answer_span in its original source language. Preserve exact characters including accents, negatives and number words. NEVER translate, summarize, paraphrase, expand a digit to a word, or include a subject that is outside the selected source substring. For a yes/no question only, answer may be yes or no after deciding the exact subject, relation, scope and polarity. If no unambiguous literal answer value exists in that quote or multiple scattered values are needed, use RELATED_NOT_ANSWERING with empty answer instead.'
+          : '3. "answer": a short answer grounded only in answer_span, or "" when the question cannot be settled. For yes/no questions this may be yes OR no: a prohibition, impossibility, exception, optional requirement or explicit denial can establish no. A statement about the inverse relation, an unrelated exception or silence about the requested fact cannot.',
         '4. "verdict": "ANSWERS" only when answer_span settles that fully qualified fact. A value for another event, metric, date, row or subject does not answer. One special case does not establish a general rule. Do not infer an unstated restriction, relationship, scope or direction. An explicit denial for the requested subject and relation can establish a negative answer. "RELATED_NOT_ANSWERING" when any requested qualifier or fact is missing; "UNRELATED" otherwise.',
         "",
         `Question: ${input.query}`,
@@ -462,6 +466,12 @@ export interface ReaderEvidenceVerifierOptions {
   readonly shortlistStrategy?: EvidenceShortlistStrategy;
   /** Re-read only the cited quote without heading or broader context. Opt-in. */
   readonly confirmQuoteSufficiency?: boolean;
+  /**
+   * Opt-in single bounded second read only if a v5 citation exists but its
+   * extracted answer value cannot bind to a unique source span. No fallback
+   * for absent answers, provider errors or ambiguous source quotations.
+   */
+  readonly retryUnboundValueOnce?: boolean;
   /** Shortlist score below which a candidate is never read. */
   readonly shortlistFloor?: number;
   readonly concurrency?: number;
@@ -481,6 +491,7 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
   private readonly adaptiveMaxCandidates: number;
   private readonly shortlistStrategy: EvidenceShortlistStrategy;
   private readonly confirmQuoteSufficiency: boolean;
+  private readonly retryUnboundValueOnce: boolean;
   private readonly shortlistFloor: number;
   private readonly concurrency: number;
 
@@ -492,6 +503,7 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
       options.adaptiveMaxCandidates ?? this.shortlistSize;
     this.shortlistStrategy = options.shortlistStrategy ?? "score";
     this.confirmQuoteSufficiency = options.confirmQuoteSufficiency ?? false;
+    this.retryUnboundValueOnce = options.retryUnboundValueOnce ?? false;
     if (!["score", "document-diverse"].includes(this.shortlistStrategy)) {
       throw new Error("Reader shortlistStrategy is invalid");
     }
@@ -529,6 +541,7 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
         ? ["document-diverse"]
         : []),
       ...(this.confirmQuoteSufficiency ? ["quote-confirmed"] : []),
+      ...(this.retryUnboundValueOnce ? ["literal-value-retry"] : []),
       ...(this.adaptiveMaxCandidates > this.shortlistSize
         ? [`adaptive-${this.shortlistSize}-${this.adaptiveMaxCandidates}`]
         : []),
@@ -575,6 +588,7 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
   private async read(
     input: QueryConditionedEvidenceVerifierInput,
     score: number | undefined,
+    exactSourceValueOnly = false,
   ): Promise<QueryConditionedEvidenceVerification> {
     const contextual = contextualEvidenceText({
       title: input.title,
@@ -591,6 +605,7 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
         query: input.query,
         scope: contextual.scope,
         body: contextual.body,
+        ...(exactSourceValueOnly ? { exactSourceValueOnly: true } : {}),
       });
     } catch (error) {
       // One unreadable judgment leaves that candidate exploratory; it does
@@ -696,6 +711,14 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
         // A paraphrase/translation, repeated value or partial identifier has
         // no single source-located answer slot. Keep it out of typed evidence.
         if (!answerEvidence) {
+          // The original reader found a real quote, but paraphrased the
+          // extracted value. Retry that SAME source/query once with a strict
+          // literal-value instruction. All source offsets, relation checks
+          // and downstream admission still apply. Never retry an invalid
+          // quote, absent verdict or provider failure, and never loop.
+          if (this.retryUnboundValueOnce && !exactSourceValueOnly) {
+            return this.read(input, score, true);
+          }
           return {
             decision: "INSUFFICIENT",
             ...scored,
