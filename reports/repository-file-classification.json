@@ -4522,6 +4522,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/retrieval/test/partial-batch-admission.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/retrieval/test/ppr.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"

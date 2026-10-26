@@ -108,6 +108,15 @@ export interface QueryConditionedEvidenceBatchOptions {
     index: number,
     result: QueryConditionedEvidenceVerification,
   ) => boolean;
+  /**
+   * Validated by the caller before admission. Incremental observations may
+   * preserve finished source-bound candidates when a bounded batch times out.
+   * Never an independent semantic or citation authority.
+   */
+  readonly onCandidateCompleted?: (
+    index: number,
+    result: QueryConditionedEvidenceVerification,
+  ) => void;
 }
 
 export interface QueryConditionedEvidenceVerifier {

@@ -751,7 +751,15 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
       for (let offset = 0; offset < round.length; offset += this.concurrency) {
         const batch = round.slice(offset, offset + this.concurrency);
         const judged = await Promise.all(
-          batch.map((index) => this.read(inputs[index]!, scores?.[index])),
+          batch.map(async (index) => {
+            const result = await this.read(inputs[index]!, scores?.[index]);
+            try {
+              options?.onCandidateCompleted?.(index, result);
+            } catch {
+              // Observability cannot change the verifier's answer authority.
+            }
+            return result;
+          }),
         );
         batch.forEach((index, position) => {
           results[index] = judged[position]!;

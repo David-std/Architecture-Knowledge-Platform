@@ -550,11 +550,14 @@ export class QueryConditionedSemanticEvidenceReader implements SemanticEvidenceR
       return Promise.all(inputs.map((input) => this.read(input)));
     }
     let rows: unknown;
+    const completed: Array<EvidenceAdmissionDecision | undefined> = new Array(
+      inputs.length,
+    );
+    let closed = false;
     try {
       rows = await this.withTimeout(
-        this.verifier.verifyBatch(
-          inputs,
-          options?.acceptsSupport
+        this.verifier.verifyBatch(inputs, {
+          ...(options?.acceptsSupport
             ? {
                 acceptsSupport: (index, verification) => {
                   const input = inputs[index]!;
@@ -570,9 +573,39 @@ export class QueryConditionedSemanticEvidenceReader implements SemanticEvidenceR
                   });
                 },
               }
-            : undefined,
-        ),
+            : {}),
+          onCandidateCompleted: (index, verification) => {
+            if (
+              closed ||
+              !Number.isSafeInteger(index) ||
+              index < 0 ||
+              index >= inputs.length ||
+              completed[index] !== undefined
+            )
+              return;
+            try {
+              const { verdict, reason } = verificationVerdict(
+                inputs[index]!.passage,
+                verification,
+              );
+              completed[index] = {
+                layer: "SEMANTIC_READER",
+                verdict,
+                reason,
+                readerId: this.id,
+              };
+            } catch (error) {
+              completed[index] = {
+                layer: "SEMANTIC_READER",
+                verdict: { kind: "INSUFFICIENT" },
+                reason: semanticReaderFailureReason(error, verification),
+                readerId: this.id,
+              };
+            }
+          },
+        }),
       );
+      closed = true;
       if (!Array.isArray(rows) || rows.length !== inputs.length) {
         throw new SourceVerificationError(
           "QUERY_CONDITIONED_EVIDENCE_BATCH_SIZE_MISMATCH",
@@ -601,12 +634,25 @@ export class QueryConditionedSemanticEvidenceReader implements SemanticEvidenceR
         }
       });
     } catch (error) {
+      closed = true;
       const decision: EvidenceAdmissionDecision = {
         layer: "SEMANTIC_READER",
         verdict: { kind: "INSUFFICIENT" },
         reason: semanticReaderFailureReason(error, rows),
         readerId: this.id,
       };
+      // Timeout is a transport failure, not proof that completed candidates
+      // had no answer. Preserve only individually source-validated verdicts
+      // that finished before the deadline; never restart the model batch.
+      if (
+        sourceVerificationFailureCode(error) === "SEMANTIC_READER_TIMEOUT" &&
+        completed.some((row) => row !== undefined)
+      ) {
+        return Array.from(
+          { length: inputs.length },
+          (_, index) => completed[index] ?? decision,
+        );
+      }
       return inputs.map(() => decision);
     }
   }
