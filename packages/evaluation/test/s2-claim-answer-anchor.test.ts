@@ -1,5 +1,9 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { checkS2ClaimAnswerAnchor } from "../src/s2-claim-answer-anchor.js";
+import {
+  checkS2ClaimAnswerAnchor,
+  traceS2ReaderAnswerSlotTransfer,
+} from "../src/s2-claim-answer-anchor.js";
 
 describe("answer-to-claim surface anchor (shadow diagnostic)", () => {
   it("binds a unique question answer to the original claim UTF-16 span", () => {
@@ -86,5 +90,98 @@ describe("answer-to-claim surface anchor (shadow diagnostic)", () => {
     expect(checkS2ClaimAnswerAnchor("x", "z".repeat(4097)).status).toBe(
       "REJECTED",
     );
+  });
+});
+
+describe("S2 reader answer-source transfer shadow", () => {
+  const content =
+    "🔍 Faro-6 publishes B3 after tres reviews. The archive has six reviewers.";
+  const original = {
+    assignedSourceId: "source:faro",
+    sourceSha256: createHash("sha256").update(content).digest("hex"),
+    exactUtf8Bytes: Buffer.from(content),
+    bodyStartUtf16: 0,
+    bodyEndUtf16: content.length,
+  };
+  const quote = "🔍 Faro-6 publishes B3 after tres reviews.";
+  const input = {
+    question: "How many reviews does B3 require?",
+    needed: "B3 publication review count",
+    extractedAnswer: "tres",
+    quote,
+    answers: true,
+  };
+  it("pins reader value to original UTF-16 without granting semantic authority", () => {
+    const result = traceS2ReaderAnswerSlotTransfer(input, original);
+    expect(result.status).toBe("LITERAL_VALUE_BOUND_TO_ORIGINAL");
+    expect(
+      content.slice(result.answerValueStartUtf16!, result.answerValueEndUtf16!),
+    ).toBe("tres");
+    expect(result.actualQueryAnswerRoleVerified).toBe(false);
+    expect(result.quantitativeEquivalenceVerified).toBe(false);
+    expect(result.productionAdmission).toBe(false);
+  });
+  it("distinguishes a cross-language paraphrase from a verified literal", () => {
+    const result = traceS2ReaderAnswerSlotTransfer(
+      { ...input, extractedAnswer: "3" },
+      original,
+    );
+    expect(result.status).toBe("EXTRACTED_VALUE_NOT_LITERAL_IN_QUOTE");
+    expect(result.answerValueStartUtf16).toBe(null);
+    expect(result.quantitativeEquivalenceVerified).toBe(false);
+  });
+  it("a digit in a document identifier remains semantically unverified", () => {
+    const result = traceS2ReaderAnswerSlotTransfer(
+      { ...input, extractedAnswer: "6" },
+      original,
+    );
+    expect(result.status).toBe("LITERAL_VALUE_BOUND_TO_ORIGINAL");
+    expect(result.actualQueryAnswerRoleVerified).toBe(false);
+    expect(
+      content.slice(result.answerValueStartUtf16!, result.answerValueEndUtf16!),
+    ).toBe("6");
+  });
+  it("rejects invented evidence and modified original SHA", () => {
+    expect(
+      traceS2ReaderAnswerSlotTransfer(
+        { ...input, quote: quote.replace("tres", "cinco") },
+        original,
+      ).status,
+    ).toBe("INVALID_ORIGINAL_QUOTE");
+    expect(
+      traceS2ReaderAnswerSlotTransfer(input, {
+        ...original,
+        sourceSha256: "0".repeat(64),
+      }).status,
+    ).toBe("INVALID_ORIGINAL_QUOTE");
+  });
+  it("rejects ambiguous duplicated values and boolean answer interpretations", () => {
+    const duplicated = "B3 needs three checks, and another three checks.";
+    const source = {
+      ...original,
+      sourceSha256: createHash("sha256").update(duplicated).digest("hex"),
+      exactUtf8Bytes: Buffer.from(duplicated),
+      bodyEndUtf16: duplicated.length,
+    };
+    expect(
+      traceS2ReaderAnswerSlotTransfer(
+        {
+          ...input,
+          quote: duplicated,
+          extractedAnswer: "three",
+        },
+        source,
+      ).status,
+    ).toBe("EXTRACTED_VALUE_AMBIGUOUS_IN_QUOTE");
+    expect(
+      traceS2ReaderAnswerSlotTransfer(
+        { ...input, extractedAnswer: "No" },
+        original,
+      ).status,
+    ).toBe("BOOLEAN_VALUE_NEEDS_RELATION_CHECK");
+    expect(
+      traceS2ReaderAnswerSlotTransfer({ ...input, answers: false }, original)
+        .status,
+    ).toBe("INVALID_READER_ANSWER");
   });
 });
