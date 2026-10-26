@@ -6,6 +6,10 @@ import {
   assessS2HttpAdmittedReader,
 } from "../src/s2-http-admitted-frozen-reader.js";
 import type { S2SemanticEvidenceConfig } from "../src/s2-semantic-evidence.js";
+import {
+  freezeS2HttpAdmittedAtomicWindowPlan,
+  assessS2HttpAdmittedAtomicWindowChoice,
+} from "../src/s2-atomic-original-window-choice.js";
 
 const sha = (value: string | Uint8Array): string =>
   createHash("sha256").update(value).digest("hex");
@@ -348,5 +352,121 @@ describe("S2 actual HTTP-admitted source-bound evaluation composer (mock HTTP ca
       assessment: { status: "INSUFFICIENT", productionAdmission: false },
       releaseGateAccepted: false,
     });
+  });
+});
+
+describe("S2 HTTP-admitted original window selection stays inside the admitted excerpt", () => {
+  const config = () => ({
+    tokenizerId: "http-bounded-tokenizer@mock",
+    countTokens: async (quote: string, claim: string) =>
+      Math.ceil((quote.length + claim.length) / 4),
+    maxTokens: 160,
+    maxWindows: 4,
+    maxSentencesPerWindow: 1 as const,
+  });
+  it("follows HTTP original SHA/revision/excerpt through frozen W1 and QA+claim proposals", async () => {
+    const data = input();
+    const selector = config();
+    const frozen = await freezeS2HttpAdmittedAtomicWindowPlan(data, selector);
+    expect(frozen.http).toMatchObject({
+      originalHttpQuoteReplay: "REPLAY_VERIFIED",
+      releaseGateAccepted: false,
+    });
+    expect(frozen.atomic.status).toBe("CANDIDATES");
+    expect(frozen.atomic.options.map((o) => o.exactSourceQuote)).toEqual([
+      literal,
+    ]);
+    expect(frozen.atomic.options[0]!.originalStartUtf16).toBe(
+      originalText.indexOf(literal),
+    );
+    expect(
+      frozen.atomic.options.every(
+        (o) =>
+          literal.includes(o.exactSourceQuote) &&
+          !o.exactSourceQuote.includes("No ejecuta despliegues"),
+      ),
+    ).toBe(true);
+    const judged = probes();
+    const result = await assessS2HttpAdmittedAtomicWindowChoice(
+      data,
+      frozen,
+      { windowId: "W1", ...tokens },
+      selector,
+      judged.config,
+    );
+    expect(result).toMatchObject({
+      status: "SOURCE_BOUND_SEMANTIC_CANDIDATE_ONLY",
+      selectedWindowId: "W1",
+      productionAdmission: false,
+      releaseGateAccepted: false,
+    });
+    expect(judged.relevance).toHaveBeenCalledOnce();
+    expect(judged.claim).toHaveBeenCalledOnce();
+  });
+
+  it("refuses exploratory-only Fastify responses even when source bytes and text are correct", async () => {
+    await expect(
+      freezeS2HttpAdmittedAtomicWindowPlan(input(false), config()),
+    ).rejects.toThrow("S2_HTTP_FROZEN_NO_ADMITTED_PROVENANCE");
+  });
+
+  it("holds changed HTTP bytes, question, document source and frozen plan, without semantic probe calls", async () => {
+    const data = input();
+    const selector = config();
+    const frozen = await freezeS2HttpAdmittedAtomicWindowPlan(data, selector);
+    const judged = probes();
+    const originals = [
+      {
+        ...data,
+        rawHttpResponseBytes: Buffer.from(
+          JSON.stringify({ ...response(true), hits: [] }),
+        ),
+      },
+      {
+        ...data,
+        originalQuestion: "¿Qué otra cosa permite publicar?",
+      },
+      {
+        ...data,
+        original: { ...original, fileSha256: "0".repeat(64) },
+      },
+    ];
+    for (const changed of originals) {
+      const result = await assessS2HttpAdmittedAtomicWindowChoice(
+        changed,
+        frozen,
+        { windowId: "W1", ...tokens },
+        selector,
+        judged.config,
+      );
+      expect(result.status).toBe("HELD");
+      expect(result.productionAdmission).toBe(false);
+    }
+    const fabricated = {
+      ...frozen,
+      atomic: {
+        ...frozen.atomic,
+        modelSchema: {
+          ...frozen.atomic.modelSchema,
+          properties: {
+            ...frozen.atomic.modelSchema.properties,
+            windowId: { type: "string" as const, enum: ["W999"] },
+          },
+        },
+      },
+    };
+    const alteredResult = await assessS2HttpAdmittedAtomicWindowChoice(
+      data,
+      fabricated,
+      { windowId: "W1", ...tokens },
+      selector,
+      judged.config,
+    );
+    expect(alteredResult).toMatchObject({
+      status: "HELD",
+      reason: "HTTP_RECEIPT_OR_ATOMIC_WINDOW_PLAN_DRIFT",
+    });
+    expect(judged.relevance).not.toHaveBeenCalled();
+    expect(judged.claim).not.toHaveBeenCalled();
   });
 });
