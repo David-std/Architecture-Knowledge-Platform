@@ -3222,6 +3222,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-reader-claim-review.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-retrieved-writer-bridge.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3503,6 +3508,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-quote-evidence-choice.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-reader-claim-review.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -5042,6 +5052,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/s2-audit-reader-claim-review.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/s2-audit-section-blind-reviewers.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -5068,6 +5083,11 @@
     },
     {
       "path": "scripts/s2-prepare-owner-holdout.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/s2-prepare-reader-claim-review.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
