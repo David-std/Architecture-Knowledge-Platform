@@ -85,6 +85,10 @@ export async function evaluateGovernedTemporalPropositionShadow(
   if (
     !input.rawObjectStore ||
     !input.queryProposition.polarity ||
+    // An omitted or empty object is a wildcard in the generic matcher.
+    // The governed path cannot prove a complete subject→predicate→object
+    // proposition from a wildcard assertion in a free-text question.
+    !input.queryProposition.object?.trim() ||
     input.queryProposition.conditions?.length ||
     input.queryProposition.temporalScope !== undefined ||
     input.queryProposition.quantityUnit !== undefined ||

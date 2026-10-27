@@ -365,6 +365,33 @@ describe.skipIf(!databaseUrl)("governed proposition shadow admission", () => {
         },
       );
       expect(missingPolarity.evaluatedFacts).toBe(0);
+      // The generic exact matcher permits an object wildcard. Governed
+      // source evidence must not answer an unbound value slot by accident.
+      const missingObject = await evaluateGovernedTemporalPropositionShadow(
+        db,
+        {
+          spaceId,
+          rawObjectStore,
+          hit,
+          query,
+          queryProposition: {
+            subject: queryProposition.subject,
+            predicate: queryProposition.predicate,
+            polarity: queryProposition.polarity,
+          },
+          authorizationPathPrefixes: ["security"],
+        },
+      );
+      expect(missingObject.evaluatedFacts).toBe(0);
+      const emptyObject = await evaluateGovernedTemporalPropositionShadow(db, {
+        spaceId,
+        rawObjectStore,
+        hit,
+        query,
+        queryProposition: { ...queryProposition, object: "  " },
+        authorizationPathPrefixes: ["security"],
+      });
+      expect(emptyObject.evaluatedFacts).toBe(0);
       const unprovenCondition = await evaluateGovernedTemporalPropositionShadow(
         db,
         {
