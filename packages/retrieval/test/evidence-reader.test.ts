@@ -463,6 +463,148 @@ describe("reader evidence verifier", () => {
     expect(calls).toBe(1);
   });
 
+  it("continues to an authorized next candidate after a wrong-form yes/no reply", async () => {
+    const first = "The rota is overseen by an engineer.";
+    const second = "Each engineer is on call for one week out of every six.";
+    const calls: string[] = [];
+    const reader: EvidenceReader = {
+      id: "adaptive-form-evidence",
+      async judge(value) {
+        calls.push(value.body);
+        if (value.body.includes(first)) {
+          return {
+            answers: true,
+            quote: first,
+            requestedFact: "on-call frequency",
+            extractedAnswer: "yes",
+          };
+        }
+        return {
+          answers: true,
+          quote: second,
+          requestedFact: "on-call frequency",
+          extractedAnswer: "one week out of every six",
+        };
+      },
+    };
+    const verifier = new ReaderEvidenceVerifier({
+      reader,
+      shortlistSize: 1,
+      adaptiveMaxCandidates: 2,
+      concurrency: 1,
+    });
+    const query = "How often is each engineer on call?";
+    const result = await verifier.verifyBatch([
+      input(first, query),
+      input(second, query),
+    ]);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "READER_ANSWER_FORM_INCOMPATIBLE_WITH_QUERY",
+    });
+    expect(result[1]).toMatchObject({
+      decision: "SUPPORTS",
+      answerEvidence: {
+        kind: "LITERAL",
+        answerText: "one week out of every six",
+      },
+    });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("never treats a source-quoted yes as the requested frequency in EN", async () => {
+    const passage = "Each engineer is on call for one week out of every six.";
+    const reader = readerReturning(() => ({
+      answers: true,
+      quote: passage,
+      requestedFact: "On-call schedule",
+      extractedAnswer: "yes",
+    }));
+    const verdict = await new ReaderEvidenceVerifier({ reader }).verify(
+      input(passage, "How often is each engineer on call?"),
+    );
+    expect(verdict).toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "READER_ANSWER_FORM_INCOMPATIBLE_WITH_QUERY",
+    });
+    expect(verdict.evidenceSpan).toBeUndefined();
+    expect(reader.calls).toHaveLength(1);
+  });
+
+  it("uses at most one opted-in source-literal retry to recover a valid value", async () => {
+    const passage = "Each engineer is on call for one week out of every six.";
+    const reader = readerReturning((request) => ({
+      answers: true,
+      quote: passage,
+      requestedFact: "On-call frequency",
+      extractedAnswer: request.exactSourceValueOnly
+        ? "one week out of every six"
+        : "yes",
+    }));
+    const result = await new ReaderEvidenceVerifier({
+      reader,
+      retryUnboundValueOnce: true,
+    }).verify(input(passage, "How often is each engineer on call?"));
+    expect(result).toMatchObject({
+      decision: "SUPPORTS",
+      reason: "READER_QUOTED_ANSWER",
+      answerEvidence: {
+        kind: "LITERAL",
+        answerText: "one week out of every six",
+      },
+    });
+    expect(reader.calls).toHaveLength(2);
+    expect(reader.calls[0]).not.toHaveProperty("exactSourceValueOnly");
+    expect(reader.calls[1]).toHaveProperty("exactSourceValueOnly", true);
+  });
+
+  it("does not retry indefinitely or accept yes/no on a Spanish condition question", async () => {
+    const passage =
+      "Se renuevan únicamente los préstamos que aún no han vencido.";
+    const reader = readerReturning(() => ({
+      answers: true,
+      quote: passage,
+      requestedFact: "Casos no renovables",
+      extractedAnswer: "no",
+    }));
+    const result = await new ReaderEvidenceVerifier({
+      reader,
+      retryUnboundValueOnce: true,
+    }).verify(input(passage, "¿En qué casos no se puede renovar un préstamo?"));
+    expect(result).toMatchObject({
+      decision: "INSUFFICIENT",
+      reason: "READER_ANSWER_FORM_INCOMPATIBLE_WITH_QUERY",
+    });
+    expect(reader.calls).toHaveLength(2);
+  });
+
+  it("leaves explicit binary questions and conditional-led questions readable", async () => {
+    const passage = "While a SEV1 is active, non-emergency deploys are frozen.";
+    const reader = readerReturning(() => ({
+      answers: true,
+      quote: passage,
+      requestedFact: "Deployment permission",
+      extractedAnswer: "no",
+    }));
+    const verifier = new ReaderEvidenceVerifier({ reader });
+    const result = await verifier.verify(
+      input(passage, "Can regular deploys continue while a SEV1 is open?"),
+    );
+    expect(result).toMatchObject({
+      decision: "SUPPORTS",
+      answerEvidence: { kind: "POLARITY", answerText: "no" },
+    });
+    const conditional = await verifier.verify(
+      input(passage, "When a SEV1 is open, can regular deploys continue?"),
+    );
+    expect(conditional).toMatchObject({
+      decision: "SUPPORTS",
+      answerEvidence: { kind: "POLARITY", answerText: "no" },
+    });
+    expect(reader.calls).toHaveLength(2);
+  });
+
   it("retains an explicit answer inside a cited table row with the unified binding", async () => {
     const verifier = new ReaderEvidenceVerifier({
       reader: readerReturning(() => ({

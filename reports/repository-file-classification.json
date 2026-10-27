@@ -4337,6 +4337,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/question-answer-form.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/reasoning-executor.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -4563,6 +4568,11 @@
     },
     {
       "path": "packages/retrieval/test/query-translation.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/question-answer-form.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -5048,6 +5058,11 @@
     },
     {
       "path": "scripts/s2-audit-owner-holdout-reviews.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/s2-audit-reader-answer-forms.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

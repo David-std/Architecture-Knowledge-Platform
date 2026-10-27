@@ -6,6 +6,7 @@ import type {
   QueryConditionedEvidenceVerifierInput,
 } from "./answerability.js";
 import { uniqueSourceAnswerValueSpan } from "./answer-value-evidence.js";
+import { explicitlyRequestsNonBooleanAnswer } from "./question-answer-form.js";
 import {
   contextualEvidenceText,
   locateEvidenceQuote,
@@ -705,6 +706,19 @@ export class ReaderEvidenceVerifier implements QueryConditionedEvidenceVerifier 
       const value = judgment.extractedAnswer.trim();
       const quote = input.passage.slice(span.startOffset, span.endOffset);
       if (/^(?:yes|no|sí|si|true|false)$/iu.test(value)) {
+        // A yes/no string can be perfectly quoted yet cannot answer an
+        // explicit question asking WHEN, HOW OFTEN or IN WHICH CASES.
+        // This is answer-form sufficiency, not inference about the source.
+        if (explicitlyRequestsNonBooleanAnswer(input.query)) {
+          if (this.retryUnboundValueOnce && !exactSourceValueOnly) {
+            return this.read(input, score, true);
+          }
+          return {
+            decision: "INSUFFICIENT",
+            ...scored,
+            reason: "READER_ANSWER_FORM_INCOMPATIBLE_WITH_QUERY",
+          };
+        }
         answerEvidence = {
           kind: "POLARITY",
           requestedFact: judgment.requestedFact,
