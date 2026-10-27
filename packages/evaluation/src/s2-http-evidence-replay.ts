@@ -23,6 +23,47 @@ const boundary = (value: string, i: number): boolean =>
     value.charCodeAt(i) <= 0xdfff
   );
 
+/**
+ * A quote existing somewhere in SOURCE is not enough to authenticate a
+ * SearchHit excerpt. Require the entire literal excerpt as one contiguous
+ * original body window, with the *same* original quote coordinates inside it.
+ * This prevents a genuine short quote from laundering fabricated neighboring
+ * text, or from being attached to a different occurrence in the same file.
+ * Presentation-only title/heading rewrites are deliberately not raw proofs.
+ */
+function excerptWindowContainsQuote(
+  original: string,
+  bodyStart: number,
+  bodyEnd: number,
+  excerpt: string,
+  quoteStart: number,
+  quoteEnd: number,
+  quote: string,
+): boolean {
+  if (
+    !excerpt ||
+    excerpt.length > bodyEnd - bodyStart ||
+    !boundary(original, quoteStart) ||
+    !boundary(original, quoteEnd)
+  )
+    return false;
+  let start = original.indexOf(excerpt, bodyStart);
+  while (start >= 0 && start + excerpt.length <= bodyEnd) {
+    const offsetStart = quoteStart - start;
+    const offsetEnd = quoteEnd - start;
+    if (
+      boundary(original, start) &&
+      boundary(original, start + excerpt.length) &&
+      offsetStart >= 0 &&
+      offsetEnd <= excerpt.length &&
+      excerpt.slice(offsetStart, offsetEnd) === quote
+    )
+      return true;
+    start = original.indexOf(excerpt, start + 1);
+  }
+  return false;
+}
+
 export interface S2RawHttpOriginal {
   readonly documentId: string;
   readonly vaultId: string;
@@ -216,6 +257,21 @@ export function replayS2RawHttpEvidence(
       text.slice(citation.startUtf16, citation.endUtf16) !== citation.quote
     )
       return reject("QUOTE_DOES_NOT_REPLAY_AT_ORIGINAL_UTF16_SPAN");
+    // The excerpt itself is downstream writer input. Authenticating only a
+    // substring permits a forged surrounding claim to piggyback on a true
+    // quote, or the wrong duplicate occurrence to inherit source authority.
+    if (
+      !excerptWindowContainsQuote(
+        text,
+        source.bodyStartUtf16,
+        source.bodyEndUtf16,
+        hit.excerpt as string,
+        citation.startUtf16,
+        citation.endUtf16,
+        citation.quote,
+      )
+    )
+      return reject("HTTP_EXCERPT_NOT_ORIGINAL_SOURCE_SPAN");
     const identity =
       citation.hitIndex +
       ":" +
