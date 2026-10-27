@@ -1,6 +1,7 @@
 import type { SearchHit } from "@akp/contracts";
 import {
   assessRetrievalAnswerability,
+  collidingRetrievalCandidateKeys,
   retrievalAnswerabilityCandidateKey,
   type CandidateSupportReason,
   type QueryConditionedEvidenceSpan,
@@ -172,27 +173,52 @@ export async function assessRetrievalAnswerabilityWithLayeredAdmission(
   );
   if (hits.length === 0) return baseline;
 
+  // A candidate key identifies a document/unit, not its revision or bytes.
+  // If duplicate keys reach this boundary, a verdict for one SOURCE passage
+  // must never be reassigned to another passage (or a passage outside the
+  // bounded reader window). Detect collisions across the *whole* pool.
+  const collisions = collidingRetrievalCandidateKeys(hits);
+  const collisionDecision: EvidenceAdmissionDecision = {
+    layer: "STRUCTURAL_GUARD",
+    verdict: { kind: "INSUFFICIENT" },
+    reason: "LAYERED_CANDIDATE_KEY_COLLISION",
+  };
+
   const window = hits.slice(0, maxCandidates);
-  let decisions: EvidenceAdmissionDecision[];
-  try {
-    const evaluated: unknown = await pipeline.evaluateBatch(
-      window.map((hit) => ({ query, hit })),
-    );
-    decisions =
-      Array.isArray(evaluated) && evaluated.length === window.length
-        ? (evaluated as EvidenceAdmissionDecision[])
-        : failureDecisions(window.length);
-  } catch {
-    decisions = failureDecisions(window.length);
+  const uniqueWindow = window.filter(
+    (hit) => !collisions.has(retrievalAnswerabilityCandidateKey(hit)),
+  );
+  let verified: EvidenceAdmissionDecision[];
+  if (uniqueWindow.length === 0) {
+    verified = [];
+  } else {
+    try {
+      const evaluated: unknown = await pipeline.evaluateBatch(
+        uniqueWindow.map((hit) => ({ query, hit })),
+      );
+      verified =
+        Array.isArray(evaluated) && evaluated.length === uniqueWindow.length
+          ? (evaluated as EvidenceAdmissionDecision[])
+          : failureDecisions(uniqueWindow.length);
+    } catch {
+      verified = failureDecisions(uniqueWindow.length);
+    }
   }
 
   const traces = new Map<string, QueryConditionedEvidenceTrace>();
-  window.forEach((hit, index) => {
+  for (const hit of hits) {
     const key = retrievalAnswerabilityCandidateKey(hit);
-    if (!traces.has(key)) {
-      traces.set(key, layeredTrace(hit, decisions[index], admissionId));
+    if (collisions.has(key) && !traces.has(key)) {
+      traces.set(key, layeredTrace(hit, collisionDecision, admissionId));
     }
-  });
+  }
+  let nextVerified = 0;
+  for (const hit of window) {
+    const key = retrievalAnswerabilityCandidateKey(hit);
+    if (!collisions.has(key)) {
+      traces.set(key, layeredTrace(hit, verified[nextVerified++], admissionId));
+    }
+  }
   const hitsByKey = new Map(
     hits.map((hit) => [retrievalAnswerabilityCandidateKey(hit), hit]),
   );

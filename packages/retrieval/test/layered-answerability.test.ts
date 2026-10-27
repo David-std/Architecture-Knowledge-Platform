@@ -184,6 +184,75 @@ describe("layered production admission", () => {
     );
   });
 
+  it("does not borrow an admitted quote across colliding unit identities or outside the read window", async () => {
+    const original = hit("The retry budget is 3 attempts.");
+    const stale = hit("The retry budget is 9 attempts.", {
+      documentId: original.documentId,
+      unitId: original.unitId,
+      vaultId: original.vaultId,
+      revision: "older-source-revision",
+    });
+    const separate = hit("The platform team documents deployment procedures.");
+    const reader = semanticReader([original.excerpt]);
+    const readBatch = vi.spyOn(reader, "readBatch");
+    const assessment = await assessRetrievalAnswerabilityWithLayeredAdmission(
+      [original, stale, separate],
+      QUERY,
+      new LayeredEvidenceAdmissionPipeline({ semanticReader: reader }),
+      { maxCandidates: 1 },
+    );
+    expect(assessment.supported).toBe(false);
+    expect(assessment.supportedCandidateKeys).toEqual([]);
+    expect(assessment.candidateSignals.slice(0, 2)).toHaveLength(2);
+    expect(
+      assessment.candidateSignals
+        .slice(0, 2)
+        .map((signal) => signal.queryConditionedEvidence?.reason),
+    ).toEqual([
+      "LAYERED_CANDIDATE_KEY_COLLISION",
+      "LAYERED_CANDIDATE_KEY_COLLISION",
+    ]);
+    expect(readBatch).not.toHaveBeenCalled();
+    expect(
+      assessment.candidateSignals[2]?.queryConditionedEvidence,
+    ).toMatchObject({
+      decision: "NOT_VERIFIED",
+      reason: "LAYERED_ADMISSION_OUTSIDE_BOUNDED_WINDOW",
+    });
+  });
+
+  it("still evaluates unrelated bounded candidates when another unit identity collides", async () => {
+    const first = hit("The retry budget is 3 attempts.");
+    const conflict = hit("The retry budget is 9 attempts.", {
+      documentId: first.documentId,
+      unitId: first.unitId,
+      revision: "other-revision",
+    });
+    const clean = hit("The retry budget is 4 attempts.");
+    const reader = semanticReader([first.excerpt, clean.excerpt]);
+    const readBatch = vi.spyOn(reader, "readBatch");
+    const result = await assessRetrievalAnswerabilityWithLayeredAdmission(
+      [first, conflict, clean],
+      QUERY,
+      new LayeredEvidenceAdmissionPipeline({ semanticReader: reader }),
+      { maxCandidates: 3 },
+    );
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(clean),
+    ]);
+    expect(
+      result.candidateSignals
+        .slice(0, 2)
+        .every(
+          (signal) =>
+            signal.queryConditionedEvidence?.reason ===
+            "LAYERED_CANDIDATE_KEY_COLLISION",
+        ),
+    ).toBe(true);
+    expect(readBatch).toHaveBeenCalledTimes(1);
+    expect(readBatch.mock.calls[0]?.[0]).toHaveLength(1);
+  });
+
   it("never admits candidates outside the bounded window", async () => {
     const pool = [
       hit("The retry budget is 3 attempts per request."),

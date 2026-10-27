@@ -74,6 +74,38 @@ function contribution(
 }
 
 describe("retrieval answerability", () => {
+  it("never admits a duplicate document/unit key in the deterministic baseline", () => {
+    const first = hit(943, {
+      title: "Retry policy",
+      excerpt: "The retry budget is 3 attempts per request.",
+      contributions: [contribution("vector", 0.91, 1)],
+    });
+    const altered = {
+      ...first,
+      revision: "reviewed-previous-revision",
+      excerpt: "The retry budget is 9 attempts per request.",
+    };
+    const unrelated = hit(944, {
+      title: "Maintenance note",
+      excerpt: "The maintenance team archives deployment notes.",
+      contributions: [contribution("vector", 0.7, 3)],
+    });
+    const result = assessRetrievalAnswerability(
+      [first, altered, unrelated],
+      "What is the retry budget?",
+    );
+    expect(result.supported).toBe(false);
+    expect(result.supportedCandidateKeys).toEqual([]);
+    expect(result.candidateSignals.map((s) => s.passageSupport.reason)).toEqual(
+      [
+        "CANDIDATE_KEY_COLLISION",
+        "CANDIDATE_KEY_COLLISION",
+        expect.any(String),
+      ],
+    );
+    expect(result.candidateSignals[2]?.passageSupport.supported).toBe(false);
+  });
+
   it("does not infer a relation from a catalog sentence that lists both entities", () => {
     const catalog = hit(904, {
       title: "FINP and LEDG catalog",
@@ -1553,6 +1585,125 @@ describe("retrieval answerability", () => {
       mode: "SHADOW",
       decision: "SUPPORTS",
     });
+  });
+
+  it("does not apply an ENFORCE verifier result to colliding revisions or unverified duplicates", async () => {
+    const current = hit(940, {
+      title: "Retry policy",
+      excerpt: "The retry budget is 3 attempts per request.",
+      contributions: [contribution("vector", 0.93, 1)],
+    });
+    const old = {
+      ...current,
+      revision: "source-revision-before-review",
+      excerpt: "The retry budget is 9 attempts per request.",
+    };
+    const clean = hit(941, {
+      title: "Independent retry policy",
+      excerpt: "The retry budget is 4 attempts per request.",
+      contributions: [contribution("vector", 0.89, 2)],
+    });
+    const seen: string[] = [];
+    const verifier = {
+      id: "identity-collision-test",
+      async verify(input: { candidateKey: string; passage: string }) {
+        seen.push(input.candidateKey);
+        return {
+          decision: "SUPPORTS" as const,
+          evidenceSpan: {
+            startOffset: 0,
+            endOffset: input.passage.length,
+          },
+          reason: "READ_SOURCE_UNIT",
+        };
+      },
+    };
+    const result = await assessRetrievalAnswerabilityWithVerifier(
+      [current, old, clean],
+      "What is the retry budget?",
+      verifier,
+      { mode: "ENFORCE", maxCandidates: 3 },
+    );
+    expect(result.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(clean),
+    ]);
+    expect(seen).toEqual([retrievalAnswerabilityCandidateKey(clean)]);
+    expect(
+      result.candidateSignals
+        .slice(0, 2)
+        .map((s) => s.queryConditionedEvidence?.reason),
+    ).toEqual([
+      "QUERY_CONDITIONED_CANDIDATE_KEY_COLLISION",
+      "QUERY_CONDITIONED_CANDIDATE_KEY_COLLISION",
+    ]);
+    expect(
+      result.candidateSignals
+        .slice(0, 2)
+        .every((s) => s.passageSupport.supported === false),
+    ).toBe(true);
+  });
+
+  it("withholds a colliding candidate across the bounded verifier window without a model call", async () => {
+    const current = hit(942, {
+      title: "Retry policy",
+      excerpt: "The retry budget is 3 attempts per request.",
+      contributions: [contribution("vector", 0.9, 1)],
+    });
+    const stale = {
+      ...current,
+      revision: "old-revision",
+      excerpt: "The retry budget is 7 attempts per request.",
+    };
+    let calls = 0;
+    const verifier = {
+      id: "batch-collision-test",
+      async verifyBatch() {
+        calls++;
+        throw new Error("provider should not be called for ambiguous keys");
+      },
+      async verify() {
+        calls++;
+        throw new Error("provider should not be called for ambiguous keys");
+      },
+    };
+    const enforce = await assessRetrievalAnswerabilityWithVerifier(
+      [current, stale],
+      "What is the retry budget?",
+      verifier,
+      { mode: "ENFORCE", maxCandidates: 1 },
+    );
+    expect(enforce.supported).toBe(false);
+    expect(enforce.supportedCandidateKeys).toEqual([]);
+    expect(
+      enforce.candidateSignals.every(
+        (signal) =>
+          signal.queryConditionedEvidence?.reason ===
+          "QUERY_CONDITIONED_CANDIDATE_KEY_COLLISION",
+      ),
+    ).toBe(true);
+    expect(calls).toBe(0);
+
+    const baseline = assessRetrievalAnswerability(
+      [current, stale],
+      "What is the retry budget?",
+    );
+    const shadow = await assessRetrievalAnswerabilityWithVerifier(
+      [current, stale],
+      "What is the retry budget?",
+      verifier,
+      { mode: "SHADOW", maxCandidates: 1 },
+    );
+    expect(shadow.supportedCandidateKeys).toEqual(
+      baseline.supportedCandidateKeys,
+    );
+    expect(
+      shadow.candidateSignals.every(
+        (signal) =>
+          signal.queryConditionedEvidence?.reason ===
+          "QUERY_CONDITIONED_CANDIDATE_KEY_COLLISION",
+      ),
+    ).toBe(true);
+    expect(calls).toBe(0);
   });
 
   it("passes only the atomic excerpt to a query-conditioned verifier", async () => {

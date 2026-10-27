@@ -155,6 +155,7 @@ export interface QueryConditionedEvidenceTrace {
 }
 
 export type CandidateSupportReason =
+  | "CANDIDATE_KEY_COLLISION"
   | "DIRECT_CHANNEL_SUPPORT"
   | "GRAPH_INTENT_SUPPORT"
   | "QUERY_CONDITIONED_SUPPORT"
@@ -243,6 +244,25 @@ export function retrievalAnswerabilityCandidateKey(
   hit: Pick<SearchHit, "documentId" | "unitId">,
 ): string {
   return `${hit.documentId}:${hit.unitId ?? "document"}`;
+}
+
+/**
+ * The public candidate key does not include the vault, revision or SOURCE
+ * bytes. A duplicate key is therefore ambiguous at an evidence-decision
+ * boundary, even if one of the candidates lies beyond the verifier window.
+ * Shared by LAYERED and SHADOW/ENFORCE to prevent cross-source verdict reuse.
+ */
+export function collidingRetrievalCandidateKeys(
+  hits: readonly Pick<SearchHit, "documentId" | "unitId">[],
+): ReadonlySet<string> {
+  const seen = new Set<string>();
+  const collisions = new Set<string>();
+  for (const hit of hits) {
+    const key = retrievalAnswerabilityCandidateKey(hit);
+    if (seen.has(key)) collisions.add(key);
+    seen.add(key);
+  }
+  return collisions;
 }
 
 function normalizedIdentity(value: string): string {
@@ -429,11 +449,23 @@ export function assessRetrievalAnswerability(
   policyInput: RetrievalAnswerabilityPolicyInput = {},
   context: RetrievalAnswerabilityContext = {},
 ): RetrievalAnswerabilityAssessment {
+  const collisions = collidingRetrievalCandidateKeys(hits);
   const candidateSignals = collectCandidateAnswerabilitySignals(
     hits,
     query,
     policyInput,
     context,
+  ).map((signal) =>
+    collisions.has(signal.candidateKey)
+      ? {
+          ...signal,
+          passageSupport: {
+            ...signal.passageSupport,
+            supported: false,
+            reason: "CANDIDATE_KEY_COLLISION" as const,
+          },
+        }
+      : signal,
   );
 
   if (candidateSignals.length === 0) {
@@ -627,9 +659,23 @@ async function verifyQueryConditionedEvidence(
   policy: QueryConditionedEvidencePolicy,
 ): Promise<Map<string, QueryConditionedEvidenceTrace>> {
   const output = new Map<string, QueryConditionedEvidenceTrace>();
+  const collisions = collidingRetrievalCandidateKeys(hits);
+  for (const key of collisions) {
+    output.set(key, {
+      verifierId: verifier.id,
+      mode: policy.mode,
+      decision: "INSUFFICIENT",
+      score: null,
+      reason: "QUERY_CONDITIONED_CANDIDATE_KEY_COLLISION",
+      evidenceSpan: null,
+    });
+  }
   const inputs = hits
     .slice(0, policy.maxCandidates)
+    .filter((hit) => !collisions.has(retrievalAnswerabilityCandidateKey(hit)))
     .map((hit) => verifierInput(hit, query));
+  // All ambiguous candidates were rejected before provider invocation.
+  if (inputs.length === 0) return output;
   if (verifier.verifyBatch) {
     try {
       const results: unknown = await verifier.verifyBatch(inputs);
@@ -732,6 +778,7 @@ export async function assessRetrievalAnswerabilityWithVerifier(
   );
   if (hits.length === 0) return baseline;
 
+  const collisionKeys = collidingRetrievalCandidateKeys(hits);
   const traces = await verifyQueryConditionedEvidence(
     hits,
     query,
@@ -755,6 +802,20 @@ export async function assessRetrievalAnswerabilityWithVerifier(
 
     if (verifierPolicy.mode === "SHADOW") {
       return { ...signal, queryConditionedEvidence: trace };
+    }
+
+    // Even deterministic DIRECT_CHANNEL_SUPPORT cannot license an ambiguous
+    // candidate identity in ENFORCE. The shadow keeps its baseline unchanged.
+    if (collisionKeys.has(signal.candidateKey)) {
+      return {
+        ...signal,
+        passageSupport: {
+          ...signal.passageSupport,
+          supported: false,
+          reason: "QUERY_CONDITIONED_INSUFFICIENT" as const,
+        },
+        queryConditionedEvidence: trace,
+      };
     }
 
     const hit = hitsByKey.get(signal.candidateKey);
