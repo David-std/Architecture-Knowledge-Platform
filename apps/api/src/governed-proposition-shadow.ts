@@ -21,13 +21,10 @@ export interface GovernedTemporalPropositionShadowInput {
   readonly rawObjectStore?: ObjectStore;
   readonly hit: SearchHit;
   readonly query: string;
-  readonly queryProposition: StructuredPropositionQuery & {
-    /** Unproved semantic qualifiers are explicitly rejected in this shadow. */
-    readonly conditions?: readonly string[];
-    readonly temporalScope?: string;
-    readonly quantityUnit?: string;
-    readonly modality?: "REQUIRED" | "PERMITTED" | "PROHIBITED" | "OPTIONAL";
-  };
+  /** Same explicit qualifier contract as the retrieval matcher.
+   * This shadow still rejects unsupported qualifiers until a governed
+   * original-query projection and the appropriate SOURCE fact are proven. */
+  readonly queryProposition: StructuredPropositionQuery;
   readonly authorizationPathPrefixes: Array<string | null>;
   readonly validAt?: string;
 }

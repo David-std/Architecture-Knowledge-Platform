@@ -134,6 +134,118 @@ describe("R5 layered evidence admission boundaries", () => {
     ).toEqual({ kind: "CONTRADICTS", quote });
   });
 
+  it("withholds explicitly qualified structured relations when temporal, condition, modality or unit differs", () => {
+    const matcher = new ExactStructuredPropositionMatcher();
+    const quote = { startOffset: 0, endOffset: 41 };
+    const query = {
+      subject: "Sol",
+      predicate: "verified",
+      object: "sample-A",
+      polarity: "POSITIVE" as const,
+      temporalScope: "2026-09-13",
+      conditions: ["after inspection", "sealed"],
+      modality: "REQUIRED" as const,
+      quantityUnit: "mg/L",
+    };
+    const exact = { ...query, quote };
+    expect(matcher.match({ query, candidate: exact })).toEqual({
+      kind: "ANSWERS",
+      quote,
+    });
+    for (const candidate of [
+      { ...exact, temporalScope: "2026-09-12" },
+      { ...exact, temporalScope: undefined },
+      { ...exact, conditions: ["after inspection"] },
+      { ...exact, conditions: undefined },
+      { ...exact, modality: "PERMITTED" as const },
+      { ...exact, quantityUnit: "g/L" },
+      { ...exact, quantityUnit: undefined },
+    ]) {
+      expect(matcher.match({ query, candidate })).toEqual({
+        kind: "RELATED_NOT_ANSWERING",
+      });
+    }
+    expect(
+      matcher.match({
+        query: { ...query, conditions: [" sealed ", "AFTER inspection"] },
+        candidate: exact,
+      }),
+    ).toEqual({ kind: "ANSWERS", quote });
+    // A qualified source is not an unconditional fact.
+    expect(
+      matcher.match({
+        query: { subject: "Sol", predicate: "verified", object: "sample-A" },
+        candidate: exact,
+      }),
+    ).toEqual({ kind: "RELATED_NOT_ANSWERING" });
+  });
+
+  it("never lets a semantic reader override a governed temporal mismatch", async () => {
+    const excerpt = "Sol verified sample-A on September 12, 2026.";
+    const read = vi.fn(async () => ({
+      layer: "SEMANTIC_READER" as const,
+      verdict: {
+        kind: "ANSWERS" as const,
+        quote: { startOffset: 0, endOffset: excerpt.length },
+      },
+      reason: "UNTRUSTED_READER_CLAIM",
+    }));
+    const result = await new LayeredEvidenceAdmissionPipeline({
+      semanticReader: { id: "mock-reader", read },
+      structuredMismatchPolicy: "ABSTAIN",
+    }).evaluate({
+      query: "Who verified sample-A on September 13, 2026?",
+      hit: hit({ excerpt }),
+      queryProposition: {
+        subject: "Sol",
+        predicate: "verified",
+        object: "sample-A",
+        temporalScope: "2026-09-13",
+      },
+      candidateProposition: {
+        subject: "Sol",
+        predicate: "verified",
+        object: "sample-A",
+        temporalScope: "2026-09-12",
+        quote: { startOffset: 0, endOffset: excerpt.length },
+      },
+    });
+    expect(result).toMatchObject({
+      layer: "STRUCTURED_PROPOSITION",
+      verdict: { kind: "RELATED_NOT_ANSWERING" },
+    });
+    expect(read).not.toHaveBeenCalled();
+
+    // Even the legacy general fallback policy cannot override a known,
+    // explicit SOURCE temporal mismatch with an LLM support proposal.
+    const defaultPipeline = new LayeredEvidenceAdmissionPipeline({
+      semanticReader: { id: "mock-reader", read },
+    });
+    expect(
+      await defaultPipeline.evaluate({
+        query: "Who verified sample-A on September 13, 2026?",
+        hit: hit({ excerpt }),
+        queryProposition: {
+          subject: "Sol",
+          predicate: "verified",
+          object: "sample-A",
+          temporalScope: "2026-09-13",
+        },
+        candidateProposition: {
+          subject: "Sol",
+          predicate: "verified",
+          object: "sample-A",
+          temporalScope: "2026-09-12",
+          quote: { startOffset: 0, endOffset: excerpt.length },
+        },
+      }),
+    ).toMatchObject({
+      layer: "STRUCTURED_PROPOSITION",
+      verdict: { kind: "RELATED_NOT_ANSWERING" },
+    });
+    expect(read).not.toHaveBeenCalled();
+  });
+
   it("rejects hidden, interrogative and wrong-year source spans", () => {
     const guard = new StructuralEvidenceGuard();
 

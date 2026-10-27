@@ -86,6 +86,35 @@ than baseline; full-request p95 <=25 s; degraded calls <=5%; no downstream
 answer/task regression. **No endpoint has passed this holdout.** E5 stays
 shadow; S3–S5 remain blocked; PR #38 stays OPEN/DRAFT/unmerged.
 
+## Historical X/Y review packet disposition (2026-10-27)
+
+The existing 127-case X/Y packets were frozen on October 26 from a **source-supplied
+Reader v5 capture of 261 historical queries**. They test the correctness of
+individual model-proposed reader answers, not the subsequently composed
+E5 → authenticated LAYERED → original SOURCE → ContextPacket → Writer pipeline.
+Both remain `PACKETS_VERIFIED_UNREVIEWED` without any external human labels.
+
+Those historical packets are **optional developer calibration/forensics,
+not a prerequisite or substitute for the prospective S2 release gate**.
+Preserve their original hashes, private case map, salts and empty reviewer
+submissions unchanged; do not retroactively mark them reviewed, use them as
+new holdout gold or base a new default model policy on their familiar cases.
+
+After the integrated candidate version, full natural-language question/claim
+proof contract, authorization chain and observable Writer outputs stabilize,
+prepare **new independent X/Y or equivalent blinded packets** covering
+source-family-disjoint EN/ES questions, genuine no-answer cases, and actual
+admitted versus withheld citations and complete Writer answers. Freeze the
+independent SOURCE/questions, original bytes and adjudication rubric **before
+running or inspecting the model outputs**. The two reviewers must evaluate
+the same frozen protocol; a third resolves disagreements without tuning the
+gold to the model's answer. New packets can be prepared in parallel with
+engineering readiness but must not be chosen post hoc from only successful
+answers. Human review may then begin; no human review is claimed today.
+
+This is a scheduling and validity clarification, **not a relaxation** of
+precision, FAR, ACL/freshness, latency or independent adjudication requirements.
+
 ## Still missing
 
 - [ ] Freeze new manifest and check source/reviewer independence

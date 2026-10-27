@@ -47,7 +47,17 @@ export interface EvidenceAdmissionDecision {
   readonly readerId?: string;
 }
 
-export interface StructuredProposition {
+/** Explicit provenance-bound qualifiers only; never inferred from free text here. */
+export interface StructuredPropositionQualifiers {
+  /** Exact event or applicability scope, supplied by an authorized projector. */
+  readonly temporalScope?: string;
+  /** All preconditions of the asserted relation, not a keyword bag. */
+  readonly conditions?: readonly string[];
+  readonly modality?: "REQUIRED" | "PERMITTED" | "PROHIBITED" | "OPTIONAL";
+  readonly quantityUnit?: string;
+}
+
+export interface StructuredProposition extends StructuredPropositionQualifiers {
   readonly subject: string;
   readonly predicate: string;
   readonly object?: string;
@@ -55,7 +65,7 @@ export interface StructuredProposition {
   readonly quote: ExactSourceSpan;
 }
 
-export interface StructuredPropositionQuery {
+export interface StructuredPropositionQuery extends StructuredPropositionQualifiers {
   readonly subject: string;
   readonly predicate: string;
   readonly object?: string;
@@ -77,6 +87,63 @@ function normalizedProjectionValue(value: string): string {
     .trim()
     .replace(/\s+/gu, " ")
     .toLocaleLowerCase("und");
+}
+
+/**
+ * Exact, non-generative comparison of externally verified proposition roles.
+ * Both sides must disclose all applicability qualifiers; an omitted source
+ * condition or temporal event cannot be widened into an unqualified answer.
+ * NFKC/case/spacing permit representation variants, NOT semantic synonyms.
+ */
+function exactQualifier(
+  left: string | undefined,
+  right: string | undefined,
+): boolean {
+  if (left === undefined || right === undefined) {
+    return left === undefined && right === undefined;
+  }
+  if (typeof left !== "string" || typeof right !== "string") return false;
+  const a = normalizedProjectionValue(left);
+  const b = normalizedProjectionValue(right);
+  return Boolean(a && b && a === b);
+}
+
+function exactConditions(
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): boolean {
+  if (left !== undefined && !Array.isArray(left)) return false;
+  if (right !== undefined && !Array.isArray(right)) return false;
+  const a = left ?? [];
+  const b = right ?? [];
+  if (a.length !== b.length) return false;
+  if (!a.length) return true;
+  if (
+    a.some((x) => typeof x !== "string") ||
+    b.some((x) => typeof x !== "string")
+  )
+    return false;
+  const aa = a.map(normalizedProjectionValue).sort();
+  const bb = b.map(normalizedProjectionValue).sort();
+  return aa.every(
+    (v, i) =>
+      Boolean(v) &&
+      (i === 0 || v !== aa[i - 1]) &&
+      v === bb[i] &&
+      (i === 0 || v !== bb[i - 1]),
+  );
+}
+
+function exactPropositionQualifiers(
+  query: StructuredPropositionQuery,
+  candidate: StructuredProposition,
+): boolean {
+  return (
+    exactQualifier(query.temporalScope, candidate.temporalScope) &&
+    exactQualifier(query.modality, candidate.modality) &&
+    exactQualifier(query.quantityUnit, candidate.quantityUnit) &&
+    exactConditions(query.conditions, candidate.conditions)
+  );
 }
 
 /**
@@ -116,6 +183,12 @@ export class ExactStructuredPropositionMatcher implements StructuredPropositionM
       ? normalizedProjectionValue(input.candidate.object)
       : null;
     if (queryObject !== null && queryObject !== candidateObject) {
+      return { kind: "RELATED_NOT_ANSWERING" };
+    }
+    // Qualifier disagreement is not an invitation to retry via the same
+    // semantic model. It withholds the structured support decision even in
+    // the pipeline's legacy semantic-fallback mode.
+    if (!exactPropositionQualifiers(input.query, input.candidate)) {
       return { kind: "RELATED_NOT_ANSWERING" };
     }
 
