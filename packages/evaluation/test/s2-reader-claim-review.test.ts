@@ -163,6 +163,70 @@ describe("S2 historical source-bound reader claim review packets", () => {
       }),
     ).toThrow(/CASE_INVALID/);
   });
+  it("does not mistake overall-label agreement for agreement on semantic roles", () => {
+    // All data here are deterministic test fixtures, not human review data.
+    const o = prepareS2ReaderClaimReview([input], seed);
+    const x = JSON.parse(o.submissionXBytes.toString());
+    const y = JSON.parse(o.submissionYBytes.toString());
+    for (const [submission, reviewerId] of [
+      [x, "reviewer-alpha"],
+      [y, "reviewer-beta"],
+    ] as const) {
+      submission.reviewerId = reviewerId;
+      submission.reviewerSelfAttestedIndependent = true;
+      submission.cases[0].answerFaithfulness = "FULLY_SUPPORTED";
+      for (const facet of Object.keys(submission.cases[0].facets))
+        submission.cases[0].facets[facet] = "ALIGNED";
+    }
+    const audit = () =>
+      inspectS2ReaderClaimReviewSubmissions({
+        packetXBytes: o.packetXBytes,
+        packetYBytes: o.packetYBytes,
+        receiptBytes: o.receiptBytes,
+        submissionXBytes: Buffer.from(JSON.stringify(x)),
+        submissionYBytes: Buffer.from(JSON.stringify(y)),
+      });
+    expect(audit()).toMatchObject({
+      labelAgreements: 1,
+      facetDisagreementCases: 0,
+      bothSupported: 1,
+      unresolvedCases: 0,
+      independentHumanReviewVerified: false,
+      releaseGateAccepted: false,
+    });
+
+    // Reviewers agree on the overall label, yet one says the relation
+    // direction matters and the other says it does not apply.
+    y.cases[0].facets.direction = "NOT_APPLICABLE";
+    expect(audit()).toMatchObject({
+      labelAgreements: 1,
+      labelDisagreements: 0,
+      facetDisagreementCases: 1,
+      facetDisagreementsByName: { direction: 1, subject: 0, answerRole: 0 },
+      bothSupported: 0,
+      unresolvedCases: 1,
+    });
+
+    // A FULLY_SUPPORTED answer with a self-declared conflicting or unknown
+    // dimension is inconsistent even before comparing the other reviewer.
+    y.cases[0].facets.direction = "CONFLICT";
+    expect(audit).toThrow(/SUBMISSION_CASE_INVALID/);
+    y.cases[0].facets.direction = "UNKNOWN";
+    expect(audit).toThrow(/SUBMISSION_CASE_INVALID/);
+
+    // The same hidden facet mismatch must remain unresolved for negative
+    // judgments; it cannot be reported as unqualified negative consensus.
+    x.cases[0].answerFaithfulness = "WRONG_OR_UNSUPPORTED";
+    y.cases[0].answerFaithfulness = "WRONG_OR_UNSUPPORTED";
+    y.cases[0].facets.direction = "CONFLICT";
+    expect(audit()).toMatchObject({
+      labelAgreements: 1,
+      facetDisagreementCases: 1,
+      bothWrongOrUnsupported: 0,
+      unresolvedCases: 1,
+    });
+  });
+
   it("does not accept reviewer packets carrying added hidden gold even with a matching forged receipt hash", () => {
     const o = prepareS2ReaderClaimReview([input], seed);
     const tampered = JSON.parse(o.packetXBytes.toString());

@@ -415,6 +415,13 @@ export function inspectS2ReaderClaimReviewSubmissions(input: {
   readonly caseCount: number;
   readonly labelAgreements: number;
   readonly labelDisagreements: number;
+  /** Count cases where any of the eight semantic dimensions differs. */
+  readonly facetDisagreementCases: number;
+  readonly facetDisagreementsByName: Record<
+    (typeof S2_READER_REVIEW_FACETS)[number],
+    number
+  >;
+  /** Complete agreement is still only reviewer agreement, not ground truth. */
   readonly bothSupported: number;
   readonly bothWrongOrUnsupported: number;
   readonly unresolvedCases: number;
@@ -504,7 +511,15 @@ export function inspectS2ReaderClaimReviewSubmissions(input: {
         S2_READER_REVIEW_FACETS.some((f) => !facets.has(item.facets[f])) ||
         typeof item.note !== "string" ||
         item.note.length > 2000 ||
-        (item.answerFaithfulness === "UNCERTAIN" && !item.note.trim())
+        (item.answerFaithfulness === "UNCERTAIN" && !item.note.trim()) ||
+        // A reviewer cannot claim FULL support while simultaneously recording
+        // an unknown or conflicting subject/relation/condition/answer role.
+        // NOT_APPLICABLE remains valid for genuinely irrelevant dimensions.
+        (item.answerFaithfulness === "FULLY_SUPPORTED" &&
+          S2_READER_REVIEW_FACETS.some(
+            (f) =>
+              item.facets[f] === "CONFLICT" || item.facets[f] === "UNKNOWN",
+          ))
       ) {
         throw Error("S2_READER_REVIEW_SUBMISSION_CASE_INVALID");
       }
@@ -517,27 +532,36 @@ export function inspectS2ReaderClaimReviewSubmissions(input: {
   if (x.reviewerId === y.reviewerId)
     throw Error("S2_READER_REVIEW_REVIEWERS_NOT_DISTINCT");
   let labelAgreements = 0,
+    facetDisagreementCases = 0,
     bothSupported = 0,
     bothWrongOrUnsupported = 0,
     unresolvedCases = 0;
+  const facetDisagreementsByName = Object.fromEntries(
+    S2_READER_REVIEW_FACETS.map((facet) => [facet, 0]),
+  ) as Record<(typeof S2_READER_REVIEW_FACETS)[number], number>;
   for (const key of x.indexed.keys()) {
     const a = x.indexed.get(key)!,
       b = y.indexed.get(key);
     if (!b) throw Error("S2_READER_REVIEW_SUBMISSION_PAIR_MISSING");
     const same = a.answerFaithfulness === b.answerFaithfulness;
     if (same) labelAgreements++;
-    if (
-      a.answerFaithfulness === "FULLY_SUPPORTED" &&
-      b.answerFaithfulness === "FULLY_SUPPORTED"
-    )
+    let facetsAgree = true;
+    for (const facet of S2_READER_REVIEW_FACETS) {
+      if (a.facets[facet] !== b.facets[facet]) {
+        facetDisagreementsByName[facet]++;
+        facetsAgree = false;
+      }
+    }
+    if (!facetsAgree) facetDisagreementCases++;
+    // A shared overall label must not conceal a disagreement about the
+    // subject, direction, polarity, exception or requested answer role.
+    if (same && facetsAgree && a.answerFaithfulness === "FULLY_SUPPORTED")
       bothSupported++;
-    if (
-      a.answerFaithfulness === "WRONG_OR_UNSUPPORTED" &&
-      b.answerFaithfulness === "WRONG_OR_UNSUPPORTED"
-    )
+    if (same && facetsAgree && a.answerFaithfulness === "WRONG_OR_UNSUPPORTED")
       bothWrongOrUnsupported++;
     if (
       !same ||
+      !facetsAgree ||
       a.answerFaithfulness === "UNCERTAIN" ||
       a.answerFaithfulness === "PARTIALLY_SUPPORTED"
     )
@@ -548,6 +572,8 @@ export function inspectS2ReaderClaimReviewSubmissions(input: {
     caseCount: preflight.caseCount,
     labelAgreements,
     labelDisagreements: preflight.caseCount - labelAgreements,
+    facetDisagreementCases,
+    facetDisagreementsByName,
     bothSupported,
     bothWrongOrUnsupported,
     unresolvedCases,
