@@ -162,6 +162,7 @@ export function inspectS2SourceBoundRelationFacets(
     )
       return "SOURCE_OR_REVIEW_BINDING_INVALID";
     const facets = new Set<string>();
+    let claimApplicableCount = 0;
     for (const v of review.facets) {
       if (
         !v ||
@@ -177,10 +178,15 @@ export function inspectS2SourceBoundRelationFacets(
       if (v.applicability === "UNRESOLVED") unresolved = true;
       else if (v.applicability === "APPLICABLE") {
         applicableCount++;
+        claimApplicableCount++;
         if (v.modelObservation === "CONFLICT") conflict = true;
         if (v.modelObservation === "UNKNOWN") unknown = true;
       }
     }
+    // A different claim's reviewed relation must never stand in for this
+    // claim's entirely unreviewed semantics. Even an all-N/A annotation
+    // packet is not evidence that the statement is contextually sound.
+    if (claimApplicableCount === 0) unresolved = true;
   }
   if (applicableCount === 0) return "APPLICABILITY_REVIEW_REQUIRED";
   if (unresolved) return "APPLICABILITY_REVIEW_REQUIRED";

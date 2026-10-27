@@ -369,6 +369,32 @@ describe("S2 complete multi-claim answer proof in shadow", () => {
       expect(out.productionAdmission).toBe(false);
     }
   });
+  it("does not let an all-N/A claim borrow facet coverage from another claim", async () => {
+    // Two individually source-bound claims: all claims must be audited.
+    // This is a fixture assertion, not independent judgment of Orion facts.
+    for (const missingClaimIndex of [0, 1]) {
+      const packets = facetPackets();
+      packets[missingClaimIndex] = {
+        ...packets[missingClaimIndex]!,
+        facets: packets[missingClaimIndex]!.facets.map((item) => ({
+          ...item,
+          applicability: "NOT_APPLICABLE" as const,
+          modelObservation: "UNKNOWN" as const,
+        })),
+      };
+      const conf = { ...cfg(), sourceBoundRelationFacetReviews: packets };
+      const result = await assessS2CompleteAnswer(input, [original], conf);
+      expect(result).toMatchObject({
+        status: "INSUFFICIENT",
+        relationFacetAudit: "APPLICABILITY_REVIEW_REQUIRED",
+        productionAdmission: false,
+        releaseGateAccepted: false,
+      });
+      expect(conf.consistencyVerifier.verify).not.toHaveBeenCalled();
+      expect(conf.atomicityVerifier.verify).not.toHaveBeenCalled();
+    }
+  });
+
   it("binds each annotation to the exact question, claim, original source and quote, not merely a reviewer label", async () => {
     for (const mutation of [
       "claim",
