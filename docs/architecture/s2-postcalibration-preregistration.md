@@ -123,3 +123,17 @@ precision, FAR, ACL/freshness, latency or independent adjudication requirements.
 - [ ] Collect full-response latency, answer outcomes, actual tokens, errors
 - [ ] Execute paired manual/Obsidian benchmark and stratified analysis
 - [ ] Verify CI and independently audit S2 gate on exact final SHA
+
+## Controlled S2 private review export (development only; §99)
+
+There is now a bridge for **previously unreviewed questions** evaluated on genuine previously reviewed original SOURCE, without treating the old approved question as a gold label for the new one. This is not the preregistered 240-question source-family-disjoint holdout.
+
+- The server must explicitly opt in to `AKP_S2_REVIEWED_SOURCE_ENABLED`, `AKP_S2_ATOMIC_WRITER_EVAL_ENABLED`, `AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED`, and `AKP_S2_PRIVATE_SHADOW_REVIEW_CAPTURE_ENABLED`, and inject a private trusted `s2PrivateShadowReviewSink` into `buildServer`. A capture is supplied **only after** the current actor, vault, context packet, approved original-SOURCE proof and model structured-output validations pass. Do not connect this callback to generic telemetry, logs, an external service, published Git, or shared storage.
+- An explicitly authorized operator collects the resulting **full private samples JSON** and records a SHA-256 text pin in a separate private path. These samples include original SOURCE and Writer answers: imported vault access and export permissions must be separately confirmed; keeping the source hash does **not** grant permission to redistribute the bytes.
+- From a restricted private directory **outside** the repository, run:
+  `pnpm exec tsx scripts/s2-export-private-unseen-review.ts --samples C:/private/s2/samples.json --pin-file C:/private/s2/samples.sha256 --output-dir C:/private/s2/review-run-unique`
+  The output directory must not preexist. The tool verifies the sample pin, exact SOURCE hash/UTF-16 span, frozen case IDs, Writer claim text coverage and citation keys. It emits only counts and hashes to stdout, and writes two separately shuffled `source-review-X.json` / `source-review-Y.json` reviewer packets with **no Writer answers and all truth fields blank**.
+- Never send `private-writer-answers-NOT-FOR-SOURCE-REVIEWERS.json` or `private-custodian-receipt.json` to source-answerability reviewers. The private response file is held by the authorized custodian until the **source-only judgments are independently frozen**. Native Windows file modes alone do not prove NTFS ACL privacy; grant only required reviewers access to their own packets.
+- Assign independent reviewers outside the engineering/model team, verify identity and independence externally, review with whole authorized source context for genuine no-answer, adjudicate differences, then perform a separate full Writer answer/statement review. **Do not** mark these model-exposed development cases as prospective blind acceptance gold. For the final gate, source-family-disjoint sources and questions must be independently selected and **frozen before the first model run**, with the established 240-question EN/ES protocol, human judgments, paired baseline, tokens, full HTTP p95 and FAR with uncertainty.
+
+There is deliberately no automatic runtime publication, admission override, SOURCE object export, reviewer-result fabrication, or private-file persistence side effect from an ordinary HTTP request.

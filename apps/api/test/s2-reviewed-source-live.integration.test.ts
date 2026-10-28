@@ -64,7 +64,11 @@ run(
       | "TRUNCATED"
       | "UNREVIEWED_CLAIM"
       | "REVOKE_DURING_GENERATION"
-      | "REVOKE_ANCHOR_DURING_GENERATION" = "GOOD";
+      | "REVOKE_ANCHOR_DURING_GENERATION"
+      | "REVOKE_ANCHOR_WITH_ABSTENTION"
+      | "REVOKE_ANCHOR_WITH_TRUNCATION"
+      | "REVOKE_ACL_WITH_ABSTENTION"
+      | "ABSTAIN" = "GOOD";
     const pinnedAtomicProvider = {
       id: "s2:mock-provider-transport-only",
       model: "s2-synthetic-model:latest",
@@ -72,13 +76,20 @@ run(
       codeCommitSha: "a".repeat(40),
       async generate(requestBytes: Uint8Array) {
         nativeCallCount++;
-        if (nativeMode === "REVOKE_DURING_GENERATION") {
+        if (
+          nativeMode === "REVOKE_DURING_GENERATION" ||
+          nativeMode === "REVOKE_ACL_WITH_ABSTENTION"
+        ) {
           await db.pool.query(
             "update vault_memberships set enabled=false where user_id=$1 and vault_id=$2",
             [reviewers[0]!.id, vaultId],
           );
         }
-        if (nativeMode === "REVOKE_ANCHOR_DURING_GENERATION") {
+        if (
+          nativeMode === "REVOKE_ANCHOR_DURING_GENERATION" ||
+          nativeMode === "REVOKE_ANCHOR_WITH_ABSTENTION" ||
+          nativeMode === "REVOKE_ANCHOR_WITH_TRUNCATION"
+        ) {
           await db.pool.query(
             `update s2_reviewed_source_propositions
                 set status='REVOKED', revoked_by=$1, revoked_at=now()
@@ -104,6 +115,10 @@ run(
         expect(
           request.format.properties.statements.items.properties.citationId.enum,
         ).toEqual(["SECTION1"]);
+        const isAbstention =
+          nativeMode === "ABSTAIN" ||
+          nativeMode === "REVOKE_ANCHOR_WITH_ABSTENTION" ||
+          nativeMode === "REVOKE_ACL_WITH_ABSTENTION";
         const claim = {
           answerText:
             nativeMode === "UNREVIEWED_CLAIM"
@@ -121,11 +136,20 @@ run(
           ],
           abstained: false,
         };
+        if (isAbstention) {
+          claim.answerText = "";
+          claim.statements = [];
+          claim.abstained = true;
+        }
         return Buffer.from(
           JSON.stringify({
             model: request.model,
             done: true,
-            done_reason: nativeMode === "TRUNCATED" ? "length" : "stop",
+            done_reason:
+              nativeMode === "TRUNCATED" ||
+              nativeMode === "REVOKE_ANCHOR_WITH_TRUNCATION"
+                ? "length"
+                : "stop",
             prompt_eval_count: 420,
             eval_count: 62,
             message: { role: "assistant", content: JSON.stringify(claim) },
@@ -802,14 +826,29 @@ run(
       expect(await disabled.json()).toMatchObject({
         code: "S2_UNSEEN_QUESTION_SHADOW_DISABLED",
       });
+      const captures: unknown[] = [];
+      let failPrivateCapture = false;
       const previous = process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED;
+      const previousCapture =
+        process.env.AKP_S2_PRIVATE_SHADOW_REVIEW_CAPTURE_ENABLED;
       process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED = "true";
+      process.env.AKP_S2_PRIVATE_SHADOW_REVIEW_CAPTURE_ENABLED = "true";
       let shadowApp: ReturnType<typeof buildServer> | undefined;
       try {
         shadowApp = buildServer({
           s2AtomicWriterProvider: pinnedAtomicProvider,
+          s2PrivateShadowReviewSink: (sample) => {
+            if (failPrivateCapture)
+              throw Error("SENSITIVE_LOCAL_REVIEW_FAILURE");
+            captures.push(sample);
+          },
         });
       } finally {
+        if (previousCapture === undefined)
+          delete process.env.AKP_S2_PRIVATE_SHADOW_REVIEW_CAPTURE_ENABLED;
+        else
+          process.env.AKP_S2_PRIVATE_SHADOW_REVIEW_CAPTURE_ENABLED =
+            previousCapture;
         if (previous === undefined)
           delete process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED;
         else process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED = previous;
@@ -847,6 +886,45 @@ run(
         expect(result).not.toHaveProperty("sourceOriginalText");
         expect(result).not.toHaveProperty("sourceAnchorQuestion");
         expect(result).toHaveProperty("answerSha256");
+        expect(captures).toHaveLength(1);
+        const privateReview = captures[0] as {
+          question: string;
+          language: string;
+          passages: Array<{
+            sourceText: string;
+            originalSourceText: string;
+            originalSourceSha256: string;
+          }>;
+          writer: {
+            answerText: string;
+            abstained: boolean;
+            statements: unknown[];
+          };
+          review: {
+            sourceAnswerability: null;
+            claimFaithfulness: null;
+            independentReviewerIdentityVerified: false;
+            releaseGateAccepted: false;
+          };
+        };
+        expect(privateReview).toMatchObject({
+          question,
+          language: "en",
+          writer: { answerText: writerStatement, abstained: false },
+          review: {
+            sourceAnswerability: null,
+            claimFaithfulness: null,
+            independentReviewerIdentityVerified: false,
+            releaseGateAccepted: false,
+          },
+        });
+        expect(privateReview.passages[0]?.originalSourceText).toContain(
+          writerStatement,
+        );
+        expect(privateReview.passages[0]?.sourceText).toBe(writerStatement);
+        expect(privateReview.passages[0]?.originalSourceSha256).toMatch(
+          /^[a-f0-9]{64}$/,
+        );
         const smuggled = await fetch(
           url + "/v1/s2/writer-claims/generate-audit",
           {
@@ -865,6 +943,69 @@ run(
         );
         expect(smuggled.status).toBe(400);
         expect(nativeCallCount).toBe(before + 1);
+        expect(captures).toHaveLength(1);
+        nativeMode = "ABSTAIN";
+        try {
+          const abstention = await fetch(
+            url + "/v1/s2/writer-claims/generate-audit",
+            {
+              method: "POST",
+              headers: {
+                ...headers(0),
+                "Idempotency-Key": randomUUID() + "-" + randomUUID(),
+              },
+              body: JSON.stringify(request),
+              signal: AbortSignal.timeout(20000),
+            },
+          );
+          expect(abstention.status).toBe(200);
+          const abstentionReceipt = (await abstention.json()) as Record<
+            string,
+            unknown
+          >;
+          expect(abstentionReceipt).toMatchObject({
+            status: "WRITER_ABSTAINED_NO_ANSWER",
+            productionAdmission: false,
+            releaseGateAccepted: false,
+          });
+          expect(abstentionReceipt).not.toHaveProperty("answerText");
+          expect(captures).toHaveLength(2);
+          expect(captures[1]).toMatchObject({
+            writer: { answerText: "", abstained: true, statements: [] },
+            review: { semanticGoldVerified: false, releaseGateAccepted: false },
+          });
+        } finally {
+          nativeMode = "GOOD";
+        }
+        failPrivateCapture = true;
+        try {
+          const fail = await fetch(
+            url + "/v1/s2/writer-claims/generate-audit",
+            {
+              method: "POST",
+              headers: {
+                ...headers(0),
+                "Idempotency-Key": randomUUID() + "-" + randomUUID(),
+              },
+              body: JSON.stringify(request),
+              signal: AbortSignal.timeout(20000),
+            },
+          );
+          expect(fail.status).toBe(200);
+          const result = (await fail.json()) as Record<string, unknown>;
+          expect(result).toMatchObject({
+            status: "WITHHELD_PRIVATE_REVIEW_CAPTURE_FAILED",
+            productionAdmission: false,
+            releaseGateAccepted: false,
+          });
+          expect(JSON.stringify(result)).not.toContain(
+            "SENSITIVE_LOCAL_REVIEW_FAILURE",
+          );
+          expect(JSON.stringify(result)).not.toContain(writerStatement);
+          expect(captures).toHaveLength(2);
+        } finally {
+          failPrivateCapture = false;
+        }
         const approved = await db.pool.query<{ id: string }>(
           `select id from s2_reviewed_source_propositions
             where document_id=$1 and excerpt_sha256=$2 and status='APPROVED'`,
@@ -893,7 +1034,7 @@ run(
             productionAdmission: false,
             releaseGateAccepted: false,
           });
-          expect(nativeCallCount).toBe(before + 2);
+          expect(nativeCallCount).toBe(before + 4);
           nativeMode = "GOOD";
           const revokedBefore = await fetch(
             url + "/v1/s2/writer-claims/generate-audit",
@@ -914,7 +1055,42 @@ run(
             productionAdmission: false,
             releaseGateAccepted: false,
           });
-          expect(nativeCallCount).toBe(before + 2);
+          expect(nativeCallCount).toBe(before + 4);
+          // A model abstention or malformed output is NOT a bypass for
+          // mid-inference SOURCE review revocation.
+          for (const mode of [
+            "REVOKE_ANCHOR_WITH_ABSTENTION",
+            "REVOKE_ANCHOR_WITH_TRUNCATION",
+          ] as const) {
+            await db.pool.query(
+              `update s2_reviewed_source_propositions
+                 set status='APPROVED',revoked_by=null,revoked_at=null
+                 where id=any($1::uuid[])`,
+              [anchorIdsToRevoke],
+            );
+            nativeMode = mode;
+            const beforeCall = nativeCallCount;
+            const response = await fetch(
+              url + "/v1/s2/writer-claims/generate-audit",
+              {
+                method: "POST",
+                headers: {
+                  ...headers(0),
+                  "Idempotency-Key": randomUUID() + "-" + randomUUID(),
+                },
+                body: JSON.stringify(request),
+                signal: AbortSignal.timeout(20000),
+              },
+            );
+            expect(response.status).toBe(200);
+            expect(await response.json()).toMatchObject({
+              status: "WITHHELD_SOURCE_ANCHOR_CHANGED_AFTER_INFERENCE",
+              modelInvoked: true,
+              productionAdmission: false,
+              releaseGateAccepted: false,
+            });
+            expect(nativeCallCount).toBe(beforeCall + 1);
+          }
         } finally {
           nativeMode = "GOOD";
           await db.pool.query(
@@ -1055,6 +1231,26 @@ run(
     );
     it("rechecks vault membership after model latency and rejects revoked in-flight authority", async () => {
       nativeMode = "REVOKE_DURING_GENERATION";
+      try {
+        const response = await post("/v1/s2/writer-claims/generate-audit", 0, {
+          packetId,
+          packetHash,
+          language: "en",
+        });
+        expect(response.status).toBe(403);
+        expect(await response.json()).toMatchObject({
+          code: "S2_WRITER_SCOPE_DENIED",
+        });
+      } finally {
+        nativeMode = "GOOD";
+        await db.pool.query(
+          "update vault_memberships set enabled=true where user_id=$1 and vault_id=$2",
+          [reviewers[0]!.id, vaultId],
+        );
+      }
+    }, 45000);
+    it("denies an in-flight abstention if vault access was revoked", async () => {
+      nativeMode = "REVOKE_ACL_WITH_ABSTENTION";
       try {
         const response = await post("/v1/s2/writer-claims/generate-audit", 0, {
           packetId,

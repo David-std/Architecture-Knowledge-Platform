@@ -362,6 +362,18 @@
       "sourceSection": 39,
       "disposition": "EVALUATION_ONLY",
       "decision": "Source/original or bilingual diagnostic; cannot grant admission"
+    },
+    {
+      "path": "packages/evaluation/src/s2-private-unseen-review.ts",
+      "sourceSection": 99,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Strictly validate captured SOURCE hashes, original UTF-16 spans and complete model claims; assemble blank X/Y source-only packets and private Writer custody, never gold."
+    },
+    {
+      "path": "scripts/s2-export-private-unseen-review.ts",
+      "sourceSection": 99,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Offline-only outside-repository pinned-sample export with exclusive private files and no public source/model text; operator ACL remains mandatory."
     }
   ],
   "techniques": [
@@ -661,6 +673,20 @@
         "apps/api/src/s2-reviewed-source-proposition-service.ts"
       ],
       "decision": "Separately opted-in observation of previously unreviewed questions on exact currently authorized original SOURCE with an approved different-question anchor. Original SHA, ACL, revision, post-inference anchor proof and frozen native citations are checked, but the anchor's relation and model statements are NEVER semantically admitted; only redacted diagnostics are returned."
+    },
+    {
+      "id": "private-unseen-question-source-and-writer-review-custody",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 99,
+      "flag": "AKP_S2_PRIVATE_SHADOW_REVIEW_CAPTURE_ENABLED",
+      "files": [
+        "apps/api/src/routes/s2-native-writer.ts",
+        "apps/api/src/server.ts",
+        "packages/evaluation/src/s2-private-unseen-review.ts",
+        "scripts/s2-export-private-unseen-review.ts"
+      ],
+      "decision": "Opt-in in-process authorized private original-SOURCE and model-output capture, redacted public HTTP, and separate source-only blinded reviewer versus custodian Writer packets. Requires explicit receiving sink and remains developmental; human gold, reviewer identity, claim entailment and release permissions are NEVER manufactured."
     }
   ]
 }

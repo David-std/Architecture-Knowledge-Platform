@@ -36,6 +36,46 @@ const Request = z
   })
   .strict();
 
+/** Private evaluator-only, injected by the trusted server owner.
+ * The SOURCE and Writer prose MUST NEVER be returned by HTTP or logged.
+ * Review fields are deliberately blank; this is NOT human gold.
+ */
+export interface S2PrivateShadowReviewSample {
+  schemaVersion: "akp.s2.private-shadow-review-sample.v1";
+  caseSha256: string;
+  packetSha256: string;
+  language: "en" | "es";
+  question: string;
+  passages: {
+    citationId: string;
+    sourceText: string;
+    originalSourceSha256: string;
+    originalSourceText: string;
+    startUtf16: number;
+    endUtf16: number;
+  }[];
+  writer: {
+    answerText: string;
+    abstained: boolean;
+    statements: { text: string; citationId: string }[];
+    requestSha256: string;
+    responseSha256: string;
+    modelDigestSha256: string;
+    providerMs: number;
+  };
+  review: {
+    sourceAnswerability: null;
+    claimFaithfulness: null;
+    abstentionJustified: null;
+    independentReviewerIdentityVerified: false;
+    semanticGoldVerified: false;
+    releaseGateAccepted: false;
+  };
+}
+export type S2PrivateShadowReviewSink = (
+  sample: Readonly<S2PrivateShadowReviewSample>,
+) => Promise<void> | void;
+
 /** Experimental *existing* governed Writer custody pipeline, not a new judge.
  * Provider never receives unchecked or out-of-scope ContextPacket bytes.
  * Only the same source/claim admission owner can return a CANDIDATE.
@@ -45,7 +85,12 @@ export function registerS2NativeReviewedWriterRoutes(
   db: Postgres,
   trustedPort: GovernedLayeredPropositionPort,
   provider: S2AtomicWriterProvider,
+  privateReviewSink?: S2PrivateShadowReviewSink,
 ): void {
+  const privateReviewCaptureEnabled =
+    process.env.AKP_S2_PRIVATE_SHADOW_REVIEW_CAPTURE_ENABLED === "true";
+  if (privateReviewCaptureEnabled && !privateReviewSink)
+    throw new Error("S2_PRIVATE_SHADOW_REVIEW_SINK_REQUIRED");
   const sourceAnchoredShadowEnabled =
     process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED === "true";
   const pipeline = new LayeredEvidenceAdmissionPipeline({
@@ -237,54 +282,8 @@ export function registerS2NativeReviewedWriterRoutes(
       }
       const providerMs =
         Math.round((performance.now() - providerStarted) * 100) / 100;
-      let observed: ReturnType<typeof observeS2AtomicNativeWriter>;
-      try {
-        observed = observeS2AtomicNativeWriter(
-          frozen.freeze,
-          frozen.requestBytes,
-          bytes,
-        );
-      } catch {
-        return {
-          status: "WITHHELD_PROVIDER_CUSTODY_FAILURE",
-          productionAdmission: false,
-          releaseGateAccepted: false,
-          modelInvoked: true,
-          providerMs,
-        };
-      }
-      if (observed.status !== "STRUCTURALLY_VALID") {
-        return {
-          status: "WITHHELD_PROVIDER_OUTPUT",
-          reason: observed.reason,
-          requestSha256: observed.requestSha256,
-          responseSha256: observed.responseSha256,
-          promptTokens: observed.promptTokens,
-          completionTokens: observed.completionTokens,
-          providerMs,
-          productionAdmission: false,
-          releaseGateAccepted: false,
-          modelInvoked: true,
-        };
-      }
-      if (observed.abstained) {
-        return {
-          status: "WRITER_ABSTAINED_NO_ANSWER",
-          requestSha256: observed.requestSha256,
-          responseSha256: observed.responseSha256,
-          promptTokens: observed.promptTokens,
-          completionTokens: observed.completionTokens,
-          providerMs,
-          modelInvoked: true,
-          productionAdmission: false,
-          releaseGateAccepted: false,
-        };
-      }
-      const statements = observed.statements.map((s) => ({
-        ...s,
-        citationId: s.citationId.replace(/^SECTION/u, "SEC"),
-      }));
-      // Recheck current permissions/packet/revision AFTER provider latency.
+      // No model result, INCLUDING an abstention or malformed output, may
+      // bypass the second ACL/SOURCE check after inference.
       const second = await resolveS2WriterContext({
         db,
         principal,
@@ -319,6 +318,140 @@ export function registerS2NativeReviewedWriterRoutes(
               releaseGateAccepted: false,
             };
         }
+      } else {
+        // Even if the model abstains or violates the response schema, the
+        // original reviewed question and literal SOURCE must still be valid.
+        for (const section of second.packet.sections) {
+          const hit = hitFromReviewedS2Section(section);
+          let proof = null;
+          try {
+            proof = await second.port.resolve({
+              originalQuestion: second.packet.query,
+              hit,
+            });
+          } catch {
+            proof = null;
+          }
+          if (
+            !bindGovernedLayeredPropositionInput(
+              second.packet.query,
+              hit,
+              proof,
+            )
+          )
+            return {
+              status: "WITHHELD_REVIEWED_SOURCE_CHANGED_AFTER_INFERENCE",
+              modelInvoked: true,
+              productionAdmission: false,
+              releaseGateAccepted: false,
+            };
+        }
+      }
+      let observed: ReturnType<typeof observeS2AtomicNativeWriter>;
+      try {
+        observed = observeS2AtomicNativeWriter(
+          frozen.freeze,
+          frozen.requestBytes,
+          bytes,
+        );
+      } catch {
+        return {
+          status: "WITHHELD_PROVIDER_CUSTODY_FAILURE",
+          productionAdmission: false,
+          releaseGateAccepted: false,
+          modelInvoked: true,
+          providerMs,
+        };
+      }
+      if (observed.status !== "STRUCTURALLY_VALID") {
+        return {
+          status: "WITHHELD_PROVIDER_OUTPUT",
+          reason: observed.reason,
+          requestSha256: observed.requestSha256,
+          responseSha256: observed.responseSha256,
+          promptTokens: observed.promptTokens,
+          completionTokens: observed.completionTokens,
+          providerMs,
+          productionAdmission: false,
+          releaseGateAccepted: false,
+          modelInvoked: true,
+        };
+      }
+      // Model outputs are still untrusted. This private, injected hook only
+      // lets an authorized evaluator assemble blind-review material after
+      // current ACL and original-SOURCE checks; it supplies NO admission.
+      if (
+        input.data.mode === "SOURCE_ANCHORED_SHADOW" &&
+        privateReviewCaptureEnabled &&
+        privateReviewSink
+      ) {
+        try {
+          const sample: S2PrivateShadowReviewSample = {
+            schemaVersion: "akp.s2.private-shadow-review-sample.v1",
+            caseSha256: caseData.caseKeySha256,
+            packetSha256: sha(packet.packetHash),
+            language: input.data.language,
+            question: packet.query,
+            passages: passages.map((passage, index) => ({
+              citationId: passage.id,
+              sourceText: passage.text,
+              originalSourceSha256: originals[index]!.fileSha256,
+              originalSourceText: new TextDecoder("utf-8", {
+                fatal: true,
+              }).decode(originals[index]!.fileBytes),
+              startUtf16: passage.original!.startUtf16,
+              endUtf16: passage.original!.endUtf16,
+            })),
+            writer: {
+              answerText: observed.answerText ?? "",
+              abstained: observed.abstained === true,
+              statements: observed.statements.map((statement) => ({
+                text: statement.text,
+                citationId: statement.citationId,
+              })),
+              requestSha256: observed.requestSha256,
+              responseSha256: observed.responseSha256,
+              modelDigestSha256: provider.modelDigestSha256,
+              providerMs,
+            },
+            review: {
+              sourceAnswerability: null,
+              claimFaithfulness: null,
+              abstentionJustified: null,
+              independentReviewerIdentityVerified: false,
+              semanticGoldVerified: false,
+              releaseGateAccepted: false,
+            },
+          };
+          await privateReviewSink(sample);
+        } catch {
+          // No query, SOURCE, model output or private sink error in HTTP.
+          return {
+            status: "WITHHELD_PRIVATE_REVIEW_CAPTURE_FAILED",
+            modelInvoked: true,
+            productionAdmission: false,
+            releaseGateAccepted: false,
+          };
+        }
+      }
+      if (observed.abstained) {
+        return {
+          status: "WRITER_ABSTAINED_NO_ANSWER",
+          requestSha256: observed.requestSha256,
+          responseSha256: observed.responseSha256,
+          promptTokens: observed.promptTokens,
+          completionTokens: observed.completionTokens,
+          providerMs,
+          modelInvoked: true,
+          productionAdmission: false,
+          releaseGateAccepted: false,
+        };
+      }
+      const statements = observed.statements.map((s) => ({
+        ...s,
+        citationId: s.citationId.replace(/^SECTION/u, "SEC"),
+      }));
+      if (input.data.mode === "SOURCE_ANCHORED_SHADOW") {
         return {
           status: "UNSEEN_QUESTION_SOURCE_ANCHORED_SHADOW",
           evaluationOnly: true,

@@ -63,6 +63,9 @@ export interface RetrievalMetrics {
   hit: boolean;
 }
 
+export { buildS2PrivateUnseenReviewKit } from "./s2-private-unseen-review.js";
+export type { S2PrivateSourceReviewPacket } from "./s2-private-unseen-review.js";
+
 export function scoreRetrieval(
   result: RetrievalCaseResult,
   k: number,

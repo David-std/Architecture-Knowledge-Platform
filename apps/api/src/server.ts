@@ -68,7 +68,10 @@ import { registerSourceConnectorRoutes } from "./routes/source-connectors.js";
 import { createS2ReviewedSourcePropositionPort } from "./s2-reviewed-source-proposition-service.js";
 import { registerS2ReviewedPropositionRoutes } from "./routes/s2-reviewed-propositions.js";
 import { registerS2ReviewedWriterAuditRoutes } from "./routes/s2-writer-claims.js";
-import { registerS2NativeReviewedWriterRoutes } from "./routes/s2-native-writer.js";
+import {
+  registerS2NativeReviewedWriterRoutes,
+  type S2PrivateShadowReviewSink,
+} from "./routes/s2-native-writer.js";
 import {
   S2PinnedLocalOllamaWriter,
   type S2AtomicWriterProvider,
@@ -96,6 +99,9 @@ export interface ApiServerDependencies {
   governedPropositionPort?: GovernedLayeredPropositionPort;
   /** Deliberate evaluation-only dependency; NEVER promotes evidence to production. */
   s2AtomicWriterProvider?: S2AtomicWriterProvider;
+  /** Trusted in-process review collector; only ever invoked under 3 opt-in flags
+   * after the second SOURCE and ACL check, never exposed by HTTP. */
+  s2PrivateShadowReviewSink?: S2PrivateShadowReviewSink;
 }
 
 export function buildServer(dependencies: ApiServerDependencies = {}) {
@@ -373,6 +379,16 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
       !governedPropositionPort)
   )
     throw new Error("S2_SOURCE_ANCHORED_SHADOW_REQUIRES_GOVERNED_WRITER");
+  // Private full-text shadow capture requires a trusted in-process sink.
+  // Never silently treat a requested capture as enabled without the model,
+  // SOURCE scope and operator-owned receiving dependency.
+  if (
+    process.env.AKP_S2_PRIVATE_SHADOW_REVIEW_CAPTURE_ENABLED === "true" &&
+    (process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED !== "true" ||
+      process.env.AKP_S2_ATOMIC_WRITER_EVAL_ENABLED !== "true" ||
+      !dependencies.s2PrivateShadowReviewSink)
+  )
+    throw new Error("S2_PRIVATE_SHADOW_REVIEW_REQUIRES_TRUSTED_SINK");
   if (s2ReviewedSourceEnabled && rawObjectStore && governedPropositionPort) {
     registerS2ReviewedPropositionRoutes(app, db, rawObjectStore);
     registerS2ReviewedWriterAuditRoutes(app, db, governedPropositionPort);
@@ -389,6 +405,7 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
         db,
         governedPropositionPort,
         provider,
+        dependencies.s2PrivateShadowReviewSink,
       );
     }
   }

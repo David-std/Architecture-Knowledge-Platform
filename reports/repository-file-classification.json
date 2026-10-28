@@ -3312,6 +3312,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-private-unseen-review.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-question-answer-claim.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3598,6 +3603,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-pre-admission-source-discovery.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-private-unseen-review.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -5213,6 +5223,11 @@
     },
     {
       "path": "scripts/s2-audit-writer-semantic-review.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/s2-export-private-unseen-review.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
