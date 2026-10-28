@@ -65,6 +65,9 @@ import { registerCodeKnowledgeLinkRoutes } from "./routes/code-knowledge-links.j
 import { registerTemporalTruthRoutes } from "./routes/temporal-truth.js";
 import { registerAssuranceRoutes } from "./routes/assurance.js";
 import { registerSourceConnectorRoutes } from "./routes/source-connectors.js";
+import { createS2ReviewedSourcePropositionPort } from "./s2-reviewed-source-proposition-service.js";
+import { registerS2ReviewedPropositionRoutes } from "./routes/s2-reviewed-propositions.js";
+import { registerS2ReviewedWriterAuditRoutes } from "./routes/s2-writer-claims.js";
 
 config({
   path: path.resolve(
@@ -191,6 +194,16 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
         bucket: process.env.AKP_RAW_BUCKET as string,
       })
     : undefined;
+  const s2ReviewedSourceEnabled =
+    process.env.AKP_S2_REVIEWED_SOURCE_ENABLED === "true";
+  if (s2ReviewedSourceEnabled && !rawObjectStore) {
+    throw new Error("S2_REVIEWED_SOURCE_REQUIRES_RAW_STORE");
+  }
+  const governedPropositionPort =
+    dependencies.governedPropositionPort ??
+    (s2ReviewedSourceEnabled && rawObjectStore
+      ? createS2ReviewedSourcePropositionPort(db, rawObjectStore)
+      : undefined);
   const telemetry = new OpenTelemetryBridge();
   const requestTraces = new Map<
     string,
@@ -337,6 +350,10 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   registerTemporalTruthRoutes(app, db);
   registerAssuranceRoutes(app, db);
   registerSourceConnectorRoutes(app, db);
+  if (s2ReviewedSourceEnabled && rawObjectStore && governedPropositionPort) {
+    registerS2ReviewedPropositionRoutes(app, db, rawObjectStore);
+    registerS2ReviewedWriterAuditRoutes(app, db, governedPropositionPort);
+  }
   registerProviderTaskRoutes(app, db);
   registerOperatorRoutes(app, db);
   // Translations only add lexical/vector retrieval variants; admission still
@@ -402,9 +419,7 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
     ...(evidenceAdmissionPipeline
       ? {
           evidenceAdmissionPipeline,
-          ...(dependencies.governedPropositionPort
-            ? { governedPropositionPort: dependencies.governedPropositionPort }
-            : {}),
+          ...(governedPropositionPort ? { governedPropositionPort } : {}),
           evidenceAdmissionMinDistinctDocuments:
             runtimeConfig.evidenceAdmissionMinDistinctDocuments,
           evidenceAdmissionAbstainOnConflict:
