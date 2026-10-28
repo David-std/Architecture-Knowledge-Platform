@@ -312,6 +312,16 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/api/src/routes/s2-reviewed-propositions.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/routes/s2-writer-claims.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/api/src/routes/schema-governance.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -353,6 +363,11 @@
     },
     {
       "path": "apps/api/src/s2-admission-shadow.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/s2-reviewed-source-proposition-service.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -607,12 +622,32 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/api/test/s2-reviewed-propositions.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/s2-reviewed-source-live.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/s2-reviewed-source-proposition-service.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/api/test/s2-source-rebind.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
     {
       "path": "apps/api/test/s2-source-span.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/s2-writer-claims.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -2137,6 +2172,11 @@
       "reason": "append-only database migration"
     },
     {
+      "path": "db/migrations/093_s2_reviewed_source_propositions.sql",
+      "category": "MIGRATION",
+      "reason": "append-only database migration"
+    },
+    {
       "path": "dependency-cruiser.cjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -2302,6 +2342,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/s2-prospective-provider-and-live-custody-evaluation.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/s2-question-role-claim-relation-evaluation.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
@@ -2313,6 +2358,11 @@
     },
     {
       "path": "docs/architecture/s2-review-calibration-rubric.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
+      "path": "docs/architecture/s2-reviewed-original-source-service.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
     },
@@ -5137,6 +5187,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/s2-prepare-external-review-kit.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/s2-prepare-owner-holdout.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -5153,6 +5208,11 @@
     },
     {
       "path": "scripts/s2-probe-native-structured-writer.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/s2-prospective-ollama-custody.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

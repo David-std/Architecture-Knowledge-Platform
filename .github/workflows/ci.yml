@@ -71,6 +71,30 @@ jobs:
           docker compose exec -T postgres createdb -U akp akp_upgrade
           pnpm verify:upgrade-migrations
       - run: pnpm auth:provision
+      - name: Verify opt-in S2 original SOURCE and Writer custody with real HTTP
+        env:
+          DATABASE_URL: postgres://akp:akp@localhost:55432/akp_s2_reviewed_test
+          AKP_RAW_ENDPOINT: http://127.0.0.1:19000
+          AKP_RAW_BUCKET: akp-s2-reviewed-ci
+          AKP_RAW_ACCESS_KEY: akp
+          AKP_S2_REVIEWED_SOURCE_ENABLED: "true"
+          AKP_S2_LIVE_ROUTE_TEST: "1"
+          NODE_ENV: test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup_s2_reviewed_database() {
+            docker compose exec -T postgres dropdb -U akp --if-exists akp_s2_reviewed_test >/dev/null 2>&1 || true
+          }
+          trap cleanup_s2_reviewed_database EXIT
+          cleanup_s2_reviewed_database
+          docker compose exec -T postgres createdb -U akp akp_s2_reviewed_test
+          pnpm db:migrate
+          pnpm --filter @akp/retrieval build
+          pnpm --filter @akp/api exec vitest run \
+            --config vitest.integration.config.ts \
+            test/s2-reviewed-source-live.integration.test.ts \
+            --no-file-parallelism
       - name: Run pnpm check
         run: pnpm check
       - name: Run requested answer slot family-disjoint projection

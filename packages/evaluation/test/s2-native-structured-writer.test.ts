@@ -113,6 +113,38 @@ describe("S2 native structured writer fail-closed", () => {
     ]);
     expect(b.freeze.fullContextConfirmedByProvider).toBe(false);
   });
+  it("freezes Qwen-family explicit no-thinking request without changing the default contract", () => {
+    const baseline = make();
+    const f = fixture();
+    const withoutThinking = freezeNativeStructuredWriter({
+      case: f.caseData,
+      originals: f.originals,
+      contextTokens: 4096,
+      maxOutputTokens: 512,
+      disableThinking: true,
+    });
+    const parsedBase = JSON.parse(
+      Buffer.from(baseline.requestBytes).toString("utf8"),
+    );
+    const parsedDisabled = JSON.parse(
+      Buffer.from(withoutThinking.requestBytes).toString("utf8"),
+    );
+    expect(parsedBase.think).toBeUndefined();
+    expect(parsedDisabled.think).toBe(false);
+    expect(withoutThinking.freeze.exactRequestSha256).not.toBe(
+      baseline.freeze.exactRequestSha256,
+    );
+    expect(withoutThinking.freeze.sourcePassages).toEqual(
+      baseline.freeze.sourcePassages,
+    );
+    expect(
+      run(withoutThinking, {
+        answerText: "Twice.",
+        citations: ["SRC1"],
+        abstained: false,
+      }).status,
+    ).toBe("STRUCTURALLY_VALID");
+  });
   it("restricts citation JSON enum to exactly the frozen source IDs", () => {
     expect(
       buildS2NativeWriterSchema(["SRC1", "SECTION2"]).properties.citations.items

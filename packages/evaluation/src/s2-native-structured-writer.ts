@@ -76,6 +76,8 @@ export function freezeNativeStructuredWriter(input: {
   originals: readonly FrozenOriginalReference[];
   contextTokens: 4096 | 8192 | 16384;
   maxOutputTokens: number;
+  /** Explicitly disable Ollama reasoning tokens for compatible local Writer models. */
+  disableThinking?: boolean;
 }): NativeWriterBuild {
   const old = freezeExactWriterRequest(input.case, input.originals);
   if (
@@ -111,6 +113,7 @@ export function freezeNativeStructuredWriter(input: {
   const request = {
     model: input.case.model,
     stream: false,
+    ...(input.disableThinking ? { think: false } : {}),
     format: buildS2NativeWriterSchema(passages.map((passage) => passage.id)),
     options: {
       temperature: 0,
