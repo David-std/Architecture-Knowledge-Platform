@@ -35,6 +35,12 @@ export interface S2AdmissionShadowObservation {
     excerptSha256: string;
     trimmedExcerptUtf16Length: number;
     admittedByApplication: boolean;
+    /** Sanitized first-stage provenance only; relevance never implies support. */
+    retrievalChannelRanks: Array<{
+      channel:
+        "exact" | "lexical" | "vector" | "graph" | "graph-ppr" | "community";
+      rank: number;
+    }>;
     passageSupportReason: string | null;
     readerMode: string | null;
     readerIdSha256: string | null;
@@ -54,6 +60,47 @@ export interface S2AdmissionShadowObservation {
 
 const sha256 = (value: string) =>
   createHash("sha256").update(value).digest("hex");
+
+/**
+ * Keep only bounded, known retrieval channel ranks; never export free-text
+ * fusion reasons, provider metadata, query text, vector scores or SOURCE.
+ * This exposes whether a candidate was recovered via vector, lexical or
+ * another channel without making that channel an evidence authority.
+ */
+const TRACEABLE_CHANNELS = [
+  "exact",
+  "lexical",
+  "vector",
+  "graph",
+  "graph-ppr",
+  "community",
+] as const;
+type TraceableChannel = (typeof TRACEABLE_CHANNELS)[number];
+
+function redactedRetrievalChannels(hit: SearchHit): Array<{
+  channel: TraceableChannel;
+  rank: number;
+}> {
+  const ranks = new Map<TraceableChannel, number>();
+  for (const contribution of hit.fusionContributions ?? []) {
+    const channel = TRACEABLE_CHANNELS.find(
+      (candidate) => candidate === contribution.channel,
+    );
+    if (
+      !channel ||
+      !Number.isSafeInteger(contribution.rank) ||
+      contribution.rank < 1 ||
+      contribution.rank > 100_000
+    )
+      continue;
+    const existing = ranks.get(channel);
+    if (existing === undefined || contribution.rank < existing)
+      ranks.set(channel, contribution.rank);
+  }
+  return [...ranks]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([channel, rank]) => ({ channel, rank }));
+}
 
 /** A model/provider reason may contain source or query text; never echo it. */
 function safeReasonCode(value: string | undefined): string | null {
@@ -134,6 +181,7 @@ export function buildS2AdmissionShadowObservation(input: {
       excerptSha256: sha256(hit.excerpt),
       trimmedExcerptUtf16Length: excerpt.length,
       admittedByApplication: admitted.has(candidateKey),
+      retrievalChannelRanks: redactedRetrievalChannels(hit),
       passageSupportReason: signal?.passageSupport.reason ?? null,
       readerMode: trace?.mode ?? null,
       readerIdSha256: trace ? sha256(trace.verifierId) : null,

@@ -98,6 +98,71 @@ describe("S2 redacted actual-admission shadow", () => {
     expect(serialized).not.toContain("authorized-vault");
   });
 
+  it("records bounded vector/lexical candidate origin without leaking provider reasons or changing admission", () => {
+    const base = input();
+    const enriched = {
+      ...hit,
+      fusionContributions: [
+        {
+          channel: "vector",
+          rank: 5,
+          channelWeight: 1,
+          rawScore: 0.841987,
+          reason: "PRIVATE_VECTOR_REASON",
+        },
+        {
+          channel: "vector",
+          rank: 2,
+          channelWeight: 1,
+          rawScore: 0.842987,
+          reason: "PRIVATE_VECTOR_REASON",
+        },
+        {
+          channel: "lexical",
+          rank: 3,
+          channelWeight: 1,
+          reason: "PRIVATE_LEXICAL_REASON",
+        },
+        {
+          channel: "unknown-secret-provider",
+          rank: 1,
+          channelWeight: 1,
+          reason: "PRIVATE_PROVIDER",
+        },
+        {
+          channel: "exact",
+          rank: -3,
+          channelWeight: 1,
+          reason: "PRIVATE_BAD_RANK",
+        },
+      ],
+    } as SearchHit;
+    const assessment = assessRetrievalAnswerability(
+      [enriched],
+      "What is M-7 battery?",
+    );
+    const record = buildS2AdmissionShadowObservation({
+      ...base,
+      pool: [enriched],
+      assessment,
+    });
+    expect(record.candidates[0]?.retrievalChannelRanks).toEqual([
+      { channel: "lexical", rank: 3 },
+      { channel: "vector", rank: 2 },
+    ]);
+    expect(record.admittedCandidateCount).toBe(
+      assessment.supportedCandidateKeys.length,
+    );
+    for (const text of [
+      "PRIVATE_VECTOR_REASON",
+      "PRIVATE_LEXICAL_REASON",
+      "PRIVATE_PROVIDER",
+      "unknown-secret-provider",
+      "0.841987",
+    ])
+      expect(JSON.stringify(record)).not.toContain(text);
+  });
+
   it("keeps a shadow verifier verdict separate from actual admission", () => {
     const recorded = buildS2AdmissionShadowObservation({
       ...input(),
