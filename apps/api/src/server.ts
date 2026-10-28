@@ -362,6 +362,17 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
     !s2ReviewedSourceEnabled
   )
     throw new Error("S2_ATOMIC_WRITER_REQUIRES_REVIEWED_SOURCE");
+  // A diagnostic on an unreviewed question can never stand on its own:
+  // the authenticated native Writer and original SOURCE review must both be
+  // explicitly enabled, or construction fails before any route is installed.
+  if (
+    process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED === "true" &&
+    (process.env.AKP_S2_ATOMIC_WRITER_EVAL_ENABLED !== "true" ||
+      !s2ReviewedSourceEnabled ||
+      !rawObjectStore ||
+      !governedPropositionPort)
+  )
+    throw new Error("S2_SOURCE_ANCHORED_SHADOW_REQUIRES_GOVERNED_WRITER");
   if (s2ReviewedSourceEnabled && rawObjectStore && governedPropositionPort) {
     registerS2ReviewedPropositionRoutes(app, db, rawObjectStore);
     registerS2ReviewedWriterAuditRoutes(app, db, governedPropositionPort);

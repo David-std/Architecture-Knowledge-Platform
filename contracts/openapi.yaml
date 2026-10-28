@@ -4581,9 +4581,14 @@ paths:
         Model, pinned model digest and build commit are server-side settings;
         caller cannot supply a URL, provider, source, claim projection or
         approval. Native model output has exact per-statement source IDs and
-        is re-audited after inference. Returns digests/metrics and a withheld
-        or candidate verdict, never source text, Writer prose or a production
-        release permission. Human semantic adjudication remains necessary.
+        is re-audited after inference in REVIEWED_CUSTODY mode. The additional
+        SOURCE_ANCHORED_SHADOW mode requires a separate opt-in flag and a
+        previously approved SOURCE anchor for each section; it may expose the
+        original SOURCE to the pinned local model for a NEW, unreviewed question,
+        but NEVER reviews the new question or its claims and can return only a
+        redacted NOT_ADMITTED diagnostic. Both modes return digests/metrics,
+        never source text, Writer prose or a production release permission.
+        Human semantic adjudication remains necessary.
       x-akp-permission: eval:run
       x-akp-idempotency-exempt: true
       requestBody:
@@ -4598,6 +4603,10 @@ paths:
                 packetId: { type: string, format: uuid }
                 packetHash: { type: string, minLength: 1, maxLength: 256 }
                 language: { type: string, enum: [en, es] }
+                mode:
+                  type: string
+                  enum: [REVIEWED_CUSTODY, SOURCE_ANCHORED_SHADOW]
+                  default: REVIEWED_CUSTODY
       responses:
         "200": { $ref: "#/components/responses/ObjectResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }

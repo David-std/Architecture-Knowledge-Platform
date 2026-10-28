@@ -55,12 +55,16 @@ run(
     let nativeCallCount = 0;
     let esPacketId = "";
     let esPacketHash = "";
+    let unseenPacketId = "";
+    let unseenPacketHash = "";
+    let anchorIdsToRevoke: string[] = [];
     let nativeMode:
       | "GOOD"
       | "FORGED_CITATION"
       | "TRUNCATED"
       | "UNREVIEWED_CLAIM"
-      | "REVOKE_DURING_GENERATION" = "GOOD";
+      | "REVOKE_DURING_GENERATION"
+      | "REVOKE_ANCHOR_DURING_GENERATION" = "GOOD";
     const pinnedAtomicProvider = {
       id: "s2:mock-provider-transport-only",
       model: "s2-synthetic-model:latest",
@@ -72,6 +76,14 @@ run(
           await db.pool.query(
             "update vault_memberships set enabled=false where user_id=$1 and vault_id=$2",
             [reviewers[0]!.id, vaultId],
+          );
+        }
+        if (nativeMode === "REVOKE_ANCHOR_DURING_GENERATION") {
+          await db.pool.query(
+            `update s2_reviewed_source_propositions
+                set status='REVOKED', revoked_by=$1, revoked_at=now()
+              where id=any($2::uuid[]) and status='APPROVED'`,
+            [reviewers[1]!.id, anchorIdsToRevoke],
           );
         }
         const request = JSON.parse(
@@ -741,6 +753,182 @@ run(
       });
       expect(nativeCallCount).toBe(before);
     }, 45000);
+    it("observes a new unreviewed question against pre-reviewed original SOURCE without semantic admission", async () => {
+      const question = "Was shipment SR-41 authorized by another actor?";
+      const original = await db.pool.query<{ packet: Record<string, unknown> }>(
+        "select packet from context_packets where id=$1",
+        [packetId],
+      );
+      const id = randomUUID(),
+        digest = sha("source-anchored-shadow:" + id);
+      unseenPacketId = id;
+      unseenPacketHash = digest;
+      const packet = {
+        ...original.rows[0]!.packet,
+        packetId: id,
+        packetHash: digest,
+        query: question,
+      };
+      await db.pool.query(
+        `insert into context_packets(id,space_id,vault_id,actor_id,
+          corpus_revision,query_hash,packet_hash,request,packet,scope)
+          values($1,$2,$3,$4,'s2:r1',$5,$6,$7::jsonb,$8::jsonb,$9::jsonb)`,
+        [
+          id,
+          spaceId,
+          vaultId,
+          reviewers[0]!.id,
+          sha(question),
+          digest,
+          JSON.stringify({ query: question, spaceId, vaultId }),
+          JSON.stringify(packet),
+          JSON.stringify({ spaceId, vaultIds: [vaultId], federated: false }),
+        ],
+      );
+      const request = {
+        packetId: id,
+        packetHash: digest,
+        language: "en",
+        mode: "SOURCE_ANCHORED_SHADOW",
+      };
+      // Test both authorization layers: this capability is disabled in the
+      // ordinary API even if the native Writer evaluator itself is enabled.
+      const disabled = await post(
+        "/v1/s2/writer-claims/generate-audit",
+        0,
+        request,
+      );
+      expect(disabled.status).toBe(403);
+      expect(await disabled.json()).toMatchObject({
+        code: "S2_UNSEEN_QUESTION_SHADOW_DISABLED",
+      });
+      const previous = process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED;
+      process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED = "true";
+      let shadowApp: ReturnType<typeof buildServer> | undefined;
+      try {
+        shadowApp = buildServer({
+          s2AtomicWriterProvider: pinnedAtomicProvider,
+        });
+      } finally {
+        if (previous === undefined)
+          delete process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED;
+        else process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED = previous;
+      }
+      try {
+        await shadowApp.ready();
+        const url = await shadowApp.listen({ host: "127.0.0.1", port: 0 });
+        const before = nativeCallCount;
+        const response = await fetch(
+          url + "/v1/s2/writer-claims/generate-audit",
+          {
+            method: "POST",
+            headers: {
+              ...headers(0),
+              "Idempotency-Key": randomUUID() + "-" + randomUUID(),
+            },
+            body: JSON.stringify(request),
+            signal: AbortSignal.timeout(20000),
+          },
+        );
+        const result = (await response.json()) as Record<string, unknown>;
+        expect(response.status, JSON.stringify(result)).toBe(200);
+        expect(result).toMatchObject({
+          status: "UNSEEN_QUESTION_SOURCE_ANCHORED_SHADOW",
+          modelInvoked: true,
+          reviewedQuestion: false,
+          individualClaimReviewPerformed: false,
+          originalSourceCustodyRevalidated: true,
+          semanticQuestionAndClaimAuthority: false,
+          productionAdmission: false,
+          releaseGateAccepted: false,
+        });
+        expect(nativeCallCount).toBe(before + 1);
+        expect(result).not.toHaveProperty("answerText");
+        expect(result).not.toHaveProperty("sourceOriginalText");
+        expect(result).not.toHaveProperty("sourceAnchorQuestion");
+        expect(result).toHaveProperty("answerSha256");
+        const smuggled = await fetch(
+          url + "/v1/s2/writer-claims/generate-audit",
+          {
+            method: "POST",
+            headers: {
+              ...headers(0),
+              "Idempotency-Key": randomUUID() + "-" + randomUUID(),
+            },
+            body: JSON.stringify({
+              ...request,
+              source: writerStatement,
+              queryProposition: { subject: "attacker" },
+            }),
+            signal: AbortSignal.timeout(20000),
+          },
+        );
+        expect(smuggled.status).toBe(400);
+        expect(nativeCallCount).toBe(before + 1);
+        const approved = await db.pool.query<{ id: string }>(
+          `select id from s2_reviewed_source_propositions
+            where document_id=$1 and excerpt_sha256=$2 and status='APPROVED'`,
+          [docId, sha(writerStatement)],
+        );
+        expect(approved.rows.length).toBeGreaterThan(0);
+        anchorIdsToRevoke = approved.rows.map((row) => row.id);
+        try {
+          nativeMode = "REVOKE_ANCHOR_DURING_GENERATION";
+          const revokedDuring = await fetch(
+            url + "/v1/s2/writer-claims/generate-audit",
+            {
+              method: "POST",
+              headers: {
+                ...headers(0),
+                "Idempotency-Key": randomUUID() + "-" + randomUUID(),
+              },
+              body: JSON.stringify(request),
+              signal: AbortSignal.timeout(20000),
+            },
+          );
+          expect(revokedDuring.status).toBe(200);
+          expect(await revokedDuring.json()).toMatchObject({
+            status: "WITHHELD_SOURCE_ANCHOR_CHANGED_AFTER_INFERENCE",
+            modelInvoked: true,
+            productionAdmission: false,
+            releaseGateAccepted: false,
+          });
+          expect(nativeCallCount).toBe(before + 2);
+          nativeMode = "GOOD";
+          const revokedBefore = await fetch(
+            url + "/v1/s2/writer-claims/generate-audit",
+            {
+              method: "POST",
+              headers: {
+                ...headers(0),
+                "Idempotency-Key": randomUUID() + "-" + randomUUID(),
+              },
+              body: JSON.stringify(request),
+              signal: AbortSignal.timeout(20000),
+            },
+          );
+          expect(revokedBefore.status).toBe(200);
+          expect(await revokedBefore.json()).toMatchObject({
+            status: "WITHHELD_UNREVIEWED_SOURCE_ANCHOR",
+            modelInvoked: false,
+            productionAdmission: false,
+            releaseGateAccepted: false,
+          });
+          expect(nativeCallCount).toBe(before + 2);
+        } finally {
+          nativeMode = "GOOD";
+          await db.pool.query(
+            `update s2_reviewed_source_propositions
+              set status='APPROVED',revoked_by=null,revoked_at=null
+              where id=any($1::uuid[])`,
+            [anchorIdsToRevoke],
+          );
+          anchorIdsToRevoke = [];
+        }
+      } finally {
+        await shadowApp.close();
+      }
+    }, 60000);
     const itRealNative =
       process.env.AKP_S2_ATOMIC_WRITER_REAL_PROVIDER_TEST === "true"
         ? it
@@ -799,6 +987,65 @@ run(
                 releaseGateAccepted: false,
               }),
             );
+          }
+          // A truly new, inverted-actor question reaches only the separately
+          // gated SOURCE-anchored shadow, NEVER the review-based claim gate.
+          const oldFlag = process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED;
+          process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED = "true";
+          let realShadowApp: ReturnType<typeof buildServer>;
+          try {
+            realShadowApp = buildServer({
+              s2AtomicWriterProvider: realProvider,
+            });
+          } finally {
+            if (oldFlag === undefined)
+              delete process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED;
+            else process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED = oldFlag;
+          }
+          try {
+            await realShadowApp.ready();
+            const shadowBase = await realShadowApp.listen({
+              host: "127.0.0.1",
+              port: 0,
+            });
+            const before = performance.now();
+            const response = await fetch(
+              shadowBase + "/v1/s2/writer-claims/generate-audit",
+              {
+                method: "POST",
+                headers: {
+                  ...headers(0),
+                  "Idempotency-Key": randomUUID() + "-" + randomUUID(),
+                },
+                body: JSON.stringify({
+                  packetId: unseenPacketId,
+                  packetHash: unseenPacketHash,
+                  language: "en",
+                  mode: "SOURCE_ANCHORED_SHADOW",
+                }),
+                signal: AbortSignal.timeout(28000),
+              },
+            );
+            const receipt = (await response.json()) as Record<string, unknown>;
+            expect([200, 503]).toContain(response.status);
+            expect(receipt.productionAdmission).toBe(false);
+            expect(receipt.releaseGateAccepted).toBe(false);
+            expect(receipt).not.toHaveProperty("answerText");
+            expect(receipt).not.toHaveProperty("sourceOriginalText");
+            console.log(
+              "S2_REAL_UNSEEN_QUESTION_REDACTED_DIAGNOSTIC",
+              JSON.stringify({
+                httpStatus: response.status,
+                status: receipt.status ?? receipt.code,
+                modelInvoked: receipt.modelInvoked ?? false,
+                claimCount: receipt.claimCount ?? 0,
+                providerMs: receipt.providerMs ?? null,
+                fullHttpMs: Math.round(performance.now() - before),
+                releaseGateAccepted: false,
+              }),
+            );
+          } finally {
+            await realShadowApp.close();
           }
         } finally {
           await liveApp.close();

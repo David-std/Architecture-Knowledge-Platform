@@ -7,6 +7,7 @@ import {
 } from "@akp/postgres";
 import {
   retrievalAnswerabilityCandidateKey,
+  bindGovernedLayeredPropositionInput,
   type GovernedLayeredPropositionPort,
   type GovernedLayeredPropositionProof,
   type StructuredProposition,
@@ -290,4 +291,95 @@ export function createS2ReviewedSourcePropositionPort(
       }
     },
   };
+}
+
+/**
+ * Evaluate previously unknown questions against SOURCE that is ALREADY
+ * independently reviewed for a different statement. This proves only that
+ * the original bytes/ACL/revision remain current; the anchor's question
+ * proposition must NEVER be relabeled as approval for an unseen question.
+ *
+ * The same canonical reviewed port rechecks evidence, path, vault, revision
+ * and raw bytes. No second SOURCE reader or authorizer is introduced.
+ */
+export async function findS2ReviewedSourceAnchor(input: {
+  db: Postgres;
+  port: GovernedLayeredPropositionPort;
+  principalId: string;
+  spaceId: string;
+  hit: import("@akp/contracts").SearchHit;
+  excludedQuestion: string;
+}): Promise<{
+  anchorQuestionSha256: string;
+  proof: GovernedLayeredPropositionProof;
+} | null> {
+  const { db, port, principalId, spaceId, hit, excludedQuestion } = input;
+  if (
+    !principalId ||
+    !spaceId ||
+    !hit.documentId ||
+    !hit.vaultId ||
+    !hit.revision ||
+    !hit.document?.path ||
+    !hit.excerpt ||
+    hit.excerpt.length > 8192 ||
+    excludedQuestion.length > 4096
+  )
+    return null;
+  try {
+    // This is a bounded locator for an already reviewed SOURCE anchor; it is
+    // NOT a means of accepting or synthesizing natural-language propositions.
+    const matches = await db.pool.query<{
+      question_text: string;
+      question_sha256: string;
+    }>(
+      `select question_text,question_sha256
+         from s2_reviewed_source_propositions
+        where space_id=$1 and vault_id=$2 and document_id=$3
+          and unit_id is not distinct from $4::uuid
+          and document_revision=$5 and document_path=$6
+          and excerpt_sha256=$7
+          and status='APPROVED' and approved_by<>proposed_by
+          and question_sha256<>$8
+        order by question_sha256,id
+        limit 8`,
+      [
+        spaceId,
+        hit.vaultId,
+        hit.documentId,
+        hit.unitId ?? null,
+        hit.revision,
+        hit.document.path,
+        sha256(hit.excerpt),
+        sha256(excludedQuestion),
+      ],
+    );
+    for (const row of matches.rows) {
+      if (
+        !row.question_text?.trim() ||
+        row.question_text.length > 4096 ||
+        row.question_text === excludedQuestion ||
+        row.question_sha256 !== sha256(row.question_text)
+      )
+        continue;
+      let proof: GovernedLayeredPropositionProof | null = null;
+      try {
+        proof = await port.resolve({
+          originalQuestion: row.question_text,
+          hit,
+          principalId,
+          spaceId,
+        });
+      } catch {
+        proof = null;
+      }
+      // Reuse the established guarded SOURCE/structured-proposition binder.
+      // This relation is about the anchor question, NEVER excludedQuestion.
+      if (bindGovernedLayeredPropositionInput(row.question_text, hit, proof))
+        return { anchorQuestionSha256: row.question_sha256, proof: proof! };
+    }
+  } catch {
+    // No new-question fallback from unavailable/stale review rows or source.
+  }
+  return null;
 }

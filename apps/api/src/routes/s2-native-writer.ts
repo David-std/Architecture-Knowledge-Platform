@@ -21,6 +21,7 @@ import {
   hitFromReviewedS2Section,
 } from "../s2-writer-audit-core.js";
 import type { S2AtomicWriterProvider } from "../s2-local-atomic-provider.js";
+import { findS2ReviewedSourceAnchor } from "../s2-reviewed-source-proposition-service.js";
 
 const sha = (x: string | Uint8Array) =>
   createHash("sha256").update(x).digest("hex");
@@ -29,6 +30,9 @@ const Request = z
     packetId: z.string().uuid(),
     packetHash: z.string().min(1).max(256),
     language: z.enum(["en", "es"]),
+    mode: z
+      .enum(["REVIEWED_CUSTODY", "SOURCE_ANCHORED_SHADOW"])
+      .default("REVIEWED_CUSTODY"),
   })
   .strict();
 
@@ -42,6 +46,8 @@ export function registerS2NativeReviewedWriterRoutes(
   trustedPort: GovernedLayeredPropositionPort,
   provider: S2AtomicWriterProvider,
 ): void {
+  const sourceAnchoredShadowEnabled =
+    process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED === "true";
   const pipeline = new LayeredEvidenceAdmissionPipeline({
     semanticReader: {
       id: "s2:native-reviewed-source-only",
@@ -68,6 +74,13 @@ export function registerS2NativeReviewedWriterRoutes(
         return reply
           .code(400)
           .send({ code: "S2_NATIVE_WRITER_REQUEST_INVALID" });
+      if (
+        input.data.mode === "SOURCE_ANCHORED_SHADOW" &&
+        !sourceAnchoredShadowEnabled
+      )
+        return reply
+          .code(403)
+          .send({ code: "S2_UNSEEN_QUESTION_SHADOW_DISABLED" });
       const principal = actorOf(request);
       if (!principal) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       const scoped = await resolveS2WriterContext({
@@ -87,6 +100,7 @@ export function registerS2NativeReviewedWriterRoutes(
           releaseGateAccepted: false,
           modelInvoked: false,
         };
+      const sourceAnchors: string[] = [];
       const originals: FrozenOriginalReference[] = [];
       const passages: WriterProbeInput["passages"] = [];
       for (const [index, section] of packet.sections.entries()) {
@@ -100,7 +114,27 @@ export function registerS2NativeReviewedWriterRoutes(
         } catch {
           sourceProof = null;
         }
-        if (
+        if (input.data.mode === "SOURCE_ANCHORED_SHADOW") {
+          // Only an already approved SOURCE anchor may be used. Its
+          // projections are NEVER treated as review of packet.query.
+          const anchor = await findS2ReviewedSourceAnchor({
+            db,
+            port: trustedPort,
+            principalId: principal.id,
+            spaceId: packet.scope.spaceId,
+            hit,
+            excludedQuestion: packet.query,
+          });
+          if (!anchor)
+            return {
+              status: "WITHHELD_UNREVIEWED_SOURCE_ANCHOR",
+              productionAdmission: false,
+              releaseGateAccepted: false,
+              modelInvoked: false,
+            };
+          sourceProof = anchor.proof;
+          sourceAnchors.push(anchor.anchorQuestionSha256);
+        } else if (
           !bindGovernedLayeredPropositionInput(packet.query, hit, sourceProof)
         ) {
           return {
@@ -260,6 +294,54 @@ export function registerS2NativeReviewedWriterRoutes(
       });
       if (!second.ok)
         return reply.code(second.status).send({ code: second.code });
+      if (input.data.mode === "SOURCE_ANCHORED_SHADOW") {
+        if (
+          second.packet.query !== packet.query ||
+          second.packet.sections.length !== sourceAnchors.length
+        )
+          return reply.code(409).send({ code: "S2_SHADOW_PACKET_CHANGED" });
+        for (const [index, section] of second.packet.sections.entries()) {
+          const anchor = await findS2ReviewedSourceAnchor({
+            db,
+            port: second.port,
+            principalId: principal.id,
+            spaceId: second.packet.scope.spaceId,
+            hit: hitFromReviewedS2Section(section),
+            excludedQuestion: second.packet.query,
+          });
+          // The original review/source may have been revoked or changed
+          // during inference; no shadow receipt is produced in that case.
+          if (!anchor || anchor.anchorQuestionSha256 !== sourceAnchors[index])
+            return {
+              status: "WITHHELD_SOURCE_ANCHOR_CHANGED_AFTER_INFERENCE",
+              modelInvoked: true,
+              productionAdmission: false,
+              releaseGateAccepted: false,
+            };
+        }
+        return {
+          status: "UNSEEN_QUESTION_SOURCE_ANCHORED_SHADOW",
+          evaluationOnly: true,
+          modelInvoked: true,
+          model: provider.model,
+          modelDigestSha256: provider.modelDigestSha256,
+          requestSha256: observed.requestSha256,
+          responseSha256: observed.responseSha256,
+          answerSha256: sha(observed.answerText!),
+          promptTokens: observed.promptTokens,
+          completionTokens: observed.completionTokens,
+          providerMs,
+          claimCount: statements.length,
+          reviewedQuestion: false,
+          individualClaimReviewPerformed: false,
+          originalSourceCustodyRevalidated: true,
+          semanticQuestionAndClaimAuthority: false,
+          originalSourceAuthorizationIndependentlyVerified: false,
+          productionAdmission: false,
+          releaseGateAccepted: false,
+          fullAuthenticatedWriterRoundTripIndependentlyVerified: false,
+        };
+      }
       const audit = await auditReviewedS2Statements({
         packet: second.packet,
         answerText: observed.answerText!,

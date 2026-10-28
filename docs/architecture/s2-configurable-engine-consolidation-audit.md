@@ -50,6 +50,10 @@ Remote CI on `63727cb0` passed the new isolated original-SOURCE integration on N
 
 **Decision:** the architecture and 93 prior experiment sections have not become a validated product by accumulation. Preserve the successful components through one ordered, configurable, measurable pipeline; leave rejected results available as adversarial tests; close S2 **only after** the independent new-answer evaluation and full Writer/source validation.
 
+## §97 optional new-question SOURCE-anchored diagnostic
+
+The existing reviewed SOURCE → native atomic Writer → common R5 audit route now also supports the separately gated `SOURCE_ANCHORED_SHADOW` request mode (see master ledger §97). This permits model-only **diagnostics** on unreviewed new questions against an otherwise current authorized original-SOURCE excerpt that has at least one approved anchor question. It does not treat the anchor's relation or the generated answer as true and never invokes the R5 positive-claim audit under that branch; it returns redacted SHA/timings/claim counts and hard-coded `productionAdmission:false` / `releaseGateAccepted:false`. No new evidence-provider or source-authority implementation is introduced. `AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED` defaults OFF and requires `AKP_S2_ATOMIC_WRITER_EVAL_ENABLED`.
+
 ## §95 cutover implementation — bounded native atomic Writer under existing R5 (2026-10-28)
 
 The first production-boundary cutover is **opt-in evaluation, not default RAG**. The existing `/v1/s2/writer-claims/audit` and new `/v1/s2/writer-claims/generate-audit` share `resolveS2WriterContext` and `auditReviewedS2Statements`; there is **one** authority for current space/vault, persisted ContextPacket, Source proof, and claim review. The new route requires `AKP_S2_REVIEWED_SOURCE_ENABLED=true` AND `AKP_S2_ATOMIC_WRITER_EVAL_ENABLED=true`, a real immutable-source store, and all of:
