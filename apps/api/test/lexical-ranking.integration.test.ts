@@ -327,8 +327,9 @@ describe("production lexical ranking", () => {
         language: string;
         depth: number;
         correctUnitPresent: boolean;
+        correctUnitRankInCandidatePool: number | null;
         wrongUnitCount: number;
-        readerPoolHasCorrect: boolean;
+        totalPreReaderCandidates: number;
       }> = [];
       for (const language of ["ES", "EN"] as const) {
         const fixture = lexicalFixture();
@@ -434,9 +435,12 @@ describe("production lexical ranking", () => {
               language,
               depth,
               correctUnitPresent: sourceHits.includes(originals[0]!.id),
+              correctUnitRankInCandidatePool: poolIds.includes(originals[0]!.id)
+                ? poolIds.indexOf(originals[0]!.id) + 1
+                : null,
               wrongUnitCount: sourceHits.filter((id) => id !== originals[0]!.id)
                 .length,
-              readerPoolHasCorrect: sourceHits.includes(originals[0]!.id),
+              totalPreReaderCandidates: poolIds.length,
             });
             expect(sourceHits.length).toBeLessThanOrEqual(depth);
             // These results are candidates even when the HTTP presentation
