@@ -35,6 +35,7 @@
     "hygiene:validate": "node scripts/validate-repository-hygiene.mjs",
     "retrieval:generality:validate": "node scripts/validate-retrieval-generality.mjs",
     "s2:holdout:validate": "node scripts/validate-s2-span-holdout.mjs --self-test",
+    "s2:disposition:validate": "node scripts/validate-s2-technique-disposition.mjs --self-test",
     "audit:retrieval-unitization": "tsx scripts/retrieval-unitization-audit.ts",
     "benchmark:capability-baseline": "tsx scripts/capability-maturity-baseline.ts",
     "benchmark:retrieval:offline": "tsx scripts/retrieval_benchmark_offline.ts",

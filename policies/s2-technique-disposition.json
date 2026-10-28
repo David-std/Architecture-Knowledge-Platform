@@ -1,0 +1,639 @@
+{
+  "schemaVersion": "akp.s2.technique-disposition.v1",
+  "status": "ARCHITECTURE_AUDIT_NOT_RELEASE_ACCEPTANCE",
+  "pr": 38,
+  "sourceLedger": "docs/architecture/s2-semantic-experiments-and-integration-ledger.md",
+  "gateStatus": "OPEN",
+  "lastReviewed": "2026-10-28",
+  "dispositionDefinitions": {
+    "RUNTIME_DEFAULT": "On the maintained production path; security/sufficiency authority still bounded by code.",
+    "RUNTIME_OPT_IN": "Connected to maintained path behind opt-in configuration or guarded injection; not promoted.",
+    "SHADOW_ONLY": "May run and emit diagnostics; cannot grant source support.",
+    "EVALUATION_ONLY": "Implemented as offline/benchmark helper, not part of admitted production answer path.",
+    "REJECTED": "Experimental hypothesis rejected in a documented DEV comparison; do not auto-combine.",
+    "REQUIRES_CUTOVER": "Existing code/experiment is useful but lacks a proven safe single-owner production cutover.",
+    "UNIMPLEMENTED_GATE": "Missing verified end-to-end or external acceptance evidence."
+  },
+  "supplementalModules": [
+    {
+      "path": "scripts/s2-audit-owner-holdout-reviews.ts",
+      "sourceSection": 37,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-audit-reader-answer-forms.ts",
+      "sourceSection": 62,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-audit-reader-claim-review.ts",
+      "sourceSection": 62,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-audit-section-blind-reviewers.ts",
+      "sourceSection": 32,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-audit-writer-semantic-review.ts",
+      "sourceSection": 67,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-finalize-owner-case-proposals.ts",
+      "sourceSection": 37,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-freeze-and-run-writer-probe.ts",
+      "sourceSection": 45,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-paired-answer-generation.mjs",
+      "sourceSection": 28,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-prepare-owner-holdout.ts",
+      "sourceSection": 37,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-prepare-reader-claim-review.ts",
+      "sourceSection": 62,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-prepare-writer-semantic-review.ts",
+      "sourceSection": 67,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-probe-native-structured-writer.ts",
+      "sourceSection": 93,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-rebind-admission-shadow.ts",
+      "sourceSection": 39,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-reconcile-writer-review-submissions.ts",
+      "sourceSection": 67,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-score-calibration-admissions.mjs",
+      "sourceSection": 67,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-score-generated-answer-calibration.mjs",
+      "sourceSection": 68,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-score-observations.ts",
+      "sourceSection": 4,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-score-section-paired.ts",
+      "sourceSection": 32,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-source-bound-absence-study.ts",
+      "sourceSection": 35,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-source-bound-relation-study.ts",
+      "sourceSection": 35,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-summarize-writer-reviews.ts",
+      "sourceSection": 67,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-verify-external-holdout-freeze.ts",
+      "sourceSection": 37,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "packages/evaluation/src/s2-actor-binding.ts",
+      "sourceSection": 21,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-authenticated-http-writer-bridge.ts",
+      "sourceSection": 45,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-bm25-same-pool-shadow.ts",
+      "sourceSection": 78,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-claim-answer-anchor.ts",
+      "sourceSection": 24,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-claim-corroboration.ts",
+      "sourceSection": 31,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-claim-numeric-integrity.ts",
+      "sourceSection": 50,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-discovery-review-plan.ts",
+      "sourceSection": 39,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-dual-axis.ts",
+      "sourceSection": 40,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-end-to-end-evidence-trace.ts",
+      "sourceSection": 28,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-evidence-portfolio.ts",
+      "sourceSection": 30,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-frozen-reader-source-bridge.ts",
+      "sourceSection": 44,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-holdout-freeze.ts",
+      "sourceSection": 39,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-http-admitted-frozen-reader.ts",
+      "sourceSection": 45,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-http-evidence-replay.ts",
+      "sourceSection": 28,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-owner-holdout.ts",
+      "sourceSection": 37,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-owner-review-audit.ts",
+      "sourceSection": 37,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-paired-semantic-probe.ts",
+      "sourceSection": 27,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-pipeline-stage-ledger.ts",
+      "sourceSection": 28,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-pre-admission-source-discovery.ts",
+      "sourceSection": 29,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-question-answer-claim.ts",
+      "sourceSection": 49,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-quote-evidence-choice.ts",
+      "sourceSection": 47,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-reader-claim-review.ts",
+      "sourceSection": 62,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-retrieved-writer-bridge.ts",
+      "sourceSection": 45,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-section-blind-review.ts",
+      "sourceSection": 32,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-section-paired.ts",
+      "sourceSection": 32,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-semantic-pipeline-trace.ts",
+      "sourceSection": 28,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-semantic-probes.ts",
+      "sourceSection": 27,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-source-span.ts",
+      "sourceSection": 4,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-windowed-claim-diagnostics.ts",
+      "sourceSection": 22,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-writer-citation-reconciliation.ts",
+      "sourceSection": 28,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-writer-passage-capture.ts",
+      "sourceSection": 45,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-writer-review-compat.ts",
+      "sourceSection": 64,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-writer-semantic-packets.ts",
+      "sourceSection": 67,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/retrieval/src/s2-bilingual-candidate-shadow.ts",
+      "sourceSection": 19,
+      "disposition": "SHADOW_ONLY",
+      "decision": "Source/original or bilingual diagnostic; cannot grant admission"
+    },
+    {
+      "path": "apps/api/src/s2-admission-shadow.ts",
+      "sourceSection": 39,
+      "disposition": "RUNTIME_OPT_IN",
+      "decision": "Opt-in application shadow event sink, redacted diagnostics only"
+    },
+    {
+      "path": "apps/api/src/s2-source-rebind.ts",
+      "sourceSection": 39,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Source/original or bilingual diagnostic; cannot grant admission"
+    }
+  ],
+  "techniques": [
+    {
+      "id": "authorized-search-context",
+      "stage": "A",
+      "disposition": "RUNTIME_DEFAULT",
+      "sourceSection": 6,
+      "files": ["apps/api/src/routes/search.ts", "apps/api/src/server.ts"],
+      "decision": "Single HTTP/MCP search/context use-case and ACL/revision scope; extraction of pure ranking owner from huge route still pending."
+    },
+    {
+      "id": "hybrid-pgvector-lexical-rrf",
+      "stage": "B",
+      "disposition": "RUNTIME_DEFAULT",
+      "sourceSection": 77,
+      "files": [
+        "apps/api/src/routes/search.ts",
+        "packages/retrieval/src/rrf.ts"
+      ],
+      "decision": "Exact/lexical/vector channels available; vector E5 deployment remains separately configured; rank not truth."
+    },
+    {
+      "id": "e5-local-embedding",
+      "stage": "B",
+      "disposition": "SHADOW_ONLY",
+      "sourceSection": 77,
+      "files": [
+        "packages/retrieval/src/local-semantic-embedding.ts",
+        "packages/indexing/src/embedding-index.ts"
+      ],
+      "decision": "E5 indexing and search measured on real PostgreSQL; no production quality promotion."
+    },
+    {
+      "id": "bounded-unit-lexical-recall",
+      "stage": "B",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 80,
+      "files": [
+        "packages/retrieval/src/assertion-recall.ts",
+        "apps/api/src/routes/search.ts"
+      ],
+      "decision": "Source-unit candidate recovery, not admission; source-family and distractor evidence outstanding."
+    },
+    {
+      "id": "sibling-unit-depth",
+      "stage": "B",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 87,
+      "files": [
+        "apps/api/src/routes/search.ts",
+        "packages/retrieval/src/candidate-policy.ts"
+      ],
+      "decision": "Bounded SQL branch 1/2/4 tested; >1 added distractors on controls; cap configurable but not proof of better default."
+    },
+    {
+      "id": "bge-order-only",
+      "stage": "C",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 85,
+      "files": [
+        "packages/retrieval/src/local-bge-reranker.ts",
+        "apps/api/src/server.ts"
+      ],
+      "flag": "AKP_S2_BGE_RERANK_ENABLED",
+      "decision": "Local BGE ordering connected after authorized fusion; cannot grant support; default OFF, p95 concern."
+    },
+    {
+      "id": "query-translation",
+      "stage": "B",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 19,
+      "files": [
+        "packages/retrieval/src/query-translation.ts",
+        "apps/api/src/server.ts"
+      ],
+      "decision": "Entity-preserving lexical/vector query variants; no admission authority, error cases and provider budgets."
+    },
+    {
+      "id": "bounded-bilingual-question-transform",
+      "stage": "B",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 19,
+      "files": ["packages/retrieval/src/s2-question-candidate-transform.ts"],
+      "decision": "Lexical translation/retention hypothesis tested; not a second hidden query planner."
+    },
+    {
+      "id": "contextual-qa-diagnostic",
+      "stage": "E",
+      "disposition": "SHADOW_ONLY",
+      "sourceSection": 14,
+      "files": [
+        "packages/retrieval/src/local-multilingual-qa-evidence.ts",
+        "apps/api/src/server.ts"
+      ],
+      "decision": "Extractive QA can identify wrong value in an authentic quote; not eligible to grant source support."
+    },
+    {
+      "id": "nli-diagnostic",
+      "stage": "G",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 25,
+      "files": [
+        "packages/retrieval/src/local-multilingual-nli-evidence.ts",
+        "packages/evaluation/src/s2-semantic-evidence.ts"
+      ],
+      "decision": "Cross-domain entailment/polarity unsafe as mandatory veto or guarantee until independent evidence."
+    },
+    {
+      "id": "deterministic-support-guard",
+      "stage": "E",
+      "disposition": "RUNTIME_DEFAULT",
+      "sourceSection": 6,
+      "files": [
+        "packages/retrieval/src/support-verifier.ts",
+        "packages/retrieval/src/answerability.ts"
+      ],
+      "decision": "Deterministic authority retained; known false abstentions and missing role/condition semantics."
+    },
+    {
+      "id": "layered-admission",
+      "stage": "E",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 42,
+      "files": [
+        "packages/retrieval/src/evidence-admission.ts",
+        "packages/retrieval/src/layered-answerability.ts",
+        "apps/api/src/server.ts"
+      ],
+      "flag": "AKP_EVIDENCE_VERIFIER_MODE",
+      "decision": "One existing structural/semantic owner with fail-closed paths; not accepted for default."
+    },
+    {
+      "id": "v5-reader-adaptive-shortlist",
+      "stage": "E",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 55,
+      "files": [
+        "packages/retrieval/src/evidence-reader.ts",
+        "apps/api/src/runtime-config.ts"
+      ],
+      "flag": "AKP_EVIDENCE_READER_ADAPTIVE_MAX_CANDIDATES",
+      "decision": "Preserves reader errors and adaptive batch support; source relation correctness remains conditional."
+    },
+    {
+      "id": "governed-qualified-proposition-matcher",
+      "stage": "E",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 76,
+      "files": [
+        "packages/retrieval/src/proposition-projection.ts",
+        "packages/retrieval/src/evidence-admission.ts"
+      ],
+      "decision": "Source SHA and exact typed slots; only trustworthy external projection may drive it."
+    },
+    {
+      "id": "reviewed-original-source-service",
+      "stage": "D",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 92,
+      "files": [
+        "apps/api/src/s2-reviewed-source-proposition-service.ts",
+        "apps/api/src/server.ts"
+      ],
+      "flag": "AKP_S2_REVIEWED_SOURCE_ENABLED",
+      "decision": "Two distinct authenticated reviewer accounts + immutable SOURCE; human correctness not inferred from identities."
+    },
+    {
+      "id": "writer-claims-http-audit",
+      "stage": "G",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 92,
+      "files": [
+        "apps/api/src/routes/s2-writer-claims.ts",
+        "packages/retrieval/src/governed-writer-claims.ts"
+      ],
+      "decision": "Authenticated audit of externally supplied Writer statements; no provider generation or independent full answer proof."
+    },
+    {
+      "id": "source-section-independent-selection",
+      "stage": "D",
+      "disposition": "REQUIRES_CUTOVER",
+      "sourceSection": 22,
+      "files": [
+        "apps/api/src/section-candidate-shadow.ts",
+        "packages/retrieval/src/contextual-evidence.ts"
+      ],
+      "decision": "Only original authorized standalone SECTION can be evidence; parentContext must never masquerade as an original quote."
+    },
+    {
+      "id": "source-original-window-choice",
+      "stage": "D",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 47,
+      "files": [
+        "packages/evaluation/src/s2-evidence-window-selection.ts",
+        "packages/evaluation/src/s2-atomic-original-window-choice.ts"
+      ],
+      "decision": "Original literal windows and positional provenance tested offline; context/passage fallback not accepted."
+    },
+    {
+      "id": "exact-quote-source-attribution",
+      "stage": "F",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 30,
+      "files": ["packages/evaluation/src/s2-exact-quote-attribution.ts"],
+      "decision": "Unique literal original span can correct citation identity but cannot confer entailment."
+    },
+    {
+      "id": "complete-atomic-answer-coverage",
+      "stage": "G",
+      "disposition": "REQUIRES_CUTOVER",
+      "sourceSection": 36,
+      "files": [
+        "packages/evaluation/src/s2-complete-answer-evidence.ts",
+        "packages/evaluation/src/s2-writer-semantic-audit.ts"
+      ],
+      "decision": "Per-atomic-claim + full question-slot coverage not connected to a production writer answer endpoint."
+    },
+    {
+      "id": "native-writer-source-frozen-probe",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 93,
+      "files": [
+        "scripts/s2-prospective-ollama-custody.ts",
+        "packages/evaluation/src/s2-native-structured-writer.ts"
+      ],
+      "decision": "16-case author-controlled provider diagnostic across four models; not independently adjudicated nor authenticated Search/ContextPacket coupled."
+    },
+    {
+      "id": "gemma-full-proposition-mandatory-veto",
+      "stage": "E",
+      "disposition": "REJECTED",
+      "sourceSection": 67,
+      "files": [],
+      "decision": "200 exposed DEV cases rejected: high loss of correct Writer statements; do not wire as default judge."
+    },
+    {
+      "id": "forced-writer-slot-prompt",
+      "stage": "H",
+      "disposition": "REJECTED",
+      "sourceSection": 70,
+      "files": [],
+      "decision": "Paired 80 DEV prompts created unsupported answers in negatives; do not promote prompt variant."
+    },
+    {
+      "id": "independent-publisher-holdout",
+      "stage": "GATE",
+      "disposition": "UNIMPLEMENTED_GATE",
+      "sourceSection": 93,
+      "files": ["scripts/s2-prepare-external-review-kit.ts"],
+      "decision": "Only 240 BLANK intake seats; external custodians, source-family-disjoint questions and blind X/Y/Z adjudication absent."
+    },
+    {
+      "id": "full-auth-provider-writer-atomic-audit",
+      "stage": "H",
+      "disposition": "UNIMPLEMENTED_GATE",
+      "sourceSection": 93,
+      "files": [
+        "apps/api/test/s2-reviewed-source-live.integration.test.ts",
+        "scripts/s2-prospective-ollama-custody.ts"
+      ],
+      "decision": "Two separate tested pieces but no single authentic provider-fed Reader-to-Writer-to-source audit on blind cohort."
+    },
+    {
+      "id": "exact-token-paired-manual-baseline",
+      "stage": "GATE",
+      "disposition": "UNIMPLEMENTED_GATE",
+      "sourceSection": 9,
+      "files": ["packages/retrieval/scripts/context-tokenizer-baseline.ts"],
+      "decision": "Real target-tokenizer and paired Obsidian/manual baseline not yet accepted on new family-disjoint set."
+    }
+  ]
+}

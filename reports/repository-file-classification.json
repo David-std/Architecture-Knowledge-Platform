@@ -2307,6 +2307,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/s2-configurable-engine-consolidation-audit.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/s2-evaluation-protocol.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
@@ -4842,6 +4847,11 @@
       "reason": "configuration or policy contract"
     },
     {
+      "path": "policies/s2-technique-disposition.json",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "configuration or policy contract"
+    },
+    {
       "path": "README.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
@@ -5338,6 +5348,11 @@
     },
     {
       "path": "scripts/validate-s2-span-holdout.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/validate-s2-technique-disposition.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

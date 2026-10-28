@@ -36,6 +36,8 @@ jobs:
       - run: pnpm audit --audit-level high
       - name: Verify frozen S2 source-span holdout
         run: node scripts/validate-s2-span-holdout.mjs --self-test
+      - name: Audit S2 experimental technique disposition and orphaned modules
+        run: pnpm s2:disposition:validate
       - name: Check repository formatting
         shell: bash
         run: |

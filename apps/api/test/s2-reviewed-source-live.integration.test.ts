@@ -44,33 +44,13 @@ const prefix = "s2-live-" + orgId.slice(0, 8);
 run(
   "S2 real authenticated loopback HTTP, PostgreSQL and immutable SOURCE",
   () => {
-    const db = new Postgres(process.env.DATABASE_URL!);
-    const store = new MinioObjectStore({
-      endpoint: process.env.AKP_RAW_ENDPOINT!,
-      accessKey: process.env.AKP_RAW_ACCESS_KEY!,
-      secretKey: process.env.AKP_RAW_SECRET_KEY!,
-      bucket: process.env.AKP_RAW_BUCKET!,
-    });
-    const app = buildServer();
-    const layeredApp = buildServer({
-      evidenceVerifierMode: "LAYERED",
-      evidenceVerifier: {
-        id: "s2-lab-deny-untrusted-reader",
-        verify: async () => ({
-          decision: "INSUFFICIENT",
-          reason: "S2_LAB_READER_WITHHELD",
-        }),
-      },
-      evidenceAdmissionPipeline: new LayeredEvidenceAdmissionPipeline({
-        semanticReader: {
-          id: "s2-lab-no-unverified-semantic-fallback",
-          read: async () => {
-            throw new Error("S2_LAB_UNREVIEWED_READER_DENIED");
-          },
-        },
-        structuredMismatchPolicy: "ABSTAIN",
-      }),
-    });
+    // Vitest evaluates describe.skip callbacks even for excluded integration files.
+    // Never instantiate a DB, object store or HTTP server until beforeAll has
+    // confirmed that this deliberately opt-in suite is actually running.
+    let db: Postgres;
+    let store: MinioObjectStore;
+    let app: ReturnType<typeof buildServer>;
+    let layeredApp: ReturnType<typeof buildServer>;
     let base = "";
     let layeredBase = "";
     const headers = (i: number) => ({
@@ -135,6 +115,33 @@ run(
       return p.id!;
     };
     beforeAll(async () => {
+      db = new Postgres(process.env.DATABASE_URL!);
+      store = new MinioObjectStore({
+        endpoint: process.env.AKP_RAW_ENDPOINT!,
+        accessKey: process.env.AKP_RAW_ACCESS_KEY!,
+        secretKey: process.env.AKP_RAW_SECRET_KEY!,
+        bucket: process.env.AKP_RAW_BUCKET!,
+      });
+      app = buildServer();
+      layeredApp = buildServer({
+        evidenceVerifierMode: "LAYERED",
+        evidenceVerifier: {
+          id: "s2-lab-deny-untrusted-reader",
+          verify: async () => ({
+            decision: "INSUFFICIENT",
+            reason: "S2_LAB_READER_WITHHELD",
+          }),
+        },
+        evidenceAdmissionPipeline: new LayeredEvidenceAdmissionPipeline({
+          semanticReader: {
+            id: "s2-lab-no-unverified-semantic-fallback",
+            read: async () => {
+              throw new Error("S2_LAB_UNREVIEWED_READER_DENIED");
+            },
+          },
+          structuredMismatchPolicy: "ABSTAIN",
+        }),
+      });
       await db.pool.query(
         "insert into organizations(id,slug,name) values($1,$2,'S2 live source evaluation')",
         [orgId, prefix],
