@@ -110,6 +110,36 @@ describe("S2 local Ollama provider safety before sending SOURCE", () => {
     ).rejects.toThrow("MODEL_MISMATCH");
     expect(mock).not.toHaveBeenCalled();
   });
+  it("rejects concurrent native provider calls without sending duplicate SOURCE", async () => {
+    let release: (response: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const mock = vi
+      .fn()
+      .mockImplementationOnce(() => pending)
+      .mockResolvedValueOnce(new Response('{"done":true}', { status: 200 }));
+    vi.stubGlobal("fetch", mock);
+    const local = provider();
+    const first = local.generate(req);
+    await expect(local.generate(req)).rejects.toThrow("PROVIDER_BUSY");
+    expect(mock).toHaveBeenCalledTimes(1);
+    release(
+      new Response(
+        JSON.stringify({
+          models: [
+            {
+              name: "qwen2.5:7b-instruct",
+              digest,
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    expect(new TextDecoder().decode(await first)).toBe('{"done":true}');
+    expect(mock).toHaveBeenCalledTimes(2);
+  });
   it("rejects oversized untrusted provider bytes", async () => {
     const mock = vi
       .fn()

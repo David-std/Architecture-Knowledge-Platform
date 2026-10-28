@@ -56,7 +56,11 @@ run(
     let esPacketId = "";
     let esPacketHash = "";
     let nativeMode:
-      "GOOD" | "FORGED_CITATION" | "TRUNCATED" | "UNREVIEWED_CLAIM" = "GOOD";
+      | "GOOD"
+      | "FORGED_CITATION"
+      | "TRUNCATED"
+      | "UNREVIEWED_CLAIM"
+      | "REVOKE_DURING_GENERATION" = "GOOD";
     const pinnedAtomicProvider = {
       id: "s2:mock-provider-transport-only",
       model: "s2-synthetic-model:latest",
@@ -64,6 +68,12 @@ run(
       codeCommitSha: "a".repeat(40),
       async generate(requestBytes: Uint8Array) {
         nativeCallCount++;
+        if (nativeMode === "REVOKE_DURING_GENERATION") {
+          await db.pool.query(
+            "update vault_memberships set enabled=false where user_id=$1 and vault_id=$2",
+            [reviewers[0]!.id, vaultId],
+          );
+        }
         const request = JSON.parse(
           Buffer.from(requestBytes).toString("utf8"),
         ) as {
@@ -796,6 +806,26 @@ run(
       },
       60000,
     );
+    it("rechecks vault membership after model latency and rejects revoked in-flight authority", async () => {
+      nativeMode = "REVOKE_DURING_GENERATION";
+      try {
+        const response = await post("/v1/s2/writer-claims/generate-audit", 0, {
+          packetId,
+          packetHash,
+          language: "en",
+        });
+        expect(response.status).toBe(403);
+        expect(await response.json()).toMatchObject({
+          code: "S2_WRITER_SCOPE_DENIED",
+        });
+      } finally {
+        nativeMode = "GOOD";
+        await db.pool.query(
+          "update vault_memberships set enabled=true where user_id=$1 and vault_id=$2",
+          [reviewers[0]!.id, vaultId],
+        );
+      }
+    }, 45000);
     it("rechecks revocation and current vault authorization on subsequent HTTP audits", async () => {
       const approved = await db.pool.query<{ id: string }>(
         "select id from s2_reviewed_source_propositions where space_id=$1 and document_id=$2 and question_text=$3 and status='APPROVED' order by created_at desc limit 1",
