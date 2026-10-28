@@ -13,6 +13,7 @@ import { Postgres, grantVaultMembership } from "@akp/postgres";
 import { MinioObjectStore } from "@akp/object-store";
 import { buildServer } from "../src/server.js";
 import { LayeredEvidenceAdmissionPipeline } from "@akp/retrieval";
+import { S2PinnedLocalOllamaWriter } from "../src/s2-local-atomic-provider.js";
 
 const enabled =
   process.env.AKP_S2_LIVE_ROUTE_TEST === "1" &&
@@ -51,6 +52,63 @@ run(
     let store: MinioObjectStore;
     let app: ReturnType<typeof buildServer>;
     let layeredApp: ReturnType<typeof buildServer>;
+    let nativeCallCount = 0;
+    let nativeMode:
+      "GOOD" | "FORGED_CITATION" | "TRUNCATED" | "UNREVIEWED_CLAIM" = "GOOD";
+    const pinnedAtomicProvider = {
+      id: "s2:mock-provider-transport-only",
+      model: "s2-synthetic-model:latest",
+      modelDigestSha256: sha("s2-mock-model-digest"),
+      codeCommitSha: "a".repeat(40),
+      async generate(requestBytes: Uint8Array) {
+        nativeCallCount++;
+        const request = JSON.parse(
+          Buffer.from(requestBytes).toString("utf8"),
+        ) as {
+          model: string;
+          think?: boolean;
+          format: {
+            properties: {
+              statements: {
+                items: { properties: { citationId: { enum: string[] } } };
+              };
+            };
+          };
+        };
+        expect(request.model).toBe("s2-synthetic-model:latest");
+        expect(request.think).toBe(false);
+        expect(
+          request.format.properties.statements.items.properties.citationId.enum,
+        ).toEqual(["SECTION1"]);
+        const claim = {
+          answerText:
+            nativeMode === "UNREVIEWED_CLAIM"
+              ? "An unreviewed actor approved shipment SR-41 on 14 August 2024."
+              : writerStatement,
+          statements: [
+            {
+              text:
+                nativeMode === "UNREVIEWED_CLAIM"
+                  ? "An unreviewed actor approved shipment SR-41 on 14 August 2024."
+                  : writerStatement,
+              citationId:
+                nativeMode === "FORGED_CITATION" ? "SECTION9" : "SECTION1",
+            },
+          ],
+          abstained: false,
+        };
+        return Buffer.from(
+          JSON.stringify({
+            model: request.model,
+            done: true,
+            done_reason: nativeMode === "TRUNCATED" ? "length" : "stop",
+            prompt_eval_count: 420,
+            eval_count: 62,
+            message: { role: "assistant", content: JSON.stringify(claim) },
+          }),
+        );
+      },
+    };
     let base = "";
     let layeredBase = "";
     const headers = (i: number) => ({
@@ -122,8 +180,9 @@ run(
         secretKey: process.env.AKP_RAW_SECRET_KEY!,
         bucket: process.env.AKP_RAW_BUCKET!,
       });
-      app = buildServer();
+      app = buildServer({ s2AtomicWriterProvider: pinnedAtomicProvider });
       layeredApp = buildServer({
+        s2AtomicWriterProvider: pinnedAtomicProvider,
         evidenceVerifierMode: "LAYERED",
         evidenceVerifier: {
           id: "s2-lab-deny-untrusted-reader",
@@ -556,6 +615,128 @@ run(
       ).toBe(true);
       expect(elapsedMs).toBeGreaterThan(0);
     }, 45_000);
+    it("runs native atomic Writer against immutable original source then the SAME HTTP claim audit owner", async () => {
+      const before = nativeCallCount;
+      const resp = await post("/v1/s2/writer-claims/generate-audit", 0, {
+        packetId,
+        packetHash,
+        language: "en",
+      });
+      const result = await resp.json();
+      expect(resp.status, JSON.stringify(result)).toBe(200);
+      expect(result).toMatchObject({
+        status: "SOURCE_BOUND_CLAIMS_CANDIDATE",
+        modelInvoked: true,
+        model: "s2-synthetic-model:latest",
+        claimCount: 1,
+        testedClaims: 1,
+        productionAdmission: false,
+        releaseGateAccepted: false,
+        fullAuthenticatedWriterRoundTripIndependentlyVerified: false,
+      });
+      expect(result).not.toHaveProperty("answerText");
+      expect(result).not.toHaveProperty("originalSourceText");
+      expect(nativeCallCount).toBe(before + 1);
+      nativeMode = "FORGED_CITATION";
+      const forged = await post("/v1/s2/writer-claims/generate-audit", 0, {
+        packetId,
+        packetHash,
+        language: "en",
+      });
+      expect(forged.status).toBe(200);
+      expect(await forged.json()).toMatchObject({
+        status: "WITHHELD_PROVIDER_OUTPUT",
+        reason: "CLAIM_GAP_OR_UNAUTHORIZED_CITATION",
+        productionAdmission: false,
+        releaseGateAccepted: false,
+      });
+      nativeMode = "TRUNCATED";
+      const truncated = await post("/v1/s2/writer-claims/generate-audit", 0, {
+        packetId,
+        packetHash,
+        language: "en",
+      });
+      expect(truncated.status).toBe(200);
+      expect(await truncated.json()).toMatchObject({
+        status: "WITHHELD_PROVIDER_OUTPUT",
+        reason: "PROVIDER_NOT_FULLY_COMPLETED",
+      });
+      nativeMode = "UNREVIEWED_CLAIM";
+      const unreviewed = await post("/v1/s2/writer-claims/generate-audit", 0, {
+        packetId,
+        packetHash,
+        language: "en",
+      });
+      expect(unreviewed.status).toBe(200);
+      expect(await unreviewed.json()).toMatchObject({
+        status: "WITHHELD_WRITER_STATEMENT_REVIEW",
+        productionAdmission: false,
+        releaseGateAccepted: false,
+      });
+      nativeMode = "GOOD";
+      const unrelated = await post("/v1/s2/writer-claims/generate-audit", 1, {
+        packetId,
+        packetHash,
+        language: "en",
+      });
+      expect(unrelated.status).toBe(404);
+      expect(nativeCallCount).toBe(before + 4);
+    }, 60000);
+    const itRealNative =
+      process.env.AKP_S2_ATOMIC_WRITER_REAL_PROVIDER_TEST === "true"
+        ? it
+        : it.skip;
+    itRealNative(
+      "uses real pinned local Ollama through authenticated HTTP, retaining every release gate",
+      async () => {
+        const realProvider = new S2PinnedLocalOllamaWriter({
+          model: process.env.AKP_S2_REAL_NATIVE_MODEL ?? "",
+          modelDigestSha256: process.env.AKP_S2_REAL_NATIVE_DIGEST ?? "",
+          codeCommitSha: process.env.AKP_BUILD_COMMIT_SHA ?? "",
+        });
+        const liveApp = buildServer({ s2AtomicWriterProvider: realProvider });
+        let endpoint = "";
+        try {
+          await liveApp.ready();
+          endpoint = await liveApp.listen({ host: "127.0.0.1", port: 0 });
+          const before = performance.now();
+          const response = await fetch(
+            endpoint + "/v1/s2/writer-claims/generate-audit",
+            {
+              method: "POST",
+              headers: {
+                ...headers(0),
+                "Idempotency-Key": randomUUID() + "-" + randomUUID(),
+              },
+              body: JSON.stringify({ packetId, packetHash, language: "en" }),
+              signal: AbortSignal.timeout(28000),
+            },
+          );
+          const receipt = (await response.json()) as Record<string, unknown>;
+          expect([200, 503]).toContain(response.status);
+          expect(receipt.productionAdmission).toBe(false);
+          expect(receipt.releaseGateAccepted).toBe(false);
+          expect(receipt).not.toHaveProperty("answerText");
+          expect(receipt).not.toHaveProperty("sourceOriginalText");
+          console.log(
+            "S2_REAL_ATOMIC_WRITER_REDACTED_DIAGNOSTIC",
+            JSON.stringify({
+              httpStatus: response.status,
+              status: receipt.status ?? receipt.code,
+              modelInvoked: receipt.modelInvoked ?? false,
+              claimCount: receipt.claimCount ?? 0,
+              testedClaims: receipt.testedClaims ?? 0,
+              providerMs: receipt.providerMs ?? null,
+              fullHttpMs: Math.round(performance.now() - before),
+              releaseGateAccepted: false,
+            }),
+          );
+        } finally {
+          await liveApp.close();
+        }
+      },
+      60000,
+    );
     it("rechecks revocation and current vault authorization on subsequent HTTP audits", async () => {
       const approved = await db.pool.query<{ id: string }>(
         "select id from s2_reviewed_source_propositions where space_id=$1 and document_id=$2 and question_text=$3 and status='APPROVED' order by created_at desc limit 1",

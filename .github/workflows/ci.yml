@@ -81,6 +81,7 @@ jobs:
           AKP_RAW_ACCESS_KEY: akp
           AKP_S2_REVIEWED_SOURCE_ENABLED: "true"
           AKP_S2_LIVE_ROUTE_TEST: "1"
+          AKP_S2_ATOMIC_WRITER_EVAL_ENABLED: "true"
           NODE_ENV: test
         shell: bash
         run: |

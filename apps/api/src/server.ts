@@ -68,6 +68,11 @@ import { registerSourceConnectorRoutes } from "./routes/source-connectors.js";
 import { createS2ReviewedSourcePropositionPort } from "./s2-reviewed-source-proposition-service.js";
 import { registerS2ReviewedPropositionRoutes } from "./routes/s2-reviewed-propositions.js";
 import { registerS2ReviewedWriterAuditRoutes } from "./routes/s2-writer-claims.js";
+import { registerS2NativeReviewedWriterRoutes } from "./routes/s2-native-writer.js";
+import {
+  S2PinnedLocalOllamaWriter,
+  type S2AtomicWriterProvider,
+} from "./s2-local-atomic-provider.js";
 
 config({
   path: path.resolve(
@@ -89,6 +94,8 @@ export interface ApiServerDependencies {
   evidenceAdmissionPipeline?: LayeredEvidenceAdmissionEvaluator;
   /** Service-owned, permission-checked SOURCE projection port; never user JSON. */
   governedPropositionPort?: GovernedLayeredPropositionPort;
+  /** Deliberate evaluation-only dependency; NEVER promotes evidence to production. */
+  s2AtomicWriterProvider?: S2AtomicWriterProvider;
 }
 
 export function buildServer(dependencies: ApiServerDependencies = {}) {
@@ -350,9 +357,29 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   registerTemporalTruthRoutes(app, db);
   registerAssuranceRoutes(app, db);
   registerSourceConnectorRoutes(app, db);
+  if (
+    process.env.AKP_S2_ATOMIC_WRITER_EVAL_ENABLED === "true" &&
+    !s2ReviewedSourceEnabled
+  )
+    throw new Error("S2_ATOMIC_WRITER_REQUIRES_REVIEWED_SOURCE");
   if (s2ReviewedSourceEnabled && rawObjectStore && governedPropositionPort) {
     registerS2ReviewedPropositionRoutes(app, db, rawObjectStore);
     registerS2ReviewedWriterAuditRoutes(app, db, governedPropositionPort);
+    if (process.env.AKP_S2_ATOMIC_WRITER_EVAL_ENABLED === "true") {
+      const provider =
+        dependencies.s2AtomicWriterProvider ??
+        new S2PinnedLocalOllamaWriter({
+          model: process.env.AKP_S2_ATOMIC_WRITER_MODEL ?? "",
+          modelDigestSha256: process.env.AKP_S2_ATOMIC_WRITER_DIGEST ?? "",
+          codeCommitSha: process.env.AKP_BUILD_COMMIT_SHA ?? "",
+        });
+      registerS2NativeReviewedWriterRoutes(
+        app,
+        db,
+        governedPropositionPort,
+        provider,
+      );
+    }
   }
   registerProviderTaskRoutes(app, db);
   registerOperatorRoutes(app, db);

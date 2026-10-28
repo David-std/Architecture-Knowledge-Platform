@@ -4569,6 +4569,44 @@ paths:
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
 
+  /v1/s2/writer-claims/generate-audit:
+    post:
+      tags: [Evaluation]
+      operationId: generateAndAuditReviewedS2NativeWriterClaims
+      summary: Generate bounded local atomic Writer claims and audit current original SOURCE (opt-in)
+      description: >
+        Evaluation-only, disabled by default. Requires a persisted, current,
+        authenticated SOURCE_BACKED ContextPacket and the same two-person
+        reviewed original-SOURCE proposition port used by the audit route.
+        Model, pinned model digest and build commit are server-side settings;
+        caller cannot supply a URL, provider, source, claim projection or
+        approval. Native model output has exact per-statement source IDs and
+        is re-audited after inference. Returns digests/metrics and a withheld
+        or candidate verdict, never source text, Writer prose or a production
+        release permission. Human semantic adjudication remains necessary.
+      x-akp-permission: eval:run
+      x-akp-idempotency-exempt: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [packetId, packetHash, language]
+              properties:
+                packetId: { type: string, format: uuid }
+                packetHash: { type: string, minLength: 1, maxLength: 256 }
+                language: { type: string, enum: [en, es] }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ObjectResponse" }
+
 components:
   securitySchemes:
     bearerAuth:

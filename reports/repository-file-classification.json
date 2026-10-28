@@ -312,6 +312,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/api/src/routes/s2-native-writer.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/api/src/routes/s2-reviewed-propositions.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -367,12 +372,27 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "apps/api/src/s2-local-atomic-provider.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "apps/api/src/s2-reviewed-source-proposition-service.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
     {
       "path": "apps/api/src/s2-source-rebind.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/s2-writer-audit-core.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "apps/api/src/s2-writer-context.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -618,6 +638,11 @@
     },
     {
       "path": "apps/api/test/s2-bm25-postgres-shadow.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "apps/api/test/s2-local-atomic-provider.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -3167,6 +3192,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-atomic-native-writer.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-atomic-original-window-choice.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3443,6 +3473,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-atomic-evidence-portfolio.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-atomic-native-writer.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

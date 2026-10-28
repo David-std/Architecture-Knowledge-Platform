@@ -1,22 +1,13 @@
 import type { FastifyInstance } from "fastify";
-import {
-  ContextPacket as ContextPacketSchema,
-  type SearchHit,
-} from "@akp/contracts";
-import {
-  pathMatchesVaultPrefix,
-  resolveAuthorizedVaultScope,
-  type Postgres,
-} from "@akp/postgres";
+import type { Postgres } from "@akp/postgres";
 import {
   LayeredEvidenceAdmissionPipeline,
-  auditGovernedWriterStatements,
-  retrievalAnswerabilityCandidateKey,
   type GovernedLayeredPropositionPort,
-  type GovernedWriterStatement,
 } from "@akp/retrieval";
 import { z } from "zod";
-import { actorOf, hasSpaceAccess, requirePermission } from "../auth.js";
+import { actorOf, requirePermission } from "../auth.js";
+import { resolveS2WriterContext } from "../s2-writer-context.js";
+import { auditReviewedS2Statements } from "../s2-writer-audit-core.js";
 
 const uuid = z.string().uuid();
 const WriterStatement = z
@@ -36,12 +27,6 @@ const WriterAuditRequest = z
   })
   .strict();
 
-interface StoredPacket {
-  id: string;
-  space_id: string;
-  packet_hash: string;
-  packet: unknown;
-}
 const semanticReaderDisabled = {
   id: "s2:reviewed-structured-only",
   async read() {
@@ -53,32 +38,6 @@ const semanticReaderDisabled = {
     };
   },
 };
-
-function hitFromFrozenSection(
-  section: z.infer<typeof ContextPacketSchema>["sections"][number],
-): SearchHit {
-  return {
-    documentId: section.documentId,
-    vaultId: section.vaultId,
-    ...(section.unitId ? { unitId: section.unitId } : {}),
-    ...(section.unitType
-      ? { unitType: section.unitType as SearchHit["unitType"] }
-      : {}),
-    document: section.document,
-    revision: section.documentRevision,
-    title: section.title,
-    type: section.kind,
-    // These are never evidence authority. The reviewed port independently
-    // verifies the actual document lifecycle and current raw SOURCE revision.
-    trust: "HUMAN_REVIEWED",
-    lifecycle: "ACTIVE",
-    refreshStatus: "CURRENT",
-    score: 0,
-    reasons: ["s2:reviewed-http-writer-audit"],
-    excerpt: section.content,
-    citations: [],
-  };
-}
 
 /**
  * Inspect an existing HTTP Writer output against a persisted ContextPacket.
@@ -107,33 +66,16 @@ export function registerS2ReviewedWriterAuditRoutes(
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
       const input = parsed.data;
-      const result = await db.pool.query<StoredPacket>(
-        `select id,space_id,packet_hash,packet
-         from context_packets
-        where id=$1 and actor_id=$2
-          and (expires_at is null or expires_at>now())
-        limit 1`,
-        [input.packetId, actor.id],
-      );
-      const row = result.rows[0];
-      if (!row || row.packet_hash !== input.packetHash)
-        return reply.code(404).send({ code: "S2_FROZEN_CONTEXT_NOT_FOUND" });
-      const packetParsed = ContextPacketSchema.safeParse(row.packet);
-      if (!packetParsed.success)
-        return reply.code(409).send({ code: "S2_CONTEXT_PACKET_INVALID" });
-      const packet = packetParsed.data;
-      if (
-        packet.packetId !== row.id ||
-        packet.packetHash !== row.packet_hash ||
-        packet.scope.spaceId !== row.space_id ||
-        packet.sections.length > 16 ||
-        packet.query.length < 1 ||
-        packet.query.length > 4096 ||
-        !hasSpaceAccess(actor, row.space_id, "eval:run") ||
-        !hasSpaceAccess(actor, row.space_id, "source:read")
-      )
-        return reply.code(403).send({ code: "S2_WRITER_SCOPE_DENIED" });
-      // The Writer may cite only sections from the exact persisted packet.
+      const authorized = await resolveS2WriterContext({
+        db,
+        principal: actor,
+        packetId: input.packetId,
+        packetHash: input.packetHash,
+        trustedPort,
+      });
+      if (!authorized.ok)
+        return reply.code(authorized.status).send({ code: authorized.code });
+      const { packet, port } = authorized;
       const sourceMap = new Map<string, (typeof packet.sections)[number]>(
         packet.sections.map(
           (section, index) => [`SEC${index + 1}`, section] as const,
@@ -143,80 +85,13 @@ export function registerS2ReviewedWriterAuditRoutes(
         return reply
           .code(400)
           .send({ code: "S2_WRITER_CITATION_NOT_IN_CONTEXT" });
-      let scope;
-      try {
-        scope = await resolveAuthorizedVaultScope(db, {
-          userId: actor.id,
-          spaceId: row.space_id,
-          permission: "source:read",
-          vaultIds: packet.scope.vaultIds,
-          federated: packet.scope.federated,
-        });
-      } catch {
-        return reply.code(403).send({ code: "S2_WRITER_SCOPE_DENIED" });
-      }
-      for (const section of packet.sections) {
-        const prefix = scope.accessByVault[section.vaultId]?.pathPrefix;
-        if (
-          prefix === undefined ||
-          !pathMatchesVaultPrefix(section.document.path, prefix)
-        )
-          return reply.code(403).send({ code: "S2_WRITER_SCOPE_DENIED" });
-      }
-      const port: GovernedLayeredPropositionPort = {
-        resolve: ({ originalQuestion, hit }) =>
-          trustedPort.resolve({
-            originalQuestion,
-            hit,
-            principalId: actor.id,
-            spaceId: row.space_id,
-          }),
-      };
       // Resolve the actual Writer statement text using a distinct reviewed
       // projection. Client statement projections are not accepted as input.
-      const statements: GovernedWriterStatement[] = [];
-      for (const s of input.statements) {
-        const section = sourceMap.get(s.citationId)!;
-        const hit = hitFromFrozenSection(section);
-        let statementProof;
-        try {
-          statementProof = await port.resolve({
-            originalQuestion: s.text,
-            hit,
-          });
-        } catch {
-          statementProof = null;
-        }
-        if (
-          !statementProof ||
-          statementProof.queryProposition.requestedAnswerRole !== undefined ||
-          !statementProof.queryProposition.subject.trim()
-        ) {
-          // Writer output must be a complete assertion; an unknown question
-          // slot cannot masquerade as an independently reviewed claim.
-          return {
-            status: "WITHHELD_WRITER_STATEMENT_REVIEW",
-            productionAdmission: false,
-            releaseGateAccepted: false,
-            testedClaims: 0,
-            totalClaims: input.statements.length,
-          };
-        }
-        statements.push({
-          text: s.text,
-          startUtf16: s.startUtf16,
-          endUtf16: s.endUtf16,
-          citationId: s.citationId,
-          citedHit: hit,
-          citedCandidateKey: retrievalAnswerabilityCandidateKey(hit),
-          statementProposition: statementProof.queryProposition,
-        });
-      }
-      const audit = await auditGovernedWriterStatements({
-        originalQuestion: packet.query,
+      const audit = await auditReviewedS2Statements({
+        packet,
         answerText: input.answerText,
-        statements,
-        governedPropositionPort: port,
+        statements: input.statements,
+        trustedPort: port,
         admissionPipeline: pipeline,
       });
       // Raw source, question, Writer text, reviewer identities, and gold labels

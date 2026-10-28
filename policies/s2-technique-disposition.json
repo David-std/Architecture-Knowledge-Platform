@@ -634,6 +634,21 @@
       "sourceSection": 9,
       "files": ["packages/retrieval/scripts/context-tokenizer-baseline.ts"],
       "decision": "Real target-tokenizer and paired Obsidian/manual baseline not yet accepted on new family-disjoint set."
+    },
+    {
+      "id": "native-atomic-writer-existing-reviewed-audit",
+      "stage": "H",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 95,
+      "flag": "AKP_S2_ATOMIC_WRITER_EVAL_ENABLED",
+      "files": [
+        "apps/api/src/routes/s2-native-writer.ts",
+        "apps/api/src/s2-writer-context.ts",
+        "apps/api/src/s2-writer-audit-core.ts",
+        "apps/api/src/s2-local-atomic-provider.ts",
+        "packages/evaluation/src/s2-atomic-native-writer.ts"
+      ],
+      "decision": "Native local Writer is provider-pin-gated and sends ONLY currently authorized two-review SOURCE; typed full claim coverage and UTF-16 citations are re-evaluated by existing R5 audit, never as independent acceptance or release permission."
     }
   ]
 }
