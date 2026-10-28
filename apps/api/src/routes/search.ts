@@ -570,6 +570,8 @@ export interface RetrievalExecutionOptions {
   experimentalStructuredRowLexicalContext?: boolean;
   /** Library/test-only source-unit lexical recall experiment; never exposed as an HTTP request switch. */
   experimentalBoundedUnitLexicalRecall?: boolean;
+  /** Diagnostic-only 1/2/4 sibling depth; not accepted without the opt-in. */
+  experimentalBoundedUnitPerDocumentLimit?: 1 | 2 | 4;
   vaultIds?: string[];
   /** Exact, authorized Code Graph candidates resolved by the HTTP boundary. */
   codeCandidates?: CodeChannelCandidate[];
@@ -1637,6 +1639,14 @@ export async function queryKnowledge(
   const benchmarkCandidatePoolLimit = options.benchmarkCandidatePoolLimit;
   const structuredRowLexicalContext =
     options.experimentalStructuredRowLexicalContext === true;
+  const boundedUnitDepth = options.experimentalBoundedUnitPerDocumentLimit ?? 2;
+  if (
+    ![1, 2, 4].includes(boundedUnitDepth) ||
+    (options.experimentalBoundedUnitPerDocumentLimit !== undefined &&
+      options.experimentalBoundedUnitLexicalRecall !== true)
+  ) {
+    throw new Error("EXPERIMENTAL_BOUNDED_UNIT_DEPTH_INVALID");
+  }
   if (
     (benchmarkCandidatePoolLimit !== undefined ||
       options.benchmarkDisableAssertionRecall === true) &&
@@ -2233,7 +2243,7 @@ export async function queryKnowledge(
                  -- one-unit/document behavior. Only the opt-in 2-of-N unit
                  -- recall may expose a second, distinct unit from the same
                  -- authorized SOURCE document for downstream admission.
-                 limit case when $7::boolean then 2 else 1 end
+                 limit case when $7::boolean then $8::integer else 1 end
               ) best_unit on true
              where not $7::boolean or best_unit.unit_id is not null
           )
@@ -2250,6 +2260,7 @@ export async function queryKnowledge(
               documentScopeJson,
               orTerms,
               unitOnly,
+              boundedUnitDepth,
             ],
           ),
         );

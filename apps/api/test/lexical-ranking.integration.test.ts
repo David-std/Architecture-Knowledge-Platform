@@ -320,6 +320,195 @@ function searchRequest(fixture: LexicalFixture): SearchRequest {
 
 describe("production lexical ranking", () => {
   it.skipIf(!databaseUrl)(
+    "measures EN/ES answer-unit eviction at sibling depths 1, 2 and 4 on identical authorized PostgreSQL units",
+    async () => {
+      if (!databaseUrl) return;
+      const metrics: Array<{
+        language: string;
+        depth: number;
+        correctUnitPresent: boolean;
+        wrongUnitCount: number;
+        readerPoolHasCorrect: boolean;
+      }> = [];
+      for (const language of ["ES", "EN"] as const) {
+        const fixture = lexicalFixture();
+        const db = new Postgres(databaseUrl);
+        try {
+          await seedLexical(db, fixture);
+          const es = language === "ES";
+          const query = es
+            ? "¿Quién aprobó la ampliación de acceso tras la auditoría?"
+            : "Who approved the access expansion after the audit?";
+          const approved = es
+            ? "Lira aprobó la ampliación de acceso después de la auditoría."
+            : "Lira approved the access expansion after the audit.";
+          const denied = es
+            ? "Lira NO aprobó la ampliación de acceso tras la auditoría."
+            : "Lira did NOT approve the access expansion after the audit.";
+          const wrongActor = es
+            ? "Miro aprobó la ampliación de acceso tras la auditoría, no Lira."
+            : "Miro approved the access expansion after the audit, not Lira.";
+          const wrongDate = es
+            ? "Lira aprobó la ampliación de acceso, pero ANTES de la auditoría."
+            : "Lira approved the access expansion, but BEFORE the audit.";
+          const originals = [
+            { id: fixture.units.titleTerms, text: approved, kind: "CORRECT" },
+            { id: randomUUID(), text: denied, kind: "NEGATION" },
+            { id: randomUUID(), text: wrongActor, kind: "ACTOR" },
+            { id: randomUUID(), text: wrongDate, kind: "TIME" },
+          ];
+          await db.pool.query(
+            `update knowledge_documents
+                set title='Technical notes',type='concept',
+                    body_cache=$2,content_hash=$3
+              where id=$1`,
+            [
+              fixture.documents.titleTerms,
+              originals.map((item) => item.text).join("\n"),
+              createHash("sha256")
+                .update(originals.map((item) => item.text).join("\n"))
+                .digest("hex"),
+            ],
+          );
+          for (let index = 0; index < originals.length; index++) {
+            const item = originals[index]!;
+            const hash = createHash("sha256").update(item.text).digest("hex");
+            const heading =
+              index === 0
+                ? ["Technical notes"]
+                : es
+                  ? ["Quién aprobó ampliación acceso auditoría"]
+                  : ["Who approved access expansion after audit"];
+            if (index === 0) {
+              await db.pool.query(
+                "update knowledge_units set heading_path=$2,body=$3,content_hash=$4 where id=$1",
+                [item.id, heading, item.text, hash],
+              );
+            } else {
+              await db.pool.query(
+                `insert into knowledge_units(
+                  id,document_id,space_id,vault_id,unit_key,unit_type,
+                  heading_path,body,content_hash,corpus_revision,lifecycle,
+                  trust_tier,source_ids,token_estimate,parent_unit_id,
+                  document_revision,permissions,locator,structural_order,
+                  container_only,embedding_eligible
+                ) select $1,document_id,space_id,vault_id,$2,'PARAGRAPH',
+                    $3,$4,$5,corpus_revision,lifecycle,trust_tier,
+                    source_ids,24,parent_unit_id,document_revision,
+                    permissions,locator,structural_order+$6,false,true
+                  from knowledge_units where id=$7`,
+                [
+                  item.id,
+                  item.kind,
+                  heading,
+                  item.text,
+                  hash,
+                  index * 100,
+                  fixture.units.titleTerms,
+                ],
+              );
+            }
+          }
+          for (const depth of [1, 2, 4] as const) {
+            const poolIds: string[] = [];
+            const hits = await queryKnowledge(
+              db,
+              {
+                ...searchRequest(fixture),
+                query,
+                limit: 1,
+              },
+              {
+                channels: ["lexical"],
+                vaultIds: [fixture.vaultId],
+                experimentalBoundedUnitLexicalRecall: true,
+                experimentalBoundedUnitPerDocumentLimit: depth,
+                answerabilityCandidateSink: (hits) =>
+                  poolIds.push(...hits.map((hit) => hit.unitId ?? "")),
+              },
+            );
+            const sourceHits = poolIds.filter((id) =>
+              originals.some((item) => item.id === id),
+            );
+            metrics.push({
+              language,
+              depth,
+              correctUnitPresent: sourceHits.includes(originals[0]!.id),
+              wrongUnitCount: sourceHits.filter((id) => id !== originals[0]!.id)
+                .length,
+              readerPoolHasCorrect: sourceHits.includes(originals[0]!.id),
+            });
+            expect(sourceHits.length).toBeLessThanOrEqual(depth);
+            // These results are candidates even when the HTTP presentation
+            // limit is one. None becomes a SOURCE entailment verdict.
+            expect(hits.length).toBeLessThanOrEqual(1);
+          }
+          const scoped = await queryKnowledge(
+            db,
+            { ...searchRequest(fixture), query },
+            {
+              channels: ["lexical"],
+              vaultIds: [fixture.vaultId],
+              experimentalBoundedUnitLexicalRecall: true,
+              experimentalBoundedUnitPerDocumentLimit: 4,
+              graphScopes: [
+                { vaultId: fixture.vaultId, pathPrefix: "docs/body.md" },
+              ],
+              pathAuthorizer: (path) => path === "docs/body.md",
+            },
+          );
+          expect(
+            scoped.some(
+              (hit) => hit.documentId === fixture.documents.titleTerms,
+            ),
+          ).toBe(false);
+        } finally {
+          await cleanupLexical(db, fixture);
+          await db.close();
+        }
+      }
+      console.log("S2_SIBLING_DEPTH_DEV_ONLY", JSON.stringify(metrics));
+      for (const language of ["ES", "EN"]) {
+        const rows = metrics.filter((row) => row.language === language);
+        expect(rows.map((row) => row.depth)).toEqual([1, 2, 4]);
+        // The source unit is intact, but 1/2 admit only higher-scoring
+        // near-misses. Widening to four trades false candidates for recall.
+        expect(rows[0]?.correctUnitPresent).toBe(false);
+        expect(rows[1]?.correctUnitPresent).toBe(false);
+        expect(rows[2]?.correctUnitPresent).toBe(true);
+        expect(rows[2]?.wrongUnitCount).toBe(3);
+      }
+    },
+  );
+
+  it("rejects sibling-depth overrides without the internal experimental recall gate", async () => {
+    const db = {
+      pool: {
+        query: () => {
+          throw new Error("UNEXPECTED_DB_CALL");
+        },
+      },
+    } as unknown as Postgres;
+    const request = {
+      ...searchRequest(lexicalFixture()),
+      query: "Which source was approved?",
+    };
+    await expect(
+      queryKnowledge(db, request, {
+        channels: ["lexical"],
+        experimentalBoundedUnitPerDocumentLimit: 4,
+      }),
+    ).rejects.toThrow("EXPERIMENTAL_BOUNDED_UNIT_DEPTH_INVALID");
+    await expect(
+      queryKnowledge(db, request, {
+        channels: ["lexical"],
+        experimentalBoundedUnitLexicalRecall: true,
+        experimentalBoundedUnitPerDocumentLimit: 3 as 4,
+      }),
+    ).rejects.toThrow("EXPERIMENTAL_BOUNDED_UNIT_DEPTH_INVALID");
+  });
+
+  it.skipIf(!databaseUrl)(
     "retains an answer-bearing sibling SOURCE unit even when a negated sibling has stronger lexical overlap",
     async () => {
       if (!databaseUrl) return;
