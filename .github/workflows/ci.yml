@@ -90,7 +90,7 @@ jobs:
           cleanup_s2_reviewed_database
           docker compose exec -T postgres createdb -U akp akp_s2_reviewed_test
           pnpm db:migrate
-          pnpm --filter @akp/retrieval build
+          pnpm --filter '@akp/api^...' build
           pnpm --filter @akp/api exec vitest run \
             --config vitest.integration.config.ts \
             test/s2-reviewed-source-live.integration.test.ts \
