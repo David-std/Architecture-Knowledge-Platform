@@ -816,6 +816,39 @@ describe("production lexical ranking", () => {
           channels: ["lexical"] as const,
           vaultIds: [fixture.vaultId],
         };
+        const missedGoldDiagnostics: Array<{
+          case: string;
+          depth: number;
+          baselineRank: number | null;
+          boundedRank: number | null;
+          distractors: number;
+          totalPool: number;
+        }> = [];
+        const recordMiss = (
+          name: string,
+          baseline: readonly { unitId?: string }[],
+          recovered: readonly { unitId?: string }[],
+          depth: number,
+        ) => {
+          const expectedUnit = fixture.units.titleTerms;
+          const baselineIndex = baseline.findIndex(
+            (hit) => hit.unitId === expectedUnit,
+          );
+          const boundedIndex = recovered.findIndex(
+            (hit) => hit.unitId === expectedUnit,
+          );
+          const item = {
+            case: name,
+            depth,
+            baselineRank: baselineIndex < 0 ? null : baselineIndex + 1,
+            boundedRank: boundedIndex < 0 ? null : boundedIndex + 1,
+            distractors: recovered.filter((hit) => hit.unitId !== expectedUnit)
+              .length,
+            totalPool: recovered.length,
+          };
+          missedGoldDiagnostics.push(item);
+          console.log("S2_BASELINE_MISS_DEV_ONLY", JSON.stringify(item));
+        };
         const strict = await queryKnowledge(db, request, options);
         expect(
           strict.some((hit) => hit.unitId === fixture.units.titleTerms),
@@ -827,6 +860,15 @@ describe("production lexical ranking", () => {
         expect(
           relaxed.some((hit) => hit.unitId === fixture.units.titleTerms),
         ).toBe(true);
+        recordMiss("ES_APPROVAL", strict, relaxed, 2);
+        for (const depth of [1, 4] as const) {
+          const arm = await queryKnowledge(db, request, {
+            ...options,
+            experimentalBoundedUnitLexicalRecall: true,
+            experimentalBoundedUnitPerDocumentLimit: depth,
+          });
+          recordMiss("ES_APPROVAL", strict, arm, depth);
+        }
         expect(
           relaxed.some((hit) => hit.unitId === fixture.units.bodyTerms),
         ).toBe(true);
@@ -901,6 +943,19 @@ describe("production lexical ranking", () => {
         expect(
           englishRelaxed.some((hit) => hit.unitId === fixture.units.titleTerms),
         ).toBe(true);
+        recordMiss("EN_APPROVAL", englishStrict, englishRelaxed, 2);
+        for (const depth of [1, 4] as const) {
+          const arm = await queryKnowledge(
+            db,
+            { ...request, query: englishQuery },
+            {
+              ...options,
+              experimentalBoundedUnitLexicalRecall: true,
+              experimentalBoundedUnitPerDocumentLimit: depth,
+            },
+          );
+          recordMiss("EN_APPROVAL", englishStrict, arm, depth);
+        }
         // A disjoint technical domain uses the exact same generic grammar,
         // not an added term alias or a special-case question template.
         const observatory = [
@@ -947,6 +1002,31 @@ describe("production lexical ranking", () => {
           relaxedObservatory.some(
             (hit) => hit.unitId === fixture.units.titleTerms,
           ),
+        ).toBe(true);
+        recordMiss(
+          "EN_OBSERVATORY",
+          ordinaryObservatory,
+          relaxedObservatory,
+          2,
+        );
+        for (const depth of [1, 4] as const) {
+          const arm = await queryKnowledge(
+            db,
+            { ...request, query: observatoryQuery },
+            {
+              ...options,
+              experimentalBoundedUnitLexicalRecall: true,
+              experimentalBoundedUnitPerDocumentLimit: depth,
+            },
+          );
+          recordMiss("EN_OBSERVATORY", ordinaryObservatory, arm, depth);
+        }
+        expect(missedGoldDiagnostics).toHaveLength(9);
+        expect(
+          missedGoldDiagnostics.every((row) => row.baselineRank === null),
+        ).toBe(true);
+        expect(
+          missedGoldDiagnostics.every((row) => row.boundedRank !== null),
         ).toBe(true);
       } finally {
         await cleanupLexical(db, fixture);
