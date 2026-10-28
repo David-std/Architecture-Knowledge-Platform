@@ -194,6 +194,70 @@ describe("layered production admission", () => {
     expect(readBatch).not.toHaveBeenCalled();
   });
 
+  it("binds a trusted unknown actor/object answer role to original SOURCE without granting an unqualified wildcard", async () => {
+    const candidate = hit(
+      "Lira approved the index on 2026-09-13 after inspection.",
+    );
+    const query = "Who approved the index on 2026-09-13 after inspection?";
+    const exact = governedProof(candidate, query);
+    const pipeline = new LayeredEvidenceAdmissionPipeline({
+      semanticReader: semanticReader([]),
+    });
+    const reader = vi.spyOn(pipeline, "evaluateBatch");
+    const roleProof = {
+      ...exact,
+      queryProposition: {
+        ...exact.queryProposition,
+        subject: "",
+        requestedAnswerRole: "SUBJECT" as const,
+      },
+    };
+    const evaluate = (proof: GovernedLayeredPropositionProof) =>
+      assessRetrievalAnswerabilityWithLayeredAdmission(
+        [candidate],
+        query,
+        pipeline,
+        { governedPropositionPort: { resolve: async () => proof } },
+      );
+    const positive = await evaluate(roleProof);
+    expect(positive.supported).toBe(true);
+    expect(positive.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(candidate),
+    ]);
+    const objectQuery = "What did Lira approve on 2026-09-13 after inspection?";
+    const objectProof = governedProof(candidate, objectQuery, {
+      queryProposition: {
+        ...exact.queryProposition,
+        object: undefined,
+        requestedAnswerRole: "OBJECT",
+      },
+    });
+    expect(
+      (
+        await assessRetrievalAnswerabilityWithLayeredAdmission(
+          [candidate],
+          objectQuery,
+          pipeline,
+          { governedPropositionPort: { resolve: async () => objectProof } },
+        )
+      ).supported,
+    ).toBe(true);
+    for (const change of [
+      { subject: "Miro" },
+      { object: "" },
+      { temporalScope: "2026-09-12" },
+      { conditions: [] },
+      { requestedAnswerRole: undefined },
+    ]) {
+      const result = await evaluate({
+        ...roleProof,
+        queryProposition: { ...roleProof.queryProposition, ...change },
+      });
+      expect(result.supported).toBe(false);
+    }
+    expect(reader).toHaveBeenCalled();
+  });
+
   it("fails closed when original question, document revision, bytes or quote coordinates change", async () => {
     const query = "Did Lira approve the index on 2026-09-13 after inspection?";
     const candidate = hit(

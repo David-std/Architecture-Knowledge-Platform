@@ -134,6 +134,81 @@ describe("R5 layered evidence admission boundaries", () => {
     ).toEqual({ kind: "CONTRADICTS", quote });
   });
 
+  it("matches independently verified requested actor/object roles without pretending the answer is in the question", () => {
+    const matcher = new ExactStructuredPropositionMatcher();
+    const quote = { startOffset: 0, endOffset: 57 };
+    const source = {
+      subject: "Lira",
+      predicate: "approved",
+      object: "access expansion",
+      temporalScope: "2026-09-13",
+      conditions: ["after audit"],
+      polarity: "POSITIVE" as const,
+      quote,
+    };
+    const who = {
+      subject: "",
+      predicate: "approved",
+      object: "access expansion",
+      temporalScope: "2026-09-13",
+      conditions: ["after audit"],
+      requestedAnswerRole: "SUBJECT" as const,
+    };
+    expect(matcher.match({ query: who, candidate: source })).toEqual({
+      kind: "ANSWERS",
+      quote,
+    });
+    const what = {
+      subject: "Lira",
+      predicate: "approved",
+      temporalScope: "2026-09-13",
+      conditions: ["after audit"],
+      requestedAnswerRole: "OBJECT" as const,
+    };
+    expect(matcher.match({ query: what, candidate: source })).toEqual({
+      kind: "ANSWERS",
+      quote,
+    });
+    for (const query of [
+      { ...who, object: "backup schedule" },
+      { ...who, temporalScope: "2026-09-12" },
+      { ...who, conditions: [] },
+      { ...who, subject: "Miro" },
+      { ...who, object: "" },
+      { ...what, subject: "Miro" },
+      { ...what, object: "access expansion" },
+    ]) {
+      expect(matcher.match({ query, candidate: source }).kind).not.toBe(
+        "ANSWERS",
+      );
+    }
+    expect(
+      matcher.match({
+        query: who,
+        candidate: { ...source, polarity: "NEGATIVE" },
+      }).kind,
+    ).not.toBe("ANSWERS");
+    expect(
+      matcher.match({
+        query: who,
+        candidate: { ...source, subject: "" },
+      }).kind,
+    ).not.toBe("ANSWERS");
+    expect(
+      matcher.match({
+        query: what,
+        candidate: { ...source, object: "" },
+      }).kind,
+    ).not.toBe("ANSWERS");
+    // Without a trusted role the old exact matcher remains fail-closed.
+    expect(
+      matcher.match({
+        query: { ...who, requestedAnswerRole: undefined },
+        candidate: source,
+      }).kind,
+    ).toBe("INSUFFICIENT");
+  });
+
   it("withholds explicitly qualified structured relations when temporal, condition, modality or unit differs", () => {
     const matcher = new ExactStructuredPropositionMatcher();
     const quote = { startOffset: 0, endOffset: 41 };

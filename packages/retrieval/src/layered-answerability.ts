@@ -155,7 +155,16 @@ export function bindGovernedLayeredPropositionInput(
     typeof proof.queryProposition.predicate !== "string" ||
     typeof proof.candidateProposition.subject !== "string" ||
     typeof proof.candidateProposition.predicate !== "string" ||
-    !proof.queryProposition.subject.trim() ||
+    // The only permitted empty question slot is the explicitly requested
+    // SUBJECT or OBJECT. Every other relation role must remain source-bound.
+    (proof.queryProposition.requestedAnswerRole === "SUBJECT"
+      ? Boolean(proof.queryProposition.subject.trim()) ||
+        !proof.queryProposition.object?.trim()
+      : proof.queryProposition.requestedAnswerRole === "OBJECT"
+        ? !proof.queryProposition.subject.trim() ||
+          proof.queryProposition.object !== undefined
+        : !proof.queryProposition.subject.trim() ||
+          proof.queryProposition.requestedAnswerRole !== undefined) ||
     !proof.queryProposition.predicate.trim() ||
     !proof.candidateProposition.subject.trim() ||
     !proof.candidateProposition.predicate.trim() ||

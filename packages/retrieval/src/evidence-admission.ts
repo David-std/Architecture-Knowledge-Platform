@@ -66,10 +66,15 @@ export interface StructuredProposition extends StructuredPropositionQualifiers {
 }
 
 export interface StructuredPropositionQuery extends StructuredPropositionQualifiers {
+  /** Concrete subject, except when an independently verified SUBJECT question
+   * leaves this requested answer slot empty. */
   readonly subject: string;
   readonly predicate: string;
   readonly object?: string;
   readonly polarity?: "POSITIVE" | "NEGATIVE";
+  /** Trusted internal question intent only; never client/Reader self-rating.
+   * A requested slot must be unknown in the question and grounded in SOURCE. */
+  readonly requestedAnswerRole?: "SUBJECT" | "OBJECT";
 }
 
 export interface StructuredPropositionMatcherInput {
@@ -161,29 +166,47 @@ export class ExactStructuredPropositionMatcher implements StructuredPropositionM
     const candidatePredicate = normalizedProjectionValue(
       input.candidate.predicate,
     );
+    const role = input.query.requestedAnswerRole;
+    // Only a trusted upstream question projector may declare a requested slot.
+    // An empty slot means the answer is UNKNOWN, not a universal wildcard.
+    // Both other relation roles and every qualifier remain strict.
     if (
-      !querySubject ||
       !queryPredicate ||
       !candidateSubject ||
-      !candidatePredicate
+      !candidatePredicate ||
+      queryPredicate !== candidatePredicate ||
+      (role !== undefined && role !== "SUBJECT" && role !== "OBJECT")
     ) {
       return { kind: "INSUFFICIENT" };
     }
-    if (
-      querySubject !== candidateSubject ||
-      queryPredicate !== candidatePredicate
-    ) {
-      return { kind: "INSUFFICIENT" };
-    }
-
     const queryObject = input.query.object
       ? normalizedProjectionValue(input.query.object)
       : null;
     const candidateObject = input.candidate.object
       ? normalizedProjectionValue(input.candidate.object)
       : null;
-    if (queryObject !== null && queryObject !== candidateObject) {
-      return { kind: "RELATED_NOT_ANSWERING" };
+    if (role === "SUBJECT") {
+      if (querySubject || !queryObject || !candidateObject) {
+        return { kind: "INSUFFICIENT" };
+      }
+      if (queryObject !== candidateObject) {
+        return { kind: "RELATED_NOT_ANSWERING" };
+      }
+    } else if (role === "OBJECT") {
+      if (!querySubject || queryObject !== null || !candidateObject) {
+        return { kind: "INSUFFICIENT" };
+      }
+      if (querySubject !== candidateSubject) {
+        return { kind: "INSUFFICIENT" };
+      }
+    } else {
+      // Legacy exact matcher: preserve existing behavior absent trusted role.
+      if (!querySubject || querySubject !== candidateSubject) {
+        return { kind: "INSUFFICIENT" };
+      }
+      if (queryObject !== null && queryObject !== candidateObject) {
+        return { kind: "RELATED_NOT_ANSWERING" };
+      }
     }
     // Qualifier disagreement is not an invitation to retry via the same
     // semantic model. It withholds the structured support decision even in
