@@ -23,6 +23,8 @@ import {
   DeterministicQueryDecomposer,
   LayeredEvidenceAdmissionPipeline,
   LocalMultilingualQaEvidenceVerifier,
+  LocalBgeCrossEncoderReranker,
+  type BoundedCrossEncoderPort,
   OpenAICompatibleEvidenceReader,
   OpenAICompatibleQueryTranslator,
   QueryConditionedSemanticEvidenceReader,
@@ -76,6 +78,8 @@ export interface ApiServerDependencies {
   s2AdmissionShadowSink?: (record: S2AdmissionShadowObservation) => void;
   contextTokenizer?: Tokenizer;
   queryTransformer?: QueryTransformerPort;
+  /** Optional injected relevance-only model for controlled experiments. */
+  crossEncoderReranker?: BoundedCrossEncoderPort;
   evidenceVerifier?: QueryConditionedEvidenceVerifier;
   evidenceVerifierMode?: QueryConditionedEvidenceVerifierMode;
   evidenceVerifierMaxCandidates?: number;
@@ -354,7 +358,23 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
               : {}),
           })
         : undefined);
+  const crossEncoderReranker =
+    dependencies.crossEncoderReranker ??
+    (runtimeConfig.bgeRerankEnabled
+      ? new LocalBgeCrossEncoderReranker({ localFilesOnly: true })
+      : undefined);
+  if (crossEncoderReranker instanceof LocalBgeCrossEncoderReranker) {
+    app.addHook("onClose", async () => {
+      await crossEncoderReranker.dispose();
+    });
+  }
   registerSearchRoutes(app, db, {
+    ...(crossEncoderReranker
+      ? {
+          crossEncoderReranker,
+          crossEncoderRerankMaxCandidates: runtimeConfig.bgeRerankMaxCandidates,
+        }
+      : {}),
     ...(dependencies.s2AdmissionShadowSink
       ? { s2AdmissionShadowSink: dependencies.s2AdmissionShadowSink }
       : {}),

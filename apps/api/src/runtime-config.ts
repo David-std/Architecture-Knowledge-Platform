@@ -40,6 +40,8 @@ export interface ApiRuntimeConfig {
   evidenceAdmissionAbstainOnConflict: boolean;
   evidenceReader: EvidenceReaderRuntimeConfig | null;
   queryTransformProvider: QueryTransformProvider;
+  bgeRerankEnabled: boolean;
+  bgeRerankMaxCandidates: number;
   queryTranslation: QueryTranslationRuntimeConfig | null;
 }
 
@@ -367,6 +369,14 @@ export function loadApiRuntimeConfig(
     ),
     evidenceReader,
     queryTransformProvider: transformProvider,
+    bgeRerankEnabled: booleanSetting(env, "AKP_S2_BGE_RERANK_ENABLED", false),
+    bgeRerankMaxCandidates: integerSetting(
+      env,
+      "AKP_S2_BGE_RERANK_MAX_CANDIDATES",
+      4,
+      1,
+      8,
+    ),
     queryTranslation:
       transformProvider === "openai-compatible-translation"
         ? queryTranslationConfig(env)

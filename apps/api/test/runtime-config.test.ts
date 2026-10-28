@@ -32,11 +32,39 @@ describe("API runtime configuration", () => {
       evidenceAdmissionAbstainOnConflict: false,
       evidenceReader: null,
       queryTransformProvider: "disabled",
+      bgeRerankEnabled: false,
+      bgeRerankMaxCandidates: 4,
       queryTranslation: null,
     });
     expect(
       loadApiRuntimeConfig({ AKP_RATE_LIMIT_MAX: "240", PORT: "9090" }),
     ).toMatchObject({ rateLimitMax: 240, port: 9090 });
+  });
+
+  it("keeps BGE relevance reranking disabled by default and bounded when explicitly enabled", () => {
+    expect(loadApiRuntimeConfig({})).toMatchObject({
+      bgeRerankEnabled: false,
+      bgeRerankMaxCandidates: 4,
+    });
+    expect(
+      loadApiRuntimeConfig({
+        AKP_S2_BGE_RERANK_ENABLED: "true",
+        AKP_S2_BGE_RERANK_MAX_CANDIDATES: "8",
+      }),
+    ).toMatchObject({
+      bgeRerankEnabled: true,
+      bgeRerankMaxCandidates: 8,
+    });
+    expect(() =>
+      loadApiRuntimeConfig({
+        AKP_S2_BGE_RERANK_MAX_CANDIDATES: "9",
+      }),
+    ).toThrow("AKP_S2_BGE_RERANK_MAX_CANDIDATES");
+    expect(() =>
+      loadApiRuntimeConfig({
+        AKP_S2_BGE_RERANK_ENABLED: "maybe",
+      }),
+    ).toThrow("AKP_S2_BGE_RERANK_ENABLED");
   });
 
   it("keeps local evidence verification shadow-only and explicit", () => {

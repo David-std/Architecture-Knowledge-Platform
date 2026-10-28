@@ -4222,6 +4222,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/bounded-cross-encoder-rerank.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/candidate-policy.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -4448,6 +4453,11 @@
     },
     {
       "path": "packages/retrieval/test/assertion-recall.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/bounded-cross-encoder-rerank.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

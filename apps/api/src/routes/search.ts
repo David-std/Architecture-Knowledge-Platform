@@ -58,6 +58,7 @@ import {
   reciprocalRankFusion,
   validateQueryTransformationResult,
   rerankSearchHitsSafely,
+  rerankBoundedHitsWithCrossEncoder,
   resolvePersonalizedPageRankPolicy,
   resolveRetrievalPolicy,
   resolveSearchHitReranker,
@@ -75,6 +76,7 @@ import {
   type QueryTransformationKind,
   type QueryTransformationVariant,
   type QueryTransformerPort,
+  type BoundedCrossEncoderPort,
   type RetrievalAnswerabilityAssessment,
   type RetrievalAnswerabilityContext,
   type EvidenceRetrievalStageSnapshot,
@@ -527,6 +529,9 @@ export interface RetrievalExecutionOptions {
   rawScopes?: Array<{ vaultId: string; pathPrefix: string | null }>;
   allowVectorForBenchmark?: boolean;
   deterministicRerank?: boolean;
+  /** Server-owned optional BGE relevance rank, after scope+truth filtering. */
+  crossEncoderReranker?: BoundedCrossEncoderPort;
+  crossEncoderRerankMaxCandidates?: number;
   /** Optional query assistance. It never receives authorization/truth controls. */
   queryTransformer?: QueryTransformerPort;
   queryTransformMaxVariants?: number;
@@ -673,6 +678,9 @@ export interface SearchRouteDependencies {
   contextTokenizer?: Tokenizer;
   /** Optional experimental query transformer, normally controlled by feature flag. */
   queryTransformer?: QueryTransformerPort;
+  /** Optional local relevance reranker; only authorized passages are passed in. */
+  crossEncoderReranker?: BoundedCrossEncoderPort;
+  crossEncoderRerankMaxCandidates?: number;
   /**
    * Optional query-conditioned verifier. It is never derived implicitly from
    * an LLM provider; promotion requires explicit dependency wiring.
@@ -3962,15 +3970,29 @@ export async function queryKnowledge(
   if (rerankResult.warning) {
     options.warningSink?.push(rerankResult.warning);
   }
-  options.answerabilityCandidateSink?.(rerankResult.hits);
-  const finalResults = rerankResult.hits.slice(0, input.limit);
+  const boundedRerankResult: Awaited<
+    ReturnType<typeof rerankBoundedHitsWithCrossEncoder>
+  > = options.crossEncoderReranker
+    ? await rerankBoundedHitsWithCrossEncoder(
+        input.query,
+        rerankResult.hits,
+        options.crossEncoderReranker,
+        options.crossEncoderRerankMaxCandidates ?? 4,
+      )
+    : { hits: rerankResult.hits, evaluatedCandidates: 0 };
+  if (boundedRerankResult.warning) {
+    options.warningSink?.push(boundedRerankResult.warning);
+  }
+  const readyHits = boundedRerankResult.hits;
+  options.answerabilityCandidateSink?.(readyHits);
+  const finalResults = readyHits.slice(0, input.limit);
   if (options.sectionCandidateShadowSink) {
     if (!options.authorizationResolved || !options.pathAuthorizer)
       throw new Error("SECTION_SHADOW_AUTHORIZATION_REQUIRED");
     const sections = await resolveSectionCandidatesShadow(db, {
       spaceId,
       vaultIds,
-      authorizedChildHits: rerankResult.hits,
+      authorizedChildHits: readyHits,
       pathAuthorizer: options.pathAuthorizer,
       sourceReadAuthorizer: (path, vault, layer, type) =>
         !requiresSourceRead(layer, type) ||
@@ -4010,7 +4032,7 @@ export async function queryKnowledge(
       beforeRerank: results.map((hit, index) =>
         evidenceCandidateDiagnostic(hit, index + 1),
       ),
-      afterRerank: rerankResult.hits.map((hit, index) =>
+      afterRerank: readyHits.map((hit, index) =>
         evidenceCandidateDiagnostic(hit, index + 1),
       ),
       returned: finalResults.map((hit) => ({
@@ -4229,6 +4251,13 @@ export function registerSearchRoutes(
           answerabilityCandidateSink: (candidates) => {
             answerabilityCandidates = candidates;
           },
+          ...(dependencies.crossEncoderReranker
+            ? {
+                crossEncoderReranker: dependencies.crossEncoderReranker,
+                crossEncoderRerankMaxCandidates:
+                  dependencies.crossEncoderRerankMaxCandidates,
+              }
+            : {}),
           authorizationResolved: true,
           pathAuthorizer,
           truthConsistency: parsed.data.truthConsistency ?? "STRICT",
@@ -4743,6 +4772,13 @@ export function registerSearchRoutes(
           answerabilityCandidateSink: (candidates) => {
             directAnswerabilityCandidates = candidates;
           },
+          ...(dependencies.crossEncoderReranker
+            ? {
+                crossEncoderReranker: dependencies.crossEncoderReranker,
+                crossEncoderRerankMaxCandidates:
+                  dependencies.crossEncoderRerankMaxCandidates,
+              }
+            : {}),
           authorizationResolved: true,
           pathAuthorizer,
           truthConsistency: parsed.data.truthConsistency ?? "STRICT",
