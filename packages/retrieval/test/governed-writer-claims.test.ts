@@ -197,6 +197,66 @@ describe("original-question to SOURCE to every Writer statement, candidate-only"
     expect(c.reader).not.toHaveBeenCalled();
   });
 
+  it("permits repeated citation of the same immutable source unit across fully covered claims", async () => {
+    const c = context();
+    const answerText = sourceText + " " + sourceText;
+    const result = await auditGovernedWriterStatements({
+      originalQuestion: question,
+      answerText,
+      statements: [
+        statement(c.candidate),
+        {
+          ...statement(c.candidate),
+          text: " " + sourceText,
+          startUtf16: sourceText.length,
+          endUtf16: answerText.length,
+        },
+      ],
+      governedPropositionPort: c.port,
+      admissionPipeline: c.pipeline,
+    });
+    expect(result).toMatchObject({
+      status: "SOURCE_BOUND_CLAIMS_CANDIDATE",
+      testedClaims: 2,
+      productionAdmission: false,
+    });
+    expect(c.port.resolve).toHaveBeenCalledTimes(2);
+    expect(c.reader).not.toHaveBeenCalled();
+  });
+
+  it("rejects a reused Writer citation ID mapped to two different original source units before resolving either", async () => {
+    const c = context();
+    const second = {
+      ...c.candidate,
+      unitId: randomUUID(),
+      revision: "revision-B",
+    };
+    const answerText = sourceText + " " + sourceText;
+    const result = await auditGovernedWriterStatements({
+      originalQuestion: question,
+      answerText,
+      statements: [
+        statement(c.candidate),
+        {
+          ...statement(second),
+          text: " " + sourceText,
+          startUtf16: sourceText.length,
+          endUtf16: answerText.length,
+          citationId: "SRC1",
+        },
+      ],
+      governedPropositionPort: c.port,
+      admissionPipeline: c.pipeline,
+    });
+    expect(result).toMatchObject({
+      status: "WITHHELD_SOURCE_CUSTODY",
+      firstRejectedClaim: 1,
+      productionAdmission: false,
+    });
+    expect(c.port.resolve).not.toHaveBeenCalled();
+    expect(c.reader).not.toHaveBeenCalled();
+  });
+
   it("rejects uncovered answer text, missing citation identity and altered SOURCE custody", async () => {
     const c = context();
     const basic = {

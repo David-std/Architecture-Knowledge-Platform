@@ -134,6 +134,27 @@ export async function auditGovernedWriterStatements(input: {
     return make("REJECTED_ANSWER_COVERAGE", 0, null);
   }
 
+  // Writer citation IDs are references into one frozen provider source list.
+  // Reusing an ID for a different unit/revision makes attribution ambiguous,
+  // even if each individual source proof passes its own SHA check.
+  const citationSources = new Map<string, string>();
+  for (const [index, statement] of input.statements.entries()) {
+    const hit = statement.citedHit;
+    const sourceIdentity = JSON.stringify([
+      hit.vaultId,
+      hit.documentId,
+      hit.unitId ?? null,
+      hit.revision,
+      hit.document.path,
+      hit.excerpt,
+    ]);
+    const prior = citationSources.get(statement.citationId);
+    if (prior !== undefined && prior !== sourceIdentity) {
+      return make("WITHHELD_SOURCE_CUSTODY", index, index);
+    }
+    citationSources.set(statement.citationId, sourceIdentity);
+  }
+
   for (const [index, statement] of input.statements.entries()) {
     let proof;
     try {

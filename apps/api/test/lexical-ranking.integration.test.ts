@@ -2,7 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { type SearchRequest } from "@akp/contracts";
 import { Postgres } from "@akp/postgres";
-import { assessRetrievalAnswerability, planQuery } from "@akp/retrieval";
+import {
+  assessRetrievalAnswerability,
+  ExactStructuredPropositionMatcher,
+  planQuery,
+} from "@akp/retrieval";
 import { queryKnowledge } from "../src/routes/search.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -743,6 +747,27 @@ describe("production lexical ranking", () => {
     },
   );
 
+  it("never treats an after-sunrise source as evidence for a nighttime-calibration question", () => {
+    // This is a known semantic negative in the §88 retrieval-only fixture.
+    // Its original unit can be recalled, but that is not answerability gold.
+    const verdict = new ExactStructuredPropositionMatcher().match({
+      query: {
+        subject: "Vela",
+        predicate: "calibrated",
+        object: "the telescope",
+        temporalScope: "during night operations",
+      },
+      candidate: {
+        subject: "Vela",
+        predicate: "calibrated",
+        object: "the telescope",
+        temporalScope: "after sunrise",
+        quote: { startOffset: 0, endOffset: 48 },
+      },
+    });
+    expect(verdict.kind).toBe("RELATED_NOT_ANSWERING");
+  });
+
   it.skipIf(!databaseUrl)(
     "recovers the original answer-bearing unit for an ordinary ES Markdown question only with bounded unit recall",
     async () => {
@@ -1003,6 +1028,34 @@ describe("production lexical ranking", () => {
             (hit) => hit.unitId === fixture.units.titleTerms,
           ),
         ).toBe(true);
+        // Retrieval qrel != answerability gold: the recovered original
+        // says AFTER SUNRISE, while the question asks DURING NIGHT operations.
+        // Even when the same SOURCE unit is located, a source-bound
+        // proposition comparison must not license this time-incompatible claim.
+        const observatoryTarget = relaxedObservatory.find(
+          (hit) => hit.unitId === fixture.units.titleTerms,
+        );
+        expect(observatoryTarget?.excerpt).toContain("after sunrise");
+        expect(
+          new ExactStructuredPropositionMatcher().match({
+            query: {
+              subject: "Vela",
+              predicate: "calibrated",
+              object: "the telescope",
+              temporalScope: "during night operations",
+            },
+            candidate: {
+              subject: "Vela",
+              predicate: "calibrated",
+              object: "the telescope",
+              temporalScope: "after sunrise",
+              quote: {
+                startOffset: 0,
+                endOffset: observatoryTarget!.excerpt.length,
+              },
+            },
+          }).kind,
+        ).toBe("RELATED_NOT_ANSWERING");
         recordMiss(
           "EN_OBSERVATORY",
           ordinaryObservatory,
