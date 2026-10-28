@@ -442,6 +442,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/api/test/governed-proposition-port.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/api/test/governed-proposition-shadow.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -4252,6 +4257,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/retrieval/src/governed-writer-claims.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/retrieval/src/index.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -4493,6 +4503,11 @@
     },
     {
       "path": "packages/retrieval/test/evidence-source-selection.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/retrieval/test/governed-writer-claims.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { SearchHit } from "@akp/contracts";
 import {
   assessRetrievalAnswerability,
@@ -13,7 +14,10 @@ import {
 import type {
   EvidenceAdmissionDecision,
   LayeredEvidenceAdmissionInput,
+  StructuredProposition,
+  StructuredPropositionQuery,
 } from "./evidence-admission.js";
+import { sourceSpanUsesCodePointBoundaries } from "./source-verification.js";
 
 /** The batch boundary of `LayeredEvidenceAdmissionPipeline`. */
 export interface LayeredEvidenceAdmissionEvaluator {
@@ -22,7 +26,47 @@ export interface LayeredEvidenceAdmissionEvaluator {
   ): Promise<EvidenceAdmissionDecision[]>;
 }
 
+/**
+ * Internally supplied proof of an externally adjudicated question/SOURCE
+ * relation, tied to an original UTF-8 SOURCE document. The resolver must
+ * obtain the content and claims through an authorized, revision-scoped
+ * application service; these checks bind its output but cannot authenticate
+ * its identity or independently decide semantic truth.
+ *
+ * Never populate this from client JSON, a Reader output, a bare citation or
+ * an unauthenticated temporal-fact validity timestamp.
+ */
+export interface GovernedLayeredPropositionProof {
+  readonly originalQuestion: string;
+  readonly originalQuestionSha256: string;
+  readonly candidateKey: string;
+  readonly documentId: string;
+  readonly unitId: string | null;
+  readonly vaultId: string;
+  readonly revision: string;
+  readonly path: string;
+  readonly originalSourceBytes: Uint8Array;
+  readonly originalSourceText: string;
+  readonly originalSourceSha256: string;
+  readonly excerptStartUtf16: number;
+  readonly excerptEndUtf16: number;
+  readonly queryProposition: StructuredPropositionQuery;
+  readonly candidateProposition: StructuredProposition;
+}
+
+export interface GovernedLayeredPropositionPort {
+  resolve(input: {
+    readonly originalQuestion: string;
+    readonly hit: SearchHit;
+    /** Authenticated request identity when invoked by the API route. */
+    readonly principalId?: string;
+    readonly spaceId?: string;
+  }): Promise<GovernedLayeredPropositionProof | null>;
+}
+
 export interface LayeredAnswerabilityOptions {
+  /** Optional trusted-internal SOURCE/semantic projection port, fail-closed. */
+  readonly governedPropositionPort?: GovernedLayeredPropositionPort;
   /** Leading candidates of the fused, reranked pool that may be admitted. */
   maxCandidates?: number;
   /** Recorded in traces of decisions that carry no reader identity. */
@@ -36,6 +80,101 @@ export interface LayeredAnswerabilityOptions {
 export const DEFAULT_LAYERED_ADMISSION_MAX_CANDIDATES = 64;
 
 const LAYERED_ADMISSION_FAILURE = "LAYERED_ADMISSION_FAILURE";
+const governedUnavailableDecision: EvidenceAdmissionDecision = {
+  layer: "STRUCTURED_PROPOSITION",
+  verdict: { kind: "INSUFFICIENT" },
+  reason: "GOVERNED_SOURCE_PROPOSITION_UNAVAILABLE",
+};
+
+function sha256(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+function originalBytesMatchText(bytes: Uint8Array, text: string): boolean {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes) === text;
+  } catch {
+    return false;
+  }
+}
+
+function sourceBoundary(text: string, start: number, end: number): boolean {
+  return (
+    Number.isSafeInteger(start) &&
+    Number.isSafeInteger(end) &&
+    start >= 0 &&
+    end > start &&
+    end <= text.length &&
+    sourceSpanUsesCodePointBoundaries(text, start, end)
+  );
+}
+
+/**
+ * Structural custody only. The authenticated port must separately establish
+ * question role, exact semantic equivalence and source authorization.
+ * A valid hash and original quote are NOT proof of entailment.
+ */
+export function bindGovernedLayeredPropositionInput(
+  query: string,
+  hit: SearchHit,
+  proof: GovernedLayeredPropositionProof | null,
+): LayeredEvidenceAdmissionInput | null {
+  if (
+    !proof ||
+    proof.originalQuestion !== query ||
+    proof.originalQuestionSha256 !== sha256(query) ||
+    proof.candidateKey !== retrievalAnswerabilityCandidateKey(hit) ||
+    proof.documentId !== hit.documentId ||
+    proof.unitId !== (hit.unitId ?? null) ||
+    proof.vaultId !== hit.vaultId ||
+    proof.revision !== hit.revision ||
+    proof.path !== hit.document.path ||
+    !(proof.originalSourceBytes instanceof Uint8Array) ||
+    proof.originalSourceBytes.byteLength === 0 ||
+    proof.originalSourceBytes.byteLength > 2_000_000 ||
+    typeof proof.originalSourceText !== "string" ||
+    !/^[0-9a-f]{64}$/u.test(proof.originalSourceSha256) ||
+    proof.originalSourceSha256 !==
+      createHash("sha256").update(proof.originalSourceBytes).digest("hex") ||
+    !originalBytesMatchText(
+      proof.originalSourceBytes,
+      proof.originalSourceText,
+    ) ||
+    !sourceBoundary(
+      proof.originalSourceText,
+      proof.excerptStartUtf16,
+      proof.excerptEndUtf16,
+    ) ||
+    proof.originalSourceText.slice(
+      proof.excerptStartUtf16,
+      proof.excerptEndUtf16,
+    ) !== hit.excerpt ||
+    !proof.queryProposition ||
+    !proof.candidateProposition ||
+    typeof proof.queryProposition.subject !== "string" ||
+    typeof proof.queryProposition.predicate !== "string" ||
+    typeof proof.candidateProposition.subject !== "string" ||
+    typeof proof.candidateProposition.predicate !== "string" ||
+    !proof.queryProposition.subject.trim() ||
+    !proof.queryProposition.predicate.trim() ||
+    !proof.candidateProposition.subject.trim() ||
+    !proof.candidateProposition.predicate.trim() ||
+    !proof.candidateProposition.quote ||
+    !sourceBoundary(
+      hit.excerpt,
+      proof.candidateProposition.quote.startOffset,
+      proof.candidateProposition.quote.endOffset,
+    )
+  )
+    return null;
+  return {
+    query,
+    hit,
+    queryProposition: proof.queryProposition,
+    candidateProposition: proof.candidateProposition,
+    requireStructuredProposition: true,
+  };
+}
 const READER_FAILURE_REASON =
   /^(?:READER_ERROR|SEMANTIC_READER_(?:ERROR|TIMEOUT|BATCH_FAILURE|BATCH_SIZE_MISMATCH))\b/u;
 
@@ -188,22 +327,45 @@ export async function assessRetrievalAnswerabilityWithLayeredAdmission(
   const uniqueWindow = window.filter(
     (hit) => !collisions.has(retrievalAnswerabilityCandidateKey(hit)),
   );
-  let verified: EvidenceAdmissionDecision[];
-  if (uniqueWindow.length === 0) {
-    verified = [];
+  const prepared = await Promise.all(
+    uniqueWindow.map(async (hit) => {
+      if (!options.governedPropositionPort) {
+        return { input: { query, hit } as LayeredEvidenceAdmissionInput };
+      }
+      try {
+        const proof = await options.governedPropositionPort.resolve({
+          originalQuestion: query,
+          hit,
+        });
+        const input = bindGovernedLayeredPropositionInput(query, hit, proof);
+        return input ? { input } : { decision: governedUnavailableDecision };
+      } catch {
+        return { decision: governedUnavailableDecision };
+      }
+    }),
+  );
+  const evaluable = prepared.flatMap((item) =>
+    item.input ? [item.input] : [],
+  );
+  let decisions: EvidenceAdmissionDecision[];
+  if (evaluable.length === 0) {
+    decisions = [];
   } else {
     try {
-      const evaluated: unknown = await pipeline.evaluateBatch(
-        uniqueWindow.map((hit) => ({ query, hit })),
-      );
-      verified =
-        Array.isArray(evaluated) && evaluated.length === uniqueWindow.length
+      const evaluated: unknown = await pipeline.evaluateBatch(evaluable);
+      decisions =
+        Array.isArray(evaluated) && evaluated.length === evaluable.length
           ? (evaluated as EvidenceAdmissionDecision[])
-          : failureDecisions(uniqueWindow.length);
+          : failureDecisions(evaluable.length);
     } catch {
-      verified = failureDecisions(uniqueWindow.length);
+      decisions = failureDecisions(evaluable.length);
     }
   }
+  let nextDecision = 0;
+  const verified: EvidenceAdmissionDecision[] = prepared.map(
+    (item) =>
+      item.decision ?? decisions[nextDecision++] ?? governedUnavailableDecision,
+  );
 
   const traces = new Map<string, QueryConditionedEvidenceTrace>();
   for (const hit of hits) {

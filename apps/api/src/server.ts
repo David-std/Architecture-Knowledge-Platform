@@ -27,6 +27,7 @@ import {
   OpenAICompatibleQueryTranslator,
   QueryConditionedSemanticEvidenceReader,
   ReaderEvidenceVerifier,
+  type GovernedLayeredPropositionPort,
   type LayeredEvidenceAdmissionEvaluator,
   type QueryConditionedEvidenceVerifier,
   type QueryConditionedEvidenceVerifierMode,
@@ -79,6 +80,8 @@ export interface ApiServerDependencies {
   evidenceVerifierMode?: QueryConditionedEvidenceVerifierMode;
   evidenceVerifierMaxCandidates?: number;
   evidenceAdmissionPipeline?: LayeredEvidenceAdmissionEvaluator;
+  /** Service-owned, permission-checked SOURCE projection port; never user JSON. */
+  governedPropositionPort?: GovernedLayeredPropositionPort;
 }
 
 export function buildServer(dependencies: ApiServerDependencies = {}) {
@@ -379,6 +382,9 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
     ...(evidenceAdmissionPipeline
       ? {
           evidenceAdmissionPipeline,
+          ...(dependencies.governedPropositionPort
+            ? { governedPropositionPort: dependencies.governedPropositionPort }
+            : {}),
           evidenceAdmissionMinDistinctDocuments:
             runtimeConfig.evidenceAdmissionMinDistinctDocuments,
           evidenceAdmissionAbstainOnConflict:

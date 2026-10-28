@@ -75,6 +75,57 @@ function fixture(): Mutable<S2EndToEndTraceInput> {
   };
 }
 describe("S2 full HTTP→writer→source→semantic shadow provenance", () => {
+  it("makes a governed R5 Writer-statement mismatch an explicit downstream custody stop", () => {
+    const f = fixture();
+    f.governedWriterClaims = {
+      status: "WITHHELD_WRITER_STATEMENT",
+      testedClaims: 0,
+      totalClaims: 1,
+      sourceCitations: [],
+      productionAdmission: false,
+      releaseGateAccepted: false,
+    };
+    expect(traceS2EndToEndEvidence(f)).toMatchObject({
+      status: "GOVERNED_WRITER_CLAIMS_WITHHELD",
+      firstUnprovenStage: "CLAIM",
+      optionalGovernedClaimStatus: "WITHHELD_WRITER_STATEMENT",
+      productionAdmission: false,
+    });
+    f.governedWriterClaims = {
+      ...f.governedWriterClaims,
+      status: "SOURCE_BOUND_CLAIMS_CANDIDATE",
+      testedClaims: 1,
+      sourceCitations: [
+        { citationId: "SRC1", originalSourceSha256: sha("source") },
+      ],
+    };
+    expect(traceS2EndToEndEvidence(f)).toMatchObject({
+      status: "SEMANTIC_DOWNSTREAM_SHADOW_CANDIDATE",
+      optionalGovernedClaimStatus: "SOURCE_BOUND_CLAIMS_CANDIDATE",
+      productionAdmission: false,
+      releaseGateAccepted: false,
+    });
+    f.governedWriterClaims = {
+      ...f.governedWriterClaims,
+      sourceCitations: [
+        { citationId: "SRC1", originalSourceSha256: sha("a different SOURCE") },
+      ],
+    };
+    expect(traceS2EndToEndEvidence(f)).toMatchObject({
+      status: "GOVERNED_WRITER_CLAIMS_WITHHELD",
+      firstUnprovenStage: "CLAIM",
+    });
+    f.governedWriterClaims = {
+      ...f.governedWriterClaims,
+      sourceCitations: [
+        { citationId: "SRC2", originalSourceSha256: sha("source") },
+      ],
+    };
+    expect(traceS2EndToEndEvidence(f).status).toBe(
+      "GOVERNED_WRITER_CLAIMS_WITHHELD",
+    );
+  });
+
   it("never turns a completely supported trace into production authority", () => {
     expect(traceS2EndToEndEvidence(fixture())).toMatchObject({
       status: "SEMANTIC_DOWNSTREAM_SHADOW_CANDIDATE",

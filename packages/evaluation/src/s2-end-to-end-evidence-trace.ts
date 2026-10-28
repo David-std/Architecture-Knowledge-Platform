@@ -17,6 +17,18 @@ export interface S2EndToEndTraceInput extends S2SemanticPipelineTraceInput {
   readonly http: AuthenticatedSearchBridgeResult | null;
   /** Optional strict replay of HTTP excerpt offsets against original bytes. */
   readonly httpOriginalReplay: S2RawHttpEvidenceResult | null;
+  /** Optional result from the single governed R5 per-Writer-claim adapter. */
+  readonly governedWriterClaims?: {
+    readonly status: string;
+    readonly testedClaims: number;
+    readonly totalClaims: number;
+    readonly sourceCitations: readonly {
+      readonly citationId: string;
+      readonly originalSourceSha256: string;
+    }[];
+    readonly productionAdmission: false;
+    readonly releaseGateAccepted: false;
+  };
 }
 export interface S2EndToEndEvidenceTrace {
   readonly status:
@@ -27,6 +39,7 @@ export interface S2EndToEndEvidenceTrace {
     | "HTTP_QUESTION_IDENTITY_MISMATCH"
     | "PROVIDER_REQUEST_MISMATCH"
     | "WRITER_REFERENCES_NONADMITTED_SOURCE"
+    | "GOVERNED_WRITER_CLAIMS_WITHHELD"
     | "SEMANTIC_DOWNSTREAM_UNPROVEN"
     | "SEMANTIC_DOWNSTREAM_SHADOW_CANDIDATE";
   readonly firstUnprovenStage:
@@ -46,6 +59,7 @@ export interface S2EndToEndEvidenceTrace {
   readonly optionalHttpOriginalQuoteReplay:
     "NOT_CAPTURED" | "REPLAY_VERIFIED" | "REJECTED";
   readonly writerRequestSourceBound: boolean;
+  readonly optionalGovernedClaimStatus: string | null;
   readonly downstream: S2SemanticPipelineTrace | null;
   readonly authorizationIndependentlyVerified: false;
   readonly goldIndependentlyReviewed: false;
@@ -77,6 +91,7 @@ export function traceS2EndToEndEvidence(
     selectedSourceCount: http?.selectedSourceCount ?? 0,
     optionalHttpOriginalQuoteReplay,
     writerRequestSourceBound,
+    optionalGovernedClaimStatus: input.governedWriterClaims?.status ?? null,
     downstream,
     authorizationIndependentlyVerified: false,
     goldIndependentlyReviewed: false,
@@ -134,6 +149,38 @@ export function traceS2EndToEndEvidence(
     )
   )
     return make("WRITER_REFERENCES_NONADMITTED_SOURCE", "SOURCE");
+  // An observed per-claim custody failure must never be repaired by F3
+  // or whole-answer model agreement. Positive results remain shadow-only.
+  if (
+    input.governedWriterClaims !== undefined &&
+    (input.governedWriterClaims.status !== "SOURCE_BOUND_CLAIMS_CANDIDATE" ||
+      !Number.isSafeInteger(input.governedWriterClaims.testedClaims) ||
+      input.governedWriterClaims.testedClaims < 1 ||
+      input.governedWriterClaims.testedClaims !==
+        input.governedWriterClaims.totalClaims ||
+      !Array.isArray(input.governedWriterClaims.sourceCitations) ||
+      input.governedWriterClaims.sourceCitations.length !==
+        input.governedWriterClaims.totalClaims ||
+      input.governedWriterClaims.sourceCitations.some(
+        (ref) =>
+          !ref ||
+          !input.writer!.citations.includes(ref.citationId) ||
+          !provider.freeze.sourcePassages.some(
+            (passage) =>
+              passage.id === ref.citationId &&
+              passage.original?.fileSha256 === ref.originalSourceSha256,
+          ),
+      ) ||
+      input.writer.citations.some(
+        (id) =>
+          !input.governedWriterClaims!.sourceCitations.some(
+            (ref) => ref.citationId === id,
+          ),
+      ) ||
+      input.governedWriterClaims.productionAdmission !== false ||
+      input.governedWriterClaims.releaseGateAccepted !== false)
+  )
+    return make("GOVERNED_WRITER_CLAIMS_WITHHELD", "CLAIM");
   const downstream = traceS2SemanticPipeline(input);
   if (downstream.status !== "SHADOW_CANDIDATE_NOT_RELEASE")
     return make(

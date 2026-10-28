@@ -771,6 +771,12 @@ export interface LayeredEvidenceAdmissionInput {
   readonly hit: SearchHit;
   readonly queryProposition?: StructuredPropositionQuery;
   readonly candidateProposition?: StructuredProposition;
+  /**
+   * A separately attested question/SOURCE pair must not fall back to an LLM
+   * on missing projections or a non-answering subject/predicate relation.
+   * Never supplied by public request JSON; only an authorized service port.
+   */
+  readonly requireStructuredProposition?: boolean;
 }
 
 /**
@@ -840,7 +846,8 @@ export class LayeredEvidenceAdmissionPipeline {
       }
 
       if (
-        this.structuredMismatchPolicy === "ABSTAIN" &&
+        (this.structuredMismatchPolicy === "ABSTAIN" ||
+          input.requireStructuredProposition === true) &&
         (!input.queryProposition || !input.candidateProposition)
       ) {
         output[index] = {
@@ -874,7 +881,10 @@ export class LayeredEvidenceAdmissionPipeline {
         // A pair of governed projections that disagrees on the asserted
         // subject/predicate must not be promoted by an unrelated model read.
         // Keep the generic exploratory fallback for existing frozen contracts.
-        if (this.structuredMismatchPolicy === "ABSTAIN") {
+        if (
+          this.structuredMismatchPolicy === "ABSTAIN" ||
+          input.requireStructuredProposition === true
+        ) {
           output[index] = {
             layer: "STRUCTURED_PROPOSITION",
             verdict: { kind: "INSUFFICIENT" },

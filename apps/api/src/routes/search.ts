@@ -63,6 +63,7 @@ import {
   runtimeChannelEnabled,
   toPgVector,
   type ActiveEmbeddingGenerationDescriptor,
+  type GovernedLayeredPropositionPort,
   type LayeredEvidenceAdmissionEvaluator,
   type PersonalizedPageRankPolicy,
   type QueryConditionedEvidenceVerifier,
@@ -679,6 +680,8 @@ export interface SearchRouteDependencies {
    * deterministic passage heuristics are diagnostics and never admit.
    */
   evidenceAdmissionPipeline?: LayeredEvidenceAdmissionEvaluator;
+  /** Internal authorized SOURCE projector; absent from public HTTP JSON. */
+  governedPropositionPort?: GovernedLayeredPropositionPort;
   /** Query-level abstention; meaningful only in LAYERED mode. */
   evidenceAdmissionMinDistinctDocuments?: number;
   evidenceAdmissionAbstainOnConflict?: boolean;
@@ -695,6 +698,34 @@ function s2AdmissionMode(
 }
 
 /**
+ * Authorization must be applied to the ORIGINAL SOURCE resolve itself, not
+ * only to indexed hits upstream. A request-scoped closure binds the authenticated
+ * principal/space and currently allowed vault+path before any storage lookup.
+ * This does not manufacture or independently certify proposition semantics.
+ */
+export function scopeGovernedLayeredPropositionPort(
+  port: GovernedLayeredPropositionPort | undefined,
+  scope: {
+    readonly principalId: string;
+    readonly spaceId: string;
+    readonly pathAuthorizer: (path: string, vaultId: string) => boolean;
+  },
+): GovernedLayeredPropositionPort | undefined {
+  if (!port) return undefined;
+  return {
+    resolve: ({ originalQuestion, hit }) =>
+      scope.pathAuthorizer(hit.document.path, hit.vaultId)
+        ? port.resolve({
+            originalQuestion,
+            hit,
+            principalId: scope.principalId,
+            spaceId: scope.spaceId,
+          })
+        : Promise.resolve(null),
+  };
+}
+
+/**
  * Applies the configured admission authority to one request's candidate pool:
  * LAYERED admits only through the layered pipeline, a verifier keeps its
  * SHADOW/ENFORCE policy over the deterministic gate, and otherwise the
@@ -705,7 +736,19 @@ async function assessCandidateAnswerability(
   pool: readonly SearchHit[],
   query: string,
   context: RetrievalAnswerabilityContext,
+  governedScope: {
+    principalId: string;
+    spaceId: string;
+    pathAuthorizer: (path: string, vaultId: string) => boolean;
+  },
 ): Promise<RetrievalAnswerabilityAssessment> {
+  // Re-check the exact source path in the currently authenticated request
+  // before the optional internal service can resolve its original bytes.
+  // Model/client-supplied identifiers do not grant this permission.
+  const scopedGovernedPort = scopeGovernedLayeredPropositionPort(
+    dependencies.governedPropositionPort,
+    governedScope,
+  );
   const maxCandidates =
     dependencies.evidenceVerifierMaxCandidates === undefined
       ? {}
@@ -717,6 +760,9 @@ async function assessCandidateAnswerability(
       dependencies.evidenceAdmissionPipeline!,
       {
         ...maxCandidates,
+        ...(scopedGovernedPort
+          ? { governedPropositionPort: scopedGovernedPort }
+          : {}),
         ...(dependencies.evidenceAdmissionMinDistinctDocuments === undefined
           ? {}
           : {
@@ -4143,6 +4189,7 @@ export function registerSearchRoutes(
         answerabilityPool,
         parsed.data.query,
         answerabilityContext,
+        { principalId: actor.id, spaceId: requestedSpace, pathAuthorizer },
       );
       notifyS2AdmissionShadow(dependencies.s2AdmissionShadowSink, {
         surface: "search",
@@ -5135,6 +5182,7 @@ export function registerSearchRoutes(
         answerabilityPool,
         parsed.data.query,
         answerabilityContext,
+        { principalId: actor.id, spaceId: requestedSpace, pathAuthorizer },
       );
       notifyS2AdmissionShadow(dependencies.s2AdmissionShadowSink, {
         surface: "context",

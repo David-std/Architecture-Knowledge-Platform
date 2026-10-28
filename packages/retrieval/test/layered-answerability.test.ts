@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { SearchHit } from "@akp/contracts";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -12,7 +12,10 @@ import {
   type EvidenceAdmissionDecision,
   type SemanticEvidenceReader,
 } from "../src/evidence-admission.js";
-import { assessRetrievalAnswerabilityWithLayeredAdmission } from "../src/layered-answerability.js";
+import {
+  assessRetrievalAnswerabilityWithLayeredAdmission,
+  type GovernedLayeredPropositionProof,
+} from "../src/layered-answerability.js";
 
 const QUERY = "What is the retry budget?";
 
@@ -72,7 +75,191 @@ function semanticReader(answering: readonly string[]): SemanticEvidenceReader {
   };
 }
 
+const sha256 = (text: string) =>
+  createHash("sha256").update(text, "utf8").digest("hex");
+
+function governedProof(
+  candidate: SearchHit,
+  originalQuestion: string,
+  overrides: Partial<GovernedLayeredPropositionProof> = {},
+): GovernedLayeredPropositionProof {
+  const originalSourceText =
+    "SOURCE HEADER\n" + candidate.excerpt + "\nSOURCE END";
+  return {
+    originalQuestion,
+    originalQuestionSha256: sha256(originalQuestion),
+    candidateKey: retrievalAnswerabilityCandidateKey(candidate),
+    documentId: candidate.documentId,
+    unitId: candidate.unitId ?? null,
+    vaultId: candidate.vaultId,
+    revision: candidate.revision,
+    path: candidate.document.path,
+    originalSourceText,
+    originalSourceBytes: new TextEncoder().encode(originalSourceText),
+    originalSourceSha256: sha256(originalSourceText),
+    excerptStartUtf16: "SOURCE HEADER\n".length,
+    excerptEndUtf16: "SOURCE HEADER\n".length + candidate.excerpt.length,
+    queryProposition: {
+      subject: "Lira",
+      predicate: "approved",
+      object: "the index",
+      polarity: "POSITIVE",
+      temporalScope: "2026-09-13",
+      conditions: ["after inspection"],
+    },
+    candidateProposition: {
+      subject: "Lira",
+      predicate: "approved",
+      object: "the index",
+      polarity: "POSITIVE",
+      temporalScope: "2026-09-13",
+      conditions: ["after inspection"],
+      quote: { startOffset: 0, endOffset: candidate.excerpt.length },
+    },
+    ...overrides,
+  };
+}
+
 describe("layered production admission", () => {
+  it("uses a pinned original SOURCE proposition and never asks the model to overrule a mismatch", async () => {
+    const query = "Did Lira approve the index on 2026-09-13 after inspection?";
+    const candidate = hit(
+      "Lira approved the index on 2026-09-13 after inspection.",
+    );
+    const reader = semanticReader([candidate.excerpt]);
+    const readBatch = vi.spyOn(reader, "readBatch");
+    const pipeline = new LayeredEvidenceAdmissionPipeline({
+      semanticReader: reader,
+      // Default SEMANTIC_FALLBACK cannot override governed mismatches.
+    });
+    const exact = governedProof(candidate, query);
+    const positive = await assessRetrievalAnswerabilityWithLayeredAdmission(
+      [candidate],
+      query,
+      pipeline,
+      { governedPropositionPort: { resolve: async () => exact } },
+    );
+    expect(positive.supported).toBe(true);
+    expect(positive.supportedCandidateKeys).toEqual([
+      retrievalAnswerabilityCandidateKey(candidate),
+    ]);
+    expect(
+      positive.candidateSignals[0]?.queryConditionedEvidence,
+    ).toMatchObject({
+      verifierId: "layered-admission:STRUCTURED_PROPOSITION",
+      decision: "SUPPORTS",
+      evidenceSpan: { startOffset: 0, endOffset: candidate.excerpt.length },
+    });
+    for (const change of [
+      { queryProposition: { ...exact.queryProposition, subject: "Miro" } },
+      {
+        queryProposition: { ...exact.queryProposition, predicate: "rejected" },
+      },
+      { queryProposition: { ...exact.queryProposition, object: "Lira" } },
+      {
+        queryProposition: {
+          ...exact.queryProposition,
+          polarity: "NEGATIVE" as const,
+        },
+      },
+      {
+        queryProposition: {
+          ...exact.queryProposition,
+          temporalScope: "2026-09-14",
+        },
+      },
+      {
+        queryProposition: {
+          ...exact.queryProposition,
+          conditions: ["without inspection"],
+        },
+      },
+    ]) {
+      const withheld = await assessRetrievalAnswerabilityWithLayeredAdmission(
+        [candidate],
+        query,
+        pipeline,
+        {
+          governedPropositionPort: {
+            resolve: async () => ({ ...exact, ...change }),
+          },
+        },
+      );
+      expect(withheld.supported).toBe(false);
+      expect(withheld.supportedCandidateKeys).toEqual([]);
+      expect(
+        withheld.candidateSignals[0]?.queryConditionedEvidence?.decision,
+      ).not.toBe("SUPPORTS");
+    }
+    expect(readBatch).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when original question, document revision, bytes or quote coordinates change", async () => {
+    const query = "Did Lira approve the index on 2026-09-13 after inspection?";
+    const candidate = hit(
+      "Lira approved the index on 2026-09-13 after inspection.",
+    );
+    const exact = governedProof(candidate, query);
+    const reader = semanticReader([candidate.excerpt]);
+    const readBatch = vi.spyOn(reader, "readBatch");
+    const pipeline = new LayeredEvidenceAdmissionPipeline({
+      semanticReader: reader,
+    });
+    for (const change of [
+      { originalQuestion: "Different question" },
+      { originalQuestionSha256: sha256("Different question") },
+      { candidateKey: "other-unit" },
+      { documentId: randomUUID() },
+      { vaultId: randomUUID() },
+      { revision: "other-revision" },
+      { path: "other-document.md" },
+      { originalSourceSha256: sha256("other-source") },
+      { originalSourceText: exact.originalSourceText + " tampered" },
+      { originalSourceBytes: new TextEncoder().encode("tampered raw bytes") },
+      { originalSourceBytes: new Uint8Array([0xff, 0xfe]) },
+      { excerptStartUtf16: exact.excerptStartUtf16 + 1 },
+      {
+        candidateProposition: {
+          ...exact.candidateProposition,
+          quote: { startOffset: 0, endOffset: candidate.excerpt.length + 1 },
+        },
+      },
+    ]) {
+      const assessment = await assessRetrievalAnswerabilityWithLayeredAdmission(
+        [candidate],
+        query,
+        pipeline,
+        {
+          governedPropositionPort: {
+            resolve: async () => ({ ...exact, ...change }),
+          },
+        },
+      );
+      expect(assessment.supported).toBe(false);
+      expect(
+        assessment.candidateSignals[0]?.queryConditionedEvidence,
+      ).toMatchObject({
+        decision: "INSUFFICIENT",
+        reason: "GOVERNED_SOURCE_PROPOSITION_UNAVAILABLE",
+      });
+    }
+    const unavailable = await assessRetrievalAnswerabilityWithLayeredAdmission(
+      [candidate],
+      query,
+      pipeline,
+      {
+        governedPropositionPort: {
+          resolve: async () => {
+            throw Error("private provider token must not escape");
+          },
+        },
+      },
+    );
+    expect(unavailable.supported).toBe(false);
+    expect(JSON.stringify(unavailable)).not.toContain("private provider token");
+    expect(readBatch).not.toHaveBeenCalled();
+  });
+
   it("admits only source-bound pipeline answers and withdraws lexical passage authority", async () => {
     const lexical = hit("The retry budget is reviewed by the platform team.");
     const answering = hit("The retry budget is 3 attempts per request.");
