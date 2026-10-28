@@ -53,6 +53,8 @@ run(
     let app: ReturnType<typeof buildServer>;
     let layeredApp: ReturnType<typeof buildServer>;
     let nativeCallCount = 0;
+    let esPacketId = "";
+    let esPacketHash = "";
     let nativeMode:
       "GOOD" | "FORGED_CITATION" | "TRUNCATED" | "UNREVIEWED_CLAIM" = "GOOD";
     const pinnedAtomicProvider = {
@@ -483,6 +485,8 @@ run(
       );
       const id = randomUUID();
       const digest = sha("s2:es:" + id);
+      esPacketId = id;
+      esPacketHash = digest;
       const packet = {
         ...snapshot.rows[0]!.packet,
         packetId: id,
@@ -682,6 +686,51 @@ run(
       expect(unrelated.status).toBe(404);
       expect(nativeCallCount).toBe(before + 4);
     }, 60000);
+    it("withholds an unreviewed new natural-language question BEFORE calling the model", async () => {
+      const question = "Who approved shipment SR-42 on 14 August 2024?";
+      const snapshot = await db.pool.query<{ packet: Record<string, unknown> }>(
+        "select packet from context_packets where id=$1",
+        [packetId],
+      );
+      const id = randomUUID(),
+        digest = sha("negative:" + id);
+      const packet = {
+        ...snapshot.rows[0]!.packet,
+        packetId: id,
+        packetHash: digest,
+        query: question,
+      };
+      await db.pool.query(
+        `insert into context_packets(id,space_id,vault_id,actor_id,
+          corpus_revision,query_hash,packet_hash,request,packet,scope)
+          values($1,$2,$3,$4,'s2:r1',$5,$6,$7::jsonb,$8::jsonb,$9::jsonb)`,
+        [
+          id,
+          spaceId,
+          vaultId,
+          reviewers[0]!.id,
+          sha(question),
+          digest,
+          JSON.stringify({ query: question, spaceId, vaultId }),
+          JSON.stringify(packet),
+          JSON.stringify({ spaceId, vaultIds: [vaultId], federated: false }),
+        ],
+      );
+      const before = nativeCallCount;
+      const resp = await post("/v1/s2/writer-claims/generate-audit", 0, {
+        packetId: id,
+        packetHash: digest,
+        language: "en",
+      });
+      expect(resp.status).toBe(200);
+      expect(await resp.json()).toMatchObject({
+        status: "WITHHELD_UNREVIEWED_QUESTION_OR_SOURCE",
+        modelInvoked: false,
+        productionAdmission: false,
+        releaseGateAccepted: false,
+      });
+      expect(nativeCallCount).toBe(before);
+    }, 45000);
     const itRealNative =
       process.env.AKP_S2_ATOMIC_WRITER_REAL_PROVIDER_TEST === "true"
         ? it
@@ -699,38 +748,48 @@ run(
         try {
           await liveApp.ready();
           endpoint = await liveApp.listen({ host: "127.0.0.1", port: 0 });
-          const before = performance.now();
-          const response = await fetch(
-            endpoint + "/v1/s2/writer-claims/generate-audit",
-            {
-              method: "POST",
-              headers: {
-                ...headers(0),
-                "Idempotency-Key": randomUUID() + "-" + randomUUID(),
+          for (const [language, id, digest] of [
+            ["en", packetId, packetHash],
+            ["es", esPacketId, esPacketHash],
+          ] as const) {
+            const before = performance.now();
+            const response = await fetch(
+              endpoint + "/v1/s2/writer-claims/generate-audit",
+              {
+                method: "POST",
+                headers: {
+                  ...headers(0),
+                  "Idempotency-Key": randomUUID() + "-" + randomUUID(),
+                },
+                body: JSON.stringify({
+                  packetId: id,
+                  packetHash: digest,
+                  language,
+                }),
+                signal: AbortSignal.timeout(28000),
               },
-              body: JSON.stringify({ packetId, packetHash, language: "en" }),
-              signal: AbortSignal.timeout(28000),
-            },
-          );
-          const receipt = (await response.json()) as Record<string, unknown>;
-          expect([200, 503]).toContain(response.status);
-          expect(receipt.productionAdmission).toBe(false);
-          expect(receipt.releaseGateAccepted).toBe(false);
-          expect(receipt).not.toHaveProperty("answerText");
-          expect(receipt).not.toHaveProperty("sourceOriginalText");
-          console.log(
-            "S2_REAL_ATOMIC_WRITER_REDACTED_DIAGNOSTIC",
-            JSON.stringify({
-              httpStatus: response.status,
-              status: receipt.status ?? receipt.code,
-              modelInvoked: receipt.modelInvoked ?? false,
-              claimCount: receipt.claimCount ?? 0,
-              testedClaims: receipt.testedClaims ?? 0,
-              providerMs: receipt.providerMs ?? null,
-              fullHttpMs: Math.round(performance.now() - before),
-              releaseGateAccepted: false,
-            }),
-          );
+            );
+            const receipt = (await response.json()) as Record<string, unknown>;
+            expect([200, 503]).toContain(response.status);
+            expect(receipt.productionAdmission).toBe(false);
+            expect(receipt.releaseGateAccepted).toBe(false);
+            expect(receipt).not.toHaveProperty("answerText");
+            expect(receipt).not.toHaveProperty("sourceOriginalText");
+            console.log(
+              "S2_REAL_ATOMIC_WRITER_REDACTED_DIAGNOSTIC",
+              JSON.stringify({
+                language,
+                httpStatus: response.status,
+                status: receipt.status ?? receipt.code,
+                modelInvoked: receipt.modelInvoked ?? false,
+                claimCount: receipt.claimCount ?? 0,
+                testedClaims: receipt.testedClaims ?? 0,
+                providerMs: receipt.providerMs ?? null,
+                fullHttpMs: Math.round(performance.now() - before),
+                releaseGateAccepted: false,
+              }),
+            );
+          }
         } finally {
           await liveApp.close();
         }
