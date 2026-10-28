@@ -47,6 +47,32 @@ describe("S2 PostgreSQL lexical vs offline BM25 same-pool development probe", ()
         );
         const strictMatches = sql.rows.filter((r) => r.strict_hit);
         expect(strictMatches).toEqual([]);
+        // A Spanish stemmer corrects the approved/aprobo morphological
+        // mismatch for bounded terms, but does NOT cure a long natural
+        // question that still requires words not present in the passage.
+        const morphology = await db.pool.query<{
+          full_query_hit: boolean;
+          bounded_query_hit: boolean;
+          simple_morph_match: boolean;
+        }>(
+          `select
+             to_tsvector('spanish',$1) @@
+               plainto_tsquery('spanish',$2) full_query_hit,
+             to_tsvector('spanish',$1) @@
+               plainto_tsquery('spanish',$3) bounded_query_hit,
+             to_tsvector('simple',$1) @@
+               plainto_tsquery('simple',$3) simple_morph_match`,
+          [
+            "M-7 fue aprobado por Lira despues de la auditoria.",
+            "quien aprobo M-7 tras la auditoria",
+            "M-7 aprobo auditoria",
+          ],
+        );
+        expect(morphology.rows[0]).toEqual({
+          full_query_hit: false,
+          bounded_query_hit: true,
+          simple_morph_match: false,
+        });
         const shadow = shadowS2Bm25SamePool({
           query,
           candidates: rows.map((r, index) => ({
