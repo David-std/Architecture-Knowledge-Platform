@@ -28,3 +28,38 @@ export function isAssertionRecallSelectionReason(
     reason.includes(ASSERTION_RECALL_SELECTION_MARKER)
   );
 }
+
+/**
+ * Candidate-only first-stage recall of non-claim Markdown units when the full
+ * natural-language query has too many required lexemes. Require two distinct
+ * significant original query tokens within one indexed unit's searchable
+ * fields (not merely across different document units). A matching index
+ * row is still NOT proof of an original SOURCE span. Do not stem, translate, infer synonyms or
+ * declare an entailment relationship from this query.
+ *
+ * This bounded 2-of-N tsquery is deliberately opt-in at the queryKnowledge
+ * library boundary. It must not bypass caller ACL, source revision or Reader
+ * verification, and should be compared on frozen EN/ES source-unit qrels
+ * before any runtime promotion.
+ */
+export const BOUNDED_UNIT_RECALL_SELECTION_MARKER =
+  "lexical:bounded-unit-recall:";
+
+export function boundedUnitLexicalRecallQuery(query: string): string | null {
+  const tokens = [
+    ...new Set(
+      query
+        .normalize("NFC")
+        .toLocaleLowerCase("en-US")
+        .match(/[\p{L}\p{N}]+/gu) ?? [],
+    ),
+  ]
+    .filter((token) => token.length >= 4 && token.length <= 64)
+    .slice(0, 8);
+  if (tokens.length < 2) return null;
+  const pairs: string[] = [];
+  for (let left = 0; left < tokens.length; left++)
+    for (let right = left + 1; right < tokens.length; right++)
+      pairs.push(`(${tokens[left]} & ${tokens[right]})`);
+  return pairs.join(" | ");
+}

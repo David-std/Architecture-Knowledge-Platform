@@ -40,6 +40,8 @@ import {
   evidenceCandidateDiagnostic,
   assertionRecallSelectionReason,
   boundedAssertionRecallQuery,
+  boundedUnitLexicalRecallQuery,
+  BOUNDED_UNIT_RECALL_SELECTION_MARKER,
   isAssertionRecallSelectionReason,
   buildContextPacket,
   buildContextPacketPair,
@@ -566,6 +568,8 @@ export interface RetrievalExecutionOptions {
    * remains byte-for-byte compatible with the current lexical vectors.
    */
   experimentalStructuredRowLexicalContext?: boolean;
+  /** Library/test-only source-unit lexical recall experiment; never exposed as an HTTP request switch. */
+  experimentalBoundedUnitLexicalRecall?: boolean;
   vaultIds?: string[];
   /** Exact, authorized Code Graph candidates resolved by the HTTP boundary. */
   codeCandidates?: CodeChannelCandidate[];
@@ -2091,6 +2095,7 @@ export async function queryKnowledge(
 
   const lexicalRows: LexicalSearchRow[] = [];
   const assertionRecallRows: LexicalSearchRow[] = [];
+  const boundedUnitRecallRows: LexicalSearchRow[] = [];
   const unitLexicalSearchVector = (alias: string) =>
     structuredRowLexicalContext
       ? `${alias}.lexical_augmented_search_vector`
@@ -2103,7 +2108,7 @@ export async function queryKnowledge(
     : "false";
   if (channels.has("lexical") || channels.has("graph")) {
     for (const assisted of assistedQueries) {
-      const queryLexical = (orTerms: string | null) =>
+      const queryLexical = (orTerms: string | null, unitOnly = false) =>
         observedRetrieval("lexical", () =>
           db.pool.query<LexicalSearchRow>(
             `
@@ -2133,7 +2138,7 @@ export async function queryKnowledge(
                and d.lifecycle ${lifecycleClause}
                and ${trustClause("d.")}
                and d.refresh_status not in ('STALE_BLOCKED','INVALID')
-               and ($6::text is null or d.type in ('claim','rule','decision-rule'))
+               and ($6::text is null or $7::boolean or d.type in ('claim','rule','decision-rule'))
                ${documentScopeClause("d.", 5)}
                ${modeClause("d.")}
                ${rawAuthorizationClause("d.", 4)}
@@ -2219,9 +2224,14 @@ export async function queryKnowledge(
                    and u.corpus_revision=d.index_revision
                    and u.lifecycle ${lifecycleClause}
                    and ${trustClause("u.")}
+                   and (
+                     not $7::boolean
+                     or ${unitLexicalSearchVector("u")} @@ d.terms
+                   )
                   order by u.container_only,unit_score desc,u.structural_order,u.id
                  limit 1
               ) best_unit on true
+             where not $7::boolean or best_unit.unit_id is not null
           )
           select id,unit_id,unit_type,document_revision,score,match_reason
             from scored
@@ -2235,6 +2245,7 @@ export async function queryKnowledge(
               rawAuthorizationJson,
               documentScopeJson,
               orTerms,
+              unitOnly,
             ],
           ),
         );
@@ -2280,6 +2291,33 @@ export async function queryKnowledge(
           }),
         );
       }
+      // Query-only, opt-in recovery of non-claim Markdown indexed units.
+      // Two distinct original query lexemes must match within one unit's
+      // searchable fields; SOURCE correspondence remains a later check.
+      // Preserve the original question for all downstream Reader/Writer checks.
+      const unitTerms = options.experimentalBoundedUnitLexicalRecall
+        ? boundedUnitLexicalRecallQuery(assisted.query)
+        : null;
+      if (unitTerms) {
+        const supplemental = await queryLexical(unitTerms, true);
+        boundedUnitRecallRows.push(
+          ...supplemental.rows.map((row) => ({
+            ...row,
+            match_reason: assisted.variant
+              ? `lexical:transformed:${assisted.variant.kind}:${BOUNDED_UNIT_RECALL_SELECTION_MARKER}${row.match_reason}`
+              : `${BOUNDED_UNIT_RECALL_SELECTION_MARKER}${row.match_reason}`,
+            ...(assisted.variant
+              ? {
+                  query_variant_kind: assisted.variant.kind,
+                  query_variant_ordinal: assisted.variant.ordinal,
+                  ...(assisted.trace
+                    ? { query_transform_trace: assisted.trace }
+                    : {}),
+                }
+              : {}),
+          })),
+        );
+      }
     }
   }
   const strictLexicalRows = mergeLexicalRows(lexicalRows).slice(
@@ -2290,8 +2328,18 @@ export async function queryKnowledge(
   const directAssertionRecallRows = mergeLexicalRows(assertionRecallRows)
     .filter((row) => !strictLexicalKeys.has(lexicalRowKey(row)))
     .slice(0, internalCandidateLimit);
+  const precedingKeys = new Set(
+    [...strictLexicalRows, ...directAssertionRecallRows].map(lexicalRowKey),
+  );
+  const additionalUnitRows = mergeLexicalRows(boundedUnitRecallRows)
+    .filter((row) => !precedingKeys.has(lexicalRowKey(row)))
+    .slice(0, Math.min(32, internalCandidateLimit));
   const lexical = {
-    rows: [...strictLexicalRows, ...directAssertionRecallRows],
+    rows: [
+      ...strictLexicalRows,
+      ...directAssertionRecallRows,
+      ...additionalUnitRows,
+    ],
   };
   recordRetrievalCandidates("lexical", lexical.rows.length);
   if (channels.has("lexical")) {
@@ -3483,23 +3531,27 @@ export async function queryKnowledge(
   );
   const fusedPrimary = fusedRanked.slice(0, internalCandidateLimit);
   const fusedPrimaryIds = new Set(fusedPrimary.map((item) => item.id));
-  const assertionRecallFusionIds = new Set(
+  const supplementalRecallFusionIds = new Set(
     fusionProjection.candidates
       .filter(
         (candidate) =>
           candidate.channel === "LEXICAL" &&
           typeof candidate.selectionReason === "string" &&
-          candidate.selectionReason.includes("lexical:assertion-recall:"),
+          (candidate.selectionReason.includes("lexical:assertion-recall:") ||
+            candidate.selectionReason.includes(
+              BOUNDED_UNIT_RECALL_SELECTION_MARKER,
+            )),
       )
       .map((candidate) => candidate.candidateId),
   );
-  const fusedAssertionRecall = fusedRanked
+  const fusedSupplementalRecall = fusedRanked
     .filter(
       (item) =>
-        assertionRecallFusionIds.has(item.id) && !fusedPrimaryIds.has(item.id),
+        supplementalRecallFusionIds.has(item.id) &&
+        !fusedPrimaryIds.has(item.id),
     )
     .slice(0, internalCandidateLimit);
-  const fused = [...fusedPrimary, ...fusedAssertionRecall];
+  const fused = [...fusedPrimary, ...fusedSupplementalRecall];
   if (fused.length === 0) {
     await finalizeTruthSnapshot();
     options.stageDiagnosticSink?.({

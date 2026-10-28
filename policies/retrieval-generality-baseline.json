@@ -460,8 +460,12 @@
       "\"NFC\"",
       "\"en-US\"",
       "\"lexical:assertion-recall:\"",
+      "\"lexical:bounded-unit-recall:\"",
       "\"string\"",
-      "/[\\p{L}\\p{N}]+/gu"
+      "/[\\p{L}\\p{N}]+/gu",
+      "`(${",
+      "} & ${",
+      "})`"
     ]
   }
 }

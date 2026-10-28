@@ -320,6 +320,218 @@ function searchRequest(fixture: LexicalFixture): SearchRequest {
 
 describe("production lexical ranking", () => {
   it.skipIf(!databaseUrl)(
+    "recovers the original answer-bearing unit for an ordinary ES Markdown question only with bounded unit recall",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = lexicalFixture();
+      const db = new Postgres(databaseUrl);
+      try {
+        await seedLexical(db, fixture);
+        const positive =
+          "Lira aprobó la ampliación de acceso después de la auditoría.";
+        const negative =
+          "Lira no aprobó la ampliación de acceso después de la auditoría.";
+        const generic =
+          "La auditoría revisó la ampliación de acceso y presentó un informe.";
+        const replacements = [
+          {
+            doc: fixture.documents.titleTerms,
+            unit: fixture.units.titleTerms,
+            text: positive,
+          },
+          {
+            doc: fixture.documents.bodyTerms,
+            unit: fixture.units.bodyTerms,
+            text: negative,
+          },
+          {
+            doc: fixture.documents.alias,
+            unit: fixture.units.alias,
+            text: generic,
+          },
+        ];
+        for (const item of replacements) {
+          const hash = createHash("sha256").update(item.text).digest("hex");
+          await db.pool.query(
+            "update knowledge_documents set title='Technical notes',body_cache=$2,content_hash=$3,type='concept' where id=$1",
+            [item.doc, item.text, hash],
+          );
+          await db.pool.query(
+            "update knowledge_units set heading_path=ARRAY['Technical notes'],body=$2,content_hash=$3 where id=$1",
+            [item.unit, item.text, hash],
+          );
+        }
+        const query =
+          "¿Quién aprobó la ampliación de acceso tras la auditoría?";
+        // Two terms in different original units must not be interpreted as
+        // co-occurring in one answer-bearing passage.
+        const separated = "ampliación auditoría";
+        await db.pool.query(
+          "update knowledge_documents set title='Separate terms',body_cache=$2,content_hash=$3 where id=$1",
+          [
+            fixture.documents.externalId,
+            separated,
+            createHash("sha256").update(separated).digest("hex"),
+          ],
+        );
+        for (const item of [
+          { id: fixture.structuralParentId, body: "ampliación" },
+          { id: fixture.units.externalId, body: "auditoría" },
+        ]) {
+          await db.pool.query(
+            "update knowledge_units set heading_path=ARRAY['Separate'],body=$2,content_hash=$3 where id=$1",
+            [
+              item.id,
+              item.body,
+              createHash("sha256").update(item.body).digest("hex"),
+            ],
+          );
+        }
+        const request = { ...searchRequest(fixture), query };
+        const options = {
+          channels: ["lexical"] as const,
+          vaultIds: [fixture.vaultId],
+        };
+        const strict = await queryKnowledge(db, request, options);
+        expect(
+          strict.some((hit) => hit.unitId === fixture.units.titleTerms),
+        ).toBe(false);
+        const relaxed = await queryKnowledge(db, request, {
+          ...options,
+          experimentalBoundedUnitLexicalRecall: true,
+        });
+        expect(
+          relaxed.some((hit) => hit.unitId === fixture.units.titleTerms),
+        ).toBe(true);
+        expect(
+          relaxed.some((hit) => hit.unitId === fixture.units.bodyTerms),
+        ).toBe(true);
+        expect(relaxed.some((hit) => hit.unitId === fixture.units.alias)).toBe(
+          true,
+        );
+        expect(
+          relaxed.some(
+            (hit) => hit.documentId === fixture.documents.externalId,
+          ),
+        ).toBe(false);
+        const positiveHit = relaxed.find(
+          (hit) => hit.unitId === fixture.units.titleTerms,
+        );
+        expect(positiveHit?.excerpt).toContain("Lira aprobó");
+        expect(
+          positiveHit?.reasons.some((reason) =>
+            reason.includes("lexical:bounded-unit-recall:"),
+          ),
+        ).toBe(true);
+        const restricted = await queryKnowledge(db, request, {
+          ...options,
+          experimentalBoundedUnitLexicalRecall: true,
+          graphScopes: [
+            { vaultId: fixture.vaultId, pathPrefix: "docs/title-terms.md" },
+          ],
+          pathAuthorizer: (path) => path === "docs/title-terms.md",
+        });
+        expect(restricted.map((hit) => hit.documentId)).toEqual([
+          fixture.documents.titleTerms,
+        ]);
+        // Same physical unit identifiers and revision; swap only the
+        // fixture language to verify that this mechanism is not ES-specific.
+        const english = [
+          {
+            doc: fixture.documents.titleTerms,
+            unit: fixture.units.titleTerms,
+            text: "Lira approved the access expansion following the audit.",
+          },
+          {
+            doc: fixture.documents.bodyTerms,
+            unit: fixture.units.bodyTerms,
+            text: "Lira did not approve the access expansion after the audit.",
+          },
+        ];
+        for (const item of english) {
+          const hash = createHash("sha256").update(item.text).digest("hex");
+          await db.pool.query(
+            "update knowledge_documents set body_cache=$2,content_hash=$3 where id=$1",
+            [item.doc, item.text, hash],
+          );
+          await db.pool.query(
+            "update knowledge_units set body=$2,content_hash=$3 where id=$1",
+            [item.unit, item.text, hash],
+          );
+        }
+        const englishQuery =
+          "Who approved the access expansion after the audit?";
+        const englishStrict = await queryKnowledge(
+          db,
+          { ...request, query: englishQuery },
+          options,
+        );
+        expect(
+          englishStrict.some((hit) => hit.unitId === fixture.units.titleTerms),
+        ).toBe(false);
+        const englishRelaxed = await queryKnowledge(
+          db,
+          { ...request, query: englishQuery },
+          { ...options, experimentalBoundedUnitLexicalRecall: true },
+        );
+        expect(
+          englishRelaxed.some((hit) => hit.unitId === fixture.units.titleTerms),
+        ).toBe(true);
+        // A disjoint technical domain uses the exact same generic grammar,
+        // not an added term alias or a special-case question template.
+        const observatory = [
+          {
+            doc: fixture.documents.titleTerms,
+            unit: fixture.units.titleTerms,
+            text: "Vela calibrated the telescope after sunrise.",
+          },
+          {
+            doc: fixture.documents.bodyTerms,
+            unit: fixture.units.bodyTerms,
+            text: "Vela did not calibrate the telescope after sunrise.",
+          },
+        ];
+        for (const item of observatory) {
+          const hash = createHash("sha256").update(item.text).digest("hex");
+          await db.pool.query(
+            "update knowledge_documents set body_cache=$2,content_hash=$3 where id=$1",
+            [item.doc, item.text, hash],
+          );
+          await db.pool.query(
+            "update knowledge_units set body=$2,content_hash=$3 where id=$1",
+            [item.unit, item.text, hash],
+          );
+        }
+        const observatoryQuery =
+          "Who calibrated the telescope during night operations?";
+        const ordinaryObservatory = await queryKnowledge(
+          db,
+          { ...request, query: observatoryQuery },
+          options,
+        );
+        expect(
+          ordinaryObservatory.some(
+            (hit) => hit.unitId === fixture.units.titleTerms,
+          ),
+        ).toBe(false);
+        const relaxedObservatory = await queryKnowledge(
+          db,
+          { ...request, query: observatoryQuery },
+          { ...options, experimentalBoundedUnitLexicalRecall: true },
+        );
+        expect(
+          relaxedObservatory.some(
+            (hit) => hit.unitId === fixture.units.titleTerms,
+          ),
+        ).toBe(true);
+      } finally {
+        await cleanupLexical(db, fixture);
+        await db.close();
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
     "recovers a scoped canonical document from an explicit question acronym",
     async () => {
       if (!databaseUrl) return;

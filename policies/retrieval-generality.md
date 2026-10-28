@@ -76,3 +76,41 @@ contains digits. The existing quantity/date format checks are reused. This
 source-mapping correction adds no question synonyms, domain concepts or global
 threshold changes. Coordinate selection remains experimental until source-level
 and semantic held-out measurements justify promotion.
+
+### Bounded indexed-unit recall grammar (experimental, §80)
+
+The S2 pre-ranking regression showed that the existing mandatory-term
+`plainto_tsquery('simple', entireQuestion)` can exclude a relevant Markdown
+`concept` unit even when it is indexed and authorized. The existing
+`boundedAssertionRecallQuery` is intentionally restricted to claim/rule
+documents; broadening that historical pathway would conflate evidence kinds.
+
+The **opt-in** `boundedUnitLexicalRecallQuery` instead constructs a bounded
+2-of-N `tsquery` over original question lexemes. At most eight distinct
+Unicode tokens of 4–64 characters yield at most 28 parenthesized AND pairs;
+this does **not** add synonyms, domain identifiers or inferred source facts.
+Each matching **indexed unit** must satisfy one pair; separate sections of
+the same document cannot supply the two required terms. Normal space, vault,
+path, lifecycle, revision, trust, derived-truth and downstream SOURCE/Reader/
+Writer controls continue to apply. The extra candidate pool is at most 32;
+neither that pool nor BGE reranker scores have admission authority.
+
+**Explicit four-literal baseline review:** the change to
+`retrieval-generality-baseline.json` permits only the new stable telemetry
+marker `lexical:bounded-unit-recall:` and three syntax fragments of the
+generic pair-builder template (opening parenthesis, AND delimiter, closing
+parenthesis); the existing NFC, Unicode token regexp, `en-US`
+case fold and OR separator are reused. No examples, entity names, nouns,
+aliases or question-specific rules are included in this baseline change.
+The gate still rejects all other new literals in the monitored files.
+
+The integration evidence is intentionally _development-only_: real
+PostgreSQL with unrelated access-approval and observatory fixtures,
+positive/negated/mere-topic passages in EN/ES, an across-units negative,
+and an explicit path authorization restriction. The initial positive
+regression failed before the opt-in and passed afterward. There has **not**
+been new independent source-family-disjoint human adjudication, and no
+precision/FAR/p95 evidence justifies enabling the flag by default.
+The architectural exception and promotion decision remain reviewable in
+draft PR #38, master S2 ledger §80. Do not interpret a passing static
+gate or these synthetic fixtures as a semantic release acceptance.
