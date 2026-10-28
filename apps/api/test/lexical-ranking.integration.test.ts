@@ -320,6 +320,119 @@ function searchRequest(fixture: LexicalFixture): SearchRequest {
 
 describe("production lexical ranking", () => {
   it.skipIf(!databaseUrl)(
+    "retains an answer-bearing sibling SOURCE unit even when a negated sibling has stronger lexical overlap",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = lexicalFixture();
+      const db = new Postgres(databaseUrl);
+      try {
+        await seedLexical(db, fixture);
+        const good =
+          "Lira aprobó la ampliación de acceso después de la auditoría.";
+        const wrong =
+          "Lira NO aprobó la ampliación de acceso después de la auditoría. " +
+          "La ampliación de acceso quedó pendiente después de la auditoría.";
+        const goodHash = createHash("sha256").update(good).digest("hex");
+        const badHash = createHash("sha256").update(wrong).digest("hex");
+        const siblingId = randomUUID();
+        await db.pool.query(
+          `update knowledge_documents
+              set type='concept',title='Technical notes',
+                  body_cache=$2,content_hash=$3
+            where id=$1`,
+          [fixture.documents.titleTerms, good + "\n" + wrong, goodHash],
+        );
+        await db.pool.query(
+          `update knowledge_units
+              set heading_path=ARRAY['Technical notes'],body=$2,content_hash=$3
+            where id=$1`,
+          [fixture.units.titleTerms, good, goodHash],
+        );
+        await db.pool.query(
+          `insert into knowledge_units(
+              id,document_id,space_id,vault_id,unit_key,unit_type,
+              heading_path,body,content_hash,corpus_revision,lifecycle,
+              trust_tier,source_ids,token_estimate,parent_unit_id,
+              document_revision,permissions,locator,structural_order,
+              container_only,embedding_eligible
+            ) select $1,document_id,space_id,vault_id,'negated-sibling',
+                'PARAGRAPH',ARRAY['Ampliación acceso auditoría'],$2,$3,
+                corpus_revision,lifecycle,trust_tier,source_ids,24,
+                parent_unit_id,document_revision,permissions,locator,
+                structural_order+100,false,true
+              from knowledge_units where id=$4`,
+          [siblingId, wrong, badHash, fixture.units.titleTerms],
+        );
+        const request = {
+          ...searchRequest(fixture),
+          query: "¿Quién aprobó la ampliación de acceso tras la auditoría?",
+        };
+        const options = {
+          channels: ["lexical"] as const,
+          vaultIds: [fixture.vaultId],
+          experimentalBoundedUnitLexicalRecall: true,
+        };
+        const ordinary = await queryKnowledge(db, request, {
+          channels: ["lexical"] as const,
+          vaultIds: [fixture.vaultId],
+        });
+        expect(
+          ordinary.some(
+            (hit) =>
+              hit.unitId === fixture.units.titleTerms ||
+              hit.unitId === siblingId,
+          ),
+        ).toBe(false);
+        const hits = await queryKnowledge(db, request, options);
+        const siblings = hits.filter(
+          (hit) => hit.documentId === fixture.documents.titleTerms,
+        );
+        expect(siblings.some((hit) => hit.unitId === siblingId)).toBe(true);
+        // RED before the repair: a one-unit-per-document LATERAL chooses only
+        // the higher-scoring negative and drops this correct original unit.
+        expect(
+          siblings.some((hit) => hit.unitId === fixture.units.titleTerms),
+        ).toBe(true);
+        // Both are *retrieval candidates*, not certified semantic answers.
+        expect(
+          siblings.every((hit) =>
+            hit.reasons.some((reason) =>
+              reason.includes("lexical:bounded-unit-recall:"),
+            ),
+          ),
+        ).toBe(true);
+        const scoped = await queryKnowledge(db, request, {
+          ...options,
+          graphScopes: [
+            { vaultId: fixture.vaultId, pathPrefix: "docs/body.md" },
+          ],
+          pathAuthorizer: (path) => path === "docs/body.md",
+        });
+        expect(
+          scoped.some((hit) => hit.documentId === fixture.documents.titleTerms),
+        ).toBe(false);
+        // The public response limit is not the Reader/answerability pool.
+        const readerCandidates: string[] = [];
+        await queryKnowledge(
+          db,
+          { ...request, limit: 1 },
+          {
+            ...options,
+            answerabilityCandidateSink: (pool) => {
+              readerCandidates.push(...pool.map((hit) => hit.unitId ?? ""));
+            },
+          },
+        );
+        expect(readerCandidates).toContain(fixture.units.titleTerms);
+        expect(readerCandidates).toContain(siblingId);
+      } finally {
+        await cleanupLexical(db, fixture);
+        await db.close();
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
     "recovers the original answer-bearing unit for an ordinary ES Markdown question only with bounded unit recall",
     async () => {
       if (!databaseUrl) return;

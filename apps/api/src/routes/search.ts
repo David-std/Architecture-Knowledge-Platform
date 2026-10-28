@@ -2229,7 +2229,11 @@ export async function queryKnowledge(
                      or ${unitLexicalSearchVector("u")} @@ d.terms
                    )
                   order by u.container_only,unit_score desc,u.structural_order,u.id
-                 limit 1
+                 -- Strict and claim-only lexical retrieval keep their original
+                 -- one-unit/document behavior. Only the opt-in 2-of-N unit
+                 -- recall may expose a second, distinct unit from the same
+                 -- authorized SOURCE document for downstream admission.
+                 limit case when $7::boolean then 2 else 1 end
               ) best_unit on true
              where not $7::boolean or best_unit.unit_id is not null
           )
