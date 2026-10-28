@@ -602,6 +602,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/api/test/s2-bm25-postgres-shadow.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/api/test/s2-source-rebind.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -3117,6 +3122,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-bm25-same-pool-shadow.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-claim-answer-anchor.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3388,6 +3398,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-authenticated-http-writer-bridge.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-bm25-same-pool-shadow.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
