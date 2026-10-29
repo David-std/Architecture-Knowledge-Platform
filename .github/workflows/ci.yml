@@ -431,6 +431,8 @@ jobs:
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
       - name: Verify S2 unsigned technical Z original-SOURCE audit (synthetic only)
         run: python -m unittest discover -s scripts -p test_s2_technical_z_intake.py -v
+      - name: Verify owner-attested third-party Z DEV reconciliation boundaries (synthetic only)
+        run: python -m unittest discover -s scripts -p test_s2_reconcile_owner_attested_z.py -v
       - name: Verify owner-approved S2 editorial revision boundaries (synthetic only)
         run: python -m unittest discover -s scripts -p test_s2_owner_editorial_revision.py -v
       - name: Build Code Graph contract dependency
