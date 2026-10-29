@@ -22,6 +22,8 @@ RUN corepack enable && corepack prepare pnpm@10.34.5 --activate
 # Dependency manifests first so an unchanged dependency graph reuses the
 # install layer across source-only rebuilds.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# pnpm needs versioned transitive dependency patches at install time.
+COPY patches/query-string@7.1.3.patch patches/
 COPY apps/api/package.json apps/api/
 COPY apps/cli/package.json apps/cli/
 COPY apps/mcp/package.json apps/mcp/
