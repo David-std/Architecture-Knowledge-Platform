@@ -1,0 +1,198 @@
+import { createHash } from "node:crypto";
+import { describe, expect, it } from "vitest";
+import {
+  parseS2ExternalIntakeCsv,
+  preflightS2IndependentIntake,
+  type ExternalSourceFile,
+} from "../src/s2-independent-intake.js";
+const sha = (x: Uint8Array | string) =>
+  createHash("sha256").update(x).digest("hex");
+const UTF = (s: string) => Buffer.from(s, "utf8");
+const hdr = [
+  "caseSeat",
+  "publisherFamilySeat",
+  "language",
+  "targetStratum",
+  "publisherName",
+  "upstreamRepository",
+  "sourceRevision40Hex",
+  "sourceRelativePath",
+  "originalSha256",
+  "authorizedVaultScope",
+  "sourceLocatorUtf16Start",
+  "sourceLocatorUtf16End",
+  "question",
+  "ownerSuggestedGoldKeepPrivate",
+  "externalCustodianSourceSelectionReason",
+  "externalCustodianCaseAuthor",
+];
+const csv = (rows: string[][]) =>
+  UTF(
+    rows
+      .map((row) =>
+        row.map((v) => '"' + v.replaceAll('"', '""') + '"').join(","),
+      )
+      .join("\n") + "\n",
+  );
+const fixture = () => {
+  const template = [hdr],
+    filled = [hdr];
+  const files: ExternalSourceFile[] = [];
+  const deny = ["development-publisher", "calibration-publisher"];
+  for (let f = 1; f <= 12; f++) {
+    const seat = "F" + String(f).padStart(2, "0");
+    const source =
+      "Independent synthetic source " +
+      seat +
+      " says that \u{1f525} unit " +
+      seat +
+      " was approved after audit.";
+    files.push({
+      familySeat: seat,
+      relativePath: "source-" + seat + ".md",
+      rawBytes: UTF(source),
+    });
+    for (const lang of ["en", "es"] as const) {
+      for (const polarity of ["POSITIVE", "NEGATIVE_ADVERSARIAL"] as const) {
+        for (let n = 0; n < 5; n++) {
+          const id = "C" + seat + lang + polarity.slice(0, 3) + n;
+          const line = [
+            id,
+            seat,
+            lang,
+            polarity,
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+          ];
+          template.push(line);
+          filled.push([
+            ...line.slice(0, 4),
+            "new-family-" + seat.toLowerCase(),
+            "external" + seat.toLowerCase() + "/reference",
+            "a".repeat(40),
+            "source-" + seat + ".md",
+            sha(UTF(source)),
+            "vault:" + seat,
+            "0",
+            String(source.length),
+            lang === "en"
+              ? "Who approved item " +
+                seat +
+                " case " +
+                polarity +
+                " " +
+                n +
+                "?"
+              : "¿Quién aprobó el elemento " +
+                seat +
+                " caso " +
+                polarity +
+                " " +
+                n +
+                "?",
+            "",
+            "Independent selection for pilot only",
+            "authorized-external-custodian-pending",
+          ]);
+        }
+      }
+    }
+  }
+  return {
+    templateBytes: csv(template),
+    filledBytes: csv(filled),
+    files,
+    deny,
+  };
+};
+const run = (fixtureData = fixture()) =>
+  preflightS2IndependentIntake({
+    templateBytes: fixtureData.templateBytes,
+    templateSha256: sha(fixtureData.templateBytes),
+    filledBytes: fixtureData.filledBytes,
+    filledSha256: sha(fixtureData.filledBytes),
+    sourceFiles: fixtureData.files,
+    excludedDevelopmentPublisherFamilies: fixtureData.deny,
+  });
+describe("S2 prospective pre-inference external 240-seat intake", () => {
+  it("accepts exactly 240 *structurally complete* synthetic cases without claiming independent truth", () => {
+    const x = run();
+    expect(x).toMatchObject({
+      status: "STRUCTURALLY_COMPLETE_UNADJUDICATED_NOT_FROZEN",
+      seatCount: 240,
+      familyCount: 12,
+      sourceCount: 12,
+      sourceOriginalByteHashesVerified: true,
+      independentReviewerGoldAdjudicated: false,
+      independentCustodianAuthenticated: false,
+      freezeSignatureVerified: false,
+      releaseGateAccepted: false,
+    });
+    expect(Object.values(x.counts)).toEqual([60, 60, 60, 60]);
+  });
+  it("rejects the genuinely BLANK 240-seat template as a holdout", () => {
+    const f = fixture();
+    f.filledBytes = f.templateBytes;
+    expect(() => run(f)).toThrow(/UNFILLED_SOURCE_OR_QUESTION/);
+  });
+  it("rejects changed template SHA, family and answerability seats", () => {
+    const f = fixture();
+    expect(() =>
+      preflightS2IndependentIntake({
+        templateBytes: f.templateBytes,
+        templateSha256: sha("fake"),
+        filledBytes: f.filledBytes,
+        filledSha256: sha(f.filledBytes),
+        sourceFiles: f.files,
+        excludedDevelopmentPublisherFamilies: f.deny,
+      }),
+    ).toThrow(/UNPINNED_BYTES/);
+    const orig = f.filledBytes.toString("utf8");
+    f.filledBytes = UTF(orig.replace('"POSITIVE"', '"NEGATIVE_ADVERSARIAL"'));
+    expect(() => run(f)).toThrow(/SEAT_OR_STRATUM_CHANGED/);
+  });
+  it("rejects changed raw original source and source scope", () => {
+    const f = fixture();
+    f.files[0]!.rawBytes = UTF("forged and incorrect SOURCE bytes");
+    expect(() => run(f)).toThrow(/ORIGINAL_SOURCE_HASH_MISMATCH/);
+  });
+  it("blocks known development publisher family reuse", () => {
+    const f = fixture();
+    f.deny.push("new-family-f01");
+    expect(() => run(f)).toThrow(/SOURCE_SCOPE_OR_PROVENANCE_INVALID/);
+  });
+  it("rejects incomplete and duplicate cases and fake language", () => {
+    const f = fixture();
+    const s = f.filledBytes.toString("utf8");
+    f.filledBytes = UTF(
+      s.replace('"authorized-external-custodian-pending"', '""'),
+    );
+    expect(() => run(f)).toThrow(/UNFILLED_SOURCE_OR_QUESTION/);
+    expect(() =>
+      parseS2ExternalIntakeCsv(UTF("not,the,right,header\n")),
+    ).toThrow(/CSV_HEADER/);
+  });
+  it("accepts RFC quoted commas/newlines but rejects malformed or expanded CSV", () => {
+    const f = fixture();
+    const s = f.filledBytes.toString("utf8");
+    const modified = s.replace(
+      '"Independent selection for pilot only"',
+      '"Independent selection, with\na second line for audit only"',
+    );
+    f.filledBytes = UTF(modified);
+    expect(run(f).seatCount).toBe(240);
+    expect(() =>
+      parseS2ExternalIntakeCsv(UTF('"unterminated,quote')),
+    ).toThrow();
+  });
+});

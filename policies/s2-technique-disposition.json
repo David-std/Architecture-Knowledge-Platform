@@ -374,6 +374,30 @@
       "sourceSection": 99,
       "disposition": "EVALUATION_ONLY",
       "decision": "Offline-only outside-repository pinned-sample export with exclusive private files and no public source/model text; operator ACL remains mandatory."
+    },
+    {
+      "path": "packages/evaluation/src/s2-independent-intake.ts",
+      "sourceSection": 100,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Fail-closed prospective-source intake parsing and immutable original byte binding for externally supplied questions; no Writer, inferred gold or admission."
+    },
+    {
+      "path": "scripts/s2-preflight-external-intake.ts",
+      "sourceSection": 100,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Private CLI validates frozen coordinator template and externally filled original source/answerability seats before provider inference and emits redacted non-gate receipt only."
+    },
+    {
+      "path": "packages/evaluation/src/s2-prospective-paired-score.ts",
+      "sourceSection": 100,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Consume independently supplied judgments for same-case deterministic/candidate comparison and emit non-gateable paired descriptive metrics; no semantic truth generated."
+    },
+    {
+      "path": "scripts/s2-score-private-paired-arms.ts",
+      "sourceSection": 100,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Private frozen-by-hash paired arms scorer, no models, no runtime admission/policy authority and no gold promotion."
     }
   ],
   "techniques": [
@@ -687,6 +711,28 @@
         "scripts/s2-export-private-unseen-review.ts"
       ],
       "decision": "Opt-in in-process authorized private original-SOURCE and model-output capture, redacted public HTTP, and separate source-only blinded reviewer versus custodian Writer packets. Requires explicit receiving sink and remains developmental; human gold, reviewer identity, claim entailment and release permissions are NEVER manufactured."
+    },
+    {
+      "id": "prospective-240-seat-original-source-preflight",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 100,
+      "files": [
+        "packages/evaluation/src/s2-independent-intake.ts",
+        "scripts/s2-preflight-external-intake.ts"
+      ],
+      "decision": "Pre-inference 240-seat external custodian intake gate verifies pinned template/cases, source-family and stratum distribution, exact original SHA/UTF-16, private path containment and declared DEV family separation. Structural readiness only, not signature/independent gold or semantic release authorization."
+    },
+    {
+      "id": "source-family-stratified-prospective-paired-scoring",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 100,
+      "files": [
+        "packages/evaluation/src/s2-prospective-paired-score.ts",
+        "scripts/s2-score-private-paired-arms.ts"
+      ],
+      "decision": "Exact same-case deterministic-vs-candidate paired descriptive S2 metrics: independent-source-gold-supplied citation precision and false admission rate, justified abstentions, full HTTP p95, errors, tokens and source-family/language sensitivity; no model scores are used to authenticate truth; release gate always false."
     }
   ]
 }

@@ -137,3 +137,36 @@ There is now a bridge for **previously unreviewed questions** evaluated on genui
 - Assign independent reviewers outside the engineering/model team, verify identity and independence externally, review with whole authorized source context for genuine no-answer, adjudicate differences, then perform a separate full Writer answer/statement review. **Do not** mark these model-exposed development cases as prospective blind acceptance gold. For the final gate, source-family-disjoint sources and questions must be independently selected and **frozen before the first model run**, with the established 240-question EN/ES protocol, human judgments, paired baseline, tokens, full HTTP p95 and FAR with uncertainty.
 
 There is deliberately no automatic runtime publication, admission override, SOURCE object export, reviewer-result fabrication, or private-file persistence side effect from an ordinary HTTP request.
+
+## External custodian intake → frozen independent review → paired metrics (§100)
+
+Use the existing unfilled coordinator kit `%LOCALAPPDATA%/Temp/AKP_S2_PROSPECTIVE_20261028_2027/external-custodian-240-prep-001`. Its SHA-256 proves only the BLANK template. The external custodian selects previously unseen and appropriately licensed publisher/source families and independently writes all 240 question+original SOURCE records, keeping the allowed vault/path scope, full original UTF-8 files and SHA-256 under a private `source-root/Fnn/<relativePath>` tree. Keep all raw source/case/gold/identity data **outside** Git.
+
+After externally recording the SHA-256 of a completed `filled.csv` and a separate, complete development-publisher denylist, run the pre-inference structural preflight (PowerShell example):
+
+```powershell
+pnpm exec tsx scripts/s2-preflight-external-intake.ts `
+  --template C:/private/s2/template.csv `
+  --template-pin C:/private/s2/template.sha256 `
+  --filled C:/private/s2/completed.csv `
+  --filled-pin C:/private/s2/completed.sha256 `
+  --source-root C:/private/s2/originals `
+  --denylist C:/private/s2/prior-dev-publishers.json `
+  --denylist-pin C:/private/s2/prior-dev-publishers.sha256 `
+  --output C:/private/s2/NEW-intake-preflight.json
+```
+
+A successful output of `STRUCTURALLY_COMPLETE_UNADJUDICATED_NOT_FROZEN` verifies 240 seat/source identities and original byte spans **only**. It does not prove real rights, upstream Git provenance, the completeness of the DEV denylist, true answerability, reviewer identity or independence. Next apply the existing external Ed25519 verifier `scripts/s2-verify-external-holdout-freeze.ts` with **out-of-band** key fingerprint and sealed assignments BEFORE any Writer query; then conduct X/Y blind source-only review, Z adjudication, and a separate atomic Writer full-answer review. Do not disclose `ownerSuggestedGoldKeepPrivate`, `targetStratum`, model text or the private arm map to reviewers.
+
+Once original, frozen and independently reviewed cases AND actual paired HTTP observations from both arms exist, run the separately private diagnostic scorer:
+
+```powershell
+pnpm exec tsx scripts/s2-score-private-paired-arms.ts `
+  --cases C:/private/s2/paired-source-reviewed-observations.json `
+  --pin-file C:/private/s2/paired-source-reviewed-observations.sha256 `
+  --output C:/private/s2/NEW-paired-metrics.json
+```
+
+This tool accepts the same case IDs for `DETERMINISTIC` and `CANDIDATE`, never requests a model or invents labels, and reports source-exact citation precision, full-answer correctness, unjustified abstentions, FAR, p95, degraded-call ratio and language/source-family diagnostics. Its leave-one-family-out results are **sensitivity checks, not a cluster-aware CI**; independent acceptance requires an externally auditable design-aware interval and all S2 gates. Scoring output is ALWAYS nonrelease. The separate 240-case synthetic fixture run is marked as synthetic and must never be treated as a reviewed holdout.
+
+Until the external custodians supply real new/source-disjoint original files and blinded gold, it would be dishonest to report measured independent precision, FAR, p95 or a no-regression decision. Both default retrieval policy and S2 milestone remain unchanged.

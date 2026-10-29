@@ -3282,6 +3282,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-independent-intake.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-native-structured-writer.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3313,6 +3318,11 @@
     },
     {
       "path": "packages/evaluation/src/s2-private-unseen-review.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/evaluation/src/s2-prospective-paired-score.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
@@ -3577,6 +3587,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/evaluation/test/s2-independent-intake.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/evaluation/test/s2-native-structured-writer.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -3618,6 +3633,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-projected-role-token.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-prospective-paired-score.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -5247,6 +5267,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/s2-preflight-external-intake.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/s2-prepare-external-review-kit.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -5298,6 +5323,11 @@
     },
     {
       "path": "scripts/s2-score-observations.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/s2-score-private-paired-arms.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
