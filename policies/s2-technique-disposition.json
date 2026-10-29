@@ -440,6 +440,18 @@
       "sourceSection": 107,
       "disposition": "EVALUATION_ONLY",
       "decision": "Synthetic full-cohort and adversarial Unicode/source/citation/negative/reviewer identity regression tests for the maintained technical-Z intake adapter."
+    },
+    {
+      "path": "scripts/s2-prepare-owner-editorial-revision.py",
+      "sourceSection": 109,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Private SHA-pinned project-owner editorial patch: eight rewords, one scope-limited negative, complete 120 EN/120 ES DEV packets, no independent holdout or runtime admission authority."
+    },
+    {
+      "path": "scripts/test_s2_owner_editorial_revision.py",
+      "sourceSection": 109,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Synthetic fail-closed original SOURCE quotes/keys and owner's restricted editing authority regression checks for versioned 240 DEV corpus; no private data in CI."
     }
   ],
   "techniques": [
@@ -830,6 +842,17 @@
         "scripts/test_s2_technical_z_intake.py"
       ],
       "decision": "Fail-closed source-original and frozen case identity, exact UTF-16 quote, JSON/CSV/manifest checksum and source-license awareness for unsigned AI Z technical intake; diagnostic X/Y differences are non-gold, no reviewer identity or FAR approval."
+    },
+    {
+      "id": "owner-approved-dev-question-revision-240",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 109,
+      "files": [
+        "scripts/s2-prepare-owner-editorial-revision.py",
+        "scripts/test_s2_owner_editorial_revision.py"
+      ],
+      "decision": "Record explicit project-owner editorial authorization to replace eight AI-authored DEV questions and retain one scoped negative. Validate unchanged source byte/UTF16/revision and paired X/Y cohort, generate versioned 240-case DEV-only nonholdout packets and immutable original proposal SHA. Owner approval is effective for internal editing but cannot authenticate independent holdout truth or source rights."
     }
   ]
 }

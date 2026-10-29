@@ -2362,6 +2362,11 @@
       "reason": "product documentation"
     },
     {
+      "path": "docs/architecture/s2-owner-editorial-authority.md",
+      "category": "PRODUCT_DOCUMENTATION",
+      "reason": "product documentation"
+    },
+    {
       "path": "docs/architecture/s2-pipeline-diagnosis-and-candidate-lab.md",
       "category": "PRODUCT_DOCUMENTATION",
       "reason": "product documentation"
@@ -5317,6 +5322,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/s2-prepare-owner-editorial-revision.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/s2-prepare-owner-holdout.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -5413,6 +5423,11 @@
     },
     {
       "path": "scripts/telemetry-command.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/test_s2_owner_editorial_revision.py",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },
