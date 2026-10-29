@@ -642,6 +642,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/api/test/s2-benchmark-authority.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/api/test/s2-bm25-postgres-shadow.integration.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"

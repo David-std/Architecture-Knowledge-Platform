@@ -2820,4 +2820,84 @@ describe("API security boundaries", () => {
       ]);
     }
   });
+
+  it("benchmark diagnostic requires unrestricted eval scope and does not turn eval runs into release gates", async () => {
+    const token = "akp-benchmark-eval-" + randomUUID();
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    let createdRunId: string | undefined;
+    const evalHeaders = { authorization: "Bearer " + token };
+    const grant = async (prefix: string | null, permissions: string[]) => {
+      await db.pool.query(
+        "update api_tokens set scopes=$2::jsonb where token_hash=$1",
+        [
+          tokenHash,
+          JSON.stringify({
+            spaces: [
+              { spaceId: defaultSpace, pathPrefix: prefix, permissions },
+            ],
+          }),
+        ],
+      );
+    };
+    const call = () =>
+      app.inject({
+        method: "POST",
+        url: "/v1/evals/run",
+        headers: evalHeaders,
+        payload: {
+          spaceId: defaultSpace,
+          vaultId: defaultVaultId,
+          evalPack: "generic",
+        },
+      });
+    await db.pool.query(
+      "insert into api_tokens(user_id,token_hash,label,scopes) values($1,$2,'benchmark-only',$3::jsonb)",
+      [
+        admin,
+        tokenHash,
+        JSON.stringify({
+          spaces: [
+            {
+              spaceId: defaultSpace,
+              pathPrefix: null,
+              permissions: ["knowledge:read"],
+            },
+          ],
+        }),
+      ],
+    );
+    try {
+      const noEvalPermission = await call();
+      expect(noEvalPermission.statusCode).toBe(403);
+      await grant("shared", ["eval:run"]);
+      const pathScoped = await call();
+      expect(pathScoped.statusCode).toBe(403);
+      expect(pathScoped.json()).toMatchObject({ code: "SPACE_ACCESS_DENIED" });
+      await grant(null, ["eval:run"]);
+      const allowed = await call();
+      expect(allowed.statusCode, allowed.body.slice(0, 600)).toBe(200);
+      expect(allowed.json()).toMatchObject({
+        authorityMode: "EVAL_RUN_UNRESTRICTED_VAULT",
+        independentSemanticGoldVerified: false,
+        releaseGateAccepted: false,
+      });
+      expect(allowed.json()).toHaveProperty("runId");
+      createdRunId = String(allowed.json().runId);
+      await db.pool.query(
+        "update api_tokens set revoked_at=now() where token_hash=$1",
+        [tokenHash],
+      );
+      const revoked = await call();
+      expect(revoked.statusCode).toBe(401);
+    } finally {
+      if (createdRunId) {
+        await db.pool.query("delete from eval_runs where id=$1", [
+          createdRunId,
+        ]);
+      }
+      await db.pool.query("delete from api_tokens where token_hash=$1", [
+        tokenHash,
+      ]);
+    }
+  });
 });

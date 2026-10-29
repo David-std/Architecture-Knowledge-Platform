@@ -454,6 +454,12 @@
       "decision": "Synthetic fail-closed original SOURCE quotes/keys and owner's restricted editing authority regression checks for versioned 240 DEV corpus; no private data in CI."
     },
     {
+      "path": "apps/api/test/s2-benchmark-authority.test.ts",
+      "sourceSection": 115,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Strict synthetic regression checks for branded eval:run-only full-vault benchmark authority, exact scoped non-federated retrieval and fail-closed direct runner invocation. No independent semantic assessment."
+    },
+    {
       "path": "apps/api/test/s2-authorized-retrieval-scope.test.ts",
       "sourceSection": 112,
       "disposition": "EVALUATION_ONLY",
@@ -491,7 +497,7 @@
       "disposition": "RUNTIME_DEFAULT",
       "sourceSection": 6,
       "files": ["apps/api/src/routes/search.ts", "apps/api/src/server.ts"],
-      "decision": "Search and Context already call the one queryKnowledge engine; section 112 centralizes effective Postgres actor/vault/path/SOURCE scopes and a typed scope-enforcing invocation for both HTTP routes and Context reasoning operators (MCP delegates HTTP). §114 also converges governance identity/check on the same actor/vault/credential-path intersection and scoped invocation, closing its direct user-facing queryKnowledge bypass. eval:run unrestricted-vault benchmarking remains a separate explicit diagnostic caller. Pure ranking/admission extraction, full graph/continuation S2.11 proof and independent holdout remain pending."
+      "decision": "Search and Context already call the one queryKnowledge engine; section 112 centralizes effective Postgres actor/vault/path/SOURCE scopes and a typed scope-enforcing invocation for both HTTP routes and Context reasoning operators (MCP delegates HTTP). §114 also converges governance identity/check on the same actor/vault/credential-path intersection and scoped invocation, closing its direct user-facing queryKnowledge bypass. §115 now requires branded eval:run unrestricted-vault authority and separate SOURCE:read raw scopes for privileged benchmark variants, reusing queryKnowledge without granting user-facing authority or release admission. Pure ranking/admission extraction, full graph/continuation S2.11 proof and independent holdout remain pending."
     },
     {
       "id": "hybrid-pgvector-lexical-rrf",

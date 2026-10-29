@@ -2,7 +2,11 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
-import { resolveAuthorizedVaultScope, type Postgres } from "@akp/postgres";
+import {
+  intersectVaultPathPrefixes,
+  resolveAuthorizedVaultScope,
+  type Postgres,
+} from "@akp/postgres";
 import { z } from "zod";
 import { DeterministicQueryDecomposer } from "@akp/retrieval";
 import {
@@ -15,6 +19,8 @@ import {
 import {
   actorOf,
   audit,
+  hasSpaceAccess,
+  pathPrefixesForPermission,
   requirePermission,
   unrestrictedSpaceIdsForPermission,
 } from "../auth.js";
@@ -73,6 +79,173 @@ function averageSlice(results: EvaluatedCase[], slice: string): number {
         matching.length;
 }
 
+/**
+ * Benchmark-only authorization: NEVER a substitute for normal retrieval
+ * admission. Only the eval:run HTTP path may create this branded authority,
+ * after verifying unrestricted space and durable vault membership.
+ */
+const benchmarkScopeSeal: unique symbol = Symbol(
+  "akp.benchmark.authorized.scope",
+);
+type BenchmarkAuthority = Readonly<{
+  [benchmarkScopeSeal]: true;
+  spaceId: string;
+  vaultId: string;
+  rawScopes: { vaultId: string; pathPrefix: string | null }[];
+}>;
+
+export function assertBenchmarkScopeBound(
+  requested: {
+    spaceId: string;
+    vaultId: string;
+    vaultIds: string[];
+    federated: boolean;
+  },
+  authorized: Pick<BenchmarkAuthority, "spaceId" | "vaultId">,
+): void {
+  if (
+    requested.spaceId !== authorized.spaceId ||
+    requested.vaultId !== authorized.vaultId ||
+    requested.federated ||
+    requested.vaultIds.length !== 1 ||
+    requested.vaultIds[0] !== authorized.vaultId
+  )
+    throw Error("BENCHMARK_SCOPE_ESCALATION_DENIED");
+}
+
+async function authorizeBenchmarkTarget(
+  db: Postgres,
+  actor: NonNullable<ReturnType<typeof actorOf>>,
+  target: { spaceId: string; vaultId: string },
+): Promise<BenchmarkAuthority> {
+  if (
+    !unrestrictedSpaceIdsForPermission(actor, "eval:run").includes(
+      target.spaceId,
+    )
+  )
+    throw Error("SPACE_ACCESS_DENIED");
+  // Benchmarks deliberately require unrestricted *eval:run*, not the
+  // end-user knowledge:read grant used by Search/Context.
+  const access = await resolveAuthorizedVaultScope(db, {
+    userId: actor.id,
+    spaceId: target.spaceId,
+    vaultId: target.vaultId,
+    vaultIds: [target.vaultId],
+    permission: "eval:run",
+    federated: false,
+  });
+  if (access.vaultIds.length !== 1 || access.vaultIds[0] !== target.vaultId)
+    throw Error("BENCHMARK_SCOPE_ESCALATION_DENIED");
+  if (access.accessByVault[target.vaultId]?.pathPrefix !== null)
+    throw Error("PATH_SCOPE_DENIED");
+  // eval:run is not a grant to inspect raw SOURCE. Raw resource candidates
+  // require a separate source:read authority, otherwise rawScopes is empty.
+  const rawScopes: BenchmarkAuthority["rawScopes"] = [];
+  if (hasSpaceAccess(actor, target.spaceId, "source:read")) {
+    try {
+      const rawGrant = await resolveAuthorizedVaultScope(db, {
+        userId: actor.id,
+        spaceId: target.spaceId,
+        vaultId: target.vaultId,
+        vaultIds: [target.vaultId],
+        permission: "source:read",
+        federated: false,
+      });
+      const vaultPrefix = rawGrant.accessByVault[target.vaultId]?.pathPrefix;
+      if (vaultPrefix !== undefined) {
+        for (const actorPrefix of pathPrefixesForPermission(
+          actor,
+          target.spaceId,
+          "source:read",
+        )) {
+          const intersection = intersectVaultPathPrefixes(
+            actorPrefix,
+            vaultPrefix,
+          );
+          if (intersection !== undefined)
+            rawScopes.push({
+              vaultId: target.vaultId,
+              pathPrefix: intersection,
+            });
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (!["VAULT_ACCESS_DENIED", "VAULT_SCOPE_NOT_FOUND"].includes(message))
+        throw error; // DB/backend uncertainty must not silently grant SOURCE.
+    }
+  }
+  return Object.freeze({
+    [benchmarkScopeSeal]: true as const,
+    spaceId: target.spaceId,
+    vaultId: target.vaultId,
+    rawScopes: Object.freeze(
+      rawScopes.map((x) => Object.freeze(x)),
+    ) as unknown as BenchmarkAuthority["rawScopes"],
+  });
+}
+
+/** The benchmark uses the *one* existing engine, with explicit eval authority. */
+async function executeAuthorizedBenchmarkRetrieval(
+  db: Postgres,
+  scope: BenchmarkAuthority,
+  query: string,
+  configuration: {
+    channels?: RetrievalExecutionOptions["channels"];
+    allowVectorForBenchmark?: boolean;
+    deterministicRerank?: boolean;
+    associativePpr?: boolean;
+    communityGlobal?: boolean;
+    queryDecomposition?: boolean;
+  },
+) {
+  if (!scope || scope[benchmarkScopeSeal] !== true)
+    throw Error("BENCHMARK_AUTHORIZATION_REQUIRED");
+  const input = {
+    query,
+    types: [],
+    minimumTrust: "MACHINE_SUPPORTED" as const,
+    mode: "SOURCE_BACKED" as const,
+    limit: 10,
+    spaceId: scope.spaceId,
+    vaultId: scope.vaultId,
+    vaultIds: [scope.vaultId],
+    federated: false,
+  };
+  assertBenchmarkScopeBound(input, scope);
+  return queryKnowledge(db, input, {
+    vaultIds: [scope.vaultId],
+    graphScopes: [{ vaultId: scope.vaultId, pathPrefix: null }],
+    pathAuthorizer: (_path: string, vaultId?: string) =>
+      vaultId === scope.vaultId,
+    rawScopes: scope.rawScopes,
+    authorizationResolved: true,
+    ...(configuration.channels ? { channels: configuration.channels } : {}),
+    ...(configuration.allowVectorForBenchmark === undefined
+      ? {}
+      : { allowVectorForBenchmark: configuration.allowVectorForBenchmark }),
+    ...(configuration.deterministicRerank ? { deterministicRerank: true } : {}),
+    ...(configuration.associativePpr
+      ? {
+          retrievalPolicy: {
+            graphMode: "ASSOCIATIVE" as const,
+            channels: { GRAPH_PPR: { enabled: true, weight: 1.1 } },
+          },
+        }
+      : configuration.communityGlobal
+        ? {
+            retrievalPolicy: {
+              graphMode: "GLOBAL" as const,
+              channels: { COMMUNITY: { enabled: true, weight: 1.1 } },
+            },
+          }
+        : {}),
+    ...(configuration.queryDecomposition
+      ? { queryTransformer: new DeterministicQueryDecomposer() }
+      : {}),
+  });
+}
+
 export async function runEvaluation(
   db: Postgres,
   configuration: {
@@ -84,10 +257,12 @@ export async function runEvaluation(
     communityGlobal?: boolean;
     queryDecomposition?: boolean;
   },
-  spaceId: string,
   packName: string,
-  vaultId: string,
+  authority: BenchmarkAuthority,
 ): Promise<Record<string, unknown>> {
+  if (!authority || authority[benchmarkScopeSeal] !== true)
+    throw Error("BENCHMARK_AUTHORIZATION_REQUIRED");
+  const { spaceId, vaultId } = authority;
   const root = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
     "../../../..",
@@ -130,51 +305,11 @@ export async function runEvaluation(
   const results = [];
   for (const testCase of cases) {
     const started = performance.now();
-    const hits = await queryKnowledge(
+    const hits = await executeAuthorizedBenchmarkRetrieval(
       db,
-      {
-        query: testCase.query,
-        types: [],
-        minimumTrust: "MACHINE_SUPPORTED",
-        mode: "SOURCE_BACKED",
-        limit: 10,
-        spaceId,
-        vaultId,
-        vaultIds: [vaultId],
-        federated: false,
-      },
-      {
-        vaultIds: [vaultId],
-        ...(configuration.channels ? { channels: configuration.channels } : {}),
-        ...(configuration.allowVectorForBenchmark === undefined
-          ? {}
-          : { allowVectorForBenchmark: configuration.allowVectorForBenchmark }),
-        ...(configuration.deterministicRerank
-          ? { deterministicRerank: true }
-          : {}),
-        ...(configuration.associativePpr
-          ? {
-              retrievalPolicy: {
-                graphMode: "ASSOCIATIVE" as const,
-                channels: {
-                  GRAPH_PPR: { enabled: true, weight: 1.1 },
-                },
-              },
-            }
-          : configuration.communityGlobal
-            ? {
-                retrievalPolicy: {
-                  graphMode: "GLOBAL" as const,
-                  channels: {
-                    COMMUNITY: { enabled: true, weight: 1.1 },
-                  },
-                },
-              }
-            : {}),
-        ...(configuration.queryDecomposition
-          ? { queryTransformer: new DeterministicQueryDecomposer() }
-          : {}),
-      },
+      authority,
+      testCase.query,
+      configuration,
     );
     const latencyMs = performance.now() - started;
     const rows =
@@ -416,6 +551,9 @@ export async function runEvaluation(
     vaultId,
     configurationName: configuration.name ?? "default",
     status: metrics.criticalFailures === 0 ? "PASSED" : "FAILED",
+    authorityMode: "EVAL_RUN_UNRESTRICTED_VAULT",
+    independentSemanticGoldVerified: false,
+    releaseGateAccepted: false,
     ...metrics,
     diagnosticMetrics,
     results,
@@ -424,10 +562,12 @@ export async function runEvaluation(
 
 export async function runRetrievalBenchmark(
   db: Postgres,
-  spaceId: string,
   packName: string,
-  vaultId: string,
+  authority: BenchmarkAuthority,
 ): Promise<Record<string, unknown>> {
+  if (!authority || authority[benchmarkScopeSeal] !== true)
+    throw Error("BENCHMARK_AUTHORIZATION_REQUIRED");
+  const { spaceId, vaultId } = authority;
   // Keep the API benchmark in lockstep with the package-level matrix.  A
   // spread creates mutable channel arrays for the execution adapter while the
   // canonical matrix remains immutable and testable offline.
@@ -462,9 +602,7 @@ export async function runRetrievalBenchmark(
   }));
   const runs = [];
   for (const configuration of configurations) {
-    runs.push(
-      await runEvaluation(db, configuration, spaceId, packName, vaultId),
-    );
+    runs.push(await runEvaluation(db, configuration, packName, authority));
   }
   const ranked = [...runs]
     .filter(
@@ -518,6 +656,9 @@ export async function runRetrievalBenchmark(
   ].sort();
   return {
     status: "COMPLETED",
+    authorityMode: "EVAL_RUN_UNRESTRICTED_VAULT",
+    independentSemanticGoldVerified: false,
+    releaseGateAccepted: false,
     datasetCases: Number(runs[0]?.cases ?? 0),
     evalPack: packName,
     vaultId,
@@ -660,18 +801,9 @@ export function registerEvaluationRoutes(
       }
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      let authority: BenchmarkAuthority;
       try {
-        const scope = await resolveAuthorizedVaultScope(db, {
-          userId: actor.id,
-          spaceId: parsed.data.spaceId,
-          permission: "eval:run",
-          vaultId: parsed.data.vaultId,
-          vaultIds: [parsed.data.vaultId],
-          federated: false,
-        });
-        if (scope.accessByVault[parsed.data.vaultId]?.pathPrefix !== null) {
-          return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
-        }
+        authority = await authorizeBenchmarkTarget(db, actor, parsed.data);
       } catch (error) {
         return reply.code(403).send({
           code: error instanceof Error ? error.message : "VAULT_ACCESS_DENIED",
@@ -683,9 +815,8 @@ export function registerEvaluationRoutes(
       const result = await runEvaluation(
         db,
         {},
-        parsed.data.spaceId,
         parsed.data.evalPack,
-        parsed.data.vaultId,
+        authority,
       );
       await audit(
         db,
@@ -719,18 +850,9 @@ export function registerEvaluationRoutes(
       }
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
+      let authority: BenchmarkAuthority;
       try {
-        const scope = await resolveAuthorizedVaultScope(db, {
-          userId: actor.id,
-          spaceId: parsed.data.spaceId,
-          permission: "eval:run",
-          vaultId: parsed.data.vaultId,
-          vaultIds: [parsed.data.vaultId],
-          federated: false,
-        });
-        if (scope.accessByVault[parsed.data.vaultId]?.pathPrefix !== null) {
-          return reply.code(403).send({ code: "PATH_SCOPE_DENIED" });
-        }
+        authority = await authorizeBenchmarkTarget(db, actor, parsed.data);
       } catch (error) {
         return reply.code(403).send({
           code: error instanceof Error ? error.message : "VAULT_ACCESS_DENIED",
@@ -741,9 +863,8 @@ export function registerEvaluationRoutes(
       }
       const result = await runRetrievalBenchmark(
         db,
-        parsed.data.spaceId,
         parsed.data.evalPack,
-        parsed.data.vaultId,
+        authority,
       );
       await audit(
         db,
