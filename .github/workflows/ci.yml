@@ -429,6 +429,8 @@ jobs:
           version: 0.12.7
           enable-cache: true
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Verify S2 unsigned technical Z original-SOURCE audit (synthetic only)
+        run: python -m unittest discover -s scripts -p test_s2_technical_z_intake.py -v
       - name: Build Code Graph contract dependency
         run: pnpm --filter @akp/contracts build
       - name: Install pinned real Graphify provider

@@ -5272,6 +5272,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/s2-audit-technical-z-intake.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/s2-audit-writer-semantic-review.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -5408,6 +5413,11 @@
     },
     {
       "path": "scripts/telemetry-command.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/test_s2_technical_z_intake.py",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

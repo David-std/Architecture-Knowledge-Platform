@@ -428,6 +428,18 @@
       "sourceSection": 105,
       "disposition": "EVALUATION_ONLY",
       "decision": "Private exact 240-row reviewer CSV conversion with original CSV SHA trace, packet identity, Unicode-safe SOURCE quotes and reviewer schema; no model, no source truth promotion, no production policy authority."
+    },
+    {
+      "path": "scripts/s2-audit-technical-z-intake.py",
+      "sourceSection": 107,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Private original SOURCE+X/Y+unsigned technical Z ZIP validator, redacted nonrelease receipt only, no generative semantic judging or runtime authorization."
+    },
+    {
+      "path": "scripts/test_s2_technical_z_intake.py",
+      "sourceSection": 107,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Synthetic full-cohort and adversarial Unicode/source/citation/negative/reviewer identity regression tests for the maintained technical-Z intake adapter."
     }
   ],
   "techniques": [
@@ -807,6 +819,17 @@
         "packages/evaluation/src/s2-prospective-source-review-audit.ts"
       ],
       "decision": "Explicitly map reviewer CSV whole-corpus-examined field to existing negative-only absence attestation; verify original SOURCE exact spans and immutable complete reviewer packet, classify verdict conflicts separately from answer/quote variance without auto-gold or inferred equivalence."
+    },
+    {
+      "id": "technical-ai-z-unsigned-source-intake-audit",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 107,
+      "files": [
+        "scripts/s2-audit-technical-z-intake.py",
+        "scripts/test_s2_technical_z_intake.py"
+      ],
+      "decision": "Fail-closed source-original and frozen case identity, exact UTF-16 quote, JSON/CSV/manifest checksum and source-license awareness for unsigned AI Z technical intake; diagnostic X/Y differences are non-gold, no reviewer identity or FAR approval."
     }
   ]
 }
