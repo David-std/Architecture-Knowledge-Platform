@@ -463,13 +463,13 @@
       "path": "packages/evaluation/src/s2-development-http-journey-metrics.ts",
       "sourceSection": 111,
       "disposition": "EVALUATION_ONLY",
-      "decision": "Strict DEV-only external orchestration metrics for existing Search, Context and Writer HTTP routes with repeat Search accounted, failed attempts and redacted outcomes. Not one retrieval invocation, semantic gold, or release evidence."
+      "decision": "DEV-only external clock metrics for both §111 three-request/two-retrieval Search+Context+Writer and §113 Context DIRECT+Writer (one retrieval/two HTTP requests), each with strict failed-attempt inclusion and redacted outcomes. Neither is semantic gold, paired candidate evidence, one-server-request latency or release acceptance."
     },
     {
       "path": "packages/evaluation/test/s2-development-http-journey-metrics.test.ts",
       "sourceSection": 111,
       "disposition": "EVALUATION_ONLY",
-      "decision": "Pure timing and fail-closed stage transition regression tests for the optional composed HTTP diagnostic, not a live benchmark or independent source-quality assessment."
+      "decision": "Pure timing and fail-closed stage transition regression tests for both mutually exclusive composed HTTP protocols, 6 tests, not independent SOURCE-quality or release acceptance."
     },
     {
       "path": "packages/evaluation/src/s2-development-http-writer-metrics.ts",

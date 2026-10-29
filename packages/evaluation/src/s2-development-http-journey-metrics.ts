@@ -143,3 +143,123 @@ export function summarizeS2DevelopmentHttpJourney(
     releaseGateAccepted: false as const,
   };
 }
+
+/** Independent from §111's three-request/two-search DEV diagnostic. */
+export type S2ContextWriterSample = {
+  caseTag: S2HttpJourneyCase;
+  arm: "DETERMINISTIC";
+  context: S2HttpJourneyPhase;
+  writer: S2HttpJourneyPhase | null;
+  endToEndMs: number;
+  outcome:
+    | "CONTEXT_FAILED"
+    | "CONTEXT_NOT_SUPPORTED"
+    | "WRITER_RECEIPT"
+    | "WRITER_FAILED";
+  writerModelInvoked: boolean;
+  productionAdmission: false;
+  releaseGateAccepted: false;
+};
+const aggregateContextWriter = (items: readonly S2ContextWriterSample[]) => ({
+  count: items.length,
+  endToEndP50Ms: percentile(
+    items.map((x) => x.endToEndMs),
+    0.5,
+  ),
+  endToEndP95Ms: percentile(
+    items.map((x) => x.endToEndMs),
+    0.95,
+  ),
+  contextP95Ms: percentile(
+    items.map((x) => x.context.elapsedMs),
+    0.95,
+  ),
+  writerP95Ms: percentile(
+    items.flatMap((x) => (x.writer ? [x.writer.elapsedMs] : [])),
+    0.95,
+  ),
+  failures: items.filter((x) =>
+    ["CONTEXT_FAILED", "WRITER_FAILED"].includes(x.outcome),
+  ).length,
+  contextWithheld: items.filter((x) => x.outcome === "CONTEXT_NOT_SUPPORTED")
+    .length,
+  writerReceipts: items.filter((x) => x.outcome === "WRITER_RECEIPT").length,
+  http503: items.filter((x) =>
+    [x.context, x.writer].some((phase) => phase?.httpStatus === 503),
+  ).length,
+  timeouts: items.filter((x) =>
+    [x.context, x.writer].some((phase) => phase?.httpStatus === 0),
+  ).length,
+});
+/**
+ * Real external wall clock over exactly Context HTTP (which performs one
+ * direct authorized retrieval + admission + packet) and gated Writer HTTP.
+ * It does not claim one HTTP request or independently judged semantic truth.
+ */
+export function summarizeS2DevelopmentContextWriter(
+  samples: readonly S2ContextWriterSample[],
+) {
+  if (!samples.length || samples.length > 5000)
+    throw Error("S2_CONTEXT_WRITER_EMPTY_OR_UNBOUNDED");
+  for (const x of samples) {
+    if (
+      !["REVIEWED_EN", "REVIEWED_ES", "UNSEEN_NEGATIVE_EN"].includes(
+        x.caseTag,
+      ) ||
+      x.arm !== "DETERMINISTIC" ||
+      !x.context ||
+      !validPhase(x.context) ||
+      !validPhase(x.writer) ||
+      !finite(x.endToEndMs) ||
+      x.endToEndMs + 5 < x.context.elapsedMs + (x.writer?.elapsedMs ?? 0) ||
+      x.productionAdmission !== false ||
+      x.releaseGateAccepted !== false ||
+      typeof x.writerModelInvoked !== "boolean"
+    )
+      throw Error("S2_CONTEXT_WRITER_INVALID_SAMPLE");
+    const expected =
+      x.context.httpStatus !== 200
+        ? "CONTEXT_FAILED"
+        : x.writer === null
+          ? "CONTEXT_NOT_SUPPORTED"
+          : x.writer.httpStatus === 200
+            ? "WRITER_RECEIPT"
+            : "WRITER_FAILED";
+    if (
+      x.outcome !== expected ||
+      (x.context.httpStatus !== 200 && x.writer !== null) ||
+      (x.writer === null && x.writerModelInvoked)
+    )
+      throw Error("S2_CONTEXT_WRITER_INVALID_STAGE_TRANSITION");
+  }
+  return {
+    schemaVersion:
+      "akp.s2.development-http-context-writer-single-retrieval.v1" as const,
+    status: "DEV_ONLY_NOT_INDEPENDENT" as const,
+    sampleCount: samples.length,
+    all: aggregateContextWriter(samples),
+    cases: Object.fromEntries(
+      [...new Set(samples.map((x) => x.caseTag))]
+        .sort()
+        .map((tag) => [
+          tag,
+          aggregateContextWriter(samples.filter((x) => x.caseTag === tag)),
+        ]),
+    ),
+    httpSequence: [
+      "POST /v1/context (DIRECT: retrieval + admission + ContextPacket persistence)",
+      "POST /v1/s2/writer-claims/generate-audit (when supported)",
+    ] as const,
+    separateSearchHttpIssued: false as const,
+    singleServerHttpRequest: false as const,
+    readerTimeSeparatelyMeasured: false as const,
+    exactTokenizerUsageMeasured: false as const,
+    pairedCandidateArmMeasured: false as const,
+    referenceLabelsIndependent: false as const,
+    sourceFamiliesIndependent: false as const,
+    semanticGoldVerified: false as const,
+    fullWriterClaimsIndependentlyReviewed: false as const,
+    policyDefaultsChanged: false as const,
+    releaseGateAccepted: false as const,
+  };
+}

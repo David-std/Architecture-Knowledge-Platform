@@ -19,6 +19,8 @@ import { S2PinnedLocalOllamaWriter } from "../src/s2-local-atomic-provider.js";
 import {
   summarizeS2DevelopmentFullHttp,
   summarizeS2DevelopmentHttpJourney,
+  summarizeS2DevelopmentContextWriter,
+  type S2ContextWriterSample,
   type S2HttpWriterSample,
   type S2HttpJourneySample,
 } from "@akp/evaluation";
@@ -1364,14 +1366,20 @@ run(
       },
       420_000,
     );
+    const legacyThreeRequest =
+      process.env.AKP_S2_DEV_HTTP_JOURNEY_BENCH === "1";
+    const singleRetrieval = process.env.AKP_S2_DEV_CONTEXT_WRITER_BENCH === "1";
     const itRealJourney =
       process.env.AKP_S2_ATOMIC_WRITER_REAL_PROVIDER_TEST === "true" &&
-      process.env.AKP_S2_DEV_HTTP_JOURNEY_BENCH === "1"
+      (legacyThreeRequest || singleRetrieval)
         ? it
         : it.skip;
     itRealJourney(
-      "measures real authorized Search -> ContextPacket -> guarded Writer HTTP orchestration (DEV ONLY)",
+      "measures real authorized ContextPacket -> guarded Writer HTTP (one Context retrieval, DEV ONLY)",
       async () => {
+        if (legacyThreeRequest && singleRetrieval) {
+          throw new Error("S2_DEV_HTTP_JOURNEY_MODES_MUTUALLY_EXCLUSIVE");
+        }
         const provider = new S2PinnedLocalOllamaWriter({
           model: process.env.AKP_S2_REAL_NATIVE_MODEL ?? "",
           modelDigestSha256: process.env.AKP_S2_REAL_NATIVE_DIGEST ?? "",
@@ -1388,6 +1396,7 @@ run(
           else process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED = priorShadow;
         }
         const samples: S2HttpJourneySample[] = [];
+        const singleSamples: S2ContextWriterSample[] = [];
         const round = (x: number) => Math.round(x * 100) / 100;
         try {
           await realApp.ready();
@@ -1458,15 +1467,19 @@ run(
                 query: scenario.query,
                 limit: 6,
               };
-              const search = await send("/v1/search", input, 20_000);
+              const search = legacyThreeRequest
+                ? await send("/v1/search", input, 20_000)
+                : null;
               let context: Awaited<ReturnType<typeof send>> | null = null;
               let writer: Awaited<ReturnType<typeof send>> | null = null;
               let modelInvoked = false;
-              if (search.phase.httpStatus === 200) {
-                const hits = search.data.hits;
-                expect(Array.isArray(hits)).toBe(true);
-                for (const hit of hits as { vaultId: string }[]) {
-                  expect(hit.vaultId).toBe(vaultId);
+              if (search === null || search.phase.httpStatus === 200) {
+                if (search) {
+                  const hits = search.data.hits;
+                  expect(Array.isArray(hits)).toBe(true);
+                  for (const hit of hits as { vaultId: string }[]) {
+                    expect(hit.vaultId).toBe(vaultId);
+                  }
                 }
                 context = await send(
                   "/v1/context",
@@ -1474,6 +1487,7 @@ run(
                     ...input,
                     packetMode: "FULL_CONTEXT_PACKET",
                     contextLevel: "L2",
+                    reasoningMode: "DIRECT",
                     maxTokens: 1200,
                   },
                   20_000,
@@ -1517,35 +1531,67 @@ run(
                   modelInvoked = writer.data.modelInvoked === true;
                 }
               }
-              const outcome: S2HttpJourneySample["outcome"] =
-                search.phase.httpStatus !== 200
-                  ? "SEARCH_FAILED"
-                  : context?.phase.httpStatus !== 200
+              if (legacyThreeRequest) {
+                if (!search) throw new Error("S2_COMPOSED_SEARCH_MISSING");
+                const outcome: S2HttpJourneySample["outcome"] =
+                  search.phase.httpStatus !== 200
+                    ? "SEARCH_FAILED"
+                    : context?.phase.httpStatus !== 200
+                      ? "CONTEXT_FAILED"
+                      : writer === null
+                        ? "CONTEXT_NOT_SUPPORTED"
+                        : writer.phase.httpStatus === 200
+                          ? "WRITER_RECEIPT"
+                          : "WRITER_FAILED";
+                samples.push({
+                  caseTag: scenario.caseTag,
+                  arm: "DETERMINISTIC",
+                  search: search.phase,
+                  context: context?.phase ?? null,
+                  writer: writer?.phase ?? null,
+                  endToEndMs: round(performance.now() - started),
+                  outcome,
+                  writerModelInvoked: modelInvoked,
+                  productionAdmission: false,
+                  releaseGateAccepted: false,
+                });
+              } else {
+                if (!context) throw new Error("S2_SINGLE_CONTEXT_NOT_ISSUED");
+                const outcome: S2ContextWriterSample["outcome"] =
+                  context.phase.httpStatus !== 200
                     ? "CONTEXT_FAILED"
                     : writer === null
                       ? "CONTEXT_NOT_SUPPORTED"
                       : writer.phase.httpStatus === 200
                         ? "WRITER_RECEIPT"
                         : "WRITER_FAILED";
-              samples.push({
-                caseTag: scenario.caseTag,
-                arm: "DETERMINISTIC",
-                search: search.phase,
-                context: context?.phase ?? null,
-                writer: writer?.phase ?? null,
-                endToEndMs: round(performance.now() - started),
-                outcome,
-                writerModelInvoked: modelInvoked,
-                productionAdmission: false,
-                releaseGateAccepted: false,
-              });
+                singleSamples.push({
+                  caseTag: scenario.caseTag,
+                  arm: "DETERMINISTIC",
+                  context: context.phase,
+                  writer: writer?.phase ?? null,
+                  endToEndMs: round(performance.now() - started),
+                  outcome,
+                  writerModelInvoked: modelInvoked,
+                  productionAdmission: false,
+                  releaseGateAccepted: false,
+                });
+              }
             }
           }
-          expect(samples).toHaveLength(12);
-          const report = summarizeS2DevelopmentHttpJourney(samples);
+          expect(legacyThreeRequest ? samples : singleSamples).toHaveLength(12);
+          const report = legacyThreeRequest
+            ? summarizeS2DevelopmentHttpJourney(samples)
+            : summarizeS2DevelopmentContextWriter(singleSamples);
           expect(report.releaseGateAccepted).toBe(false);
-          expect(report.searchExecutedTwice).toBe(true);
-          const output = process.env.AKP_S2_DEV_HTTP_JOURNEY_METRICS_OUTPUT;
+          if (legacyThreeRequest) {
+            expect(report).toHaveProperty("searchExecutedTwice", true);
+          } else {
+            expect(report).toHaveProperty("separateSearchHttpIssued", false);
+          }
+          const output = legacyThreeRequest
+            ? process.env.AKP_S2_DEV_HTTP_JOURNEY_METRICS_OUTPUT
+            : process.env.AKP_S2_DEV_CONTEXT_WRITER_METRICS_OUTPUT;
           if (output) {
             const absolute = path.resolve(output);
             const repository = path.resolve(import.meta.dirname, "../../..");
@@ -1559,7 +1605,9 @@ run(
             });
           }
           console.log(
-            "S2_REAL_COMPOSED_HTTP_JOURNEY_DEV_NON_GOLD",
+            legacyThreeRequest
+              ? "S2_REAL_COMPOSED_HTTP_JOURNEY_DEV_NON_GOLD"
+              : "S2_REAL_CONTEXT_WRITER_ONE_RETRIEVAL_DEV_NON_GOLD",
             JSON.stringify(report),
           );
         } finally {
