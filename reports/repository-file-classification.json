@@ -5387,6 +5387,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/s2-reconcile-owner-attested-z.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "scripts/s2-reconcile-writer-review-submissions.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -5458,6 +5463,11 @@
     },
     {
       "path": "scripts/test_s2_owner_editorial_revision.py",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/test_s2_reconcile_owner_attested_z.py",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

@@ -869,6 +869,17 @@
       "decision": "Explicitly map reviewer CSV whole-corpus-examined field to existing negative-only absence attestation; verify original SOURCE exact spans and immutable complete reviewer packet, classify verdict conflicts separately from answer/quote variance without auto-gold or inferred equivalence."
     },
     {
+      "id": "owner-attested-third-party-z-private-dev-reconciliation",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 119,
+      "files": [
+        "scripts/s2-reconcile-owner-attested-z.py",
+        "scripts/test_s2_reconcile_owner_attested_z.py"
+      ],
+      "decision": "Bind the 177 real owner-attested blind third-party Z decisions to 63 exact private X/Y consensus cases and original source hashes/UTF-16 spans in a private 240-case DEV-only reference. Distinguish owner testimony from externally authenticated independence, preserve seven exceptional labels, fail closed on tampering and never treat exposed DEV as independent acceptance gold."
+    },
+    {
       "id": "technical-ai-z-unsigned-source-intake-audit",
       "stage": "H",
       "disposition": "EVALUATION_ONLY",
