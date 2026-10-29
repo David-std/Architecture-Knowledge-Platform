@@ -4044,6 +4044,138 @@ export async function queryKnowledge(
   return finalResults;
 }
 
+/** One API-owned authorization decision, reused by Search and Context (and MCP via HTTP). */
+interface AuthorizedRetrievalScope {
+  principalVaultId: string | null;
+  spaceId: string;
+  vaultIds: string[];
+  accessByVault: AuthorizedVaultScope["accessByVault"];
+  graphScopes: GraphScope[];
+  rawScopes: GraphScope[];
+  pathAuthorizer: (documentPath: string, vaultId?: string) => boolean;
+}
+
+async function resolveAuthorizedKnowledgeRetrieval(
+  db: Postgres,
+  actor: NonNullable<ReturnType<typeof actorOf>>,
+  input: Pick<SearchInput, "spaceId" | "vaultId" | "vaultIds" | "federated">,
+): Promise<AuthorizedRetrievalScope> {
+  if (!hasSpaceAccess(actor, input.spaceId, "knowledge:read")) {
+    throw new Error("SPACE_ACCESS_DENIED");
+  }
+  const principalVaultId =
+    actor.principalKind === "AGENT_PROCESS" ? actor.principalVaultId : null;
+  const explicitlyRequestedVaults = [
+    ...(input.vaultId ? [input.vaultId] : []),
+    ...input.vaultIds,
+  ];
+  if (
+    principalVaultId &&
+    (input.federated ||
+      explicitlyRequestedVaults.some((id) => id !== principalVaultId))
+  ) {
+    throw new Error("PRINCIPAL_VAULT_SCOPE_DENIED");
+  }
+  const resolved = await new PostgresAuthorizationPort(db).resolveVaultScope({
+    userId: actor.id,
+    spaceId: input.spaceId,
+    permission: "knowledge:read",
+    ...(principalVaultId
+      ? { vaultId: principalVaultId }
+      : input.vaultId
+        ? { vaultId: input.vaultId }
+        : {}),
+    vaultIds: principalVaultId ? [principalVaultId] : input.vaultIds,
+    federated: principalVaultId ? false : input.federated,
+  });
+  const vaultIds = resolved.vaultIds;
+  const accessByVault = resolved.accessByVault;
+  const actorPathPrefixes = pathPrefixesForPermission(
+    actor,
+    input.spaceId,
+    "knowledge:read",
+  );
+  const graphScopes = Object.entries(accessByVault).flatMap(
+    ([vaultId, access]) =>
+      actorPathPrefixes.flatMap((actorPathPrefix) => {
+        const pathPrefix = intersectVaultPathPrefixes(
+          actorPathPrefix,
+          access.pathPrefix,
+        );
+        return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
+      }),
+  );
+  const pathAuthorizer = (documentPath: string, vaultId?: string) => {
+    const access = accessByVault[String(vaultId ?? "")];
+    if (!access) return false;
+    return (
+      pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
+      hasPathAccess(actor, input.spaceId, "knowledge:read", documentPath)
+    );
+  };
+  return {
+    principalVaultId,
+    spaceId: input.spaceId,
+    vaultIds,
+    accessByVault,
+    graphScopes,
+    rawScopes: rawScopesForActor(actor, input.spaceId, accessByVault),
+    pathAuthorizer,
+  };
+}
+
+function retrievalAuthorizationErrorStatus(code: string): number {
+  switch (code) {
+    case "SPACE_ACCESS_DENIED":
+    case "PRINCIPAL_VAULT_SCOPE_DENIED":
+    case "VAULT_ACCESS_DENIED":
+      return 403;
+    case "VAULT_SCOPE_NOT_FOUND":
+      return 404;
+    case "AUTHORIZATION_INDETERMINATE":
+    case "AUTHORIZATION_BACKEND_UNAVAILABLE":
+      return 503;
+    default:
+      return 400;
+  }
+}
+
+/** No downstream operation may widen a resolved authority through its query. */
+export function assertAuthorizedRetrievalRequest(
+  input: Pick<SearchInput, "spaceId" | "vaultId" | "vaultIds" | "federated">,
+  authority: Pick<AuthorizedRetrievalScope, "spaceId" | "vaultIds">,
+): void {
+  const authorized = new Set(authority.vaultIds);
+  if (
+    !authority.vaultIds.length ||
+    input.spaceId !== authority.spaceId ||
+    (input.vaultId !== undefined && !authorized.has(input.vaultId)) ||
+    input.vaultIds.some((id) => !authorized.has(id)) ||
+    (!input.federated && authority.vaultIds.length > 1)
+  ) {
+    throw new Error("RETRIEVAL_AUTHORIZED_SCOPE_MISMATCH");
+  }
+}
+
+/** The one typed, scoped query invocation for both HTTP search and context. */
+async function executeScopedKnowledgeRetrieval(
+  db: Postgres,
+  input: SearchInput,
+  authority: AuthorizedRetrievalScope,
+  options: RetrievalExecutionOptions,
+): Promise<SearchHit[]> {
+  assertAuthorizedRetrievalRequest(input, authority);
+  return queryKnowledge(db, input, {
+    ...options,
+    // Last-write authority: no caller option can broaden these constraints.
+    vaultIds: authority.vaultIds,
+    graphScopes: authority.graphScopes,
+    rawScopes: authority.rawScopes,
+    pathAuthorizer: authority.pathAuthorizer,
+    authorizationResolved: true,
+  });
+}
+
 export function registerSearchRoutes(
   app: FastifyInstance,
   db: Postgres,
@@ -4079,87 +4211,33 @@ export function registerSearchRoutes(
       if (!hasSpaceAccess(actor, requestedSpace, "knowledge:read")) {
         return reply.code(403).send({ code: "SPACE_ACCESS_DENIED" });
       }
-      const principalVaultId =
-        actor.principalKind === "AGENT_PROCESS" ? actor.principalVaultId : null;
-      const explicitlyRequestedVaults = [
-        ...(parsed.data.vaultId ? [parsed.data.vaultId] : []),
-        ...parsed.data.vaultIds,
-      ];
-      if (
-        principalVaultId &&
-        (parsed.data.federated ||
-          explicitlyRequestedVaults.some(
-            (vaultId) => vaultId !== principalVaultId,
-          ))
-      ) {
-        return reply.code(403).send({ code: "PRINCIPAL_VAULT_SCOPE_DENIED" });
-      }
-      let vaultIds: string[];
-      let accessByVault: AuthorizedVaultScope["accessByVault"] = {};
+      let actorScope: AuthorizedRetrievalScope;
       try {
-        const scope = await new PostgresAuthorizationPort(db).resolveVaultScope(
-          {
-            userId: actor.id,
-            spaceId: requestedSpace,
-            permission: "knowledge:read",
-            ...(principalVaultId
-              ? { vaultId: principalVaultId }
-              : parsed.data.vaultId
-                ? { vaultId: parsed.data.vaultId }
-                : {}),
-            vaultIds: principalVaultId
-              ? [principalVaultId]
-              : parsed.data.vaultIds,
-            federated: principalVaultId ? false : parsed.data.federated,
-          },
+        actorScope = await resolveAuthorizedKnowledgeRetrieval(
+          db,
+          actor,
+          parsed.data,
         );
-        vaultIds = scope.vaultIds;
-        accessByVault = scope.accessByVault;
       } catch (error) {
         const code =
           error instanceof Error ? error.message : "INVALID_VAULT_SCOPE";
         return reply
-          .code(
-            code === "VAULT_SCOPE_NOT_FOUND"
-              ? 404
-              : code === "VAULT_ACCESS_DENIED"
-                ? 403
-                : code === "AUTHORIZATION_INDETERMINATE" ||
-                    code === "AUTHORIZATION_BACKEND_UNAVAILABLE"
-                  ? 503
-                  : 400,
-          )
+          .code(retrievalAuthorizationErrorStatus(code))
           .send({ code });
       }
+      const {
+        principalVaultId,
+        vaultIds,
+        accessByVault,
+        graphScopes,
+        rawScopes,
+        pathAuthorizer,
+      } = actorScope;
       const scopedRequest: SearchInput = {
         ...parsed.data,
         vaultIds,
         ...(vaultIds.length === 1 ? { vaultId: vaultIds[0] } : {}),
       };
-      const actorPathPrefixes = pathPrefixesForPermission(
-        actor,
-        requestedSpace,
-        "knowledge:read",
-      );
-      const graphScopes = Object.entries(accessByVault).flatMap(
-        ([vaultId, access]) =>
-          actorPathPrefixes.flatMap((actorPathPrefix) => {
-            const pathPrefix = intersectVaultPathPrefixes(
-              actorPathPrefix,
-              access.pathPrefix,
-            );
-            return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
-          }),
-      );
-      const pathAuthorizer = (documentPath: string, vaultId?: string) => {
-        const access = accessByVault[String(vaultId ?? "")];
-        if (!access) return false;
-        return (
-          pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
-          hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
-        );
-      };
-      const rawScopes = rawScopesForActor(actor, requestedSpace, accessByVault);
       let projectCode;
       try {
         projectCode = await resolveProjectCodeRetrieval(db, {
@@ -4233,38 +4311,43 @@ export function registerSearchRoutes(
       let answerabilityCandidates: readonly SearchHit[] | undefined;
       let hits: SearchHit[];
       try {
-        hits = await queryKnowledge(db, scopedRequest, {
-          plan,
-          vaultIds,
-          graphScopes,
-          rawScopes,
-          ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
-          ...(dependencies.queryTransformer
-            ? {
-                queryTransformer: dependencies.queryTransformer,
-                queryTransformActorId: actor.id,
-                queryTransformTraceId: request.id,
-              }
-            : {}),
-          warningSink: retrievalWarnings,
-          availableChannelSink: availableChannels,
-          answerabilityCandidateSink: (candidates) => {
-            answerabilityCandidates = candidates;
+        hits = await executeScopedKnowledgeRetrieval(
+          db,
+          scopedRequest,
+          actorScope,
+          {
+            plan,
+            vaultIds,
+            graphScopes,
+            rawScopes,
+            ...(projectCode ? { codeCandidates: projectCode.candidates } : {}),
+            ...(dependencies.queryTransformer
+              ? {
+                  queryTransformer: dependencies.queryTransformer,
+                  queryTransformActorId: actor.id,
+                  queryTransformTraceId: request.id,
+                }
+              : {}),
+            warningSink: retrievalWarnings,
+            availableChannelSink: availableChannels,
+            answerabilityCandidateSink: (candidates) => {
+              answerabilityCandidates = candidates;
+            },
+            ...(dependencies.crossEncoderReranker
+              ? {
+                  crossEncoderReranker: dependencies.crossEncoderReranker,
+                  crossEncoderRerankMaxCandidates:
+                    dependencies.crossEncoderRerankMaxCandidates,
+                }
+              : {}),
+            authorizationResolved: true,
+            pathAuthorizer,
+            truthConsistency: parsed.data.truthConsistency ?? "STRICT",
+            truthStateSink: (state) => {
+              truthState = state;
+            },
           },
-          ...(dependencies.crossEncoderReranker
-            ? {
-                crossEncoderReranker: dependencies.crossEncoderReranker,
-                crossEncoderRerankMaxCandidates:
-                  dependencies.crossEncoderRerankMaxCandidates,
-              }
-            : {}),
-          authorizationResolved: true,
-          pathAuthorizer,
-          truthConsistency: parsed.data.truthConsistency ?? "STRICT",
-          truthStateSink: (state) => {
-            truthState = state;
-          },
-        });
+        );
       } catch (error) {
         if (
           error instanceof Error &&
@@ -4520,58 +4603,28 @@ export function registerSearchRoutes(
       }
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
-      const principalVaultId =
-        actor.principalKind === "AGENT_PROCESS" ? actor.principalVaultId : null;
-      const explicitlyRequestedVaults = [
-        ...(parsed.data.vaultId ? [parsed.data.vaultId] : []),
-        ...parsed.data.vaultIds,
-      ];
-      if (
-        principalVaultId &&
-        (parsed.data.federated ||
-          explicitlyRequestedVaults.some(
-            (vaultId) => vaultId !== principalVaultId,
-          ))
-      ) {
-        return reply.code(403).send({ code: "PRINCIPAL_VAULT_SCOPE_DENIED" });
-      }
-      let vaultIds: string[];
-      let accessByVault: AuthorizedVaultScope["accessByVault"] = {};
+      let actorScope: AuthorizedRetrievalScope;
       try {
-        const scope = await new PostgresAuthorizationPort(db).resolveVaultScope(
-          {
-            userId: actor.id,
-            spaceId: requestedSpace,
-            permission: "knowledge:read",
-            ...(principalVaultId
-              ? { vaultId: principalVaultId }
-              : parsed.data.vaultId
-                ? { vaultId: parsed.data.vaultId }
-                : {}),
-            vaultIds: principalVaultId
-              ? [principalVaultId]
-              : parsed.data.vaultIds,
-            federated: principalVaultId ? false : parsed.data.federated,
-          },
+        actorScope = await resolveAuthorizedKnowledgeRetrieval(
+          db,
+          actor,
+          parsed.data,
         );
-        vaultIds = scope.vaultIds;
-        accessByVault = scope.accessByVault;
       } catch (error) {
         const code =
           error instanceof Error ? error.message : "INVALID_VAULT_SCOPE";
         return reply
-          .code(
-            code === "VAULT_SCOPE_NOT_FOUND"
-              ? 404
-              : code === "VAULT_ACCESS_DENIED"
-                ? 403
-                : code === "AUTHORIZATION_INDETERMINATE" ||
-                    code === "AUTHORIZATION_BACKEND_UNAVAILABLE"
-                  ? 503
-                  : 400,
-          )
+          .code(retrievalAuthorizationErrorStatus(code))
           .send({ code });
       }
+      const {
+        principalVaultId,
+        vaultIds,
+        accessByVault,
+        graphScopes,
+        rawScopes,
+        pathAuthorizer,
+      } = actorScope;
 
       const contextSessionId = parsed.data.sessionId ?? null;
       const contextObjectRefId = parsed.data.objectRefId ?? null;
@@ -4642,30 +4695,6 @@ export function registerSearchRoutes(
         vaultIds,
         ...(vaultIds.length === 1 ? { vaultId: vaultIds[0] } : {}),
       };
-      const actorPathPrefixes = pathPrefixesForPermission(
-        actor,
-        requestedSpace,
-        "knowledge:read",
-      );
-      const graphScopes = Object.entries(accessByVault).flatMap(
-        ([vaultId, access]) =>
-          actorPathPrefixes.flatMap((actorPathPrefix) => {
-            const pathPrefix = intersectVaultPathPrefixes(
-              actorPathPrefix,
-              access.pathPrefix,
-            );
-            return pathPrefix === undefined ? [] : [{ vaultId, pathPrefix }];
-          }),
-      );
-      const pathAuthorizer = (documentPath: string, vaultId?: string) => {
-        const access = accessByVault[String(vaultId ?? "")];
-        if (!access) return false;
-        return (
-          pathMatchesVaultPrefix(documentPath, access.pathPrefix) &&
-          hasPathAccess(actor, requestedSpace, "knowledge:read", documentPath)
-        );
-      };
-      const rawScopes = rawScopesForActor(actor, requestedSpace, accessByVault);
       let projectCode;
       try {
         projectCode = await resolveProjectCodeRetrieval(db, {
@@ -4754,7 +4783,7 @@ export function registerSearchRoutes(
         "DIRECT";
 
       const directRetrieval = () =>
-        queryKnowledge(db, scopedRequest, {
+        executeScopedKnowledgeRetrieval(db, scopedRequest, actorScope, {
           plan,
           vaultIds,
           graphScopes,
@@ -4927,9 +4956,10 @@ export function registerSearchRoutes(
             break;
         }
 
-        const result = await queryKnowledge(
+        const result = await executeScopedKnowledgeRetrieval(
           db,
           operatorRequest,
+          actorScope,
           executionOptions,
         );
         if (signal.aborted) throw new Error("REASONING_EXECUTION_ABORTED");

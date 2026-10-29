@@ -454,6 +454,12 @@
       "decision": "Synthetic fail-closed original SOURCE quotes/keys and owner's restricted editing authority regression checks for versioned 240 DEV corpus; no private data in CI."
     },
     {
+      "path": "apps/api/test/s2-authorized-retrieval-scope.test.ts",
+      "sourceSection": 112,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Adversarial unit assertions for typed HTTP Search/Context retrieval scope: foreign space/vault, unauthorized federated expansion and empty authority must fail before the query/provider. Integration and full S2.1 closure remain separate."
+    },
+    {
       "path": "packages/evaluation/src/s2-development-http-journey-metrics.ts",
       "sourceSection": 111,
       "disposition": "EVALUATION_ONLY",
@@ -485,7 +491,7 @@
       "disposition": "RUNTIME_DEFAULT",
       "sourceSection": 6,
       "files": ["apps/api/src/routes/search.ts", "apps/api/src/server.ts"],
-      "decision": "Single HTTP/MCP search/context use-case and ACL/revision scope; extraction of pure ranking owner from huge route still pending."
+      "decision": "Search and Context already call the one queryKnowledge engine; section 112 centralizes effective Postgres actor/vault/path/SOURCE scopes and a typed scope-enforcing invocation for both HTTP routes and Context reasoning operators (MCP delegates HTTP). Pure ranking/admission extraction from the large route, full caller cutover, single-search journey, independent holdout and S2.11 proof remain pending."
     },
     {
       "id": "hybrid-pgvector-lexical-rrf",
