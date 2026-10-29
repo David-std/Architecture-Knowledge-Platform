@@ -3682,6 +3682,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "packages/evaluation/test/s2-review-csv-converter.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "packages/evaluation/test/s2-section-blind-review.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
@@ -5268,6 +5273,11 @@
     },
     {
       "path": "scripts/s2-audit-writer-semantic-review.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/s2-convert-prospective-source-review-csv.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

@@ -105,6 +105,8 @@ describe("S2 pre-inference SOURCE-only X/Y submissions are not semantic gold", (
         explicitAgreed: 120,
         negativeAgreed: 120,
         disagreements: 0,
+        verdictConflictCases: 0,
+        matchingVerdictDifferentSupportCases: 0,
       },
       independentSourceGoldCertified: false,
       externalSourceAuthorityAuthenticated: false,
@@ -118,7 +120,12 @@ describe("S2 pre-inference SOURCE-only X/Y submissions are not semantic gold", (
     const caseId = a.x.cases[0]!.reviewCaseKey;
     a.y.cases[0] = { ...negative(), reviewCaseKey: caseId };
     const x = a.run();
-    expect(x.agreement).toMatchObject({ fullyAgreed: 239, disagreements: 1 });
+    expect(x.agreement).toMatchObject({
+      fullyAgreed: 239,
+      disagreements: 1,
+      verdictConflictCases: 1,
+      matchingVerdictDifferentSupportCases: 0,
+    });
     expect(x.zPacket.cases).toHaveLength(1);
     expect(x.zPacket).toMatchObject({
       reviewerXAndYAnswersIncluded: false,
@@ -180,5 +187,23 @@ describe("S2 packet reviewer scope equality", () => {
     b.pY.sourceDocs[0]!.authorizedVaultScope = "wrong-vault";
     b.y.packetSha256 = sha(bytes(b.pY));
     expect(b.run).toThrow(/REVIEW_SOURCE_DOCUMENT_DIFFERENCE/);
+  });
+});
+
+describe("S2 reviewer variance is NOT semantic disagreement certification", () => {
+  it("retains Z work for same verdict but different source-supported answers", () => {
+    const a = cohort();
+    a.y.cases[0]!.reviewerAnswer =
+      "Alternate wording of the same source-supported result.";
+    const result = a.run();
+    expect(result.agreement).toMatchObject({
+      fullyAgreed: 239,
+      disagreements: 1,
+      verdictConflictCases: 0,
+      matchingVerdictDifferentSupportCases: 1,
+    });
+    expect(result.zPacket.cases).toHaveLength(1);
+    expect(result.independentSourceGoldCertified).toBe(false);
+    expect(JSON.stringify(result.zPacket)).not.toContain("Alternate wording");
   });
 });

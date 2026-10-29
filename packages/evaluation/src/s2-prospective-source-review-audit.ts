@@ -367,7 +367,9 @@ export function auditS2ProspectiveSourceReview(input: {
   const disagreements: string[] = [];
   let fullyAgreed = 0,
     negativeAgreed = 0,
-    explicitAgreed = 0;
+    explicitAgreed = 0,
+    verdictConflictCases = 0,
+    matchingVerdictDifferentSupportCases = 0;
   for (const id of [...packetX.cases.keys()].sort()) {
     const a = X.get(id)!,
       b = Y.get(id)!;
@@ -384,6 +386,9 @@ export function auditS2ProspectiveSourceReview(input: {
           ),
         );
     if (!eq) {
+      if (a.sourceAnswerability !== b.sourceAnswerability)
+        verdictConflictCases++;
+      else matchingVerdictDifferentSupportCases++;
       disagreements.push(id);
       continue;
     }
@@ -431,6 +436,8 @@ export function auditS2ProspectiveSourceReview(input: {
       negativeAgreed,
       explicitAgreed,
       disagreements: disagreements.length,
+      verdictConflictCases,
+      matchingVerdictDifferentSupportCases,
     },
     zPacket,
     reviewerIdentitiesAuthenticated: false as const,

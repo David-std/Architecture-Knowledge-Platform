@@ -422,6 +422,12 @@
       "sourceSection": 103,
       "disposition": "EVALUATION_ONLY",
       "decision": "Private pinned-source/source-review CLI produces private Z-only packet and redacted receipt outside Git, without model inference or semantic truth promotion."
+    },
+    {
+      "path": "scripts/s2-convert-prospective-source-review-csv.mjs",
+      "sourceSection": 105,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Private exact 240-row reviewer CSV conversion with original CSV SHA trace, packet identity, Unicode-safe SOURCE quotes and reviewer schema; no model, no source truth promotion, no production policy authority."
     }
   ],
   "techniques": [
@@ -790,6 +796,17 @@
         "scripts/s2-audit-prospective-source-review.ts"
       ],
       "decision": "The already issued pre-inference X/Y tasks are matched to independently delivered, SHA-pinned reviewer submissions; verify complete cases, original SOURCE quote byte spans, vault path revision, full corpus-negative check declarations, and hold disagreements for blank independent Z adjudication. No human gold or policy promotion is authenticated by code."
+    },
+    {
+      "id": "external-csv-review-attestation-semantic-bridge",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 105,
+      "files": [
+        "scripts/s2-convert-prospective-source-review-csv.mjs",
+        "packages/evaluation/src/s2-prospective-source-review-audit.ts"
+      ],
+      "decision": "Explicitly map reviewer CSV whole-corpus-examined field to existing negative-only absence attestation; verify original SOURCE exact spans and immutable complete reviewer packet, classify verdict conflicts separately from answer/quote variance without auto-gold or inferred equivalence."
     }
   ]
 }
