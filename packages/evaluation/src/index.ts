@@ -74,6 +74,8 @@ export type {
 } from "./s2-prospective-paired-score.js";
 export { s2ClusterStratifiedPairedBootstrap } from "./s2-family-stratified-bootstrap.js";
 export { auditS2ProspectiveSourceReview } from "./s2-prospective-source-review-audit.js";
+export { summarizeS2DevelopmentFullHttp } from "./s2-development-http-writer-metrics.js";
+export type { S2HttpWriterSample } from "./s2-development-http-writer-metrics.js";
 export { prepareS2PreInferenceBlindReview } from "./s2-preinference-blind-review.js";
 export { buildS2PrivateUnseenReviewKit } from "./s2-private-unseen-review.js";
 export type { S2PrivateSourceReviewPacket } from "./s2-private-unseen-review.js";

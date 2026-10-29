@@ -8,12 +8,18 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import { Postgres, grantVaultMembership } from "@akp/postgres";
 import { MinioObjectStore } from "@akp/object-store";
 import { buildServer } from "../src/server.js";
 import { LayeredEvidenceAdmissionPipeline } from "@akp/retrieval";
 import { S2PinnedLocalOllamaWriter } from "../src/s2-local-atomic-provider.js";
+import {
+  summarizeS2DevelopmentFullHttp,
+  type S2HttpWriterSample,
+} from "@akp/evaluation";
 
 const enabled =
   process.env.AKP_S2_LIVE_ROUTE_TEST === "1" &&
@@ -1228,6 +1234,133 @@ run(
         }
       },
       60000,
+    );
+    const itRealHttpMetrics =
+      process.env.AKP_S2_ATOMIC_WRITER_REAL_PROVIDER_TEST === "true" &&
+      process.env.AKP_S2_DEV_HTTP_BENCH === "1"
+        ? it
+        : it.skip;
+    itRealHttpMetrics(
+      "measures bounded repeated FULL HTTP Writer responses with real pinned Ollama and both guarded modes (DEV ONLY)",
+      async () => {
+        const realProvider = new S2PinnedLocalOllamaWriter({
+          model: process.env.AKP_S2_REAL_NATIVE_MODEL ?? "",
+          modelDigestSha256: process.env.AKP_S2_REAL_NATIVE_DIGEST ?? "",
+          codeCommitSha: process.env.AKP_BUILD_COMMIT_SHA ?? "",
+        });
+        const previous = process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED;
+        process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED = "true";
+        let realApp: ReturnType<typeof buildServer>;
+        try {
+          realApp = buildServer({ s2AtomicWriterProvider: realProvider });
+        } finally {
+          if (previous === undefined)
+            delete process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED;
+          else process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED = previous;
+        }
+        const samples: S2HttpWriterSample[] = [];
+        try {
+          await realApp.ready();
+          const httpBase = await realApp.listen({ host: "127.0.0.1", port: 0 });
+          const scenarios = [
+            {
+              caseTag: "REVIEWED_EN",
+              language: "en",
+              packetId,
+              packetHash,
+              mode: "REVIEWED_CUSTODY",
+            },
+            {
+              caseTag: "REVIEWED_ES",
+              language: "es",
+              packetId: esPacketId,
+              packetHash: esPacketHash,
+              mode: "REVIEWED_CUSTODY",
+            },
+            {
+              caseTag: "UNSEEN_NEGATIVE_EN",
+              language: "en",
+              packetId: unseenPacketId,
+              packetHash: unseenPacketHash,
+              mode: "SOURCE_ANCHORED_SHADOW",
+            },
+          ] as const;
+          for (let round = 0; round < 4; round++) {
+            for (const scenario of scenarios) {
+              const start = performance.now();
+              const response = await fetch(
+                httpBase + "/v1/s2/writer-claims/generate-audit",
+                {
+                  method: "POST",
+                  headers: {
+                    ...headers(0),
+                    "Idempotency-Key": randomUUID() + "-" + randomUUID(),
+                  },
+                  body: JSON.stringify({
+                    packetId: scenario.packetId,
+                    packetHash: scenario.packetHash,
+                    language: scenario.language,
+                    mode: scenario.mode,
+                  }),
+                  signal: AbortSignal.timeout(28_000),
+                },
+              );
+              const receipt = (await response.json()) as Record<
+                string,
+                unknown
+              >;
+              const elapsed = performance.now() - start;
+              expect([200, 503]).toContain(response.status);
+              expect(receipt.productionAdmission).toBe(false);
+              expect(receipt.releaseGateAccepted).toBe(false);
+              expect(receipt).not.toHaveProperty("answerText");
+              expect(receipt).not.toHaveProperty("sourceOriginalText");
+              expect(receipt).not.toHaveProperty("sourceAnchorQuestion");
+              const providerMs =
+                typeof receipt.providerMs === "number"
+                  ? receipt.providerMs
+                  : null;
+              samples.push({
+                caseTag: scenario.caseTag,
+                httpStatus: response.status,
+                fullHttpMs: Math.round(elapsed * 100) / 100,
+                providerMs,
+                status: String(receipt.status ?? receipt.code ?? "UNKNOWN"),
+                modelInvoked:
+                  receipt.modelInvoked === true ||
+                  (receipt.modelInvoked === undefined && providerMs !== null),
+                productionAdmission: false,
+                releaseGateAccepted: false,
+              });
+            }
+          }
+          expect(samples).toHaveLength(12);
+          const result = summarizeS2DevelopmentFullHttp(samples);
+          expect(result.releaseGateAccepted).toBe(false);
+          expect(result.referenceLabelsIndependent).toBe(false);
+          // Persist metrics only under a newly created private local path;
+          // raw prompt, citation, source and Writer text never enter this receipt.
+          const report = process.env.AKP_S2_DEV_HTTP_METRICS_OUTPUT;
+          if (report) {
+            const full = path.resolve(report);
+            const repository = path.resolve(import.meta.dirname, "../../..");
+            expect(path.isAbsolute(report)).toBe(true);
+            expect(
+              full === repository || full.startsWith(repository + path.sep),
+            ).toBe(false);
+            await writeFile(full, JSON.stringify(result, null, 2) + "\n", {
+              flag: "wx",
+            });
+          }
+          console.log(
+            "S2_REAL_FULL_HTTP_DEV_METRICS_NON_GOLD",
+            JSON.stringify(result),
+          );
+        } finally {
+          await realApp.close();
+        }
+      },
+      420_000,
     );
     it("rechecks vault membership after model latency and rejects revoked in-flight authority", async () => {
       nativeMode = "REVOKE_DURING_GENERATION";

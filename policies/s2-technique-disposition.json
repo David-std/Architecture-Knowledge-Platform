@@ -452,6 +452,18 @@
       "sourceSection": 109,
       "disposition": "EVALUATION_ONLY",
       "decision": "Synthetic fail-closed original SOURCE quotes/keys and owner's restricted editing authority regression checks for versioned 240 DEV corpus; no private data in CI."
+    },
+    {
+      "path": "packages/evaluation/src/s2-development-http-writer-metrics.ts",
+      "sourceSection": 110,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Pure bounded strict nearest-rank p50/p95 and degraded HTTP 503 summary for real Writer-audit HTTP timing, never release acceptance or Search-to-Writer journey claim."
+    },
+    {
+      "path": "packages/evaluation/test/s2-development-http-writer-metrics.test.ts",
+      "sourceSection": 110,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Synthetic metric calculation, failure inclusion, malformed latency, stage-timing nonaddition tests."
     }
   ],
   "techniques": [
@@ -853,6 +865,17 @@
         "scripts/test_s2_owner_editorial_revision.py"
       ],
       "decision": "Record explicit project-owner editorial authorization to replace eight AI-authored DEV questions and retain one scoped negative. Validate unchanged source byte/UTF16/revision and paired X/Y cohort, generate versioned 240-case DEV-only nonholdout packets and immutable original proposal SHA. Owner approval is effective for internal editing but cannot authenticate independent holdout truth or source rights."
+    },
+    {
+      "id": "actual-guarded-writer-http-latency-dev-diagnostic",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 110,
+      "files": [
+        "packages/evaluation/src/s2-development-http-writer-metrics.ts",
+        "apps/api/test/s2-reviewed-source-live.integration.test.ts"
+      ],
+      "decision": "Run optionally 12 sequential real authenticated local-HTTP Writer audit calls (reviewed EN/ES, unseen inverted actor EN) with pinned Ollama on PostgreSQL/MinIO; count every HTTP 503 in p95/degraded denominators; distinguish initial per-scenario repeats. Does not include preceding search or independent semantic gold."
     }
   ]
 }
