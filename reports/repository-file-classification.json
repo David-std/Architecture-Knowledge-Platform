@@ -3337,6 +3337,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-prospective-source-review-audit.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-question-answer-claim.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3648,6 +3653,11 @@
     },
     {
       "path": "packages/evaluation/test/s2-prospective-paired-score.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
+      "path": "packages/evaluation/test/s2-prospective-source-review-audit.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
     },
@@ -5233,6 +5243,11 @@
     },
     {
       "path": "scripts/s2-audit-owner-holdout-reviews.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/s2-audit-prospective-source-review.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

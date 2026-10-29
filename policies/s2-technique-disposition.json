@@ -4,7 +4,7 @@
   "pr": 38,
   "sourceLedger": "docs/architecture/s2-semantic-experiments-and-integration-ledger.md",
   "gateStatus": "OPEN",
-  "lastReviewed": "2026-10-28",
+  "lastReviewed": "2026-10-29",
   "dispositionDefinitions": {
     "RUNTIME_DEFAULT": "On the maintained production path; security/sufficiency authority still bounded by code.",
     "RUNTIME_OPT_IN": "Connected to maintained path behind opt-in configuration or guarded injection; not promoted.",
@@ -410,6 +410,18 @@
       "sourceSection": 102,
       "disposition": "EVALUATION_ONLY",
       "decision": "Deterministic descriptive, paired publisher-family clustered percentile bootstrap, with language balance, not release confidence certification."
+    },
+    {
+      "path": "packages/evaluation/src/s2-prospective-source-review-audit.ts",
+      "sourceSection": 103,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Fail closed on mismatched X/Y original-source reviews, fake citation, revised source scope and negative with unconfirmed whole-corpus declaration; output Z-only adjudication material and redacted non-release counts."
+    },
+    {
+      "path": "scripts/s2-audit-prospective-source-review.ts",
+      "sourceSection": 103,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Private pinned-source/source-review CLI produces private Z-only packet and redacted receipt outside Git, without model inference or semantic truth promotion."
     }
   ],
   "techniques": [
@@ -767,6 +779,17 @@
         "packages/evaluation/src/s2-prospective-paired-score.ts"
       ],
       "decision": "Exploratory 2048-replicate whole-publisher-family paired resampling with equal EN/ES weights, 2.5-97.5 percentile precision/FAR/correct-answer intervals and no certified release or external-truth claims."
+    },
+    {
+      "id": "prospective-blind-source-review-submission-custody",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 103,
+      "files": [
+        "packages/evaluation/src/s2-prospective-source-review-audit.ts",
+        "scripts/s2-audit-prospective-source-review.ts"
+      ],
+      "decision": "The already issued pre-inference X/Y tasks are matched to independently delivered, SHA-pinned reviewer submissions; verify complete cases, original SOURCE quote byte spans, vault path revision, full corpus-negative check declarations, and hold disagreements for blank independent Z adjudication. No human gold or policy promotion is authenticated by code."
     }
   ]
 }
