@@ -4045,7 +4045,7 @@ export async function queryKnowledge(
 }
 
 /** One API-owned authorization decision, reused by Search and Context (and MCP via HTTP). */
-interface AuthorizedRetrievalScope {
+export interface AuthorizedRetrievalScope {
   principalVaultId: string | null;
   spaceId: string;
   vaultIds: string[];
@@ -4055,7 +4055,7 @@ interface AuthorizedRetrievalScope {
   pathAuthorizer: (documentPath: string, vaultId?: string) => boolean;
 }
 
-async function resolveAuthorizedKnowledgeRetrieval(
+export async function resolveAuthorizedKnowledgeRetrieval(
   db: Postgres,
   actor: NonNullable<ReturnType<typeof actorOf>>,
   input: Pick<SearchInput, "spaceId" | "vaultId" | "vaultIds" | "federated">,
@@ -4124,7 +4124,7 @@ async function resolveAuthorizedKnowledgeRetrieval(
   };
 }
 
-function retrievalAuthorizationErrorStatus(code: string): number {
+export function retrievalAuthorizationErrorStatus(code: string): number {
   switch (code) {
     case "SPACE_ACCESS_DENIED":
     case "PRINCIPAL_VAULT_SCOPE_DENIED":
@@ -4158,7 +4158,7 @@ export function assertAuthorizedRetrievalRequest(
 }
 
 /** The one typed, scoped query invocation for both HTTP search and context. */
-async function executeScopedKnowledgeRetrieval(
+export async function executeScopedKnowledgeRetrieval(
   db: Postgres,
   input: SearchInput,
   authority: AuthorizedRetrievalScope,

@@ -25,7 +25,11 @@ import {
   rebuildManagedRelations,
   rebuildSpaceProjections,
 } from "../projections.js";
-import { queryKnowledge } from "./search.js";
+import {
+  executeScopedKnowledgeRetrieval,
+  resolveAuthorizedKnowledgeRetrieval,
+  retrievalAuthorizationErrorStatus,
+} from "./search.js";
 
 function managedRepositoryPath(): string {
   return (
@@ -756,23 +760,26 @@ export function registerGovernanceRoutes(
       }
       const actor = actorOf(request);
       if (!actor) return reply.code(401).send({ code: "AUTH_REQUIRED" });
-      let scope;
+      // Resolve the same effective principal/vault/path authority as Search
+      // and Context. In particular, graph SQL seeds cannot escape the
+      // intersection of credential scopes and the durable vault grant.
+      let scope: Awaited<
+        ReturnType<typeof resolveAuthorizedKnowledgeRetrieval>
+      >;
       try {
-        scope = await resolveAuthorizedVaultScope(db, {
-          userId: actor.id,
+        scope = await resolveAuthorizedKnowledgeRetrieval(db, actor, {
           spaceId,
           vaultIds,
-          permission: "knowledge:read",
           federated: Boolean(request.body.federated),
         });
       } catch (error) {
         const code =
           error instanceof Error ? error.message : "VAULT_ACCESS_DENIED";
         return reply
-          .code(code === "VAULT_SCOPE_NOT_FOUND" ? 404 : 403)
+          .code(retrievalAuthorizationErrorStatus(code))
           .send({ code });
       }
-      const hits = await queryKnowledge(
+      const hits = await executeScopedKnowledgeRetrieval(
         db,
         {
           query,
@@ -784,23 +791,8 @@ export function registerGovernanceRoutes(
           mode: "COMPILED_ONLY",
           limit: 10,
         },
-        {
-          vaultIds: scope.vaultIds,
-          graphScopes: Object.entries(scope.accessByVault).map(
-            ([vaultId, access]) => ({
-              vaultId,
-              pathPrefix: access.pathPrefix,
-            }),
-          ),
-          pathAuthorizer: (knowledgePath, vaultId) => {
-            const access = scope.accessByVault[String(vaultId ?? "")];
-            return Boolean(
-              access &&
-              pathMatchesVaultPrefix(knowledgePath, access.pathPrefix) &&
-              hasPathAccess(actor, spaceId, "knowledge:read", knowledgePath),
-            );
-          },
-        },
+        scope,
+        {},
       );
       const exact = hits.filter(
         (hit) =>

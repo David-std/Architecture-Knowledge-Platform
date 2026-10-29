@@ -491,7 +491,7 @@
       "disposition": "RUNTIME_DEFAULT",
       "sourceSection": 6,
       "files": ["apps/api/src/routes/search.ts", "apps/api/src/server.ts"],
-      "decision": "Search and Context already call the one queryKnowledge engine; section 112 centralizes effective Postgres actor/vault/path/SOURCE scopes and a typed scope-enforcing invocation for both HTTP routes and Context reasoning operators (MCP delegates HTTP). Pure ranking/admission extraction from the large route, full caller cutover, single-search journey, independent holdout and S2.11 proof remain pending."
+      "decision": "Search and Context already call the one queryKnowledge engine; section 112 centralizes effective Postgres actor/vault/path/SOURCE scopes and a typed scope-enforcing invocation for both HTTP routes and Context reasoning operators (MCP delegates HTTP). §114 also converges governance identity/check on the same actor/vault/credential-path intersection and scoped invocation, closing its direct user-facing queryKnowledge bypass. eval:run unrestricted-vault benchmarking remains a separate explicit diagnostic caller. Pure ranking/admission extraction, full graph/continuation S2.11 proof and independent holdout remain pending."
     },
     {
       "id": "hybrid-pgvector-lexical-rrf",

@@ -2704,4 +2704,120 @@ describe("API security boundaries", () => {
       await db.pool.query("delete from vaults where id=$1", [vaultId]);
     }
   });
+
+  it("identity check bounds document discovery to the credential path and rejects revoked tokens", async () => {
+    const suffix = randomUUID();
+    const scopedToken = "identity-scoped-" + suffix;
+    const scopedHash = createHash("sha256").update(scopedToken).digest("hex");
+    const scopedHeaders = { authorization: "Bearer " + scopedToken };
+    const allowedId = randomUUID();
+    const deniedId = randomUUID();
+    const allowedExternal = "S2-IDENTITY-ALLOWED-" + suffix;
+    const deniedExternal = "S2-IDENTITY-RESTRICTED-" + suffix;
+    await db.pool.query(
+      "insert into api_tokens(user_id,token_hash,label,scopes) values($1,$2,'scoped identity regression',$3::jsonb)",
+      [
+        admin,
+        scopedHash,
+        JSON.stringify({
+          spaces: [
+            {
+              spaceId: defaultSpace,
+              pathPrefix: "shared",
+              permissions: ["knowledge:read"],
+            },
+          ],
+        }),
+      ],
+    );
+    try {
+      for (const entry of [
+        {
+          id: allowedId,
+          path: "shared/identity-" + suffix + ".md",
+          externalId: allowedExternal,
+        },
+        {
+          id: deniedId,
+          path: "restricted/identity-" + suffix + ".md",
+          externalId: deniedExternal,
+        },
+      ]) {
+        await db.pool.query(
+          "insert into knowledge_documents(" +
+            "id,space_id,vault_id,path,external_id,title,type,lifecycle," +
+            "trust_tier,current_revision,body_cache,frontmatter,aliases," +
+            "layer,content_hash,token_estimate,raw_links,refresh_status)" +
+            " values($1,$2,$3,$4,$5,$5,'note','ACTIVE','HUMAN_REVIEWED'," +
+            "'fixture:identity-path',$6,'{}'::jsonb,'{}','concept',$7,40,'[]'::jsonb,'CURRENT')",
+          [
+            entry.id,
+            defaultSpace,
+            defaultVaultId,
+            entry.path,
+            entry.externalId,
+            "Knowledge entry " + entry.externalId,
+            createHash("sha256").update(entry.externalId).digest("hex"),
+          ],
+        );
+      }
+      const check = (
+        query: string,
+        authHeaders = scopedHeaders,
+        opts: object = {},
+      ) =>
+        app.inject({
+          method: "POST",
+          url: "/v1/identity/check",
+          headers: authHeaders,
+          payload: {
+            query,
+            spaceId: defaultSpace,
+            vaultIds: [defaultVaultId],
+            federated: false,
+            ...opts,
+          },
+        });
+      const permitted = await check(allowedExternal);
+      expect(permitted.statusCode, permitted.body).toBe(200);
+      expect(permitted.json().candidates).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ documentId: allowedId }),
+        ]),
+      );
+      const restricted = await check(deniedExternal);
+      expect(restricted.statusCode, restricted.body).toBe(200);
+      expect(restricted.json()).toMatchObject({
+        classification: "DISTINCT_CONCEPT",
+        candidates: [],
+      });
+      const fullScope = await check(deniedExternal, headers);
+      expect(fullScope.statusCode, fullScope.body).toBe(200);
+      expect(fullScope.json().candidates).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ documentId: deniedId }),
+        ]),
+      );
+      const crossSpace = await check(deniedExternal, scopedHeaders, {
+        spaceId: secondSpace,
+        vaultIds: [secondVaultId],
+      });
+      expect(crossSpace.statusCode).toBe(403);
+      expect(crossSpace.json()).toMatchObject({ code: "SPACE_ACCESS_DENIED" });
+      await db.pool.query(
+        "update api_tokens set revoked_at=now() where token_hash=$1",
+        [scopedHash],
+      );
+      const revoked = await check(allowedExternal);
+      expect(revoked.statusCode).toBe(401);
+    } finally {
+      await db.pool.query(
+        "delete from knowledge_documents where id=any($1::uuid[])",
+        [[allowedId, deniedId]],
+      );
+      await db.pool.query("delete from api_tokens where token_hash=$1", [
+        scopedHash,
+      ]);
+    }
+  });
 });
