@@ -1,0 +1,17 @@
+diff --git a/index.js b/index.js
+index d45e67d91d38c91d05e68e8b338e4bc2de591dcc..cf9166f5f8624e09156f03532a12de40b3988a57 100644
+--- a/index.js
++++ b/index.js
+@@ -1,5 +1,11 @@
+ 'use strict';
+ const strictUriEncode = require('strict-uri-encode');
+-const decodeComponent = require('decode-uri-component');
++// decode-uri-component >=0.5.1 is ESM. Node >=24 exposes its default
++// export to this legacy CommonJS query-string consumer through require().
++const decodeModule = require('decode-uri-component');
++const decodeComponent = typeof decodeModule === 'function' ? decodeModule : decodeModule.default;
++if (typeof decodeComponent !== 'function') {
++  throw new TypeError('decode-uri-component must provide a decoder function');
++}
+ const splitOnFirst = require('split-on-first');
+ const filterObject = require('filter-obj');

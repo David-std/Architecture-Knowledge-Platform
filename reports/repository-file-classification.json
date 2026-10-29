@@ -4947,6 +4947,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "patches/query-string@7.1.3.patch",
+      "category": "PRODUCT_CONTRACT",
+      "reason": "versioned patched dependency contract"
+    },
+    {
       "path": "pnpm-lock.yaml",
       "category": "PRODUCT_CONTRACT",
       "reason": "versioned interface or dependency contract"
@@ -5170,6 +5175,11 @@
       "path": "scripts/migrate.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/minio-query-string-interop.test.mjs",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
     },
     {
       "path": "scripts/optional-semantic-layer-rollback-evidence.ts",

@@ -33,6 +33,8 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Verify patched MinIO URI decoder interoperability
+        run: node --test scripts/minio-query-string-interop.test.mjs
       - run: pnpm audit --audit-level high
       - name: Verify frozen S2 source-span holdout
         run: node scripts/validate-s2-span-holdout.mjs --self-test

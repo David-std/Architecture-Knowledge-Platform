@@ -50,6 +50,7 @@ const allowedRootDirectories = new Set([
   "evals",
   "ops",
   "packages",
+  "patches",
   "policies",
   "reports",
   "scripts",
@@ -95,6 +96,9 @@ function classify(file) {
     /^apps\/extractor\/tests\//.test(file)
   ) {
     return ["PRODUCT_TEST", "executable product test"];
+  }
+  if (/^patches\/[A-Za-z0-9._@-]+\.patch$/.test(file)) {
+    return ["PRODUCT_CONTRACT", "versioned patched dependency contract"];
   }
   if (/^contracts\//.test(file) || file === "pnpm-lock.yaml") {
     return ["PRODUCT_CONTRACT", "versioned interface or dependency contract"];
