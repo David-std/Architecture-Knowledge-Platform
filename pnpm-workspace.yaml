@@ -18,6 +18,9 @@ overrides:
   hono: 4.13.13
   # Keep Fastify's network-range checks on a patched 10.x release.
   ip-address: 10.7.4
+  # Patch Windows service-query command injection in OTel host-metrics transitively.
+  # GHSA-3f7j-7jwc-fxfj: systeminformation <5.33.16 is unsafe.
+  systeminformation: 5.33.16
   # Minimum Vite version fixing the launch-editor advisory.
   vite: 8.1.6
   # Security floors for advisories published 2026-10-05.

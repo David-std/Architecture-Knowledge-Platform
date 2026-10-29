@@ -15,6 +15,7 @@ overrides:
   brace-expansion: 2.1.7
   hono: 4.13.13
   ip-address: 10.7.4
+  systeminformation: 5.33.16
   vite: 8.1.6
   proxy-addr: 2.0.8
   source-map-js: 1.2.2
@@ -4859,10 +4860,10 @@ packages:
       }
     engines: { node: ">= 0.4" }
 
-  systeminformation@5.33.10:
+  systeminformation@5.33.16:
     resolution:
       {
-        integrity: sha512-/NXbMVASt2UbSVgmWto4aBTIAeuYY7zOELpZybmNxqpsrbo5uYHpuEPf5nkyrPng0uG5YOb+Yv6s0FyKY4mDQg==,
+        integrity: sha512-R+Lh69IJXfJj6bfyH1In5cIR9FTr4hBS39YvlZHZjsK1p9cuELPq7hplZZIb56ZESMMb+DzdKqqE6Iomi01Mvg==,
       }
     engines: { node: ">=10.0.0" }
     os: [darwin, linux, win32, freebsd, openbsd, netbsd, sunos, android]
@@ -5900,7 +5901,7 @@ snapshots:
     dependencies:
       "@opentelemetry/api": 1.9.1
       "@opentelemetry/instrumentation": 0.222.0(@opentelemetry/api@1.9.1)
-      systeminformation: 5.33.10
+      systeminformation: 5.33.16
     transitivePeerDependencies:
       - supports-color
 
@@ -8053,7 +8054,7 @@ snapshots:
 
   supports-preserve-symlinks-flag@1.0.0: {}
 
-  systeminformation@5.33.10: {}
+  systeminformation@5.33.16: {}
 
   tapable@2.3.3: {}
 
