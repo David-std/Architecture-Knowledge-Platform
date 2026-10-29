@@ -454,6 +454,18 @@
       "decision": "Synthetic fail-closed original SOURCE quotes/keys and owner's restricted editing authority regression checks for versioned 240 DEV corpus; no private data in CI."
     },
     {
+      "path": "packages/evaluation/src/s2-development-http-journey-metrics.ts",
+      "sourceSection": 111,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Strict DEV-only external orchestration metrics for existing Search, Context and Writer HTTP routes with repeat Search accounted, failed attempts and redacted outcomes. Not one retrieval invocation, semantic gold, or release evidence."
+    },
+    {
+      "path": "packages/evaluation/test/s2-development-http-journey-metrics.test.ts",
+      "sourceSection": 111,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Pure timing and fail-closed stage transition regression tests for the optional composed HTTP diagnostic, not a live benchmark or independent source-quality assessment."
+    },
+    {
       "path": "packages/evaluation/src/s2-development-http-writer-metrics.ts",
       "sourceSection": 110,
       "disposition": "EVALUATION_ONLY",

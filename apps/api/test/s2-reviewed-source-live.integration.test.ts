@@ -18,7 +18,9 @@ import { LayeredEvidenceAdmissionPipeline } from "@akp/retrieval";
 import { S2PinnedLocalOllamaWriter } from "../src/s2-local-atomic-provider.js";
 import {
   summarizeS2DevelopmentFullHttp,
+  summarizeS2DevelopmentHttpJourney,
   type S2HttpWriterSample,
+  type S2HttpJourneySample,
 } from "@akp/evaluation";
 
 const enabled =
@@ -1361,6 +1363,210 @@ run(
         }
       },
       420_000,
+    );
+    const itRealJourney =
+      process.env.AKP_S2_ATOMIC_WRITER_REAL_PROVIDER_TEST === "true" &&
+      process.env.AKP_S2_DEV_HTTP_JOURNEY_BENCH === "1"
+        ? it
+        : it.skip;
+    itRealJourney(
+      "measures real authorized Search -> ContextPacket -> guarded Writer HTTP orchestration (DEV ONLY)",
+      async () => {
+        const provider = new S2PinnedLocalOllamaWriter({
+          model: process.env.AKP_S2_REAL_NATIVE_MODEL ?? "",
+          modelDigestSha256: process.env.AKP_S2_REAL_NATIVE_DIGEST ?? "",
+          codeCommitSha: process.env.AKP_BUILD_COMMIT_SHA ?? "",
+        });
+        const priorShadow = process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED;
+        process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED = "true";
+        let realApp: ReturnType<typeof buildServer>;
+        try {
+          realApp = buildServer({ s2AtomicWriterProvider: provider });
+        } finally {
+          if (priorShadow === undefined)
+            delete process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED;
+          else process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED = priorShadow;
+        }
+        const samples: S2HttpJourneySample[] = [];
+        const round = (x: number) => Math.round(x * 100) / 100;
+        try {
+          await realApp.ready();
+          const httpBase = await realApp.listen({ host: "127.0.0.1", port: 0 });
+          const send = async (
+            route: string,
+            body: object,
+            timeoutMs: number,
+          ) => {
+            const start = performance.now();
+            try {
+              const response = await fetch(httpBase + route, {
+                method: "POST",
+                headers: {
+                  ...headers(0),
+                  "Idempotency-Key": randomUUID() + "-" + randomUUID(),
+                },
+                body: JSON.stringify(body),
+                signal: AbortSignal.timeout(timeoutMs),
+              });
+              const data = (await response.json()) as Record<string, unknown>;
+              return {
+                phase: {
+                  httpStatus: response.status,
+                  elapsedMs: round(performance.now() - start),
+                },
+                data,
+              };
+            } catch {
+              // A timeout, invalid transport response or broken JSON is
+              // counted as a failed attempt, not dropped from the p95.
+              return {
+                phase: {
+                  httpStatus: 0,
+                  elapsedMs: round(performance.now() - start),
+                },
+                data: {} as Record<string, unknown>,
+              };
+            }
+          };
+          const scenarios = [
+            {
+              caseTag: "REVIEWED_EN",
+              query: originalQuestion,
+              language: "en",
+              mode: "REVIEWED_CUSTODY",
+            },
+            {
+              caseTag: "REVIEWED_ES",
+              query: "¿Quién aprobó el envío SR-41 el 14 de agosto de 2024?",
+              language: "es",
+              mode: "REVIEWED_CUSTODY",
+            },
+            {
+              caseTag: "UNSEEN_NEGATIVE_EN",
+              query: "Was shipment SR-41 authorized by another actor?",
+              language: "en",
+              mode: "SOURCE_ANCHORED_SHADOW",
+            },
+          ] as const;
+          for (let cycle = 0; cycle < 4; cycle++) {
+            for (const scenario of scenarios) {
+              const started = performance.now();
+              const input = {
+                spaceId,
+                vaultId,
+                mode: "SOURCE_BACKED" as const,
+                query: scenario.query,
+                limit: 6,
+              };
+              const search = await send("/v1/search", input, 20_000);
+              let context: Awaited<ReturnType<typeof send>> | null = null;
+              let writer: Awaited<ReturnType<typeof send>> | null = null;
+              let modelInvoked = false;
+              if (search.phase.httpStatus === 200) {
+                const hits = search.data.hits;
+                expect(Array.isArray(hits)).toBe(true);
+                for (const hit of hits as { vaultId: string }[]) {
+                  expect(hit.vaultId).toBe(vaultId);
+                }
+                context = await send(
+                  "/v1/context",
+                  {
+                    ...input,
+                    packetMode: "FULL_CONTEXT_PACKET",
+                    contextLevel: "L2",
+                    maxTokens: 1200,
+                  },
+                  20_000,
+                );
+                if (
+                  context.phase.httpStatus === 200 &&
+                  context.data.status === "SUPPORTED"
+                ) {
+                  const sections = context.data.sections as
+                    { documentId: string; vaultId: string }[] | undefined;
+                  const generatedPacketId = context.data.packetId;
+                  const generatedPacketHash = context.data.packetHash;
+                  // A generated packet, not the manually seeded §110 packet,
+                  // must be passed unchanged to the existing Writer owner.
+                  expect(Array.isArray(sections)).toBe(true);
+                  expect(sections?.length).toBeGreaterThan(0);
+                  for (const section of sections ?? []) {
+                    expect(section.vaultId).toBe(vaultId);
+                    expect(section.documentId).toBe(docId);
+                  }
+                  expect(typeof generatedPacketId).toBe("string");
+                  expect(typeof generatedPacketHash).toBe("string");
+                  writer = await send(
+                    "/v1/s2/writer-claims/generate-audit",
+                    {
+                      packetId: generatedPacketId,
+                      packetHash: generatedPacketHash,
+                      language: scenario.language,
+                      mode: scenario.mode,
+                    },
+                    28_000,
+                  );
+                  if (writer.phase.httpStatus === 200) {
+                    expect(writer.data.productionAdmission).toBe(false);
+                    expect(writer.data.releaseGateAccepted).toBe(false);
+                    expect(writer.data).not.toHaveProperty("answerText");
+                    expect(writer.data).not.toHaveProperty(
+                      "sourceOriginalText",
+                    );
+                  }
+                  modelInvoked = writer.data.modelInvoked === true;
+                }
+              }
+              const outcome: S2HttpJourneySample["outcome"] =
+                search.phase.httpStatus !== 200
+                  ? "SEARCH_FAILED"
+                  : context?.phase.httpStatus !== 200
+                    ? "CONTEXT_FAILED"
+                    : writer === null
+                      ? "CONTEXT_NOT_SUPPORTED"
+                      : writer.phase.httpStatus === 200
+                        ? "WRITER_RECEIPT"
+                        : "WRITER_FAILED";
+              samples.push({
+                caseTag: scenario.caseTag,
+                arm: "DETERMINISTIC",
+                search: search.phase,
+                context: context?.phase ?? null,
+                writer: writer?.phase ?? null,
+                endToEndMs: round(performance.now() - started),
+                outcome,
+                writerModelInvoked: modelInvoked,
+                productionAdmission: false,
+                releaseGateAccepted: false,
+              });
+            }
+          }
+          expect(samples).toHaveLength(12);
+          const report = summarizeS2DevelopmentHttpJourney(samples);
+          expect(report.releaseGateAccepted).toBe(false);
+          expect(report.searchExecutedTwice).toBe(true);
+          const output = process.env.AKP_S2_DEV_HTTP_JOURNEY_METRICS_OUTPUT;
+          if (output) {
+            const absolute = path.resolve(output);
+            const repository = path.resolve(import.meta.dirname, "../../..");
+            expect(path.isAbsolute(output)).toBe(true);
+            expect(
+              absolute === repository ||
+                absolute.startsWith(repository + path.sep),
+            ).toBe(false);
+            await writeFile(absolute, JSON.stringify(report, null, 2) + "\n", {
+              flag: "wx",
+            });
+          }
+          console.log(
+            "S2_REAL_COMPOSED_HTTP_JOURNEY_DEV_NON_GOLD",
+            JSON.stringify(report),
+          );
+        } finally {
+          await realApp.close();
+        }
+      },
+      600_000,
     );
     it("rechecks vault membership after model latency and rejects revoked in-flight authority", async () => {
       nativeMode = "REVOKE_DURING_GENERATION";
