@@ -227,6 +227,8 @@ describe("API security boundaries", () => {
     const vaultKey = `scope-boundary-${vaultId.slice(0, 8)}`;
     const reviewId = randomUUID();
     const privateDocumentId = randomUUID();
+    const visibleDocumentId = randomUUID();
+    const visibleExternalId = `S2-EXPLICIT-VAULT-${suffix}`;
     const privateExternalId = `PRIVATE-PERSONAL-${suffix}`;
     await db.pool.query(
       `
@@ -331,6 +333,54 @@ describe("API security boundaries", () => {
         `,
         [admin, vaultId],
       );
+      await db.pool.query(
+        `insert into knowledge_documents(
+           id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+           current_revision,body_cache,frontmatter,aliases,layer,content_hash,
+           token_estimate,raw_links,refresh_status
+         ) values($1,$2,$3,'public/narrowed-federation.md',$4,
+           'Narrow federation fixture','note','ACTIVE','HUMAN_REVIEWED',
+           'fixture:explicit-vault',$5,'{}'::jsonb,'{}','concept',$6,10,
+           '[]'::jsonb,'CURRENT')`,
+        [
+          visibleDocumentId,
+          defaultSpace,
+          vaultId,
+          visibleExternalId,
+          visibleExternalId,
+          createHash("sha256").update(visibleExternalId).digest("hex"),
+        ],
+      );
+      const federatedQuery = (vaultIds: string[]) =>
+        app.inject({
+          method: "POST",
+          url: "/v1/search",
+          headers,
+          payload: {
+            query: visibleExternalId,
+            spaceId: defaultSpace,
+            vaultIds,
+            federated: true,
+            types: [],
+            minimumTrust: "UNVERIFIED",
+            mode: "COMPILED_ONLY",
+            limit: 10,
+          },
+        });
+      const narrowed = await federatedQuery([defaultVaultId]);
+      expect(narrowed.statusCode, narrowed.body).toBe(200);
+      expect(narrowed.json().scope.vaultIds).toEqual([defaultVaultId]);
+      expect(narrowed.json().hits).toHaveLength(0);
+      const bothVaults = await federatedQuery([defaultVaultId, vaultId]);
+      expect(bothVaults.statusCode, bothVaults.body).toBe(200);
+      expect(bothVaults.json().scope.vaultIds).toEqual(
+        expect.arrayContaining([defaultVaultId, vaultId]),
+      );
+      expect(bothVaults.json().hits).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ documentId: visibleDocumentId }),
+        ]),
+      );
       const outsidePrefix = await app.inject({
         method: "POST",
         url: "/v1/proposals",
@@ -384,6 +434,11 @@ describe("API security boundaries", () => {
         "update vault_memberships set enabled=false where user_id=$1 and vault_id=$2",
         [admin, vaultId],
       );
+      const revokedFederation = await federatedQuery([defaultVaultId, vaultId]);
+      expect(revokedFederation.statusCode).toBe(403);
+      expect(revokedFederation.json()).toMatchObject({
+        code: "VAULT_ACCESS_DENIED",
+      });
       const reviewerWithoutGrant = await app.inject({
         method: "POST",
         url: `/v1/reviews/${reviewId}/decision`,
@@ -393,9 +448,10 @@ describe("API security boundaries", () => {
       expect(reviewerWithoutGrant.statusCode).toBe(403);
       expect(reviewerWithoutGrant.json().code).toBe("PATH_SCOPE_DENIED");
     } finally {
-      await db.pool.query("delete from knowledge_documents where id=$1", [
-        privateDocumentId,
-      ]);
+      await db.pool.query(
+        "delete from knowledge_documents where id=any($1::uuid[])",
+        [[privateDocumentId, visibleDocumentId]],
+      );
       await db.pool.query("delete from review_comments where review_id=$1", [
         reviewId,
       ]);

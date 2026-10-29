@@ -463,7 +463,7 @@
       "path": "apps/api/test/s2-authorized-retrieval-scope.test.ts",
       "sourceSection": 112,
       "disposition": "EVALUATION_ONLY",
-      "decision": "Adversarial unit assertions for typed HTTP Search/Context retrieval scope: foreign space/vault, unauthorized federated expansion and empty authority must fail before the query/provider. Integration and full S2.1 closure remain separate."
+      "decision": "§116 adds bidirectional explicit vault-intent/scope containment, legitimate implicit/explicit opt-in federations and unauthorized narrowed-scope widening negatives to shared Search/Context pre-provider unit tests. Existing graph/HTTP integrations still needed; no release acceptance."
     },
     {
       "path": "packages/evaluation/src/s2-development-http-journey-metrics.ts",
@@ -497,7 +497,7 @@
       "disposition": "RUNTIME_DEFAULT",
       "sourceSection": 6,
       "files": ["apps/api/src/routes/search.ts", "apps/api/src/server.ts"],
-      "decision": "Search and Context already call the one queryKnowledge engine; section 112 centralizes effective Postgres actor/vault/path/SOURCE scopes and a typed scope-enforcing invocation for both HTTP routes and Context reasoning operators (MCP delegates HTTP). §114 also converges governance identity/check on the same actor/vault/credential-path intersection and scoped invocation, closing its direct user-facing queryKnowledge bypass. §115 now requires branded eval:run unrestricted-vault authority and separate SOURCE:read raw scopes for privileged benchmark variants, reusing queryKnowledge without granting user-facing authority or release admission. Pure ranking/admission extraction, full graph/continuation S2.11 proof and independent holdout remain pending."
+      "decision": "Search and Context already call the one queryKnowledge engine; section 112 centralizes effective Postgres actor/vault/path/SOURCE scopes and a typed scope-enforcing invocation for both HTTP routes and Context reasoning operators (MCP delegates HTTP). §114 also converges governance identity/check on the same actor/vault/credential-path intersection and scoped invocation, closing its direct user-facing queryKnowledge bypass. §115 requires branded eval:run unrestricted-vault authority and separately SOURCE:read raw scopes; §116 additionally guards explicit vault intent against wider reused multi-vault authority at the last typed Search/Context invocation. No new engine. Pure ranking/admission extraction, complete S2.11 and independent holdout remain pending."
     },
     {
       "id": "hybrid-pgvector-lexical-rrf",

@@ -4146,12 +4146,20 @@ export function assertAuthorizedRetrievalRequest(
   authority: Pick<AuthorizedRetrievalScope, "spaceId" | "vaultIds">,
 ): void {
   const authorized = new Set(authority.vaultIds);
+  const explicitlyRequested = new Set([
+    ...(input.vaultId ? [input.vaultId] : []),
+    ...input.vaultIds,
+  ]);
   if (
     !authority.vaultIds.length ||
     input.spaceId !== authority.spaceId ||
-    (input.vaultId !== undefined && !authorized.has(input.vaultId)) ||
-    input.vaultIds.some((id) => !authorized.has(id)) ||
-    (!input.federated && authority.vaultIds.length > 1)
+    // Reject widening in either direction. An explicitly narrowed federated
+    // query must never inherit the rest of a previously resolved vault set.
+    [...explicitlyRequested].some((id) => !authorized.has(id)) ||
+    (explicitlyRequested.size > 0 &&
+      authority.vaultIds.some((id) => !explicitlyRequested.has(id))) ||
+    (!input.federated &&
+      (authority.vaultIds.length > 1 || explicitlyRequested.size > 1))
   ) {
     throw new Error("RETRIEVAL_AUTHORIZED_SCOPE_MISMATCH");
   }

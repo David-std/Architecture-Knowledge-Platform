@@ -54,6 +54,45 @@ describe("S2.1 shared typed authorized retrieval boundary", () => {
     ).not.toThrow();
   });
 
+  it("rejects authority expansion beyond an explicitly narrowed request", () => {
+    const both = { spaceId: space, vaultIds: [vaultA, vaultB] };
+    for (const request of [
+      { ...query, federated: true },
+      { ...query, vaultId: undefined, vaultIds: [vaultA], federated: true },
+      { ...query, vaultId: vaultA, vaultIds: [], federated: false },
+    ]) {
+      expect(() => assertAuthorizedRetrievalRequest(request, both)).toThrow(
+        "RETRIEVAL_AUTHORIZED_SCOPE_MISMATCH",
+      );
+    }
+  });
+
+  it("keeps exact explicit and opt-in implicit federated scope distinct", () => {
+    const both = { spaceId: space, vaultIds: [vaultA, vaultB] };
+    expect(() =>
+      assertAuthorizedRetrievalRequest(
+        { ...query, vaultId: undefined, vaultIds: [], federated: true },
+        both,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertAuthorizedRetrievalRequest(
+        {
+          ...query,
+          vaultId: undefined,
+          vaultIds: [vaultA, vaultB],
+          federated: true,
+        },
+        both,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      assertAuthorizedRetrievalRequest(
+        { ...query, vaultId: undefined, vaultIds: [vaultA], federated: false },
+        { spaceId: space, vaultIds: [vaultA] },
+      ),
+    ).not.toThrow();
+  });
   it("rejects empty authority even if input has no explicit vault", () => {
     expect(() =>
       assertAuthorizedRetrievalRequest(
