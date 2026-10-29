@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { prepareS2PreInferenceBlindReview } from "../src/s2-preinference-blind-review.js";
 import { describe, expect, it } from "vitest";
 import {
   parseS2ExternalIntakeCsv,
@@ -89,16 +90,12 @@ const fixture = () => {
               ? "Who approved item " +
                 seat +
                 " case " +
-                polarity +
-                " " +
-                n +
+                sha(id).slice(0, 8) +
                 "?"
               : "¿Quién aprobó el elemento " +
                 seat +
                 " caso " +
-                polarity +
-                " " +
-                n +
+                sha(id).slice(0, 8) +
                 "?",
             "",
             "Independent selection for pilot only",
@@ -194,5 +191,101 @@ describe("S2 prospective pre-inference external 240-seat intake", () => {
     expect(() =>
       parseS2ExternalIntakeCsv(UTF('"unterminated,quote')),
     ).toThrow();
+  });
+});
+
+describe("S2 pre-inference external source-only review, never post-model gold", () => {
+  const build = (salt = "f".repeat(64)) => {
+    const f = fixture();
+    return prepareS2PreInferenceBlindReview({
+      templateBytes: f.templateBytes,
+      templateSha256: sha(f.templateBytes),
+      filledBytes: f.filledBytes,
+      filledSha256: sha(f.filledBytes),
+      sourceFiles: f.files,
+      excludedDevelopmentPublisherFamilies: f.deny,
+      reviewerShuffleSalt: salt,
+    });
+  };
+  it("prepares 240 source-only randomized X/Y packets and a separate private coordinator map", () => {
+    const x = build();
+    expect(x.status).toBe("PREINFERENCE_BLIND_PACKETS_UNREVIEWED");
+    expect(x.privateSourceCount).toBe(12);
+    for (const key of ["X", "Y"] as const) {
+      const p = x.packets[key];
+      expect(p.cases).toHaveLength(240);
+      expect(p.sourceDocs).toHaveLength(12);
+      expect(p).toMatchObject({
+        expectedGoldIncluded: false,
+        modelOutputsIncluded: false,
+        independentGoldAdjudicated: false,
+        releaseGateAccepted: false,
+        reviewerIdentityAuthenticated: false,
+        wholeAuthorizedCorpusAbsenceProven: false,
+      });
+      expect(
+        p.cases.every(
+          (c) =>
+            c.sourceAnswerability === null &&
+            c.reviewerAnswer === null &&
+            c.wholeAuthorizedCorpusAbsenceChecked === null &&
+            c.supportingQuoteSpans.length === 0,
+        ),
+      ).toBe(true);
+      const text = JSON.stringify(p);
+      for (const forbidden of [
+        "targetStratum",
+        "caseSeat",
+        "ownerSuggestedGoldKeepPrivate",
+        "externalCustodianCaseAuthor",
+        "POSITIVE",
+        "NEGATIVE_ADVERSARIAL",
+        "coordinatorOnly",
+      ])
+        expect(text).not.toContain(forbidden);
+    }
+    expect(x.coordinatorOnly.cases).toHaveLength(240);
+    expect(
+      x.coordinatorOnly.cases.some((c) => c.targetStratum === "POSITIVE"),
+    ).toBe(true);
+    expect(x.packets.X.cases.map((c) => c.reviewCaseKey).sort()).toEqual(
+      x.packets.Y.cases.map((c) => c.reviewCaseKey).sort(),
+    );
+    expect(x.packets.X.cases.map((c) => c.reviewCaseKey)).not.toEqual(
+      x.packets.Y.cases.map((c) => c.reviewCaseKey),
+    );
+  });
+  it("rejects unpinned rows and public or malformed shuffle key", () => {
+    expect(() => build("bad-salt")).toThrow(/PRIVATE_SALT_REQUIRED/);
+    const f = fixture();
+    f.filledBytes = UTF(
+      f.filledBytes.toString("utf8").replace('"approved"', '"changed"'),
+    );
+    expect(() =>
+      prepareS2PreInferenceBlindReview({
+        templateBytes: f.templateBytes,
+        templateSha256: sha(f.templateBytes),
+        filledBytes: f.filledBytes,
+        filledSha256: sha("tampered"),
+        sourceFiles: f.files,
+        excludedDevelopmentPublisherFamilies: f.deny,
+        reviewerShuffleSalt: "a".repeat(64),
+      }),
+    ).toThrow(/UNPINNED_BYTES/);
+  });
+  it("source-only review refuses a still-blank 240-seat template", () => {
+    const f = fixture();
+    f.filledBytes = f.templateBytes;
+    expect(() =>
+      prepareS2PreInferenceBlindReview({
+        templateBytes: f.templateBytes,
+        templateSha256: sha(f.templateBytes),
+        filledBytes: f.filledBytes,
+        filledSha256: sha(f.filledBytes),
+        sourceFiles: f.files,
+        excludedDevelopmentPublisherFamilies: f.deny,
+        reviewerShuffleSalt: "a".repeat(64),
+      }),
+    ).toThrow(/UNFILLED_SOURCE_OR_QUESTION/);
   });
 });

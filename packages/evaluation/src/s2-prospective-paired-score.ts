@@ -1,4 +1,5 @@
 import { s2WilsonLower } from "./s2-source-span.js";
+import { s2ClusterStratifiedPairedBootstrap } from "./s2-family-stratified-bootstrap.js";
 const fail = (x: string): never => {
   throw Error("S2_PAIRED_SCORE_" + x);
 };
@@ -234,6 +235,7 @@ export function scoreS2PairedSemanticArms(
     byLanguage,
     byFamily,
     leaveOneFamilyOutSensitivity: leaveOneFamilyOut,
+    exploratoryClusterBootstrap: s2ClusterStratifiedPairedBootstrap(cases),
     candidateNotWorseOnNegativeFAR:
       candidate.negativeFalseAdmissionRate !== null &&
       baseline.negativeFalseAdmissionRate !== null &&

@@ -3262,6 +3262,11 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "packages/evaluation/src/s2-family-stratified-bootstrap.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
       "path": "packages/evaluation/src/s2-frozen-reader-source-bridge.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
@@ -3313,6 +3318,11 @@
     },
     {
       "path": "packages/evaluation/src/s2-pre-admission-source-discovery.ts",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "packages/evaluation/src/s2-preinference-blind-review.ts",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"
     },

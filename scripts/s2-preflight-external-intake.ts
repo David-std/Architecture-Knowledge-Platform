@@ -9,9 +9,10 @@
  * --denylist-pin C:/private/excluded-dev-publishers.sha256
  * --output C:/private/NEW-unreviewed-preflight.json
  */
-import { createHash } from "node:crypto";
-import { readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { prepareS2PreInferenceBlindReview } from "../packages/evaluation/src/s2-preinference-blind-review.js";
 import {
   parseS2ExternalIntakeCsv,
   preflightS2IndependentIntake,
@@ -29,7 +30,11 @@ const flags = [
   "--output",
 ] as const;
 if (
-  args.length !== flags.length * 2 ||
+  ![flags.length * 2, flags.length * 2 + 2].includes(args.length) ||
+  (args.length === flags.length * 2 + 2 &&
+    (args.at(-2) !== "--review-output-dir" ||
+      !args.at(-1) ||
+      args.at(-1)!.startsWith("--"))) ||
   flags.some(
     (f, i) =>
       args[2 * i] !== f ||
@@ -39,6 +44,21 @@ if (
 )
   throw Error("S2_EXTERNAL_PREFLIGHT_EIGHT_PATH_FLAGS_REQUIRED");
 const entries = flags.map((_, i) => path.resolve(args[2 * i + 1]!));
+const reviewOutput = args.length === 18 ? path.resolve(args[17]!) : null;
+if (
+  reviewOutput &&
+  (reviewOutput.toLowerCase() === root.toLowerCase() ||
+    reviewOutput.toLowerCase().startsWith(root.toLowerCase() + path.sep) ||
+    reviewOutput.toLowerCase() ===
+      path.parse(reviewOutput).root.toLowerCase() ||
+    entries.some(
+      (p) =>
+        p.toLowerCase() === reviewOutput.toLowerCase() ||
+        reviewOutput.toLowerCase().startsWith(p.toLowerCase() + path.sep) ||
+        p.toLowerCase().startsWith(reviewOutput.toLowerCase() + path.sep),
+    ))
+)
+  throw Error("S2_EXTERNAL_PREFLIGHT_REVIEW_DIRECTORY_PRIVATE_REQUIRED");
 if (
   new Set(entries.map((s) => s.toLowerCase())).size !== entries.length ||
   entries.some(
@@ -150,6 +170,36 @@ const report = preflightS2IndependentIntake({
   sourceFiles,
   excludedDevelopmentPublisherFamilies: excluded.publisherFamilies as string[],
 });
+if (reviewOutput) {
+  const kit = prepareS2PreInferenceBlindReview({
+    templateBytes: template,
+    templateSha256: templatePin.trim(),
+    filledBytes: filled,
+    filledSha256: filledPin.trim(),
+    sourceFiles,
+    excludedDevelopmentPublisherFamilies:
+      excluded.publisherFamilies as string[],
+    reviewerShuffleSalt: randomBytes(32).toString("hex"),
+  });
+  // Private source+question X/Y packets require separately restricted reviewer ACLs.
+  // A Windows file mode is not evidence of NTFS ACL enforcement.
+  await mkdir(reviewOutput, { recursive: false, mode: 0o700 });
+  await writeFile(
+    path.join(reviewOutput, "SOURCE-ONLY-reviewer-X.json"),
+    JSON.stringify(kit.packets.X, null, 2) + "\n",
+    { flag: "wx", mode: 0o600 },
+  );
+  await writeFile(
+    path.join(reviewOutput, "SOURCE-ONLY-reviewer-Y.json"),
+    JSON.stringify(kit.packets.Y, null, 2) + "\n",
+    { flag: "wx", mode: 0o600 },
+  );
+  await writeFile(
+    path.join(reviewOutput, "COORDINATOR-ONLY-NOT-FOR-REVIEWERS.json"),
+    JSON.stringify(kit.coordinatorOnly, null, 2) + "\n",
+    { flag: "wx", mode: 0o600 },
+  );
+}
 await writeFile(outPath, JSON.stringify(report, null, 2) + "\n", {
   flag: "wx",
   mode: 0o600,

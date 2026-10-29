@@ -155,3 +155,37 @@ describe("S2 paired semantic outcomes are diagnostic, not independent release go
     );
   });
 });
+
+describe("S2 family-stratified paired bootstrap cannot manufacture release confidence", () => {
+  it("reports same-family paired regression with bounded reproducible intervals", () => {
+    const cases: S2PairedAdjudicatedCase[] = [];
+    for (let i = 0; i < 12; i++)
+      for (const c of example()) {
+        cases.push({
+          ...c,
+          caseId: c.caseId + "-family" + i,
+          publisherFamily: "sourcefamily-" + String(i).padStart(2, "0"),
+        });
+      }
+    const x = scoreS2PairedSemanticArms(cases);
+    const b = x.exploratoryClusterBootstrap;
+    if (b.status !== "EXPLORATORY_STRATIFIED_CLUSTER_BOOTSTRAP_NOT_CERTIFIED")
+      throw Error("BOOTSTRAP_UNEXPECTEDLY_UNAVAILABLE");
+    expect(b.sourceFamilyCount).toBe(12);
+    expect(b.clusterConfidenceIntervalCertified).toBe(false);
+    expect(b.releaseGateAccepted).toBe(false);
+    expect(
+      b.rateIntervals.negativeFar.candidateMinusDeterministic.lower95,
+    ).toBeGreaterThan(0);
+    expect(
+      scoreS2PairedSemanticArms(cases).exploratoryClusterBootstrap,
+    ).toEqual(b);
+  });
+  it("refuses to interpret four author-tuned families as a source cluster confidence interval", () => {
+    const x = scoreS2PairedSemanticArms(example());
+    expect(x.exploratoryClusterBootstrap.status).toBe(
+      "INSUFFICIENT_FAMILY_CLUSTERS",
+    );
+    expect(x.releaseGateAccepted).toBe(false);
+  });
+});

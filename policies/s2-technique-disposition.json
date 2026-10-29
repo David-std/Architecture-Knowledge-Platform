@@ -398,6 +398,18 @@
       "sourceSection": 100,
       "disposition": "EVALUATION_ONLY",
       "decision": "Private frozen-by-hash paired arms scorer, no models, no runtime admission/policy authority and no gold promotion."
+    },
+    {
+      "path": "packages/evaluation/src/s2-preinference-blind-review.ts",
+      "sourceSection": 102,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Export source-only X/Y pre-inference packets and coordinator private mapping after the existing governed external intake preflight."
+    },
+    {
+      "path": "packages/evaluation/src/s2-family-stratified-bootstrap.ts",
+      "sourceSection": 102,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Deterministic descriptive, paired publisher-family clustered percentile bootstrap, with language balance, not release confidence certification."
     }
   ],
   "techniques": [
@@ -733,6 +745,28 @@
         "scripts/s2-score-private-paired-arms.ts"
       ],
       "decision": "Exact same-case deterministic-vs-candidate paired descriptive S2 metrics: independent-source-gold-supplied citation precision and false admission rate, justified abstentions, full HTTP p95, errors, tokens and source-family/language sensitivity; no model scores are used to authenticate truth; release gate always false."
+    },
+    {
+      "id": "pre-inference-source-only-blind-x-y-review",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 102,
+      "files": [
+        "packages/evaluation/src/s2-preinference-blind-review.ts",
+        "scripts/s2-preflight-external-intake.ts"
+      ],
+      "decision": "Reuses full pinned external original SOURCE preflight before model queries; creates private separately shuffled X/Y question-plus-source-only reviewer packets with blank answerability and source spans and an isolated custodian-only stratum map; no gold, release or SOURCE access authority."
+    },
+    {
+      "id": "en-es-balanced-paired-source-family-bootstrap",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 102,
+      "files": [
+        "packages/evaluation/src/s2-family-stratified-bootstrap.ts",
+        "packages/evaluation/src/s2-prospective-paired-score.ts"
+      ],
+      "decision": "Exploratory 2048-replicate whole-publisher-family paired resampling with equal EN/ES weights, 2.5-97.5 percentile precision/FAR/correct-answer intervals and no certified release or external-truth claims."
     }
   ]
 }

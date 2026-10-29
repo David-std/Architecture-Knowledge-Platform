@@ -72,6 +72,8 @@ export type {
   S2PairedAdjudicatedCase,
   S2EvaluatedArm,
 } from "./s2-prospective-paired-score.js";
+export { s2ClusterStratifiedPairedBootstrap } from "./s2-family-stratified-bootstrap.js";
+export { prepareS2PreInferenceBlindReview } from "./s2-preinference-blind-review.js";
 export { buildS2PrivateUnseenReviewKit } from "./s2-private-unseen-review.js";
 export type { S2PrivateSourceReviewPacket } from "./s2-private-unseen-review.js";
 
