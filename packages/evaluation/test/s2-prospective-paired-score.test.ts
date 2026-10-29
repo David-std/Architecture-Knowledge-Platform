@@ -5,6 +5,9 @@ import {
 } from "../src/s2-prospective-paired-score.js";
 const outcome = (citation: boolean, correct: boolean, negative: boolean) => {
   return {
+    authorizedPoolSha256: "b".repeat(64),
+    executedCommitSha: "c".repeat(40),
+    modelResidency: "WARM" as const,
     admittedPassages: citation
       ? [{ id: "SEC1", sourceExact: correct, semanticallySufficient: correct }]
       : [],
@@ -113,6 +116,18 @@ describe("S2 paired semantic outcomes are diagnostic, not independent release go
     mislabeled[1]!.sourceGold = "UNDETERMINED" as never;
     expect(() => scoreS2PairedSemanticArms(mislabeled)).toThrow(
       /CASE_SCOPE_INVALID/,
+    );
+  });
+  it("blocks deceptively paired arms using different SOURCE pools, runtime revisions or cold/warm conditions", () => {
+    const x = example();
+    x[1]!.outcomes.CANDIDATE.authorizedPoolSha256 = "d".repeat(64);
+    expect(() => scoreS2PairedSemanticArms(x)).toThrow(
+      /ARMS_NOT_SOURCE_OR_RUNTIME_PAIRED/,
+    );
+    const y = example();
+    y[0]!.outcomes.CANDIDATE.modelResidency = "COLD";
+    expect(() => scoreS2PairedSemanticArms(y)).toThrow(
+      /ARMS_NOT_SOURCE_OR_RUNTIME_PAIRED/,
     );
   });
   it("rejects logically contradictory gold and source-claim labels", () => {

@@ -14,6 +14,10 @@ export type S2PairedAdjudicatedCase = {
   };
 };
 export type S2EvaluatedArm = {
+  /** Same immutable authorized candidate pool and code revision in BOTH arms. */
+  authorizedPoolSha256: string;
+  executedCommitSha: string;
+  modelResidency: "COLD" | "WARM";
   admittedPassages: {
     id: string;
     sourceExact: boolean;
@@ -118,10 +122,25 @@ export function scoreS2PairedSemanticArms(
       !c.outcomes.DETERMINISTIC
     )
       fail("CASE_SCOPE_INVALID");
+    if (
+      c.outcomes.DETERMINISTIC.authorizedPoolSha256 !==
+        c.outcomes.CANDIDATE.authorizedPoolSha256 ||
+      c.outcomes.DETERMINISTIC.executedCommitSha !==
+        c.outcomes.CANDIDATE.executedCommitSha ||
+      c.outcomes.DETERMINISTIC.modelResidency !==
+        c.outcomes.CANDIDATE.modelResidency
+    )
+      fail("ARMS_NOT_SOURCE_OR_RUNTIME_PAIRED");
     ids.add(c.caseId);
     families.add(c.publisherFamily);
     for (const a of ["CANDIDATE", "DETERMINISTIC"] as const) {
       const x = c.outcomes[a];
+      if (
+        !/^[a-f0-9]{64}$/u.test(x.authorizedPoolSha256) ||
+        !/^[a-f0-9]{40}$/u.test(x.executedCommitSha) ||
+        !["COLD", "WARM"].includes(x.modelResidency)
+      )
+        fail("ARM_EXECUTION_PIN_INVALID");
       if (c.sourceGold === "NOT_ANSWERABLE" && x.finalAnswer === "CORRECT")
         fail("NEGATIVE_CANNOT_HAVE_CORRECT_ASSERTED_ANSWER");
       if (
