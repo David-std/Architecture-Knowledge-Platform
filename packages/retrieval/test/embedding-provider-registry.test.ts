@@ -3,6 +3,7 @@ import type { EmbeddingProvider } from "../src/embeddings.js";
 import {
   EmbeddingProviderUnavailableError,
   QueryEmbeddingService,
+  withEmbeddingPassageContext,
   assertEmbeddingDescriptorCompatible,
   createConfiguredEmbeddingProvider,
   createEmbeddingProviderForGeneration,
@@ -66,6 +67,47 @@ describe("embedding provider registry", () => {
         },
       ),
     ).toThrow(EmbeddingProviderUnavailableError);
+  });
+
+  it("requires an explicit contextual recipe and resolves it from the active generation", async () => {
+    const plain = createConfiguredEmbeddingProvider({
+      AKP_EMBEDDING_PROVIDER: "deterministic-test",
+      NODE_ENV: "test",
+    })!;
+    const contextual = createConfiguredEmbeddingProvider({
+      AKP_EMBEDDING_PROVIDER: "deterministic-test",
+      AKP_EMBEDDING_PASSAGE_CONTEXT: "title-heading-v1",
+      NODE_ENV: "test",
+    })!;
+    expect(contextual.descriptor.inputStrategy).toBe(
+      `${plain.descriptor.inputStrategy}+title-heading-v1`,
+    );
+    expect(contextual.descriptor.configurationHash).toMatch(/^[0-9a-f]{64}$/u);
+    expect(withEmbeddingPassageContext(contextual, "title-heading-v1")).toBe(
+      contextual,
+    );
+    expect(() =>
+      assertEmbeddingDescriptorCompatible(
+        contextual.descriptor,
+        plain.descriptor,
+      ),
+    ).toThrow(/inputStrategy/);
+    const current = { ...generation, ...contextual.descriptor };
+    const resolved = createEmbeddingProviderForGeneration(current, {
+      NODE_ENV: "test",
+      AKP_EMBEDDING_PASSAGE_CONTEXT: "body-v1",
+    });
+    expect(resolved.descriptor).toEqual(contextual.descriptor);
+    // Metadata assembly changes passages, never query role/prefix or query bytes.
+    await expect(resolved.embed(["inspection"], "query")).resolves.toEqual(
+      await plain.embed(["inspection"], "query"),
+    );
+    expect(() =>
+      createConfiguredEmbeddingProvider({
+        AKP_EMBEDDING_PROVIDER: "local-multilingual-e5",
+        AKP_EMBEDDING_PASSAGE_CONTEXT: "unknown",
+      }),
+    ).toThrow(/PASSAGE_CONTEXT/);
   });
 
   it("compares runtime objects canonically and rejects incompatible generations", () => {

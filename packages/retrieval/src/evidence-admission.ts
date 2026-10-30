@@ -1,0 +1,1000 @@
+import type { SearchHit } from "@akp/contracts";
+import type {
+  QueryConditionedEvidenceVerifier,
+  QueryConditionedEvidenceVerifierInput,
+  QueryConditionedAnswerEvidence,
+} from "./answerability.js";
+import { exactSourceCardinalWord } from "./answer-value-evidence.js";
+import { contextualEvidenceSpanText } from "./contextual-evidence.js";
+import { markdownVisibleSource } from "./markdown-visible-source.js";
+import {
+  SourceVerificationError,
+  sourceVerificationFailureCode,
+  sourceSpanUsesCodePointBoundaries,
+  validateSourceBoundVerification,
+} from "./source-verification.js";
+import {
+  dateYearEvidenceMatches,
+  explicitYearBindingsMatch,
+  explicitYearValues,
+  quantitativeEvidenceMatches,
+  quantityMeasureScopeMatches,
+  verifyDeterministicPassageSupport,
+} from "./support-verifier.js";
+
+export interface ExactSourceSpan {
+  readonly startOffset: number;
+  readonly endOffset: number;
+}
+
+export type EvidenceVerdict =
+  | {
+      readonly kind: "ANSWERS";
+      readonly quote: ExactSourceSpan;
+      readonly answerEvidence?: QueryConditionedAnswerEvidence;
+    }
+  | { readonly kind: "CONTRADICTS"; readonly quote: ExactSourceSpan }
+  | { readonly kind: "RELATED_NOT_ANSWERING" }
+  | { readonly kind: "INSUFFICIENT" };
+
+export type EvidenceAdmissionLayer =
+  "STRUCTURAL_GUARD" | "STRUCTURED_PROPOSITION" | "SEMANTIC_READER";
+
+export interface EvidenceAdmissionDecision {
+  readonly layer: EvidenceAdmissionLayer;
+  readonly verdict: EvidenceVerdict;
+  readonly reason: string;
+  readonly readerId?: string;
+}
+
+/** Explicit provenance-bound qualifiers only; never inferred from free text here. */
+export interface StructuredPropositionQualifiers {
+  /** Exact event or applicability scope, supplied by an authorized projector. */
+  readonly temporalScope?: string;
+  /** All preconditions of the asserted relation, not a keyword bag. */
+  readonly conditions?: readonly string[];
+  readonly modality?: "REQUIRED" | "PERMITTED" | "PROHIBITED" | "OPTIONAL";
+  readonly quantityUnit?: string;
+}
+
+export interface StructuredProposition extends StructuredPropositionQualifiers {
+  readonly subject: string;
+  readonly predicate: string;
+  readonly object?: string;
+  readonly polarity?: "POSITIVE" | "NEGATIVE";
+  readonly quote: ExactSourceSpan;
+}
+
+export interface StructuredPropositionQuery extends StructuredPropositionQualifiers {
+  /** Concrete subject, except when an independently verified SUBJECT question
+   * leaves this requested answer slot empty. */
+  readonly subject: string;
+  readonly predicate: string;
+  readonly object?: string;
+  readonly polarity?: "POSITIVE" | "NEGATIVE";
+  /** Trusted internal question intent only; never client/Reader self-rating.
+   * A requested slot must be unknown in the question and grounded in SOURCE. */
+  readonly requestedAnswerRole?: "SUBJECT" | "OBJECT";
+}
+
+export interface StructuredPropositionMatcherInput {
+  readonly query: StructuredPropositionQuery;
+  readonly candidate: StructuredProposition;
+}
+
+export interface StructuredPropositionMatcher {
+  match(input: StructuredPropositionMatcherInput): EvidenceVerdict;
+}
+
+function normalizedProjectionValue(value: string): string {
+  return value
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/gu, " ")
+    .toLocaleLowerCase("und");
+}
+
+/**
+ * Exact, non-generative comparison of externally verified proposition roles.
+ * Both sides must disclose all applicability qualifiers; an omitted source
+ * condition or temporal event cannot be widened into an unqualified answer.
+ * NFKC/case/spacing permit representation variants, NOT semantic synonyms.
+ */
+function exactQualifier(
+  left: string | undefined,
+  right: string | undefined,
+): boolean {
+  if (left === undefined || right === undefined) {
+    return left === undefined && right === undefined;
+  }
+  if (typeof left !== "string" || typeof right !== "string") return false;
+  const a = normalizedProjectionValue(left);
+  const b = normalizedProjectionValue(right);
+  return Boolean(a && b && a === b);
+}
+
+function exactConditions(
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): boolean {
+  if (left !== undefined && !Array.isArray(left)) return false;
+  if (right !== undefined && !Array.isArray(right)) return false;
+  const a = left ?? [];
+  const b = right ?? [];
+  if (a.length !== b.length) return false;
+  if (!a.length) return true;
+  if (
+    a.some((x) => typeof x !== "string") ||
+    b.some((x) => typeof x !== "string")
+  )
+    return false;
+  const aa = a.map(normalizedProjectionValue).sort();
+  const bb = b.map(normalizedProjectionValue).sort();
+  return aa.every(
+    (v, i) =>
+      Boolean(v) &&
+      (i === 0 || v !== aa[i - 1]) &&
+      v === bb[i] &&
+      (i === 0 || v !== bb[i - 1]),
+  );
+}
+
+function exactPropositionQualifiers(
+  query: StructuredPropositionQuery,
+  candidate: StructuredProposition,
+): boolean {
+  return (
+    exactQualifier(query.temporalScope, candidate.temporalScope) &&
+    exactQualifier(query.modality, candidate.modality) &&
+    exactQualifier(query.quantityUnit, candidate.quantityUnit) &&
+    exactConditions(query.conditions, candidate.conditions)
+  );
+}
+
+/**
+ * Matches only explicit proposition projections.
+ *
+ * There is intentionally no synonym, stemming or query-regex layer here. If
+ * ingestion/query planning did not produce a proposition projection, this
+ * matcher must abstain rather than reconstruct semantics from raw prose.
+ */
+export class ExactStructuredPropositionMatcher implements StructuredPropositionMatcher {
+  match(input: StructuredPropositionMatcherInput): EvidenceVerdict {
+    const querySubject = normalizedProjectionValue(input.query.subject);
+    const queryPredicate = normalizedProjectionValue(input.query.predicate);
+    const candidateSubject = normalizedProjectionValue(input.candidate.subject);
+    const candidatePredicate = normalizedProjectionValue(
+      input.candidate.predicate,
+    );
+    const role = input.query.requestedAnswerRole;
+    // Only a trusted upstream question projector may declare a requested slot.
+    // An empty slot means the answer is UNKNOWN, not a universal wildcard.
+    // Both other relation roles and every qualifier remain strict.
+    if (
+      !queryPredicate ||
+      !candidateSubject ||
+      !candidatePredicate ||
+      queryPredicate !== candidatePredicate ||
+      (role !== undefined && role !== "SUBJECT" && role !== "OBJECT")
+    ) {
+      return { kind: "INSUFFICIENT" };
+    }
+    const queryObject = input.query.object
+      ? normalizedProjectionValue(input.query.object)
+      : null;
+    const candidateObject = input.candidate.object
+      ? normalizedProjectionValue(input.candidate.object)
+      : null;
+    if (role === "SUBJECT") {
+      if (querySubject || !queryObject || !candidateObject) {
+        return { kind: "INSUFFICIENT" };
+      }
+      if (queryObject !== candidateObject) {
+        return { kind: "RELATED_NOT_ANSWERING" };
+      }
+    } else if (role === "OBJECT") {
+      if (!querySubject || queryObject !== null || !candidateObject) {
+        return { kind: "INSUFFICIENT" };
+      }
+      if (querySubject !== candidateSubject) {
+        return { kind: "INSUFFICIENT" };
+      }
+    } else {
+      // Legacy exact matcher: preserve existing behavior absent trusted role.
+      if (!querySubject || querySubject !== candidateSubject) {
+        return { kind: "INSUFFICIENT" };
+      }
+      if (queryObject !== null && queryObject !== candidateObject) {
+        return { kind: "RELATED_NOT_ANSWERING" };
+      }
+    }
+    // Qualifier disagreement is not an invitation to retry via the same
+    // semantic model. It withholds the structured support decision even in
+    // the pipeline's legacy semantic-fallback mode.
+    if (!exactPropositionQualifiers(input.query, input.candidate)) {
+      return { kind: "RELATED_NOT_ANSWERING" };
+    }
+
+    const queryPolarity = input.query.polarity ?? "POSITIVE";
+    const candidatePolarity = input.candidate.polarity ?? "POSITIVE";
+    if (queryPolarity !== candidatePolarity) {
+      return { kind: "CONTRADICTS", quote: input.candidate.quote };
+    }
+    return { kind: "ANSWERS", quote: input.candidate.quote };
+  }
+}
+
+export interface StructuralEvidenceGuardResult {
+  readonly accepted: boolean;
+  readonly verdict: EvidenceVerdict;
+  readonly reason: string;
+}
+
+function identifierLikeQuery(query: string): boolean {
+  const trimmed = query.trim();
+  if (
+    !trimmed ||
+    /\s/u.test(trimmed) ||
+    !/^[\p{L}\p{N}_.:/-]+$/u.test(trimmed)
+  ) {
+    return false;
+  }
+  return (
+    /\d/u.test(trimmed) ||
+    /[_:/.]/u.test(trimmed) ||
+    (trimmed.includes("-") && trimmed === trimmed.toLocaleUpperCase("en-US"))
+  );
+}
+
+function normalizedIdentity(value: string): string {
+  return value.normalize("NFKC").trim().toLocaleLowerCase("und");
+}
+
+function exactIdentifierMatchesHit(hit: SearchHit, query: string): boolean {
+  if (!identifierLikeQuery(query)) return true;
+  const needle = normalizedIdentity(query);
+  const path = normalizedIdentity(hit.document.path);
+  const pathLeaf = path.split("/").at(-1) ?? path;
+  const pathStem = pathLeaf.replace(/\.[^.]+$/u, "");
+  return [
+    hit.document.externalId,
+    hit.title,
+    hit.document.title,
+    ...(hit.document.aliases ?? []),
+    path,
+    pathLeaf,
+    pathStem,
+  ]
+    .filter((value): value is string => typeof value === "string")
+    .map(normalizedIdentity)
+    .includes(needle);
+}
+
+function validSpan(passage: string, span: ExactSourceSpan): boolean {
+  return (
+    Number.isSafeInteger(span.startOffset) &&
+    Number.isSafeInteger(span.endOffset) &&
+    span.startOffset >= 0 &&
+    span.endOffset > span.startOffset &&
+    span.endOffset <= passage.length &&
+    sourceSpanUsesCodePointBoundaries(passage, span.startOffset, span.endOffset)
+  );
+}
+
+function spanTouchesHiddenSource(
+  passage: string,
+  span: ExactSourceSpan,
+): boolean {
+  return markdownVisibleSource(passage).comments.some(
+    (comment) =>
+      comment.startOffset < span.endOffset &&
+      comment.endOffset > span.startOffset,
+  );
+}
+
+function assertionLike(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  return !/[?？؟][\p{Pe}\p{Pf}"'`*_]*\s*$/u.test(trimmed);
+}
+
+/** A list's ordinal marker is not itself evidence of a requested count. */
+function quoteIsOnlyOrdinalListMarker(
+  passage: string,
+  span: ExactSourceSpan,
+): boolean {
+  const selected = passage.slice(span.startOffset, span.endOffset).trim();
+  if (!/^\d+(?:\s*[-–]\s*\d+)?$/u.test(selected)) return false;
+  const lineStart = passage.lastIndexOf("\n", span.startOffset - 1) + 1;
+  const linePrefix = passage.slice(lineStart, span.startOffset);
+  const next = passage.slice(span.endOffset);
+  return /^\s*$/u.test(linePrefix) && /^\.\s/u.test(next);
+}
+
+function hardStructuralFactsSatisfied(
+  hit: SearchHit,
+  query: string,
+  span: ExactSourceSpan,
+  answerEvidence?: QueryConditionedAnswerEvidence,
+):
+  | "STRUCTURAL_REQUIRED_FACT_MISSING"
+  | "STRUCTURAL_ANSWER_VALUE_REQUIRED_FACT_MISSING"
+  | null {
+  const evidence = contextualEvidenceSpanText(hit.excerpt, span);
+  if (!evidence.valueText.trim() || !evidence.scopedText.trim())
+    return "STRUCTURAL_REQUIRED_FACT_MISSING";
+  if (!explicitYearBindingsMatch(evidence.scopedText, query))
+    return "STRUCTURAL_REQUIRED_FACT_MISSING";
+
+  // A source-bound answer VALUE is a necessary extra structural condition,
+  // never semantic evidence by itself. A numeral elsewhere in the quotation
+  // must not satisfy the count/year the reader claims to have extracted.
+  const structuralRequirements = verifyDeterministicPassageSupport(
+    { ...hit, excerpt: evidence.scopedText },
+    query,
+  ).requiredAnswerCues;
+  const selectedValue =
+    answerEvidence?.kind === "LITERAL" && answerEvidence.valueSpan
+      ? hit.excerpt.slice(
+          answerEvidence.valueSpan.startOffset,
+          answerEvidence.valueSpan.endOffset,
+        )
+      : null;
+
+  if (structuralRequirements.includes("QUANTITY")) {
+    // The model has already bound one unique exact source value inside its
+    // cited quote. Cardinal *words* are eligible only at that typed value:
+    // never scan headings, document IDs (e.g. Faro-6), unrelated numbers,
+    // free-text paraphrases or untyped legacy reader output for count words.
+    const sourceBoundWordCardinal =
+      answerEvidence?.kind === "LITERAL" &&
+      selectedValue !== null &&
+      exactSourceCardinalWord(selectedValue) !== null &&
+      quantityMeasureScopeMatches(query, evidence.scopedText);
+    if (
+      quoteIsOnlyOrdinalListMarker(hit.excerpt, span) ||
+      (!quantitativeEvidenceMatches(
+        evidence.valueText,
+        query,
+        evidence.scopedText,
+      ) &&
+        !sourceBoundWordCardinal)
+    )
+      return "STRUCTURAL_REQUIRED_FACT_MISSING";
+    if (
+      answerEvidence !== undefined &&
+      (selectedValue === null ||
+        (!quantitativeEvidenceMatches(
+          selectedValue,
+          query,
+          evidence.scopedText,
+        ) &&
+          !sourceBoundWordCardinal))
+    )
+      return "STRUCTURAL_ANSWER_VALUE_REQUIRED_FACT_MISSING";
+  }
+  if (structuralRequirements.includes("DATE_YEAR")) {
+    if (!dateYearEvidenceMatches(evidence.valueText, query))
+      return "STRUCTURAL_REQUIRED_FACT_MISSING";
+    if (
+      answerEvidence !== undefined &&
+      (selectedValue === null || !dateYearEvidenceMatches(selectedValue, query))
+    )
+      return "STRUCTURAL_ANSWER_VALUE_REQUIRED_FACT_MISSING";
+  }
+
+  const requestedYears = explicitYearValues(query);
+  if (requestedYears.length > 0) {
+    const availableYears = new Set(explicitYearValues(evidence.scopedText));
+    if (requestedYears.some((year) => !availableYears.has(year)))
+      return "STRUCTURAL_REQUIRED_FACT_MISSING";
+  }
+  return null;
+}
+
+/**
+ * Structural boundary for evidence admission.
+ *
+ * It owns lifecycle/truth sanity, exact identifier identity, visible-source
+ * span integrity and explicit numeric/date/table scope. It never infers
+ * semantic support from relevance or token overlap.
+ */
+export class StructuralEvidenceGuard {
+  candidateEligible(
+    hit: SearchHit,
+    query: string,
+  ): StructuralEvidenceGuardResult {
+    if (hit.lifecycle !== "ACTIVE") {
+      return {
+        accepted: false,
+        verdict: { kind: "INSUFFICIENT" },
+        reason: "STRUCTURAL_LIFECYCLE_NOT_ACTIVE",
+      };
+    }
+    if (hit.retrievalTrace?.truth.state === "DISPUTED") {
+      return {
+        accepted: false,
+        verdict: { kind: "INSUFFICIENT" },
+        reason: "STRUCTURAL_TRUTH_DISPUTED",
+      };
+    }
+    if (!exactIdentifierMatchesHit(hit, query)) {
+      return {
+        accepted: false,
+        verdict: { kind: "INSUFFICIENT" },
+        reason: "STRUCTURAL_EXACT_IDENTIFIER_MISMATCH",
+      };
+    }
+    return {
+      accepted: true,
+      verdict: { kind: "INSUFFICIENT" },
+      reason: "STRUCTURAL_CANDIDATE_ELIGIBLE",
+    };
+  }
+
+  constrainVerdict(
+    hit: SearchHit,
+    query: string,
+    verdict: EvidenceVerdict,
+  ): StructuralEvidenceGuardResult {
+    const eligibility = this.candidateEligible(hit, query);
+    if (!eligibility.accepted) return eligibility;
+    if (verdict.kind !== "ANSWERS" && verdict.kind !== "CONTRADICTS") {
+      return {
+        accepted: true,
+        verdict,
+        reason: "STRUCTURAL_NO_SOURCE_SPAN_REQUIRED",
+      };
+    }
+
+    if (!validSpan(hit.excerpt, verdict.quote)) {
+      return {
+        accepted: false,
+        verdict: { kind: "INSUFFICIENT" },
+        reason: "STRUCTURAL_SOURCE_SPAN_INVALID",
+      };
+    }
+    if (spanTouchesHiddenSource(hit.excerpt, verdict.quote)) {
+      return {
+        accepted: false,
+        verdict: { kind: "INSUFFICIENT" },
+        reason: "STRUCTURAL_HIDDEN_SOURCE_SPAN",
+      };
+    }
+    // Revalidate the in-memory answer slot at the final authority boundary.
+    // Literal bytes/offsets are necessary, never a subject/role proof.
+    if (verdict.kind === "ANSWERS" && verdict.answerEvidence) {
+      try {
+        validateSourceBoundVerification(hit.excerpt, {
+          decision: "SUPPORTS",
+          reason: "IN_MEMORY_SOURCE_BOUND_SLOT",
+          evidenceSpan: verdict.quote,
+          answerEvidence: verdict.answerEvidence,
+        });
+      } catch {
+        return {
+          accepted: false,
+          verdict: { kind: "INSUFFICIENT" },
+          reason: "STRUCTURAL_ANSWER_SLOT_INVALID",
+        };
+      }
+    }
+    const evidence = contextualEvidenceSpanText(hit.excerpt, verdict.quote);
+    if (!assertionLike(evidence.valueText)) {
+      return {
+        accepted: false,
+        verdict: { kind: "INSUFFICIENT" },
+        reason: "STRUCTURAL_NON_ASSERTION_SPAN",
+      };
+    }
+    const structuralFailure = hardStructuralFactsSatisfied(
+      hit,
+      query,
+      verdict.quote,
+      verdict.kind === "ANSWERS" ? verdict.answerEvidence : undefined,
+    );
+    if (structuralFailure !== null) {
+      return {
+        accepted: false,
+        verdict: { kind: "INSUFFICIENT" },
+        reason: structuralFailure,
+      };
+    }
+    return {
+      accepted: true,
+      verdict,
+      reason: "STRUCTURAL_SOURCE_SPAN_VALID",
+    };
+  }
+}
+
+export interface SemanticEvidenceReader {
+  readonly id: string;
+  read(
+    input: QueryConditionedEvidenceVerifierInput,
+  ): Promise<EvidenceAdmissionDecision>;
+  readBatch?(
+    inputs: readonly QueryConditionedEvidenceVerifierInput[],
+    options?: {
+      acceptsSupport?: (
+        index: number,
+        decision: EvidenceAdmissionDecision,
+      ) => boolean;
+    },
+  ): Promise<EvidenceAdmissionDecision[]>;
+}
+
+export interface QueryConditionedSemanticEvidenceReaderOptions {
+  readonly verifier: QueryConditionedEvidenceVerifier;
+  readonly timeoutMs?: number;
+}
+
+function timeoutMs(value: number | undefined): number {
+  const resolved = value ?? 5_000;
+  if (!Number.isSafeInteger(resolved) || resolved < 10 || resolved > 60_000) {
+    throw new Error("semantic evidence timeoutMs must be in [10,60000]");
+  }
+  return resolved;
+}
+
+function isReaderInput(
+  input: unknown,
+): input is QueryConditionedEvidenceVerifierInput {
+  return (
+    typeof input === "object" &&
+    input !== null &&
+    typeof (input as { passage?: unknown }).passage === "string"
+  );
+}
+
+function isSpanlessContradiction(verification: unknown): boolean {
+  return (
+    typeof verification === "object" &&
+    verification !== null &&
+    !Array.isArray(verification) &&
+    (verification as { decision?: unknown }).decision === "CONTRADICTS" &&
+    !(verification as { evidenceSpan?: unknown }).evidenceSpan
+  );
+}
+
+function semanticReaderFailureReason(
+  error: unknown,
+  verification: unknown,
+): string {
+  if (
+    sourceVerificationFailureCode(error) ===
+      "QUERY_CONDITIONED_EVIDENCE_SPAN_REQUIRED" &&
+    isSpanlessContradiction(verification)
+  ) {
+    return "SEMANTIC_CONTRADICTION_WITHOUT_SOURCE_SPAN";
+  }
+  return `SEMANTIC_READER_ERROR:${sourceVerificationFailureCode(error)}`;
+}
+
+function verificationVerdict(
+  passage: string,
+  verification: unknown,
+): { verdict: EvidenceVerdict; reason: string } {
+  const verified = validateSourceBoundVerification(passage, verification);
+  if (verified.decision === "INSUFFICIENT") {
+    return { verdict: { kind: "INSUFFICIENT" }, reason: verified.reason };
+  }
+  return {
+    verdict:
+      verified.decision === "SUPPORTS"
+        ? {
+            kind: "ANSWERS",
+            quote: verified.evidenceSpan!,
+            ...(verified.answerEvidence
+              ? { answerEvidence: verified.answerEvidence }
+              : {}),
+          }
+        : { kind: "CONTRADICTS", quote: verified.evidenceSpan! },
+    reason: verified.reason,
+  };
+}
+
+/**
+ * Adapter from current source-bound verifiers to the R5 evidence contract.
+ *
+ * Timeout, provider error, malformed output and CONTRADICTS without an exact
+ * span all fail closed to INSUFFICIENT.
+ */
+export class QueryConditionedSemanticEvidenceReader implements SemanticEvidenceReader {
+  readonly id: string;
+  private readonly verifier: QueryConditionedEvidenceVerifier;
+  private readonly maxWaitMs: number;
+
+  constructor(options: QueryConditionedSemanticEvidenceReaderOptions) {
+    this.verifier = options.verifier;
+    this.maxWaitMs = timeoutMs(options.timeoutMs);
+    this.id = `semantic-reader:${options.verifier.id}`;
+  }
+
+  async read(
+    input: QueryConditionedEvidenceVerifierInput,
+  ): Promise<EvidenceAdmissionDecision> {
+    if (!isReaderInput(input)) {
+      return {
+        layer: "SEMANTIC_READER",
+        verdict: { kind: "INSUFFICIENT" },
+        reason:
+          "SEMANTIC_READER_ERROR:QUERY_CONDITIONED_EVIDENCE_INPUT_INVALID",
+        readerId: this.id,
+      };
+    }
+    let verification: unknown;
+    try {
+      verification = await this.withTimeout(this.verifier.verify(input));
+      const { verdict, reason } = verificationVerdict(
+        input.passage,
+        verification,
+      );
+      return {
+        layer: "SEMANTIC_READER",
+        verdict,
+        reason,
+        readerId: this.id,
+      };
+    } catch (error) {
+      return {
+        layer: "SEMANTIC_READER",
+        verdict: { kind: "INSUFFICIENT" },
+        reason: semanticReaderFailureReason(error, verification),
+        readerId: this.id,
+      };
+    }
+  }
+
+  async readBatch(
+    inputs: readonly QueryConditionedEvidenceVerifierInput[],
+    options?: {
+      acceptsSupport?: (
+        index: number,
+        decision: EvidenceAdmissionDecision,
+      ) => boolean;
+    },
+  ): Promise<EvidenceAdmissionDecision[]> {
+    if (inputs.length === 0) return [];
+    if (inputs.some((input) => !isReaderInput(input))) {
+      return Promise.all(inputs.map((input) => this.read(input)));
+    }
+    if (!this.verifier.verifyBatch) {
+      return Promise.all(inputs.map((input) => this.read(input)));
+    }
+    let rows: unknown;
+    const completed: Array<EvidenceAdmissionDecision | undefined> = new Array(
+      inputs.length,
+    );
+    let closed = false;
+    try {
+      rows = await this.withTimeout(
+        this.verifier.verifyBatch(inputs, {
+          ...(options?.acceptsSupport
+            ? {
+                acceptsSupport: (index, verification) => {
+                  const input = inputs[index]!;
+                  const { verdict, reason } = verificationVerdict(
+                    input.passage,
+                    verification,
+                  );
+                  return options.acceptsSupport!(index, {
+                    layer: "SEMANTIC_READER",
+                    verdict,
+                    reason,
+                    readerId: this.id,
+                  });
+                },
+              }
+            : {}),
+          onCandidateCompleted: (index, verification) => {
+            if (
+              closed ||
+              !Number.isSafeInteger(index) ||
+              index < 0 ||
+              index >= inputs.length ||
+              completed[index] !== undefined
+            )
+              return;
+            try {
+              const { verdict, reason } = verificationVerdict(
+                inputs[index]!.passage,
+                verification,
+              );
+              completed[index] = {
+                layer: "SEMANTIC_READER",
+                verdict,
+                reason,
+                readerId: this.id,
+              };
+            } catch (error) {
+              completed[index] = {
+                layer: "SEMANTIC_READER",
+                verdict: { kind: "INSUFFICIENT" },
+                reason: semanticReaderFailureReason(error, verification),
+                readerId: this.id,
+              };
+            }
+          },
+        }),
+      );
+      closed = true;
+      if (!Array.isArray(rows) || rows.length !== inputs.length) {
+        throw new SourceVerificationError(
+          "QUERY_CONDITIONED_EVIDENCE_BATCH_SIZE_MISMATCH",
+        );
+      }
+      return rows.map((verification, index) => {
+        const input = inputs[index]!;
+        try {
+          const { verdict, reason } = verificationVerdict(
+            input.passage,
+            verification,
+          );
+          return {
+            layer: "SEMANTIC_READER" as const,
+            verdict,
+            reason,
+            readerId: this.id,
+          };
+        } catch (error) {
+          return {
+            layer: "SEMANTIC_READER" as const,
+            verdict: { kind: "INSUFFICIENT" as const },
+            reason: semanticReaderFailureReason(error, verification),
+            readerId: this.id,
+          };
+        }
+      });
+    } catch (error) {
+      closed = true;
+      const decision: EvidenceAdmissionDecision = {
+        layer: "SEMANTIC_READER",
+        verdict: { kind: "INSUFFICIENT" },
+        reason: semanticReaderFailureReason(error, rows),
+        readerId: this.id,
+      };
+      // Timeout is a transport failure, not proof that completed candidates
+      // had no answer. Preserve only individually source-validated verdicts
+      // that finished before the deadline; never restart the model batch.
+      if (
+        sourceVerificationFailureCode(error) === "SEMANTIC_READER_TIMEOUT" &&
+        completed.some((row) => row !== undefined)
+      ) {
+        return Array.from(
+          { length: inputs.length },
+          (_, index) => completed[index] ?? decision,
+        );
+      }
+      return inputs.map(() => decision);
+    }
+  }
+
+  private async withTimeout<T>(operation: Promise<T>): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        operation,
+        new Promise<T>((_resolve, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(new SourceVerificationError("SEMANTIC_READER_TIMEOUT")),
+            this.maxWaitMs,
+          );
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  }
+}
+
+export interface LayeredEvidenceAdmissionInput {
+  readonly query: string;
+  readonly hit: SearchHit;
+  readonly queryProposition?: StructuredPropositionQuery;
+  readonly candidateProposition?: StructuredProposition;
+  /**
+   * A separately attested question/SOURCE pair must not fall back to an LLM
+   * on missing projections or a non-answering subject/predicate relation.
+   * Never supplied by public request JSON; only an authorized service port.
+   */
+  readonly requireStructuredProposition?: boolean;
+}
+
+/**
+ * R5 layered admission. Production uses it only when explicitly configured
+ * (`AKP_EVIDENCE_VERIFIER_MODE=LAYERED`) through
+ * `assessRetrievalAnswerabilityWithLayeredAdmission`.
+ *
+ * Explicit structured propositions take precedence. Otherwise the semantic
+ * reader may propose a verdict, but the structural guard remains the final
+ * authority over source-bound admissibility.
+ */
+export class LayeredEvidenceAdmissionPipeline {
+  private readonly guard: StructuralEvidenceGuard;
+  private readonly propositionMatcher: StructuredPropositionMatcher;
+  private readonly semanticReader: SemanticEvidenceReader;
+  private readonly structuredMismatchPolicy: "SEMANTIC_FALLBACK" | "ABSTAIN";
+
+  constructor(options: {
+    semanticReader: SemanticEvidenceReader;
+    guard?: StructuralEvidenceGuard;
+    propositionMatcher?: StructuredPropositionMatcher;
+    /** Only governed, original-source-authorized projections may opt in. */
+    structuredMismatchPolicy?: "SEMANTIC_FALLBACK" | "ABSTAIN";
+  }) {
+    this.semanticReader = options.semanticReader;
+    this.structuredMismatchPolicy =
+      options.structuredMismatchPolicy ?? "SEMANTIC_FALLBACK";
+    this.guard = options.guard ?? new StructuralEvidenceGuard();
+    this.propositionMatcher =
+      options.propositionMatcher ?? new ExactStructuredPropositionMatcher();
+  }
+
+  async evaluate(
+    input: LayeredEvidenceAdmissionInput,
+  ): Promise<EvidenceAdmissionDecision> {
+    const [decision] = await this.evaluateBatch([input]);
+    return decision!;
+  }
+
+  /**
+   * Batch form used by governed semantic experiments and future production
+   * wiring. Structural/proposition decisions are resolved before any model
+   * call. Only the remaining eligible candidates reach the semantic reader,
+   * which allows an order-only shortlist to compare candidates without ever
+   * becoming evidence authority.
+   */
+  async evaluateBatch(
+    inputs: readonly LayeredEvidenceAdmissionInput[],
+  ): Promise<EvidenceAdmissionDecision[]> {
+    if (inputs.length === 0) return [];
+
+    const output: Array<EvidenceAdmissionDecision | undefined> = new Array(
+      inputs.length,
+    );
+    const semanticIndexes: number[] = [];
+    const semanticInputs: QueryConditionedEvidenceVerifierInput[] = [];
+
+    inputs.forEach((input, index) => {
+      const eligible = this.guard.candidateEligible(input.hit, input.query);
+      if (!eligible.accepted) {
+        output[index] = {
+          layer: "STRUCTURAL_GUARD",
+          verdict: eligible.verdict,
+          reason: eligible.reason,
+        };
+        return;
+      }
+
+      if (
+        (this.structuredMismatchPolicy === "ABSTAIN" ||
+          input.requireStructuredProposition === true) &&
+        (!input.queryProposition || !input.candidateProposition)
+      ) {
+        output[index] = {
+          layer: "STRUCTURED_PROPOSITION",
+          verdict: { kind: "INSUFFICIENT" },
+          reason: "STRUCTURED_PROPOSITION_UNAVAILABLE",
+        };
+        return;
+      }
+
+      if (input.queryProposition && input.candidateProposition) {
+        const structured = this.propositionMatcher.match({
+          query: input.queryProposition,
+          candidate: input.candidateProposition,
+        });
+        if (structured.kind !== "INSUFFICIENT") {
+          const constrained = this.guard.constrainVerdict(
+            input.hit,
+            input.query,
+            structured,
+          );
+          output[index] = {
+            layer: constrained.accepted
+              ? "STRUCTURED_PROPOSITION"
+              : "STRUCTURAL_GUARD",
+            verdict: constrained.verdict,
+            reason: constrained.reason,
+          };
+          return;
+        }
+        // A pair of governed projections that disagrees on the asserted
+        // subject/predicate must not be promoted by an unrelated model read.
+        // Keep the generic exploratory fallback for existing frozen contracts.
+        if (
+          this.structuredMismatchPolicy === "ABSTAIN" ||
+          input.requireStructuredProposition === true
+        ) {
+          output[index] = {
+            layer: "STRUCTURED_PROPOSITION",
+            verdict: { kind: "INSUFFICIENT" },
+            reason: "STRUCTURED_PROPOSITION_UNRESOLVED",
+          };
+          return;
+        }
+      }
+
+      semanticIndexes.push(index);
+      semanticInputs.push({
+        query: input.query,
+        candidateKey: `${input.hit.documentId}:${input.hit.unitId ?? "document"}`,
+        title: input.hit.title,
+        ...(input.hit.headingPath
+          ? { headingPath: input.hit.headingPath }
+          : {}),
+        passage: input.hit.excerpt,
+        unitType: input.hit.unitType ?? null,
+        parentUnitType: input.hit.parentUnitType ?? null,
+        documentType: input.hit.type,
+      });
+    });
+
+    if (semanticInputs.length > 0) {
+      let semanticDecisions: EvidenceAdmissionDecision[];
+      try {
+        semanticDecisions = this.semanticReader.readBatch
+          ? await this.semanticReader.readBatch(semanticInputs, {
+              acceptsSupport: (semanticIndex, proposed) => {
+                const original = inputs[semanticIndexes[semanticIndex]!]!;
+                return this.guard.constrainVerdict(
+                  original.hit,
+                  original.query,
+                  proposed.verdict,
+                ).accepted;
+              },
+            })
+          : await Promise.all(
+              semanticInputs.map((input) => this.semanticReader.read(input)),
+            );
+      } catch {
+        semanticDecisions = semanticInputs.map(() => ({
+          layer: "SEMANTIC_READER",
+          verdict: { kind: "INSUFFICIENT" },
+          reason: "SEMANTIC_READER_BATCH_FAILURE",
+          readerId: this.semanticReader.id,
+        }));
+      }
+      if (semanticDecisions.length !== semanticInputs.length) {
+        semanticDecisions = semanticInputs.map(() => ({
+          layer: "SEMANTIC_READER",
+          verdict: { kind: "INSUFFICIENT" },
+          reason: "SEMANTIC_READER_BATCH_SIZE_MISMATCH",
+          readerId: this.semanticReader.id,
+        }));
+      }
+
+      semanticIndexes.forEach((inputIndex, semanticIndex) => {
+        const input = inputs[inputIndex]!;
+        const semantic = semanticDecisions[semanticIndex]!;
+        const constrained = this.guard.constrainVerdict(
+          input.hit,
+          input.query,
+          semantic.verdict,
+        );
+        output[inputIndex] = {
+          ...semantic,
+          // The guard owns the final veto even when the reader ran first.
+          layer: constrained.accepted ? semantic.layer : "STRUCTURAL_GUARD",
+          verdict: constrained.verdict,
+          reason:
+            constrained.reason === "STRUCTURAL_SOURCE_SPAN_VALID" ||
+            constrained.reason === "STRUCTURAL_NO_SOURCE_SPAN_REQUIRED"
+              ? semantic.reason
+              : constrained.reason,
+        };
+      });
+    }
+
+    return output.map(
+      (decision) =>
+        decision ?? {
+          layer: "STRUCTURAL_GUARD",
+          verdict: { kind: "INSUFFICIENT" },
+          reason: "EVIDENCE_ADMISSION_INTERNAL_GAP",
+        },
+    );
+  }
+}

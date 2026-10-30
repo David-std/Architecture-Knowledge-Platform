@@ -1,6 +1,13 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 
 const exec = promisify(execFile);
@@ -24,20 +31,199 @@ function isMissingGitPathError(error: unknown): boolean {
 export class GitKnowledgeStore {
   private activeWorktree: string | null = null;
 
-  private readonly repositoryPath: string;
+  private repositoryPath: string;
 
   constructor(repositoryPath: string) {
     this.repositoryPath = path.resolve(repositoryPath);
+  }
+
+  private gitEnvironment(): NodeJS.ProcessEnv {
+    const environment = { ...process.env };
+    // A caller's Git environment must not redirect commands away from the
+    // requested worktree. Linked worktrees resolve their metadata through the
+    // .git file and do not need these overrides.
+    delete environment.GIT_DIR;
+    delete environment.GIT_WORK_TREE;
+    delete environment.GIT_COMMON_DIR;
+    delete environment.GIT_INDEX_FILE;
+    delete environment.GIT_OBJECT_DIRECTORY;
+    delete environment.GIT_ALTERNATE_OBJECT_DIRECTORIES;
+    return environment;
+  }
+
+  private execGit(args: string[]) {
+    return exec("git", args, {
+      env: this.gitEnvironment(),
+      windowsHide: true,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+  }
+
+  private async gitRootFor(directory: string): Promise<string | null> {
+    let result: Awaited<ReturnType<typeof exec>>;
+    try {
+      result = await this.execGit([
+        "-C",
+        directory,
+        "rev-parse",
+        "--show-toplevel",
+      ]);
+    } catch (error) {
+      const failure = error as NodeJS.ErrnoException & { stderr?: string };
+      const detail = `${failure.message ?? ""}\n${failure.stderr ?? ""}`;
+      if (
+        String(failure.code) !== "128" ||
+        !/not a git repository|must be run in a work tree/i.test(detail)
+      ) {
+        throw new Error("GIT_REPOSITORY_ROOT_INVALID");
+      }
+      return null;
+    }
+    const reportedRoot = result.stdout.toString().trim();
+    if (!reportedRoot) throw new Error("GIT_REPOSITORY_ROOT_INVALID");
+    const absoluteRoot = path.isAbsolute(reportedRoot)
+      ? reportedRoot
+      : path.resolve(directory, reportedRoot);
+    try {
+      return await realpath(absoluteRoot);
+    } catch {
+      throw new Error("GIT_REPOSITORY_ROOT_INVALID");
+    }
+  }
+
+  private async hasGitMetadata(directory: string): Promise<boolean> {
+    let candidate = path.resolve(directory);
+    while (true) {
+      let gitMarker = false;
+      try {
+        await lstat(path.join(candidate, ".git"));
+        gitMarker = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          throw new Error("GIT_REPOSITORY_ROOT_INVALID");
+        }
+      }
+      if (gitMarker) return true;
+
+      const [head, config, objects, refs] = await Promise.all([
+        this.pathExists(path.join(candidate, "HEAD")),
+        this.pathExists(path.join(candidate, "config")),
+        this.pathIsDirectory(path.join(candidate, "objects")),
+        this.pathIsDirectory(path.join(candidate, "refs")),
+      ]);
+      if (head && config && objects && refs) return true;
+
+      const parent = path.dirname(candidate);
+      if (parent === candidate) return false;
+      candidate = parent;
+    }
+  }
+
+  private async pathExists(target: string): Promise<boolean> {
+    try {
+      await lstat(target);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw new Error("GIT_REPOSITORY_ROOT_INVALID");
+    }
+  }
+
+  private async pathIsDirectory(target: string): Promise<boolean> {
+    try {
+      return (await lstat(target)).isDirectory();
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw new Error("GIT_REPOSITORY_ROOT_INVALID");
+    }
+  }
+
+  private async nearestExistingGitProbe(target: string): Promise<string> {
+    let candidate = path.resolve(target);
+    while (true) {
+      try {
+        const info = await lstat(candidate);
+        if (info.isDirectory() || info.isSymbolicLink()) return candidate;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+          throw new Error("GIT_REPOSITORY_ROOT_INVALID");
+        }
+      }
+      const parent = path.dirname(candidate);
+      if (parent === candidate) return candidate;
+      candidate = parent;
+    }
+  }
+
+  private async inspectGitPath(
+    requestedPath: string,
+  ): Promise<{ kind: "repository"; root: string } | { kind: "independent" }> {
+    const target = path.resolve(requestedPath);
+    let targetInfo: Awaited<ReturnType<typeof lstat>> | null = null;
+    try {
+      targetInfo = await lstat(target);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw new Error("GIT_REPOSITORY_ROOT_INVALID");
+      }
+    }
+
+    const probe =
+      targetInfo && (targetInfo.isDirectory() || targetInfo.isSymbolicLink())
+        ? target
+        : await this.nearestExistingGitProbe(target);
+    const hasMetadata = await this.hasGitMetadata(probe);
+    const discoveredRoot = await this.gitRootFor(probe);
+    if (!discoveredRoot) {
+      if (hasMetadata) throw new Error("GIT_REPOSITORY_ROOT_INVALID");
+      return { kind: "independent" };
+    }
+
+    if (!targetInfo) {
+      // The requested path would be created beneath an existing repository.
+      throw new Error("GIT_REPOSITORY_ROOT_INVALID");
+    }
+
+    let canonicalTarget: string;
+    try {
+      canonicalTarget = await realpath(target);
+    } catch {
+      throw new Error("GIT_REPOSITORY_ROOT_INVALID");
+    }
+    if (!this.sameCanonicalPath(discoveredRoot, canonicalTarget)) {
+      throw new Error("GIT_REPOSITORY_ROOT_INVALID");
+    }
+    return { kind: "repository", root: discoveredRoot };
+  }
+
+  private sameCanonicalPath(left: string, right: string): boolean {
+    const normalize = (value: string): string => {
+      const normalized = path.normalize(value);
+      return process.platform === "win32"
+        ? normalized.toLowerCase()
+        : normalized;
+    };
+    return normalize(left) === normalize(right);
+  }
+
+  private async assertGitWorktreeRoot(workingTree: string): Promise<void> {
+    const inspection = await this.inspectGitPath(workingTree);
+    if (inspection.kind !== "repository") {
+      throw new Error("GIT_REPOSITORY_ROOT_INVALID");
+    }
+    if (
+      this.sameCanonicalPath(path.resolve(workingTree), this.repositoryPath)
+    ) {
+      this.repositoryPath = inspection.root;
+    }
   }
 
   private async gitRaw(
     args: string[],
     workingTree = this.repositoryPath,
   ): Promise<string> {
-    const result = await exec("git", ["-C", workingTree, ...args], {
-      windowsHide: true,
-      maxBuffer: 10 * 1024 * 1024,
-    });
+    await this.assertGitWorktreeRoot(workingTree);
+    const result = await this.execGit(["-C", workingTree, ...args]);
     return result.stdout;
   }
 
@@ -104,39 +290,55 @@ export class GitKnowledgeStore {
     authorName: string,
     authorEmail: string,
   ): Promise<string> {
-    await mkdir(this.repositoryPath, { recursive: true });
-    try {
+    const before = await this.inspectGitPath(this.repositoryPath);
+    if (before.kind === "repository") {
+      this.repositoryPath = before.root;
+      // An existing repository is never reinitialized after a checkout or
+      // revision failure. In particular, this preserves linked worktrees,
+      // whose main branch may be checked out elsewhere.
       await this.git(["checkout", "main"]);
       return await this.revision();
-    } catch {
-      await exec("git", ["init", "-b", "main", this.repositoryPath], {
-        windowsHide: true,
-      });
-      await this.git(["config", "user.name", authorName]);
-      await this.git(["config", "user.email", authorEmail]);
-      await writeFile(
-        path.join(this.repositoryPath, "README.md"),
-        "# Managed Architecture Knowledge\n\nHuman-reviewed supplemental knowledge.\n",
-        "utf8",
-      );
-      await this.git(["add", "--all"]);
-      await this.git([
-        "-c",
-        `user.name=${authorName}`,
-        "-c",
-        `user.email=${authorEmail}`,
-        "commit",
-        "-m",
-        "chore: initialize managed knowledge repository",
-      ]);
-      return this.revision();
     }
+
+    await mkdir(this.repositoryPath, { recursive: true });
+
+    // Recheck after creating a previously absent directory in case another
+    // process initialized it concurrently. An ancestor repository is still a
+    // scope violation and must be rejected before any Git mutation.
+    const after = await this.inspectGitPath(this.repositoryPath);
+    if (after.kind === "repository") {
+      this.repositoryPath = after.root;
+      await this.git(["checkout", "main"]);
+      return await this.revision();
+    }
+
+    await this.execGit(["init", "-b", "main", this.repositoryPath]);
+    await this.assertGitWorktreeRoot(this.repositoryPath);
+    await this.git(["config", "user.name", authorName]);
+    await this.git(["config", "user.email", authorEmail]);
+    await writeFile(
+      path.join(this.repositoryPath, "README.md"),
+      "# Managed Architecture Knowledge\n\nHuman-reviewed supplemental knowledge.\n",
+      "utf8",
+    );
+    await this.git(["add", "--all"]);
+    await this.git([
+      "-c",
+      `user.name=${authorName}`,
+      "-c",
+      `user.email=${authorEmail}`,
+      "commit",
+      "-m",
+      "chore: initialize managed knowledge repository",
+    ]);
+    return this.revision();
   }
 
   async createDraftBranch(
     reviewId: string,
     baseRevision: string,
   ): Promise<string> {
+    await this.assertGitWorktreeRoot(this.repositoryPath);
     const branch = `draft/${reviewId}`;
     const { draftsRoot, worktree } = this.draftLocation(branch);
     await mkdir(draftsRoot, { recursive: true });
@@ -151,6 +353,7 @@ export class GitKnowledgeStore {
     const normalized = this.safePath(relativePath);
     if (!this.activeWorktree)
       throw new Error("No isolated draft worktree is active.");
+    await this.assertGitWorktreeRoot(this.activeWorktree);
     const destination = await this.safeDraftPath(
       this.activeWorktree,
       normalized,
@@ -220,6 +423,7 @@ export class GitKnowledgeStore {
   async readWorkingFile(relativePath: string): Promise<string> {
     const normalized = this.safePath(relativePath);
     const root = this.activeWorktree ?? this.repositoryPath;
+    await this.assertGitWorktreeRoot(root);
     const destination = await this.safeDraftPath(root, normalized, false);
     return readFile(destination, "utf8");
   }
@@ -319,6 +523,7 @@ export class GitKnowledgeStore {
    * audit until publication has completed successfully.
    */
   async cleanupDraft(branchName: string): Promise<void> {
+    await this.assertGitWorktreeRoot(this.repositoryPath);
     const { worktree } = this.draftLocation(branchName);
     await this.removeExistingWorktreePath(worktree);
     await this.git(["worktree", "prune"]);

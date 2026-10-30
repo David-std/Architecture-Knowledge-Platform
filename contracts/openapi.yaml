@@ -1442,6 +1442,100 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v1/sources/{id}/artifacts/{artifactId}/markdown:
+    get:
+      tags: [Sources]
+      operationId: getFaithfulSourceMarkdown
+      x-akp-permission: source:read
+      description: >
+        Retrieves the exact UTF-8 machine-extracted Markdown for an authorized,
+        unrestricted source vault, with its immutable source identity and SHA-256
+        checksum. The response is not reviewed canonical Git knowledge; unavailable
+        legacy projections return 409 and may require controlled reprocessing.
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: artifactId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Exact faithful source Markdown projection with verifier fields.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                  [
+                    sourceId,
+                    sourceSha256,
+                    artifactId,
+                    structuredContentHash,
+                    content,
+                    sha256,
+                    rendererVersion,
+                    trustTier,
+                    canonicalKnowledge,
+                  ]
+                properties:
+                  sourceId: { type: string, format: uuid }
+                  sourceSha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+                  artifactId: { type: string, format: uuid }
+                  structuredContentHash:
+                    { type: string, pattern: "^[a-f0-9]{64}$" }
+                  content: { type: string }
+                  sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+                  rendererVersion: { type: string }
+                  trustTier: { type: string, enum: [MACHINE_EXTRACTED] }
+                  canonicalKnowledge: { type: boolean, const: false }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/sources/{id}/artifacts/{artifactId}/units:
+    get:
+      tags: [Sources]
+      operationId: listRevisionPinnedSourceUnits
+      x-akp-permission: source:read
+      description: >
+        Lists noncanonical, revision-pinned machine-extracted source units
+        with replayable UTF-16 coordinates into exact source Markdown.
+        Requires source and Markdown SHA-256 pins; does not confer knowledge approval.
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - name: artifactId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: sourceSha256
+          in: query
+          required: true
+          schema: { type: string, pattern: "^[a-f0-9]{64}$" }
+        - name: markdownSha256
+          in: query
+          required: true
+          schema: { type: string, pattern: "^[a-f0-9]{64}$" }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 50000, default: 0 }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        "200":
+          description: Source units with hashes, source spans and noncanonical trust marker.
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /v1/sources/{id}/retire:
     post:
       tags: [Governance, Sources]
@@ -4343,6 +4437,184 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/s2/proposition-reviews:
+    post:
+      tags: [Evaluation]
+      operationId: submitS2ReviewedSourceProposition
+      summary: Propose a SOURCE-pinned S2 proposition for human review (opt-in)
+      description: >
+        Optional evaluation-only route. Proposals are never evidence authority;
+        an independent authenticated human must approve a revision-pinned
+        original-SOURCE correspondence before R5 can use it.
+      x-akp-permission: knowledge:review
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                [
+                  spaceId,
+                  vaultId,
+                  documentId,
+                  unitId,
+                  sourceId,
+                  question,
+                  excerpt,
+                  queryProposition,
+                  sourceProposition,
+                ]
+              properties:
+                spaceId: { type: string, format: uuid }
+                vaultId: { type: string, format: uuid }
+                documentId: { type: string, format: uuid }
+                unitId: { type: [string, "null"], format: uuid }
+                sourceId: { type: string, format: uuid }
+                question: { type: string, minLength: 1, maxLength: 4096 }
+                excerpt: { type: string, minLength: 1, maxLength: 8192 }
+                queryProposition:
+                  type: object
+                  additionalProperties: true
+                sourceProposition:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "201": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/s2/proposition-reviews/{id}/approve:
+    post:
+      tags: [Evaluation]
+      operationId: approveS2SourceProposition
+      summary: Independently approve a current SOURCE proposition (opt-in)
+      x-akp-permission: knowledge:review
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/s2/proposition-reviews/{id}/revoke:
+    post:
+      tags: [Evaluation]
+      operationId: revokeS2SourceProposition
+      summary: Revoke a SOURCE proposition approval (opt-in)
+      x-akp-permission: knowledge:review
+      parameters:
+        - { $ref: "#/components/parameters/UuidId" }
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/s2/writer-claims/audit:
+    post:
+      tags: [Evaluation]
+      operationId: auditS2FrozenWriterClaims
+      summary: Reverify externally generated Writer claims against a persisted ContextPacket (opt-in)
+      description: >
+        Read-only evaluation endpoint. Does not call the model, certify an
+        independent reviewer, grant production admission or validate end-to-end
+        HTTP provider custody. Client supplied candidate propositions are forbidden.
+      x-akp-permission: eval:run
+      x-akp-idempotency-exempt: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [packetId, packetHash, answerText, statements]
+              properties:
+                packetId: { type: string, format: uuid }
+                packetHash: { type: string, minLength: 1, maxLength: 256 }
+                answerText: { type: string, minLength: 1, maxLength: 4096 }
+                statements:
+                  type: array
+                  minItems: 1
+                  maxItems: 16
+                  items:
+                    type: object
+                    additionalProperties: false
+                    required: [text, startUtf16, endUtf16, citationId]
+                    properties:
+                      text: { type: string, minLength: 1, maxLength: 4096 }
+                      startUtf16: { type: integer, minimum: 0, maximum: 4096 }
+                      endUtf16: { type: integer, minimum: 1, maximum: 4096 }
+                      citationId:
+                        { type: string, pattern: "^SEC([1-9]|1[0-6])$" }
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /v1/s2/writer-claims/generate-audit:
+    post:
+      tags: [Evaluation]
+      operationId: generateAndAuditReviewedS2NativeWriterClaims
+      summary: Generate bounded local atomic Writer claims and audit current original SOURCE (opt-in)
+      description: >
+        Evaluation-only, disabled by default. Requires a persisted, current,
+        authenticated SOURCE_BACKED ContextPacket and the same two-person
+        reviewed original-SOURCE proposition port used by the audit route.
+        Model, pinned model digest and build commit are server-side settings;
+        caller cannot supply a URL, provider, source, claim projection or
+        approval. Native model output has exact per-statement source IDs and
+        is re-audited after inference in REVIEWED_CUSTODY mode. The additional
+        SOURCE_ANCHORED_SHADOW mode requires a separate opt-in flag and a
+        previously approved SOURCE anchor for each section; it may expose the
+        original SOURCE to the pinned local model for a NEW, unreviewed question,
+        but NEVER reviews the new question or its claims and can return only a
+        redacted NOT_ADMITTED diagnostic. Both modes return digests/metrics,
+        never source text, Writer prose or a production release permission.
+        Human semantic adjudication remains necessary.
+      x-akp-permission: eval:run
+      x-akp-idempotency-exempt: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [packetId, packetHash, language]
+              properties:
+                packetId: { type: string, format: uuid }
+                packetHash: { type: string, minLength: 1, maxLength: 256 }
+                language: { type: string, enum: [en, es] }
+                mode:
+                  type: string
+                  enum: [REVIEWED_CUSTODY, SOURCE_ANCHORED_SHADOW]
+                  default: REVIEWED_CUSTODY
+      responses:
+        "200": { $ref: "#/components/responses/ObjectResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/ObjectResponse" }
 
 components:
   securitySchemes:

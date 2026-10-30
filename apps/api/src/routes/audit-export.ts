@@ -86,7 +86,7 @@ export const RAW_EVIDENCE_EXPORT_HARD_MAX_BYTES = 50 * 1024 * 1024;
 
 const RawEvidenceExportQuery = z.object({
   confirm: z.literal(RAW_EVIDENCE_EXPORT_CONFIRMATION),
-  evidenceId: z.string().uuid().optional(),
+  evidenceId: z.string().guid().optional(),
   locator: z.string().max(8192).optional(),
   maxBytes: z.coerce
     .number()
@@ -469,7 +469,7 @@ async function handleRawEvidenceExport(
   const routeEvidenceId = pathEvidenceId ?? params.evidenceId;
   if (
     routeEvidenceId &&
-    !z.string().uuid().safeParse(routeEvidenceId).success
+    !z.string().guid().safeParse(routeEvidenceId).success
   ) {
     return reply.code(400).send({ code: "INVALID_EVIDENCE_ID" });
   }

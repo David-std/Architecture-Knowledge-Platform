@@ -65,8 +65,8 @@ export type GraphCatalogStatus = z.infer<typeof GraphCatalogStatus>;
 
 export const GraphCatalogEntry = z.object({
   domain: GraphDomain,
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid().nullable(),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid().nullable(),
   scopeId: z.string().min(1).max(512),
   activeRevision: z.string().min(1).max(512).optional(),
   sourceRevision: z.string().min(1).max(1024).optional(),
@@ -211,11 +211,11 @@ export const GraphProvenanceEnvelope = z
 export type GraphProvenanceEnvelope = z.infer<typeof GraphProvenanceEnvelope>;
 
 export const GraphRelationshipAssertion = z.object({
-  id: z.string().uuid(),
-  spaceId: z.string().uuid(),
+  id: z.string().guid(),
+  spaceId: z.string().guid(),
   ownerGraphDomain: GraphDomain,
-  fromNodeId: z.string().uuid(),
-  toNodeId: z.string().uuid(),
+  fromNodeId: z.string().guid(),
+  toNodeId: z.string().guid(),
   relation: z.string().min(1).max(160),
   authorizationPath: z.string().nullable(),
   lifecycle: GraphRelationshipLifecycle,
@@ -226,10 +226,10 @@ export type GraphRelationshipAssertion = z.infer<
 >;
 
 export const GraphProjectionRevision = z.object({
-  id: z.string().uuid(),
+  id: z.string().guid(),
   graphDomain: GraphDomain,
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid().nullable(),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid().nullable(),
   scopeId: z.string().min(1).max(512),
   revision: z.string().min(1).max(512),
   sourceRevision: z.string().min(1).max(1024),
@@ -253,9 +253,9 @@ export const GraphProjectionRevision = z.object({
 export type GraphProjectionRevision = z.infer<typeof GraphProjectionRevision>;
 
 export const GraphNodeRef = z.object({
-  id: z.string().uuid(),
-  spaceId: z.string().uuid(),
-  vaultId: z.string().uuid().nullable(),
+  id: z.string().guid(),
+  spaceId: z.string().guid(),
+  vaultId: z.string().guid().nullable(),
   authorizationPath: z.string().nullable(),
   identity: GraphNodeIdentity,
   payload: z.record(z.string(), z.unknown()),

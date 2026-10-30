@@ -2,7 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { type SearchRequest } from "@akp/contracts";
 import { Postgres } from "@akp/postgres";
-import { planQuery } from "@akp/retrieval";
+import {
+  assessRetrievalAnswerability,
+  ExactStructuredPropositionMatcher,
+  planQuery,
+} from "@akp/retrieval";
 import { queryKnowledge } from "../src/routes/search.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -320,6 +324,771 @@ function searchRequest(fixture: LexicalFixture): SearchRequest {
 
 describe("production lexical ranking", () => {
   it.skipIf(!databaseUrl)(
+    "measures EN/ES answer-unit eviction at sibling depths 1, 2 and 4 on identical authorized PostgreSQL units",
+    async () => {
+      if (!databaseUrl) return;
+      const metrics: Array<{
+        language: string;
+        depth: number;
+        correctUnitPresent: boolean;
+        correctUnitRankInCandidatePool: number | null;
+        wrongUnitCount: number;
+        totalPreReaderCandidates: number;
+        baselineSourceUnitCount: number;
+        distinctNewSourceUnits: number;
+        boundedChannelUnitCount: number;
+        sourceUnitIds: string[];
+        boundedChannelUnitIds: string[];
+        nonBoundedChannelUnitIds: string[];
+        baselineChannelProvenance: Array<{ unitId: string; reason: string }>;
+        channelProvenance: Array<{ unitId: string; reason: string }>;
+      }> = [];
+      for (const language of ["ES", "EN"] as const) {
+        const fixture = lexicalFixture();
+        const db = new Postgres(databaseUrl);
+        try {
+          await seedLexical(db, fixture);
+          const es = language === "ES";
+          const query = es
+            ? "¿Quién aprobó la ampliación de acceso tras la auditoría?"
+            : "Who approved the access expansion after the audit?";
+          const approved = es
+            ? "Lira aprobó la ampliación de acceso después de la auditoría."
+            : "Lira approved the access expansion after the audit.";
+          const denied = es
+            ? "Lira NO aprobó la ampliación de acceso tras la auditoría."
+            : "Lira did NOT approve the access expansion after the audit.";
+          const wrongActor = es
+            ? "Miro aprobó la ampliación de acceso tras la auditoría, no Lira."
+            : "Miro approved the access expansion after the audit, not Lira.";
+          const wrongDate = es
+            ? "Lira aprobó la ampliación de acceso, pero ANTES de la auditoría."
+            : "Lira approved the access expansion, but BEFORE the audit.";
+          const originals = [
+            { id: fixture.units.titleTerms, text: approved, kind: "CORRECT" },
+            { id: randomUUID(), text: denied, kind: "NEGATION" },
+            { id: randomUUID(), text: wrongActor, kind: "ACTOR" },
+            { id: randomUUID(), text: wrongDate, kind: "TIME" },
+          ];
+          await db.pool.query(
+            `update knowledge_documents
+                set title='Technical notes',type='concept',
+                    body_cache=$2,content_hash=$3
+              where id=$1`,
+            [
+              fixture.documents.titleTerms,
+              originals.map((item) => item.text).join("\n"),
+              createHash("sha256")
+                .update(originals.map((item) => item.text).join("\n"))
+                .digest("hex"),
+            ],
+          );
+          for (let index = 0; index < originals.length; index++) {
+            const item = originals[index]!;
+            const hash = createHash("sha256").update(item.text).digest("hex");
+            const heading =
+              index === 0
+                ? ["Technical notes"]
+                : es
+                  ? ["Quién aprobó ampliación acceso auditoría"]
+                  : ["Who approved access expansion after audit"];
+            if (index === 0) {
+              await db.pool.query(
+                "update knowledge_units set heading_path=$2,body=$3,content_hash=$4 where id=$1",
+                [item.id, heading, item.text, hash],
+              );
+            } else {
+              await db.pool.query(
+                `insert into knowledge_units(
+                  id,document_id,space_id,vault_id,unit_key,unit_type,
+                  heading_path,body,content_hash,corpus_revision,lifecycle,
+                  trust_tier,source_ids,token_estimate,parent_unit_id,
+                  document_revision,permissions,locator,structural_order,
+                  container_only,embedding_eligible
+                ) select $1,document_id,space_id,vault_id,$2,'PARAGRAPH',
+                    $3,$4,$5,corpus_revision,lifecycle,trust_tier,
+                    source_ids,24,parent_unit_id,document_revision,
+                    permissions,locator,structural_order+$6,false,true
+                  from knowledge_units where id=$7`,
+                [
+                  item.id,
+                  item.kind,
+                  heading,
+                  item.text,
+                  hash,
+                  index * 100,
+                  fixture.units.titleTerms,
+                ],
+              );
+            }
+          }
+          // The per-document depth limits only the bounded-unit SQL arm.
+          // Strict and assertion-recall can independently return a sibling.
+          // Hold the unmodified pipeline baseline fixed across all arms.
+          const baselinePoolIds: string[] = [];
+          const baselineChannelProvenance: Array<{
+            unitId: string;
+            reason: string;
+          }> = [];
+          await queryKnowledge(
+            db,
+            {
+              ...searchRequest(fixture),
+              query,
+              limit: 1,
+            },
+            {
+              channels: ["lexical"],
+              vaultIds: [fixture.vaultId],
+              answerabilityCandidateSink: (hits) =>
+                baselinePoolIds.push(...hits.map((hit) => hit.unitId ?? "")),
+              stageDiagnosticSink: (snapshot) => {
+                baselineChannelProvenance.push(
+                  ...(snapshot.channelCandidateTrace ?? [])
+                    .filter(
+                      (candidate) =>
+                        candidate.documentId === fixture.documents.titleTerms &&
+                        candidate.unitId !== null,
+                    )
+                    .map((candidate) => ({
+                      unitId: candidate.unitId!,
+                      reason: candidate.selectionReason,
+                    })),
+                );
+              },
+            },
+          );
+          const authoredUnitIds = new Set(originals.map((item) => item.id));
+          const baselineSourceIds = new Set(
+            baselinePoolIds.filter((id) => authoredUnitIds.has(id)),
+          );
+          for (const depth of [1, 2, 4] as const) {
+            const poolIds: string[] = [];
+            const boundedChannelUnitIds: string[] = [];
+            const nonBoundedChannelUnitIds: string[] = [];
+            const channelProvenance: Array<{ unitId: string; reason: string }> =
+              [];
+            const hits = await queryKnowledge(
+              db,
+              {
+                ...searchRequest(fixture),
+                query,
+                limit: 1,
+              },
+              {
+                channels: ["lexical"],
+                vaultIds: [fixture.vaultId],
+                experimentalBoundedUnitLexicalRecall: true,
+                experimentalBoundedUnitPerDocumentLimit: depth,
+                answerabilityCandidateSink: (hits) =>
+                  poolIds.push(...hits.map((hit) => hit.unitId ?? "")),
+                stageDiagnosticSink: (snapshot) => {
+                  for (const candidate of snapshot.channelCandidateTrace ??
+                    []) {
+                    if (
+                      candidate.documentId !== fixture.documents.titleTerms ||
+                      !candidate.unitId ||
+                      !authoredUnitIds.has(candidate.unitId)
+                    )
+                      continue;
+                    channelProvenance.push({
+                      unitId: candidate.unitId,
+                      reason: candidate.selectionReason,
+                    });
+                    if (
+                      candidate.selectionReason.includes(
+                        "lexical:bounded-unit-recall:",
+                      )
+                    ) {
+                      boundedChannelUnitIds.push(candidate.unitId);
+                    } else {
+                      nonBoundedChannelUnitIds.push(candidate.unitId);
+                    }
+                  }
+                },
+              },
+            );
+            const sourceHits = poolIds.filter((id) => authoredUnitIds.has(id));
+            // Stage provenance must explain EVERY sibling that reaches the
+            // candidate pool. A per-channel limit is not a total-pool limit.
+            const channelSourceIds = new Set([
+              ...boundedChannelUnitIds,
+              ...nonBoundedChannelUnitIds,
+            ]);
+            expect(sourceHits.length).toBeGreaterThan(0);
+            expect(new Set(sourceHits).size).toBe(sourceHits.length);
+            expect(sourceHits.every((id) => channelSourceIds.has(id))).toBe(
+              true,
+            );
+            const additionalSourceIds = new Set(
+              sourceHits.filter((id) => !baselineSourceIds.has(id)),
+            );
+            metrics.push({
+              language,
+              depth,
+              correctUnitPresent: sourceHits.includes(originals[0]!.id),
+              correctUnitRankInCandidatePool: poolIds.includes(originals[0]!.id)
+                ? poolIds.indexOf(originals[0]!.id) + 1
+                : null,
+              wrongUnitCount: sourceHits.filter((id) => id !== originals[0]!.id)
+                .length,
+              totalPreReaderCandidates: poolIds.length,
+              baselineSourceUnitCount: baselineSourceIds.size,
+              distinctNewSourceUnits: additionalSourceIds.size,
+              boundedChannelUnitCount: new Set(boundedChannelUnitIds).size,
+              sourceUnitIds: sourceHits,
+              boundedChannelUnitIds,
+              nonBoundedChannelUnitIds,
+              baselineChannelProvenance,
+              channelProvenance,
+            });
+            // Persist the observation in the test log BEFORE the invariant:
+            // a RED on the branch-local bound retains the measured arm/provenance.
+            console.log(
+              "S2_SIBLING_DEPTH_ARM_DEV_ONLY",
+              JSON.stringify(metrics.at(-1)),
+            );
+            // The branch-local SQL bound is not a total candidate-pool bound.
+            // Do not discard legitimate strict/assertion candidates to pass.
+            expect(new Set(boundedChannelUnitIds).size).toBeLessThanOrEqual(
+              depth,
+            );
+            expect(additionalSourceIds.size).toBeLessThanOrEqual(depth);
+            // These results are candidates even when the HTTP presentation
+            // limit is one. None becomes a SOURCE entailment verdict.
+            expect(hits.length).toBeLessThanOrEqual(1);
+          }
+          const scoped = await queryKnowledge(
+            db,
+            { ...searchRequest(fixture), query },
+            {
+              channels: ["lexical"],
+              vaultIds: [fixture.vaultId],
+              experimentalBoundedUnitLexicalRecall: true,
+              experimentalBoundedUnitPerDocumentLimit: 4,
+              graphScopes: [
+                { vaultId: fixture.vaultId, pathPrefix: "docs/body.md" },
+              ],
+              pathAuthorizer: (path) => path === "docs/body.md",
+            },
+          );
+          expect(
+            scoped.some(
+              (hit) => hit.documentId === fixture.documents.titleTerms,
+            ),
+          ).toBe(false);
+        } finally {
+          await cleanupLexical(db, fixture);
+          await db.close();
+        }
+      }
+      console.log("S2_SIBLING_DEPTH_DEV_ONLY", JSON.stringify(metrics));
+      for (const language of ["ES", "EN"]) {
+        const rows = metrics.filter((row) => row.language === language);
+        expect(rows.map((row) => row.depth)).toEqual([1, 2, 4]);
+        // The frozen unit labels remain the gold targets, but the expected
+        // 1/2 eviction and 4 recovery were an unvalidated hypothesis.
+        // Record observed recall and distractors without asserting a win.
+        expect(
+          rows.every(
+            (row) =>
+              row.correctUnitRankInCandidatePool === null ||
+              row.correctUnitRankInCandidatePool > 0,
+          ),
+        ).toBe(true);
+        expect(
+          rows.every(
+            (row) =>
+              row.sourceUnitIds.length ===
+              row.wrongUnitCount + Number(row.correctUnitPresent),
+          ),
+        ).toBe(true);
+      }
+    },
+  );
+
+  it("rejects sibling-depth overrides without the internal experimental recall gate", async () => {
+    const db = {
+      pool: {
+        query: () => {
+          throw new Error("UNEXPECTED_DB_CALL");
+        },
+      },
+    } as unknown as Postgres;
+    const request = {
+      ...searchRequest(lexicalFixture()),
+      query: "Which source was approved?",
+    };
+    await expect(
+      queryKnowledge(db, request, {
+        channels: ["lexical"],
+        experimentalBoundedUnitPerDocumentLimit: 4,
+      }),
+    ).rejects.toThrow("EXPERIMENTAL_BOUNDED_UNIT_DEPTH_INVALID");
+    await expect(
+      queryKnowledge(db, request, {
+        channels: ["lexical"],
+        experimentalBoundedUnitLexicalRecall: true,
+        experimentalBoundedUnitPerDocumentLimit: 3 as 4,
+      }),
+    ).rejects.toThrow("EXPERIMENTAL_BOUNDED_UNIT_DEPTH_INVALID");
+  });
+
+  it.skipIf(!databaseUrl)(
+    "retains an answer-bearing sibling SOURCE unit even when a negated sibling has stronger lexical overlap",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = lexicalFixture();
+      const db = new Postgres(databaseUrl);
+      try {
+        await seedLexical(db, fixture);
+        const good =
+          "Lira aprobó la ampliación de acceso después de la auditoría.";
+        const wrong =
+          "Lira NO aprobó la ampliación de acceso después de la auditoría. " +
+          "La ampliación de acceso quedó pendiente después de la auditoría.";
+        const goodHash = createHash("sha256").update(good).digest("hex");
+        const badHash = createHash("sha256").update(wrong).digest("hex");
+        const siblingId = randomUUID();
+        await db.pool.query(
+          `update knowledge_documents
+              set type='concept',title='Technical notes',
+                  body_cache=$2,content_hash=$3
+            where id=$1`,
+          [fixture.documents.titleTerms, good + "\n" + wrong, goodHash],
+        );
+        await db.pool.query(
+          `update knowledge_units
+              set heading_path=ARRAY['Technical notes'],body=$2,content_hash=$3
+            where id=$1`,
+          [fixture.units.titleTerms, good, goodHash],
+        );
+        await db.pool.query(
+          `insert into knowledge_units(
+              id,document_id,space_id,vault_id,unit_key,unit_type,
+              heading_path,body,content_hash,corpus_revision,lifecycle,
+              trust_tier,source_ids,token_estimate,parent_unit_id,
+              document_revision,permissions,locator,structural_order,
+              container_only,embedding_eligible
+            ) select $1,document_id,space_id,vault_id,'negated-sibling',
+                'PARAGRAPH',ARRAY['Ampliación acceso auditoría'],$2,$3,
+                corpus_revision,lifecycle,trust_tier,source_ids,24,
+                parent_unit_id,document_revision,permissions,locator,
+                structural_order+100,false,true
+              from knowledge_units where id=$4`,
+          [siblingId, wrong, badHash, fixture.units.titleTerms],
+        );
+        const request = {
+          ...searchRequest(fixture),
+          query: "¿Quién aprobó la ampliación de acceso tras la auditoría?",
+        };
+        const options = {
+          channels: ["lexical"] as const,
+          vaultIds: [fixture.vaultId],
+          experimentalBoundedUnitLexicalRecall: true,
+        };
+        const ordinary = await queryKnowledge(db, request, {
+          channels: ["lexical"] as const,
+          vaultIds: [fixture.vaultId],
+        });
+        expect(
+          ordinary.some(
+            (hit) =>
+              hit.unitId === fixture.units.titleTerms ||
+              hit.unitId === siblingId,
+          ),
+        ).toBe(false);
+        const hits = await queryKnowledge(db, request, options);
+        const siblings = hits.filter(
+          (hit) => hit.documentId === fixture.documents.titleTerms,
+        );
+        expect(siblings.some((hit) => hit.unitId === siblingId)).toBe(true);
+        // RED before the repair: a one-unit-per-document LATERAL chooses only
+        // the higher-scoring negative and drops this correct original unit.
+        expect(
+          siblings.some((hit) => hit.unitId === fixture.units.titleTerms),
+        ).toBe(true);
+        // Both are *retrieval candidates*, not certified semantic answers.
+        expect(
+          siblings.every((hit) =>
+            hit.reasons.some((reason) =>
+              reason.includes("lexical:bounded-unit-recall:"),
+            ),
+          ),
+        ).toBe(true);
+        const scoped = await queryKnowledge(db, request, {
+          ...options,
+          graphScopes: [
+            { vaultId: fixture.vaultId, pathPrefix: "docs/body.md" },
+          ],
+          pathAuthorizer: (path) => path === "docs/body.md",
+        });
+        expect(
+          scoped.some((hit) => hit.documentId === fixture.documents.titleTerms),
+        ).toBe(false);
+        // The public response limit is not the Reader/answerability pool.
+        const readerCandidates: string[] = [];
+        await queryKnowledge(
+          db,
+          { ...request, limit: 1 },
+          {
+            ...options,
+            answerabilityCandidateSink: (pool) => {
+              readerCandidates.push(...pool.map((hit) => hit.unitId ?? ""));
+            },
+          },
+        );
+        expect(readerCandidates).toContain(fixture.units.titleTerms);
+        expect(readerCandidates).toContain(siblingId);
+      } finally {
+        await cleanupLexical(db, fixture);
+        await db.close();
+      }
+    },
+  );
+
+  it("never treats an after-sunrise source as evidence for a nighttime-calibration question", () => {
+    // This is a known semantic negative in the §88 retrieval-only fixture.
+    // Its original unit can be recalled, but that is not answerability gold.
+    const verdict = new ExactStructuredPropositionMatcher().match({
+      query: {
+        subject: "Vela",
+        predicate: "calibrated",
+        object: "the telescope",
+        temporalScope: "during night operations",
+      },
+      candidate: {
+        subject: "Vela",
+        predicate: "calibrated",
+        object: "the telescope",
+        temporalScope: "after sunrise",
+        quote: { startOffset: 0, endOffset: 48 },
+      },
+    });
+    expect(verdict.kind).toBe("RELATED_NOT_ANSWERING");
+  });
+
+  it.skipIf(!databaseUrl)(
+    "recovers the original answer-bearing unit for an ordinary ES Markdown question only with bounded unit recall",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = lexicalFixture();
+      const db = new Postgres(databaseUrl);
+      try {
+        await seedLexical(db, fixture);
+        const positive =
+          "Lira aprobó la ampliación de acceso después de la auditoría.";
+        const negative =
+          "Lira no aprobó la ampliación de acceso después de la auditoría.";
+        const generic =
+          "La auditoría revisó la ampliación de acceso y presentó un informe.";
+        const replacements = [
+          {
+            doc: fixture.documents.titleTerms,
+            unit: fixture.units.titleTerms,
+            text: positive,
+          },
+          {
+            doc: fixture.documents.bodyTerms,
+            unit: fixture.units.bodyTerms,
+            text: negative,
+          },
+          {
+            doc: fixture.documents.alias,
+            unit: fixture.units.alias,
+            text: generic,
+          },
+        ];
+        for (const item of replacements) {
+          const hash = createHash("sha256").update(item.text).digest("hex");
+          await db.pool.query(
+            "update knowledge_documents set title='Technical notes',body_cache=$2,content_hash=$3,type='concept' where id=$1",
+            [item.doc, item.text, hash],
+          );
+          await db.pool.query(
+            "update knowledge_units set heading_path=ARRAY['Technical notes'],body=$2,content_hash=$3 where id=$1",
+            [item.unit, item.text, hash],
+          );
+        }
+        const query =
+          "¿Quién aprobó la ampliación de acceso tras la auditoría?";
+        // Two terms in different original units must not be interpreted as
+        // co-occurring in one answer-bearing passage.
+        const separated = "ampliación auditoría";
+        await db.pool.query(
+          "update knowledge_documents set title='Separate terms',body_cache=$2,content_hash=$3 where id=$1",
+          [
+            fixture.documents.externalId,
+            separated,
+            createHash("sha256").update(separated).digest("hex"),
+          ],
+        );
+        for (const item of [
+          { id: fixture.structuralParentId, body: "ampliación" },
+          { id: fixture.units.externalId, body: "auditoría" },
+        ]) {
+          await db.pool.query(
+            "update knowledge_units set heading_path=ARRAY['Separate'],body=$2,content_hash=$3 where id=$1",
+            [
+              item.id,
+              item.body,
+              createHash("sha256").update(item.body).digest("hex"),
+            ],
+          );
+        }
+        const request = { ...searchRequest(fixture), query };
+        const options = {
+          channels: ["lexical"] as const,
+          vaultIds: [fixture.vaultId],
+        };
+        const missedGoldDiagnostics: Array<{
+          case: string;
+          depth: number;
+          baselineRank: number | null;
+          boundedRank: number | null;
+          distractors: number;
+          totalPool: number;
+        }> = [];
+        const recordMiss = (
+          name: string,
+          baseline: readonly { unitId?: string }[],
+          recovered: readonly { unitId?: string }[],
+          depth: number,
+        ) => {
+          const expectedUnit = fixture.units.titleTerms;
+          const baselineIndex = baseline.findIndex(
+            (hit) => hit.unitId === expectedUnit,
+          );
+          const boundedIndex = recovered.findIndex(
+            (hit) => hit.unitId === expectedUnit,
+          );
+          const item = {
+            case: name,
+            depth,
+            baselineRank: baselineIndex < 0 ? null : baselineIndex + 1,
+            boundedRank: boundedIndex < 0 ? null : boundedIndex + 1,
+            distractors: recovered.filter((hit) => hit.unitId !== expectedUnit)
+              .length,
+            totalPool: recovered.length,
+          };
+          missedGoldDiagnostics.push(item);
+          console.log("S2_BASELINE_MISS_DEV_ONLY", JSON.stringify(item));
+        };
+        const strict = await queryKnowledge(db, request, options);
+        expect(
+          strict.some((hit) => hit.unitId === fixture.units.titleTerms),
+        ).toBe(false);
+        const relaxed = await queryKnowledge(db, request, {
+          ...options,
+          experimentalBoundedUnitLexicalRecall: true,
+        });
+        expect(
+          relaxed.some((hit) => hit.unitId === fixture.units.titleTerms),
+        ).toBe(true);
+        recordMiss("ES_APPROVAL", strict, relaxed, 2);
+        for (const depth of [1, 4] as const) {
+          const arm = await queryKnowledge(db, request, {
+            ...options,
+            experimentalBoundedUnitLexicalRecall: true,
+            experimentalBoundedUnitPerDocumentLimit: depth,
+          });
+          recordMiss("ES_APPROVAL", strict, arm, depth);
+        }
+        expect(
+          relaxed.some((hit) => hit.unitId === fixture.units.bodyTerms),
+        ).toBe(true);
+        expect(relaxed.some((hit) => hit.unitId === fixture.units.alias)).toBe(
+          true,
+        );
+        expect(
+          relaxed.some(
+            (hit) => hit.documentId === fixture.documents.externalId,
+          ),
+        ).toBe(false);
+        const positiveHit = relaxed.find(
+          (hit) => hit.unitId === fixture.units.titleTerms,
+        );
+        expect(positiveHit?.excerpt).toContain("Lira aprobó");
+        expect(
+          positiveHit?.reasons.some((reason) =>
+            reason.includes("lexical:bounded-unit-recall:"),
+          ),
+        ).toBe(true);
+        const restricted = await queryKnowledge(db, request, {
+          ...options,
+          experimentalBoundedUnitLexicalRecall: true,
+          graphScopes: [
+            { vaultId: fixture.vaultId, pathPrefix: "docs/title-terms.md" },
+          ],
+          pathAuthorizer: (path) => path === "docs/title-terms.md",
+        });
+        expect(restricted.map((hit) => hit.documentId)).toEqual([
+          fixture.documents.titleTerms,
+        ]);
+        // Same physical unit identifiers and revision; swap only the
+        // fixture language to verify that this mechanism is not ES-specific.
+        const english = [
+          {
+            doc: fixture.documents.titleTerms,
+            unit: fixture.units.titleTerms,
+            text: "Lira approved the access expansion following the audit.",
+          },
+          {
+            doc: fixture.documents.bodyTerms,
+            unit: fixture.units.bodyTerms,
+            text: "Lira did not approve the access expansion after the audit.",
+          },
+        ];
+        for (const item of english) {
+          const hash = createHash("sha256").update(item.text).digest("hex");
+          await db.pool.query(
+            "update knowledge_documents set body_cache=$2,content_hash=$3 where id=$1",
+            [item.doc, item.text, hash],
+          );
+          await db.pool.query(
+            "update knowledge_units set body=$2,content_hash=$3 where id=$1",
+            [item.unit, item.text, hash],
+          );
+        }
+        const englishQuery =
+          "Who approved the access expansion after the audit?";
+        const englishStrict = await queryKnowledge(
+          db,
+          { ...request, query: englishQuery },
+          options,
+        );
+        expect(
+          englishStrict.some((hit) => hit.unitId === fixture.units.titleTerms),
+        ).toBe(false);
+        const englishRelaxed = await queryKnowledge(
+          db,
+          { ...request, query: englishQuery },
+          { ...options, experimentalBoundedUnitLexicalRecall: true },
+        );
+        expect(
+          englishRelaxed.some((hit) => hit.unitId === fixture.units.titleTerms),
+        ).toBe(true);
+        recordMiss("EN_APPROVAL", englishStrict, englishRelaxed, 2);
+        for (const depth of [1, 4] as const) {
+          const arm = await queryKnowledge(
+            db,
+            { ...request, query: englishQuery },
+            {
+              ...options,
+              experimentalBoundedUnitLexicalRecall: true,
+              experimentalBoundedUnitPerDocumentLimit: depth,
+            },
+          );
+          recordMiss("EN_APPROVAL", englishStrict, arm, depth);
+        }
+        // A disjoint technical domain uses the exact same generic grammar,
+        // not an added term alias or a special-case question template.
+        const observatory = [
+          {
+            doc: fixture.documents.titleTerms,
+            unit: fixture.units.titleTerms,
+            text: "Vela calibrated the telescope after sunrise.",
+          },
+          {
+            doc: fixture.documents.bodyTerms,
+            unit: fixture.units.bodyTerms,
+            text: "Vela did not calibrate the telescope after sunrise.",
+          },
+        ];
+        for (const item of observatory) {
+          const hash = createHash("sha256").update(item.text).digest("hex");
+          await db.pool.query(
+            "update knowledge_documents set body_cache=$2,content_hash=$3 where id=$1",
+            [item.doc, item.text, hash],
+          );
+          await db.pool.query(
+            "update knowledge_units set body=$2,content_hash=$3 where id=$1",
+            [item.unit, item.text, hash],
+          );
+        }
+        const observatoryQuery =
+          "Who calibrated the telescope during night operations?";
+        const ordinaryObservatory = await queryKnowledge(
+          db,
+          { ...request, query: observatoryQuery },
+          options,
+        );
+        expect(
+          ordinaryObservatory.some(
+            (hit) => hit.unitId === fixture.units.titleTerms,
+          ),
+        ).toBe(false);
+        const relaxedObservatory = await queryKnowledge(
+          db,
+          { ...request, query: observatoryQuery },
+          { ...options, experimentalBoundedUnitLexicalRecall: true },
+        );
+        expect(
+          relaxedObservatory.some(
+            (hit) => hit.unitId === fixture.units.titleTerms,
+          ),
+        ).toBe(true);
+        // Retrieval qrel != answerability gold: the recovered original
+        // says AFTER SUNRISE, while the question asks DURING NIGHT operations.
+        // Even when the same SOURCE unit is located, a source-bound
+        // proposition comparison must not license this time-incompatible claim.
+        const observatoryTarget = relaxedObservatory.find(
+          (hit) => hit.unitId === fixture.units.titleTerms,
+        );
+        expect(observatoryTarget?.excerpt).toContain("after sunrise");
+        expect(
+          new ExactStructuredPropositionMatcher().match({
+            query: {
+              subject: "Vela",
+              predicate: "calibrated",
+              object: "the telescope",
+              temporalScope: "during night operations",
+            },
+            candidate: {
+              subject: "Vela",
+              predicate: "calibrated",
+              object: "the telescope",
+              temporalScope: "after sunrise",
+              quote: {
+                startOffset: 0,
+                endOffset: observatoryTarget!.excerpt.length,
+              },
+            },
+          }).kind,
+        ).toBe("RELATED_NOT_ANSWERING");
+        recordMiss(
+          "EN_OBSERVATORY",
+          ordinaryObservatory,
+          relaxedObservatory,
+          2,
+        );
+        for (const depth of [1, 4] as const) {
+          const arm = await queryKnowledge(
+            db,
+            { ...request, query: observatoryQuery },
+            {
+              ...options,
+              experimentalBoundedUnitLexicalRecall: true,
+              experimentalBoundedUnitPerDocumentLimit: depth,
+            },
+          );
+          recordMiss("EN_OBSERVATORY", ordinaryObservatory, arm, depth);
+        }
+        expect(missedGoldDiagnostics).toHaveLength(9);
+        expect(
+          missedGoldDiagnostics.every((row) => row.baselineRank === null),
+        ).toBe(true);
+        expect(
+          missedGoldDiagnostics.every((row) => row.boundedRank !== null),
+        ).toBe(true);
+      } finally {
+        await cleanupLexical(db, fixture);
+        await db.close();
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
     "recovers a scoped canonical document from an explicit question acronym",
     async () => {
       if (!databaseUrl) return;
@@ -387,6 +1156,9 @@ describe("production lexical ranking", () => {
           {
             channels: ["exact", "lexical"],
             vaultIds: [fixture.vaultId],
+            graphScopes: [
+              { vaultId: fixture.vaultId, pathPrefix: "docs/title-terms.md" },
+            ],
             graphScopes: [
               { vaultId: fixture.vaultId, pathPrefix: "docs/title-terms.md" },
             ],
@@ -532,6 +1304,7 @@ describe("production lexical ranking", () => {
           externalId: "RANKING",
           path: "docs/identity.md",
           title: "Canonical identity",
+          aliases: ["identity alias"],
         });
 
         const reranked = await queryKnowledge(db, searchRequest(fixture), {
@@ -586,6 +1359,322 @@ describe("production lexical ranking", () => {
             document: hit.document,
           }).toEqual(originalById.get(hit.documentId));
         }
+      } finally {
+        await cleanupLexical(db, fixture);
+        await db.close();
+      }
+    },
+  );
+});
+
+describe("structured TABLE_ROW lexical context", () => {
+  it.skipIf(!databaseUrl)(
+    "keeps canonical row bodies unchanged while opt-in context selects the matching row",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = lexicalFixture();
+      const db = new Postgres(databaseUrl);
+      const secondRowId = randomUUID();
+      try {
+        await seedLexical(db, fixture);
+        const documentId = fixture.documents.bodyTerms;
+        const firstRowId = fixture.units.bodyTerms;
+        const rowBody = "| API | Mira Chen | SlotA |";
+        const documentBody = [
+          "Blue release matrix",
+          "Green release matrix",
+          "Component API Owner Mira Chen Slot SlotA",
+        ].join("\n");
+        const rowHash = createHash("sha256").update(rowBody).digest("hex");
+        const documentHash = createHash("sha256")
+          .update(documentBody)
+          .digest("hex");
+        await db.pool.query(
+          `update knowledge_documents
+              set title='Release matrices',body_cache=$2,content_hash=$3
+            where id=$1`,
+          [documentId, documentBody, documentHash],
+        );
+        await db.pool.query(
+          `update knowledge_units
+              set unit_type='TABLE_ROW',heading_path=$2,body=$3,content_hash=$4,
+                  structural_order=1,lexical_context=$5
+            where id=$1`,
+          [
+            firstRowId,
+            ["Release matrices", "Table columns: Component | Owner | Slot"],
+            rowBody,
+            rowHash,
+            [
+              "Release matrices",
+              "Blue release matrix",
+              "Component = API",
+              "Owner = Mira Chen",
+              "Slot = SlotA",
+            ].join("\n"),
+          ],
+        );
+        await db.pool.query(
+          `insert into knowledge_units(
+             id,document_id,space_id,vault_id,unit_key,unit_type,heading_path,body,
+             content_hash,corpus_revision,lifecycle,trust_tier,source_ids,
+             token_estimate,parent_unit_id,document_revision,permissions,locator,
+             structural_order,container_only,embedding_eligible,lexical_context
+           ) values($1,$2,$3,$4,'structured-row-two','TABLE_ROW',$5,$6,$7,$8,
+                    'ACTIVE','HUMAN_REVIEWED','{}',8,null,$8,'{}'::jsonb,
+                    '{}'::jsonb,2,false,true,$9)`,
+          [
+            secondRowId,
+            documentId,
+            fixture.spaceId,
+            fixture.vaultId,
+            ["Release matrices", "Table columns: Component | Owner | Slot"],
+            rowBody,
+            rowHash,
+            fixture.corpusRevision,
+            [
+              "Release matrices",
+              "Green release matrix",
+              "Component = API",
+              "Owner = Mira Chen",
+              "Slot = SlotA",
+            ].join("\n"),
+          ],
+        );
+
+        const query =
+          "Green release matrix Component API Owner Mira Chen Slot SlotA";
+        const request = { ...searchRequest(fixture), query, limit: 5 };
+        const sharedOptions = {
+          channels: ["lexical"] as const,
+          vaultIds: [fixture.vaultId],
+          deterministicRerank: false,
+        };
+
+        const baseline = await queryKnowledge(db, request, sharedOptions);
+        expect(baseline[0]?.documentId).toBe(documentId);
+        expect(baseline[0]?.unitId).toBe(firstRowId);
+
+        const candidate = await queryKnowledge(db, request, {
+          ...sharedOptions,
+          experimentalStructuredRowLexicalContext: true,
+        });
+        expect(candidate[0]?.documentId).toBe(documentId);
+        expect(candidate[0]?.unitId).toBe(secondRowId);
+        expect(candidate[0]?.reasons).toContain(
+          "lexical:structured-context-terms",
+        );
+
+        const stored = await db.pool.query<{
+          id: string;
+          body: string;
+          lexical_context: string;
+          augmented_match: boolean;
+        }>(
+          `select id,body,lexical_context,
+                  lexical_augmented_search_vector @@ plainto_tsquery('simple',$2)
+                    augmented_match
+             from knowledge_units
+            where id=any($1::uuid[])
+            order by structural_order`,
+          [[firstRowId, secondRowId], query],
+        );
+        expect(stored.rows.map((row) => row.body)).toEqual([rowBody, rowBody]);
+        expect(stored.rows[0]?.lexical_context).toContain(
+          "Blue release matrix",
+        );
+        expect(stored.rows[1]?.lexical_context).toContain(
+          "Green release matrix",
+        );
+        expect(stored.rows[0]?.augmented_match).toBe(false);
+        expect(stored.rows[1]?.augmented_match).toBe(true);
+      } finally {
+        await cleanupLexical(db, fixture);
+        await db.close();
+      }
+    },
+  );
+});
+
+describe("atomic lexical selection and indexed lexemes", () => {
+  it.skipIf(!databaseUrl)(
+    "keeps a matching leaf when its container ranks higher",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = lexicalFixture();
+      const db = new Postgres(databaseUrl);
+      try {
+        await seedLexical(db, fixture);
+        for (const [id, body] of [
+          [fixture.structuralParentId, "Ranking ".repeat(50)],
+          [fixture.units.externalId, "Ranking approved atomic answer."],
+        ] as const) {
+          await db.pool.query(
+            "update knowledge_units set body=$2,content_hash=$3 where id=$1",
+            [id, body, createHash("sha256").update(body).digest("hex")],
+          );
+        }
+        const hits = await queryKnowledge(db, searchRequest(fixture), {
+          channels: ["lexical"],
+          vaultIds: [fixture.vaultId],
+          graphScopes: [
+            { vaultId: fixture.vaultId, pathPrefix: "docs/identity.md" },
+          ],
+          pathAuthorizer: (path) => path === "docs/identity.md",
+        });
+        expect(hits[0]?.unitId).toBe(fixture.units.externalId);
+        expect(hits[0]?.unitType).not.toBe("SECTION");
+        expect(hits[0]?.excerpt).toContain("approved atomic answer");
+      } finally {
+        await cleanupLexical(db, fixture);
+        await db.close();
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
+    "matches accented Spanish terms through assertion recall",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = lexicalFixture();
+      const db = new Postgres(databaseUrl);
+      try {
+        await seedLexical(db, fixture);
+        const body = "La nómina pública se registra en el sistema autorizado.";
+        const hash = createHash("sha256").update(body).digest("hex");
+        await db.pool.query(
+          "update knowledge_documents set type='claim',title='Nómina pública',body_cache=$2,content_hash=$3 where id=$1",
+          [fixture.documents.titleTerms, body, hash],
+        );
+        await db.pool.query(
+          "update knowledge_units set heading_path=$2,body=$3,content_hash=$4 where id=$1",
+          [fixture.units.titleTerms, ["Nómina pública"], body, hash],
+        );
+        const hits = await queryKnowledge(
+          db,
+          {
+            ...searchRequest(fixture),
+            query: "¿Cómo se registra la nómina pública?",
+          },
+          {
+            channels: ["lexical"],
+            vaultIds: [fixture.vaultId],
+            graphScopes: [
+              { vaultId: fixture.vaultId, pathPrefix: "docs/title-terms.md" },
+            ],
+            pathAuthorizer: (path) => path === "docs/title-terms.md",
+          },
+        );
+        expect(hits[0]?.documentId).toBe(fixture.documents.titleTerms);
+        expect(hits[0]?.unitId).toBe(fixture.units.titleTerms);
+        expect(
+          hits[0]?.reasons.some((reason) =>
+            reason.includes("assertion-recall"),
+          ),
+        ).toBe(true);
+      } finally {
+        await cleanupLexical(db, fixture);
+        await db.close();
+      }
+    },
+  );
+});
+
+describe("bounded assertion recall", () => {
+  it.skipIf(!databaseUrl)(
+    "recovers a direct approved claim without admitting a same-topic wrong relation",
+    async () => {
+      if (!databaseUrl) return;
+      const fixture = lexicalFixture();
+      const db = new Postgres(databaseUrl);
+      try {
+        await seedLexical(db, fixture);
+        const updates = [
+          {
+            documentId: fixture.documents.titleTerms,
+            unitId: fixture.units.titleTerms,
+            externalId: "CLM-BLUE-WIDGET-STORAGE",
+            title: "Blue widget requires a storage engine",
+            body: "A blue widget requires a storage engine to keep its state.",
+            type: "claim",
+          },
+          {
+            documentId: fixture.documents.bodyTerms,
+            unitId: fixture.units.bodyTerms,
+            externalId: "RUL-BLUE-WIDGET-QUEUE",
+            title: "Blue widget requires a transport queue",
+            body: "A blue widget requires a transport queue for delivery.",
+            type: "decision-rule",
+          },
+          {
+            documentId: fixture.documents.alias,
+            unitId: fixture.units.alias,
+            externalId: "PRO-BLUE-WIDGET",
+            title: "Blue widget storage engine practice guide",
+            body: "In practice, a blue widget deployment guide uses a storage engine. The guide does not require the widget itself.",
+            type: "profile",
+          },
+        ] as const;
+        for (const item of updates) {
+          const hash = createHash("sha256").update(item.body).digest("hex");
+          await db.pool.query(
+            `update knowledge_documents
+                set external_id=$2,title=$3,body_cache=$4,type=$5,
+                    content_hash=$6
+              where id=$1`,
+            [
+              item.documentId,
+              item.externalId,
+              item.title,
+              item.body,
+              item.type,
+              hash,
+            ],
+          );
+          await db.pool.query(
+            `update knowledge_units
+                set heading_path=$2,body=$3,content_hash=$4
+              where id=$1`,
+            [item.unitId, [item.title], item.body, hash],
+          );
+        }
+        const query =
+          "Does a blue widget require a storage engine in practice?";
+        const hits = await queryKnowledge(
+          db,
+          { ...searchRequest(fixture), query },
+          { channels: ["lexical"], vaultIds: [fixture.vaultId] },
+        );
+        expect(
+          hits.some((hit) => hit.documentId === fixture.documents.titleTerms),
+        ).toBe(true);
+        expect(
+          hits.some((hit) => hit.documentId === fixture.documents.alias),
+        ).toBe(true);
+        expect(
+          hits
+            .find((hit) => hit.documentId === fixture.documents.alias)
+            ?.reasons.some((reason) =>
+              reason.includes("lexical:assertion-recall:"),
+            ),
+        ).toBe(false);
+        expect(
+          hits
+            .find((hit) => hit.documentId === fixture.documents.titleTerms)
+            ?.reasons.some((reason) =>
+              reason.includes("lexical:assertion-recall:"),
+            ),
+        ).toBe(true);
+        const answerability = assessRetrievalAnswerability(hits, query);
+        const accepted = answerability.candidateSignals
+          .filter((signal) => signal.passageSupport.supported)
+          .map((signal) => signal.externalId);
+        expect(
+          hits.some((hit) => hit.documentId === fixture.documents.bodyTerms),
+        ).toBe(true);
+        expect(accepted).toContain("CLM-BLUE-WIDGET-STORAGE");
+        expect(accepted).not.toContain("RUL-BLUE-WIDGET-QUEUE");
+        expect(accepted).not.toContain("PRO-BLUE-WIDGET");
       } finally {
         await cleanupLexical(db, fixture);
         await db.close();

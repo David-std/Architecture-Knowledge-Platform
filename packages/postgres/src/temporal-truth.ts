@@ -128,6 +128,40 @@ export interface TemporalTruthQuery {
   limit?: number;
 }
 
+export interface GovernedTemporalEvidenceReference {
+  id: string;
+  spaceId: string;
+  vaultId: string;
+  sourceId: string;
+  artifactId: string | null;
+  locator: unknown;
+  contentHash: string;
+  excerpt: string;
+  /** Persisted raw SOURCE metadata; never sourced from the search hit. */
+  sourceSha256: string;
+  sourceObjectKey: string;
+  sourceByteSize: string;
+  sourceMediaType: string | null;
+}
+
+export interface GovernedTemporalFactEvidenceBundle {
+  fact: TemporalFactView;
+  supportSet: TruthSupportSet;
+  evidence: GovernedTemporalEvidenceReference[];
+}
+
+export interface GovernedTemporalFactEvidenceQuery {
+  spaceId: string;
+  vaultId: string;
+  documentId: string;
+  /** Exact persisted document identity; never trust an unrelated hit revision. */
+  documentPath: string;
+  documentRevision: string;
+  authorizationPathPrefixes: Array<string | null>;
+  validAt?: string;
+  limit?: number;
+}
+
 export type DerivedTruthStoreKind =
   | "VECTOR"
   | "GRAPH_SUMMARY"
@@ -1765,6 +1799,139 @@ export class PostgresTemporalTruthStore {
         ),
         queryRevisionHash: cutoff.hash,
         queryRevisionSeq: cutoff.seq,
+      });
+    }
+    return output;
+  }
+
+  async governedFactEvidenceForDocument(
+    rawQuery: GovernedTemporalFactEvidenceQuery,
+  ): Promise<GovernedTemporalFactEvidenceBundle[]> {
+    const spaceId = requiredUuid(rawQuery.spaceId, "TRUTH_SPACE_ID_INVALID");
+    const vaultId = requiredUuid(rawQuery.vaultId, "TRUTH_VAULT_ID_INVALID");
+    const documentId = requiredUuid(
+      rawQuery.documentId,
+      "TRUTH_DOCUMENT_ID_INVALID",
+    );
+    if (!Array.isArray(rawQuery.authorizationPathPrefixes)) {
+      throw new Error("TRUTH_AUTHORIZATION_SCOPE_REQUIRED");
+    }
+    if (rawQuery.authorizationPathPrefixes.length === 0) {
+      throw new Error("TRUTH_AUTHORIZATION_SCOPE_REQUIRED");
+    }
+    // The fact's authorization path is not a substitute for the document's
+    // path. Bind the candidate to one persisted, active source revision before
+    // collecting fact/evidence projections; stale or foreign hits fail closed.
+    if (
+      !rawQuery.documentPath ||
+      !rawQuery.documentRevision ||
+      !pathAllowed(rawQuery.documentPath, rawQuery.authorizationPathPrefixes)
+    ) {
+      return [];
+    }
+    const document = await this.db.pool.query<{ id: string }>(
+      `select id from knowledge_documents
+        where id=$1 and space_id=$2 and vault_id=$3
+          and path=$4 and current_revision=$5
+          and lifecycle='ACTIVE'
+        limit 1`,
+      [
+        documentId,
+        spaceId,
+        vaultId,
+        rawQuery.documentPath,
+        rawQuery.documentRevision,
+      ],
+    );
+    if (document.rows.length !== 1) return [];
+    const facts = (
+      await this.listFacts({
+        spaceId,
+        vaultId,
+        mode: "CURRENT",
+        authorizationPathPrefixes: rawQuery.authorizationPathPrefixes,
+        ...(rawQuery.validAt ? { validAt: rawQuery.validAt } : {}),
+        limit: rawQuery.limit ?? 100,
+      })
+    ).filter(
+      (fact) =>
+        fact.lifecycle === "ACTIVE" &&
+        fact.supportState === "SUPPORTED" &&
+        fact.truthState === "SUPPORTED_CURRENT",
+    );
+    if (facts.length === 0) return [];
+
+    const output: GovernedTemporalFactEvidenceBundle[] = [];
+    for (const fact of facts) {
+      const history = await this.supportHistory(fact.id);
+      if (
+        history.supportSet.state !== "SUPPORTED" ||
+        history.supportSet.evidenceIds.length === 0
+      ) {
+        continue;
+      }
+      const evidence = await this.db.pool.query<{
+        id: string;
+        space_id: string;
+        vault_id: string;
+        source_id: string;
+        artifact_id: string | null;
+        locator: unknown;
+        content_hash: string;
+        excerpt: string;
+        source_sha256: string;
+        source_object_key: string;
+        source_byte_size: string;
+        source_media_type: string | null;
+      }>(
+        `select distinct
+                e.id,e.space_id,e.vault_id,e.source_id,e.artifact_id,
+                e.locator,e.content_hash,e.excerpt,
+                s.sha256 source_sha256,s.object_key source_object_key,
+                s.byte_size::text source_byte_size,
+                s.media_type source_media_type
+           from document_evidence de
+           join evidence e
+             on e.id=de.evidence_id
+            and e.space_id=$2
+            and e.vault_id=$3
+           join sources s
+             on s.id=e.source_id
+            and s.space_id=$2
+            and s.vault_id=$3
+            and s.status='ACTIVE'
+           left join source_artifacts a
+             on a.id=e.artifact_id
+            and a.source_id=s.id
+            and a.source_hash=s.sha256
+          where de.document_id=$1
+            and de.relation_type='supported_by'
+            and e.id=any($4::uuid[])
+            -- The worker's structural/source locator must be pinned to
+            -- the active immutable raw SOURCE revision, not merely a path.
+            and e.locator->>'source_hash'=s.sha256
+            and (e.artifact_id is null or a.id is not null)
+          order by e.id`,
+        [documentId, spaceId, vaultId, history.supportSet.evidenceIds],
+      );
+      if (evidence.rows.length === 0) continue;
+      output.push({
+        fact,
+        supportSet: history.supportSet,
+        evidence: evidence.rows.map((row) => ({
+          id: row.id,
+          spaceId: row.space_id,
+          vaultId: row.vault_id,
+          sourceId: row.source_id,
+          artifactId: row.artifact_id,
+          locator: row.locator,
+          contentHash: row.content_hash,
+          excerpt: row.excerpt,
+          sourceSha256: row.source_sha256,
+          sourceObjectKey: row.source_object_key,
+          sourceByteSize: row.source_byte_size,
+          sourceMediaType: row.source_media_type,
+        })),
       });
     }
     return output;

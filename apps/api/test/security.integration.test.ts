@@ -227,6 +227,8 @@ describe("API security boundaries", () => {
     const vaultKey = `scope-boundary-${vaultId.slice(0, 8)}`;
     const reviewId = randomUUID();
     const privateDocumentId = randomUUID();
+    const visibleDocumentId = randomUUID();
+    const visibleExternalId = `S2-EXPLICIT-VAULT-${suffix}`;
     const privateExternalId = `PRIVATE-PERSONAL-${suffix}`;
     await db.pool.query(
       `
@@ -331,6 +333,54 @@ describe("API security boundaries", () => {
         `,
         [admin, vaultId],
       );
+      await db.pool.query(
+        `insert into knowledge_documents(
+           id,space_id,vault_id,path,external_id,title,type,lifecycle,trust_tier,
+           current_revision,body_cache,frontmatter,aliases,layer,content_hash,
+           token_estimate,raw_links,refresh_status
+         ) values($1,$2,$3,'public/narrowed-federation.md',$4,
+           'Narrow federation fixture','note','ACTIVE','HUMAN_REVIEWED',
+           'fixture:explicit-vault',$5,'{}'::jsonb,'{}','concept',$6,10,
+           '[]'::jsonb,'CURRENT')`,
+        [
+          visibleDocumentId,
+          defaultSpace,
+          vaultId,
+          visibleExternalId,
+          visibleExternalId,
+          createHash("sha256").update(visibleExternalId).digest("hex"),
+        ],
+      );
+      const federatedQuery = (vaultIds: string[]) =>
+        app.inject({
+          method: "POST",
+          url: "/v1/search",
+          headers,
+          payload: {
+            query: visibleExternalId,
+            spaceId: defaultSpace,
+            vaultIds,
+            federated: true,
+            types: [],
+            minimumTrust: "UNVERIFIED",
+            mode: "COMPILED_ONLY",
+            limit: 10,
+          },
+        });
+      const narrowed = await federatedQuery([defaultVaultId]);
+      expect(narrowed.statusCode, narrowed.body).toBe(200);
+      expect(narrowed.json().scope.vaultIds).toEqual([defaultVaultId]);
+      expect(narrowed.json().hits).toHaveLength(0);
+      const bothVaults = await federatedQuery([defaultVaultId, vaultId]);
+      expect(bothVaults.statusCode, bothVaults.body).toBe(200);
+      expect(bothVaults.json().scope.vaultIds).toEqual(
+        expect.arrayContaining([defaultVaultId, vaultId]),
+      );
+      expect(bothVaults.json().hits).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ documentId: visibleDocumentId }),
+        ]),
+      );
       const outsidePrefix = await app.inject({
         method: "POST",
         url: "/v1/proposals",
@@ -384,6 +434,11 @@ describe("API security boundaries", () => {
         "update vault_memberships set enabled=false where user_id=$1 and vault_id=$2",
         [admin, vaultId],
       );
+      const revokedFederation = await federatedQuery([defaultVaultId, vaultId]);
+      expect(revokedFederation.statusCode).toBe(403);
+      expect(revokedFederation.json()).toMatchObject({
+        code: "VAULT_ACCESS_DENIED",
+      });
       const reviewerWithoutGrant = await app.inject({
         method: "POST",
         url: `/v1/reviews/${reviewId}/decision`,
@@ -393,9 +448,10 @@ describe("API security boundaries", () => {
       expect(reviewerWithoutGrant.statusCode).toBe(403);
       expect(reviewerWithoutGrant.json().code).toBe("PATH_SCOPE_DENIED");
     } finally {
-      await db.pool.query("delete from knowledge_documents where id=$1", [
-        privateDocumentId,
-      ]);
+      await db.pool.query(
+        "delete from knowledge_documents where id=any($1::uuid[])",
+        [[privateDocumentId, visibleDocumentId]],
+      );
       await db.pool.query("delete from review_comments where review_id=$1", [
         reviewId,
       ]);
@@ -2613,6 +2669,44 @@ describe("API security boundaries", () => {
         [continuedDocumentId],
       );
 
+      // A previously valid private-vault continuation must fail closed after
+      // its membership is revoked, even though the bearer token is unchanged.
+      await db.pool.query(
+        "update vault_memberships set enabled=false where user_id=$1 and vault_id=$2",
+        [admin, vaultId],
+      );
+      const membershipRevokedContinuation = await app.inject({
+        method: "GET",
+        url: `/v1/generated-context-packets/${packetId}/continuations/${handle}`,
+        headers: packetHeaders,
+      });
+      expect(membershipRevokedContinuation.statusCode).toBe(404);
+      expect(membershipRevokedContinuation.json()).toMatchObject({
+        code: "CONTEXT_CONTINUATION_NOT_FOUND",
+      });
+      expect(
+        JSON.stringify(membershipRevokedContinuation.json()),
+      ).not.toContain(marker);
+      const membershipRevokedPacket = await app.inject({
+        method: "GET",
+        url: `/v1/generated-context-packets/${packetId}`,
+        headers: packetHeaders,
+      });
+      expect(membershipRevokedPacket.statusCode).toBe(404);
+      await db.pool.query(
+        "update vault_memberships set enabled=true where user_id=$1 and vault_id=$2",
+        [admin, vaultId],
+      );
+      const restoredMemberContinuation = await app.inject({
+        method: "GET",
+        url: `/v1/generated-context-packets/${packetId}/continuations/${handle}`,
+        headers: packetHeaders,
+      });
+      expect(
+        restoredMemberContinuation.statusCode,
+        restoredMemberContinuation.body,
+      ).toBe(200);
+
       await db.pool.query(
         `update api_tokens
             set scopes=$2::jsonb
@@ -2664,6 +2758,202 @@ describe("API security boundaries", () => {
         vaultId,
       ]);
       await db.pool.query("delete from vaults where id=$1", [vaultId]);
+    }
+  });
+
+  it("identity check bounds document discovery to the credential path and rejects revoked tokens", async () => {
+    const suffix = randomUUID();
+    const scopedToken = "identity-scoped-" + suffix;
+    const scopedHash = createHash("sha256").update(scopedToken).digest("hex");
+    const scopedHeaders = { authorization: "Bearer " + scopedToken };
+    const allowedId = randomUUID();
+    const deniedId = randomUUID();
+    const allowedExternal = "S2-IDENTITY-ALLOWED-" + suffix;
+    const deniedExternal = "S2-IDENTITY-RESTRICTED-" + suffix;
+    await db.pool.query(
+      "insert into api_tokens(user_id,token_hash,label,scopes) values($1,$2,'scoped identity regression',$3::jsonb)",
+      [
+        admin,
+        scopedHash,
+        JSON.stringify({
+          spaces: [
+            {
+              spaceId: defaultSpace,
+              pathPrefix: "shared",
+              permissions: ["knowledge:read"],
+            },
+          ],
+        }),
+      ],
+    );
+    try {
+      for (const entry of [
+        {
+          id: allowedId,
+          path: "shared/identity-" + suffix + ".md",
+          externalId: allowedExternal,
+        },
+        {
+          id: deniedId,
+          path: "restricted/identity-" + suffix + ".md",
+          externalId: deniedExternal,
+        },
+      ]) {
+        await db.pool.query(
+          "insert into knowledge_documents(" +
+            "id,space_id,vault_id,path,external_id,title,type,lifecycle," +
+            "trust_tier,current_revision,body_cache,frontmatter,aliases," +
+            "layer,content_hash,token_estimate,raw_links,refresh_status)" +
+            " values($1,$2,$3,$4,$5,$5,'note','ACTIVE','HUMAN_REVIEWED'," +
+            "'fixture:identity-path',$6,'{}'::jsonb,'{}','concept',$7,40,'[]'::jsonb,'CURRENT')",
+          [
+            entry.id,
+            defaultSpace,
+            defaultVaultId,
+            entry.path,
+            entry.externalId,
+            "Knowledge entry " + entry.externalId,
+            createHash("sha256").update(entry.externalId).digest("hex"),
+          ],
+        );
+      }
+      const check = (
+        query: string,
+        authHeaders = scopedHeaders,
+        opts: object = {},
+      ) =>
+        app.inject({
+          method: "POST",
+          url: "/v1/identity/check",
+          headers: authHeaders,
+          payload: {
+            query,
+            spaceId: defaultSpace,
+            vaultIds: [defaultVaultId],
+            federated: false,
+            ...opts,
+          },
+        });
+      const permitted = await check(allowedExternal);
+      expect(permitted.statusCode, permitted.body).toBe(200);
+      expect(permitted.json().candidates).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ documentId: allowedId }),
+        ]),
+      );
+      const restricted = await check(deniedExternal);
+      expect(restricted.statusCode, restricted.body).toBe(200);
+      expect(restricted.json()).toMatchObject({
+        classification: "DISTINCT_CONCEPT",
+        candidates: [],
+      });
+      const fullScope = await check(deniedExternal, headers);
+      expect(fullScope.statusCode, fullScope.body).toBe(200);
+      expect(fullScope.json().candidates).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ documentId: deniedId }),
+        ]),
+      );
+      const crossSpace = await check(deniedExternal, scopedHeaders, {
+        spaceId: secondSpace,
+        vaultIds: [secondVaultId],
+      });
+      expect(crossSpace.statusCode).toBe(403);
+      expect(crossSpace.json()).toMatchObject({ code: "SPACE_ACCESS_DENIED" });
+      await db.pool.query(
+        "update api_tokens set revoked_at=now() where token_hash=$1",
+        [scopedHash],
+      );
+      const revoked = await check(allowedExternal);
+      expect(revoked.statusCode).toBe(401);
+    } finally {
+      await db.pool.query(
+        "delete from knowledge_documents where id=any($1::uuid[])",
+        [[allowedId, deniedId]],
+      );
+      await db.pool.query("delete from api_tokens where token_hash=$1", [
+        scopedHash,
+      ]);
+    }
+  });
+
+  it("benchmark diagnostic requires unrestricted eval scope and does not turn eval runs into release gates", async () => {
+    const token = "akp-benchmark-eval-" + randomUUID();
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    let createdRunId: string | undefined;
+    const evalHeaders = { authorization: "Bearer " + token };
+    const grant = async (prefix: string | null, permissions: string[]) => {
+      await db.pool.query(
+        "update api_tokens set scopes=$2::jsonb where token_hash=$1",
+        [
+          tokenHash,
+          JSON.stringify({
+            spaces: [
+              { spaceId: defaultSpace, pathPrefix: prefix, permissions },
+            ],
+          }),
+        ],
+      );
+    };
+    const call = () =>
+      app.inject({
+        method: "POST",
+        url: "/v1/evals/run",
+        headers: evalHeaders,
+        payload: {
+          spaceId: defaultSpace,
+          vaultId: defaultVaultId,
+          evalPack: "generic",
+        },
+      });
+    await db.pool.query(
+      "insert into api_tokens(user_id,token_hash,label,scopes) values($1,$2,'benchmark-only',$3::jsonb)",
+      [
+        admin,
+        tokenHash,
+        JSON.stringify({
+          spaces: [
+            {
+              spaceId: defaultSpace,
+              pathPrefix: null,
+              permissions: ["knowledge:read"],
+            },
+          ],
+        }),
+      ],
+    );
+    try {
+      const noEvalPermission = await call();
+      expect(noEvalPermission.statusCode).toBe(403);
+      await grant("shared", ["eval:run"]);
+      const pathScoped = await call();
+      expect(pathScoped.statusCode).toBe(403);
+      expect(pathScoped.json()).toMatchObject({ code: "SPACE_ACCESS_DENIED" });
+      await grant(null, ["eval:run"]);
+      const allowed = await call();
+      expect(allowed.statusCode, allowed.body.slice(0, 600)).toBe(200);
+      expect(allowed.json()).toMatchObject({
+        authorityMode: "EVAL_RUN_UNRESTRICTED_VAULT",
+        independentSemanticGoldVerified: false,
+        releaseGateAccepted: false,
+      });
+      expect(allowed.json()).toHaveProperty("runId");
+      createdRunId = String(allowed.json().runId);
+      await db.pool.query(
+        "update api_tokens set revoked_at=now() where token_hash=$1",
+        [tokenHash],
+      );
+      const revoked = await call();
+      expect(revoked.statusCode).toBe(401);
+    } finally {
+      if (createdRunId) {
+        await db.pool.query("delete from eval_runs where id=$1", [
+          createdRunId,
+        ]);
+      }
+      await db.pool.query("delete from api_tokens where token_hash=$1", [
+        tokenHash,
+      ]);
     }
   });
 });

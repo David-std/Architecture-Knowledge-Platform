@@ -27,6 +27,8 @@ jobs:
           node-version: 24.20.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Verify finalized same-SHA job-step evidence rules
+        run: node --test scripts/release-assurance-workflows-consistency.test.mjs
       - name: Collect same-SHA workflow assurance
         env:
           GITHUB_TOKEN: ${{ github.token }}

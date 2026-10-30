@@ -18,14 +18,26 @@ import {
   type ActiveTrace,
 } from "@akp/observability";
 import {
+  CONTEXTUAL_CROSS_ENCODER_DEFAULT_SUPPORT_SCORE,
+  ContextualCrossEncoderEvidenceVerifier,
   DeterministicQueryDecomposer,
+  LayeredEvidenceAdmissionPipeline,
   LocalMultilingualQaEvidenceVerifier,
+  LocalBgeCrossEncoderReranker,
+  type BoundedCrossEncoderPort,
+  OpenAICompatibleEvidenceReader,
+  OpenAICompatibleQueryTranslator,
+  QueryConditionedSemanticEvidenceReader,
+  ReaderEvidenceVerifier,
+  type GovernedLayeredPropositionPort,
+  type LayeredEvidenceAdmissionEvaluator,
   type QueryConditionedEvidenceVerifier,
   type QueryConditionedEvidenceVerifierMode,
   type QueryTransformerPort,
   type Tokenizer,
 } from "@akp/retrieval";
 import { registerSearchRoutes } from "./routes/search.js";
+import type { S2AdmissionShadowObservation } from "./s2-admission-shadow.js";
 import { registerIngestRoutes } from "./routes/ingest.js";
 import { registerKnowledgeRoutes } from "./routes/knowledge.js";
 import { registerReviewRoutes } from "./routes/reviews.js";
@@ -53,6 +65,17 @@ import { registerCodeKnowledgeLinkRoutes } from "./routes/code-knowledge-links.j
 import { registerTemporalTruthRoutes } from "./routes/temporal-truth.js";
 import { registerAssuranceRoutes } from "./routes/assurance.js";
 import { registerSourceConnectorRoutes } from "./routes/source-connectors.js";
+import { createS2ReviewedSourcePropositionPort } from "./s2-reviewed-source-proposition-service.js";
+import { registerS2ReviewedPropositionRoutes } from "./routes/s2-reviewed-propositions.js";
+import { registerS2ReviewedWriterAuditRoutes } from "./routes/s2-writer-claims.js";
+import {
+  registerS2NativeReviewedWriterRoutes,
+  type S2PrivateShadowReviewSink,
+} from "./routes/s2-native-writer.js";
+import {
+  S2PinnedLocalOllamaWriter,
+  type S2AtomicWriterProvider,
+} from "./s2-local-atomic-provider.js";
 
 config({
   path: path.resolve(
@@ -62,11 +85,23 @@ config({
 });
 
 export interface ApiServerDependencies {
+  /** Explicit evaluation-only sink; absent in normal deployment. */
+  s2AdmissionShadowSink?: (record: S2AdmissionShadowObservation) => void;
   contextTokenizer?: Tokenizer;
   queryTransformer?: QueryTransformerPort;
+  /** Optional injected relevance-only model for controlled experiments. */
+  crossEncoderReranker?: BoundedCrossEncoderPort;
   evidenceVerifier?: QueryConditionedEvidenceVerifier;
   evidenceVerifierMode?: QueryConditionedEvidenceVerifierMode;
   evidenceVerifierMaxCandidates?: number;
+  evidenceAdmissionPipeline?: LayeredEvidenceAdmissionEvaluator;
+  /** Service-owned, permission-checked SOURCE projection port; never user JSON. */
+  governedPropositionPort?: GovernedLayeredPropositionPort;
+  /** Deliberate evaluation-only dependency; NEVER promotes evidence to production. */
+  s2AtomicWriterProvider?: S2AtomicWriterProvider;
+  /** Trusted in-process review collector; only ever invoked under 3 opt-in flags
+   * after the second SOURCE and ACL check, never exposed by HTTP. */
+  s2PrivateShadowReviewSink?: S2PrivateShadowReviewSink;
 }
 
 export function buildServer(dependencies: ApiServerDependencies = {}) {
@@ -79,10 +114,71 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
             runtimeConfig.evidenceVerifierMinimumSupportScore as number,
           localFilesOnly: runtimeConfig.evidenceVerifierLocalFilesOnly,
         })
+      : runtimeConfig.evidenceVerifierProvider === "contextual-cross-encoder"
+        ? new ContextualCrossEncoderEvidenceVerifier({
+            minimumSupportScore:
+              runtimeConfig.evidenceVerifierMinimumSupportScore ??
+              CONTEXTUAL_CROSS_ENCODER_DEFAULT_SUPPORT_SCORE,
+            localFilesOnly: runtimeConfig.evidenceVerifierLocalFilesOnly,
+          })
+        : runtimeConfig.evidenceReader
+          ? new ReaderEvidenceVerifier({
+              reader: new OpenAICompatibleEvidenceReader({
+                baseUrl: runtimeConfig.evidenceReader.baseUrl,
+                model: runtimeConfig.evidenceReader.model,
+                timeoutMs: runtimeConfig.evidenceReader.timeoutMs,
+                maxOutputTokens: runtimeConfig.evidenceReader.maxOutputTokens,
+                ...(runtimeConfig.evidenceReader.reasoningEffort
+                  ? {
+                      reasoningEffort:
+                        runtimeConfig.evidenceReader.reasoningEffort,
+                    }
+                  : {}),
+                jsonResponseFormat:
+                  runtimeConfig.evidenceReader.jsonResponseFormat,
+                structuredResponseSchema:
+                  runtimeConfig.evidenceReader.structuredResponseSchema,
+                ...(runtimeConfig.evidenceReader.apiKey
+                  ? { apiKey: runtimeConfig.evidenceReader.apiKey }
+                  : {}),
+              }),
+              shortlist: new ContextualCrossEncoderEvidenceVerifier({
+                minimumSupportScore:
+                  CONTEXTUAL_CROSS_ENCODER_DEFAULT_SUPPORT_SCORE,
+                localFilesOnly: runtimeConfig.evidenceVerifierLocalFilesOnly,
+              }),
+              shortlistSize: runtimeConfig.evidenceReader.shortlistSize,
+              adaptiveMaxCandidates:
+                runtimeConfig.evidenceReader.adaptiveMaxCandidates,
+              shortlistStrategy: runtimeConfig.evidenceReader.shortlistStrategy,
+              confirmQuoteSufficiency:
+                runtimeConfig.evidenceReader.confirmQuoteSufficiency,
+              retryUnboundValueOnce:
+                runtimeConfig.evidenceReader.retryUnboundValueOnce,
+            })
+          : undefined);
+  // LAYERED admits only through the layered pipeline; the configured reader
+  // verifier becomes its semantic layer and fails closed on timeout/error.
+  const evidenceAdmissionPipeline =
+    dependencies.evidenceAdmissionPipeline ??
+    ((dependencies.evidenceVerifierMode ??
+      runtimeConfig.evidenceVerifierMode) === "LAYERED" &&
+    runtimeEvidenceVerifier
+      ? new LayeredEvidenceAdmissionPipeline({
+          semanticReader: new QueryConditionedSemanticEvidenceReader({
+            verifier: runtimeEvidenceVerifier,
+            timeoutMs: runtimeConfig.evidenceAdmissionTimeoutMs,
+          }),
+        })
       : undefined);
-  const ownsRuntimeEvidenceVerifier =
+  const ownedRuntimeEvidenceVerifier =
     dependencies.evidenceVerifier === undefined &&
-    runtimeEvidenceVerifier instanceof LocalMultilingualQaEvidenceVerifier;
+    (runtimeEvidenceVerifier instanceof LocalMultilingualQaEvidenceVerifier ||
+      runtimeEvidenceVerifier instanceof
+        ContextualCrossEncoderEvidenceVerifier ||
+      runtimeEvidenceVerifier instanceof ReaderEvidenceVerifier)
+      ? runtimeEvidenceVerifier
+      : null;
   const app = Fastify({
     logger: process.env.NODE_ENV !== "test",
     bodyLimit: 10 * 1024 * 1024,
@@ -111,6 +207,16 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
         bucket: process.env.AKP_RAW_BUCKET as string,
       })
     : undefined;
+  const s2ReviewedSourceEnabled =
+    process.env.AKP_S2_REVIEWED_SOURCE_ENABLED === "true";
+  if (s2ReviewedSourceEnabled && !rawObjectStore) {
+    throw new Error("S2_REVIEWED_SOURCE_REQUIRES_RAW_STORE");
+  }
+  const governedPropositionPort =
+    dependencies.governedPropositionPort ??
+    (s2ReviewedSourceEnabled && rawObjectStore
+      ? createS2ReviewedSourcePropositionPort(db, rawObjectStore)
+      : undefined);
   const telemetry = new OpenTelemetryBridge();
   const requestTraces = new Map<
     string,
@@ -257,14 +363,93 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   registerTemporalTruthRoutes(app, db);
   registerAssuranceRoutes(app, db);
   registerSourceConnectorRoutes(app, db);
+  if (
+    process.env.AKP_S2_ATOMIC_WRITER_EVAL_ENABLED === "true" &&
+    !s2ReviewedSourceEnabled
+  )
+    throw new Error("S2_ATOMIC_WRITER_REQUIRES_REVIEWED_SOURCE");
+  // A diagnostic on an unreviewed question can never stand on its own:
+  // the authenticated native Writer and original SOURCE review must both be
+  // explicitly enabled, or construction fails before any route is installed.
+  if (
+    process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED === "true" &&
+    (process.env.AKP_S2_ATOMIC_WRITER_EVAL_ENABLED !== "true" ||
+      !s2ReviewedSourceEnabled ||
+      !rawObjectStore ||
+      !governedPropositionPort)
+  )
+    throw new Error("S2_SOURCE_ANCHORED_SHADOW_REQUIRES_GOVERNED_WRITER");
+  // Private full-text shadow capture requires a trusted in-process sink.
+  // Never silently treat a requested capture as enabled without the model,
+  // SOURCE scope and operator-owned receiving dependency.
+  if (
+    process.env.AKP_S2_PRIVATE_SHADOW_REVIEW_CAPTURE_ENABLED === "true" &&
+    (process.env.AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED !== "true" ||
+      process.env.AKP_S2_ATOMIC_WRITER_EVAL_ENABLED !== "true" ||
+      !dependencies.s2PrivateShadowReviewSink)
+  )
+    throw new Error("S2_PRIVATE_SHADOW_REVIEW_REQUIRES_TRUSTED_SINK");
+  if (s2ReviewedSourceEnabled && rawObjectStore && governedPropositionPort) {
+    registerS2ReviewedPropositionRoutes(app, db, rawObjectStore);
+    registerS2ReviewedWriterAuditRoutes(app, db, governedPropositionPort);
+    if (process.env.AKP_S2_ATOMIC_WRITER_EVAL_ENABLED === "true") {
+      const provider =
+        dependencies.s2AtomicWriterProvider ??
+        new S2PinnedLocalOllamaWriter({
+          model: process.env.AKP_S2_ATOMIC_WRITER_MODEL ?? "",
+          modelDigestSha256: process.env.AKP_S2_ATOMIC_WRITER_DIGEST ?? "",
+          codeCommitSha: process.env.AKP_BUILD_COMMIT_SHA ?? "",
+        });
+      registerS2NativeReviewedWriterRoutes(
+        app,
+        db,
+        governedPropositionPort,
+        provider,
+        dependencies.s2PrivateShadowReviewSink,
+      );
+    }
+  }
   registerProviderTaskRoutes(app, db);
   registerOperatorRoutes(app, db);
+  // Translations only add lexical/vector retrieval variants; admission still
+  // judges every candidate against the original query.
   const queryTransformer =
     dependencies.queryTransformer ??
-    (process.env.AKP_QUERY_TRANSFORM_ENABLED === "true"
+    (runtimeConfig.queryTransformProvider === "deterministic-decomposer"
       ? new DeterministicQueryDecomposer()
+      : runtimeConfig.queryTranslation
+        ? new OpenAICompatibleQueryTranslator({
+            baseUrl: runtimeConfig.queryTranslation.baseUrl,
+            model: runtimeConfig.queryTranslation.model,
+            corpusLanguages: runtimeConfig.queryTranslation.corpusLanguages,
+            timeoutMs: runtimeConfig.queryTranslation.timeoutMs,
+            jsonResponseFormat:
+              runtimeConfig.queryTranslation.jsonResponseFormat,
+            ...(runtimeConfig.queryTranslation.apiKey
+              ? { apiKey: runtimeConfig.queryTranslation.apiKey }
+              : {}),
+          })
+        : undefined);
+  const crossEncoderReranker =
+    dependencies.crossEncoderReranker ??
+    (runtimeConfig.bgeRerankEnabled
+      ? new LocalBgeCrossEncoderReranker({ localFilesOnly: true })
       : undefined);
+  if (crossEncoderReranker instanceof LocalBgeCrossEncoderReranker) {
+    app.addHook("onClose", async () => {
+      await crossEncoderReranker.dispose();
+    });
+  }
   registerSearchRoutes(app, db, {
+    ...(crossEncoderReranker
+      ? {
+          crossEncoderReranker,
+          crossEncoderRerankMaxCandidates: runtimeConfig.bgeRerankMaxCandidates,
+        }
+      : {}),
+    ...(dependencies.s2AdmissionShadowSink
+      ? { s2AdmissionShadowSink: dependencies.s2AdmissionShadowSink }
+      : {}),
     ...(dependencies.contextTokenizer
       ? { contextTokenizer: dependencies.contextTokenizer }
       : {}),
@@ -286,6 +471,16 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
             runtimeConfig.evidenceVerifierMaxCandidates,
         }
       : {}),
+    ...(evidenceAdmissionPipeline
+      ? {
+          evidenceAdmissionPipeline,
+          ...(governedPropositionPort ? { governedPropositionPort } : {}),
+          evidenceAdmissionMinDistinctDocuments:
+            runtimeConfig.evidenceAdmissionMinDistinctDocuments,
+          evidenceAdmissionAbstainOnConflict:
+            runtimeConfig.evidenceAdmissionAbstainOnConflict,
+        }
+      : {}),
   });
   registerIngestRoutes(app, db);
   registerKnowledgeRoutes(app, db);
@@ -299,12 +494,7 @@ export function buildServer(dependencies: ApiServerDependencies = {}) {
   registerGovernanceRoutes(app, db);
 
   app.addHook("onClose", async () => {
-    if (
-      ownsRuntimeEvidenceVerifier &&
-      runtimeEvidenceVerifier instanceof LocalMultilingualQaEvidenceVerifier
-    ) {
-      await runtimeEvidenceVerifier.dispose();
-    }
+    await ownedRuntimeEvidenceVerifier?.dispose();
     await db.close();
   });
   return app;

@@ -1,0 +1,413 @@
+{
+  "id": "transporte-publico",
+  "split": "heldout",
+  "language": "es",
+  "description": "Transporte público urbano: tarjeta, abonos, transbordos, tarifas, bicicletas, mascotas y sanciones.",
+  "units": [
+    {
+      "id": "tp-tarjeta",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Tarjeta de transporte",
+      "headingPath": ["Títulos", "Tarjeta de transporte"],
+      "text": "Tarjeta recargable sin contacto que se valida al subir a los autobuses y al entrar en el metro. Cuesta 3 euros y ese importe no se devuelve."
+    },
+    {
+      "id": "tp-transbordo",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Transbordos",
+      "headingPath": ["Tarifas", "Transbordos"],
+      "text": "Con la tarjeta, un transbordo entre autobús y metro dentro de los 60 minutos siguientes a la primera validación es gratuito. Con un billete sencillo de papel no hay transbordo gratuito."
+    },
+    {
+      "id": "tp-tarifa-reducida",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Tarifa reducida",
+      "headingPath": ["Tarifas", "Tarifa reducida"],
+      "text": "Las personas mayores de 65 años, las personas con una discapacidad igual o superior al 33 % y los estudiantes menores de 26 años pagan la mitad de la tarifa. Deben acreditarlo una vez al año en una oficina de atención al cliente."
+    },
+    {
+      "id": "tp-menores",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Viajeros menores de 6 años",
+      "headingPath": ["Tarifas", "Viajeros menores de 6 años"],
+      "text": "Los niños menores de 6 años viajan gratis si van acompañados de una persona adulta, sin necesidad de tarjeta propia."
+    },
+    {
+      "id": "tp-abono",
+      "documentType": "concept",
+      "unitType": "PARAGRAPH",
+      "title": "Abono mensual",
+      "headingPath": ["Títulos", "Abono mensual"],
+      "text": "Título que permite viajes ilimitados durante un mes natural en todas las líneas de la zona contratada. Se carga en la tarjeta de transporte y es personal e intransferible."
+    },
+    {
+      "id": "tp-reembolso",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Reembolsos",
+      "headingPath": ["Atención al cliente", "Reembolsos"],
+      "text": "El saldo de la tarjeta se reembolsa solo cuando la tarjeta deja de funcionar por un defecto de fabricación. El abono mensual no se reembolsa una vez que ha comenzado el mes."
+    },
+    {
+      "id": "tp-perdida",
+      "documentType": "procedure",
+      "unitType": "WORKFLOW_STEP",
+      "title": "Pérdida de la tarjeta",
+      "headingPath": ["Atención al cliente", "Pérdida de la tarjeta"],
+      "text": "Si la tarjeta está registrada a nombre del viajero, se puede bloquear en la web y trasladar el saldo a una tarjeta nueva. Las tarjetas anónimas no se pueden recuperar."
+    },
+    {
+      "id": "tp-zonas",
+      "documentType": "decision-rule",
+      "unitType": "TABLE",
+      "title": "Elegir el abono según el recorrido",
+      "headingPath": ["Títulos", "Elegir el abono según el recorrido"],
+      "text": "| Recorrido habitual | Abono recomendado |\n|---|---|\n| Solo dentro de la ciudad | Zona A |\n| Ciudad y municipios del primer anillo | Zona B |\n| Viajes diarios al aeropuerto | Zona B con suplemento de aeropuerto |"
+    },
+    {
+      "id": "tp-bicicletas",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Bicicletas a bordo",
+      "headingPath": ["Normas de viaje", "Bicicletas a bordo"],
+      "text": "Las bicicletas plegadas pueden subir siempre. Las no plegables solo se admiten en el metro fuera de las horas punta, de 10:00 a 16:00 y a partir de las 20:00, y nunca en los autobuses."
+    },
+    {
+      "id": "tp-inspeccion",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Inspección y sanciones",
+      "headingPath": ["Normas de viaje", "Inspección y sanciones"],
+      "text": "Viajar sin un título validado supone una sanción de 100 euros, que se reduce a 50 euros si se paga en el acto."
+    },
+    {
+      "id": "tp-mascotas",
+      "documentType": "rule",
+      "unitType": "RULE",
+      "title": "Mascotas",
+      "headingPath": ["Normas de viaje", "Mascotas"],
+      "text": "Los perros pequeños pueden viajar dentro de un transportín. Los perros de asistencia viajan siempre, sin bozal obligatorio y sin coste."
+    },
+    {
+      "id": "tp-validar",
+      "documentType": "claim",
+      "unitType": "EVIDENCE",
+      "title": "Validar en cada viaje permite planificar el servicio",
+      "headingPath": [
+        "Normas de viaje",
+        "Validar en cada viaje permite planificar el servicio"
+      ],
+      "text": "Cada validación registra el origen, la hora y la línea del viaje; con esos datos se ajustan las frecuencias y se reparte la recaudación entre operadores. Por eso también se valida cuando se viaja con abono."
+    },
+    {
+      "id": "tp-demanda",
+      "documentType": "dashboard",
+      "unitType": "TABLE",
+      "title": "Viajeros por línea",
+      "headingPath": ["Datos abiertos", "Viajeros por línea"],
+      "text": "| Línea | Viajeros diarios (2025) |\n|---|---|\n| Metro L1 | 182.000 |\n| Metro L2 | 141.000 |\n| Autobús 27 | 22.500 |"
+    },
+    {
+      "id": "tp-nocturno",
+      "documentType": "note",
+      "unitType": "PARAGRAPH",
+      "title": "Servicio nocturno",
+      "headingPath": ["Horarios", "Servicio nocturno"],
+      "text": "Entre la 1:00 y las 5:30 el metro no funciona y circulan ocho líneas de autobús nocturno que salen de la plaza central cada 30 minutos."
+    }
+  ],
+  "questions": [
+    {
+      "id": "tp-q01",
+      "family": "devolucion-tarjeta",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Te devuelven los 3 euros que cuesta la tarjeta?",
+      "gold": ["tp-tarjeta"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "tp-q02",
+      "family": "transbordo-papel",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Is the transfer free if I paid with a paper single ticket?",
+      "gold": ["tp-transbordo"],
+      "challenges": ["CROSS_LINGUAL", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "tp-q03",
+      "family": "ninos-gratis",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Un niño de 4 años paga billete?",
+      "gold": ["tp-menores"],
+      "challenges": ["PARAPHRASE", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "tp-q04",
+      "family": "abono-prestar",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Puedo prestarle mi abono mensual a mi hermano?",
+      "gold": ["tp-abono"],
+      "challenges": ["PARAPHRASE", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "tp-q05",
+      "family": "bici-autobus",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Can I take a non-folding bike on the bus?",
+      "gold": ["tp-bicicletas"],
+      "challenges": ["CROSS_LINGUAL", "NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "tp-q06",
+      "family": "validar-abono",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Hay que validar el abono en cada viaje?",
+      "gold": ["tp-validar"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "tp-q07",
+      "family": "bozal-asistencia",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Un perro de asistencia tiene que llevar bozal?",
+      "gold": ["tp-mascotas"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "tp-q08",
+      "family": "metro-madrugada",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Funciona el metro a las 3 de la madrugada?",
+      "gold": ["tp-nocturno"],
+      "challenges": ["NEGATIVE_ANSWER"]
+    },
+    {
+      "id": "tp-q09",
+      "family": "abono-definicion",
+      "intent": "DEFINITION",
+      "language": "es",
+      "query": "¿Qué es el abono mensual?",
+      "gold": ["tp-abono"],
+      "challenges": ["TITLE_CONTEXT"]
+    },
+    {
+      "id": "tp-q10",
+      "family": "tarjeta-definicion",
+      "intent": "DEFINITION",
+      "language": "en",
+      "query": "What is the transport card?",
+      "gold": ["tp-tarjeta"],
+      "challenges": ["CROSS_LINGUAL", "TITLE_CONTEXT"]
+    },
+    {
+      "id": "tp-q11",
+      "family": "reembolso-saldo",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Cuándo se reembolsa el saldo de la tarjeta?",
+      "gold": ["tp-reembolso"],
+      "challenges": []
+    },
+    {
+      "id": "tp-q12",
+      "family": "abono-aeropuerto",
+      "intent": "CONDITION",
+      "language": "es",
+      "query": "¿Qué abono me conviene si voy todos los días al aeropuerto?",
+      "gold": ["tp-zonas"],
+      "challenges": ["TABLE_ROW"]
+    },
+    {
+      "id": "tp-q13",
+      "family": "bici-metro-horario",
+      "intent": "CONDITION",
+      "language": "en",
+      "query": "When can I bring a regular bicycle on the metro?",
+      "gold": ["tp-bicicletas"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "tp-q14",
+      "family": "tarifa-reducida-quien",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Quién tiene derecho a la tarifa reducida?",
+      "gold": ["tp-tarifa-reducida"],
+      "challenges": []
+    },
+    {
+      "id": "tp-q15",
+      "family": "validar-motivo",
+      "intent": "RATIONALE",
+      "language": "es",
+      "query": "¿Por qué hay que validar aunque tengas abono?",
+      "gold": ["tp-validar"],
+      "challenges": []
+    },
+    {
+      "id": "tp-q16",
+      "family": "validar-motivo",
+      "intent": "RATIONALE",
+      "language": "en",
+      "query": "Why should riders tap their card on every trip?",
+      "gold": ["tp-validar"],
+      "challenges": ["CROSS_LINGUAL", "PARAPHRASE"]
+    },
+    {
+      "id": "tp-q17",
+      "family": "perder-tarjeta",
+      "intent": "PROCEDURE",
+      "language": "es",
+      "query": "¿Qué hago si pierdo la tarjeta de transporte?",
+      "gold": ["tp-perdida"],
+      "challenges": []
+    },
+    {
+      "id": "tp-q18",
+      "family": "obtener-reducida",
+      "intent": "PROCEDURE",
+      "language": "en",
+      "query": "How do I get the reduced fare?",
+      "gold": ["tp-tarifa-reducida"],
+      "challenges": ["CROSS_LINGUAL"]
+    },
+    {
+      "id": "tp-q19",
+      "family": "importe-sancion",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuánto es la multa por viajar sin billete?",
+      "gold": ["tp-inspeccion"],
+      "challenges": ["PARAPHRASE"]
+    },
+    {
+      "id": "tp-q20",
+      "family": "ventana-transbordo",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuánto tiempo tengo para hacer un transbordo gratis?",
+      "gold": ["tp-transbordo"],
+      "challenges": []
+    },
+    {
+      "id": "tp-q21",
+      "family": "viajeros-l2",
+      "intent": "QUANTITY",
+      "language": "en",
+      "query": "How many riders does metro line 2 carry per day?",
+      "gold": ["tp-demanda"],
+      "challenges": ["CROSS_LINGUAL", "TABLE_ROW"]
+    },
+    {
+      "id": "tp-q22",
+      "family": "frecuencia-nocturnos",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cada cuánto pasan los autobuses nocturnos?",
+      "gold": ["tp-nocturno"],
+      "challenges": []
+    },
+    {
+      "id": "tp-q23",
+      "family": "descuento-estudiantes",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Qué descuento tienen los estudiantes?",
+      "gold": ["tp-tarifa-reducida"],
+      "challenges": []
+    },
+    {
+      "id": "tp-q24",
+      "family": "salida-nocturnos",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Desde dónde salen los autobuses nocturnos?",
+      "gold": ["tp-nocturno"],
+      "challenges": []
+    },
+    {
+      "id": "tp-q25",
+      "family": "abono-ciudad",
+      "intent": "ENTITY",
+      "language": "es",
+      "query": "¿Qué abono necesito si solo me muevo por la ciudad?",
+      "gold": ["tp-zonas"],
+      "challenges": ["TABLE_ROW"]
+    },
+    {
+      "id": "tp-q26",
+      "family": "precio-abono",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuánto cuesta el abono mensual de la zona A?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "tp-q27",
+      "family": "viajeros-l3",
+      "intent": "QUANTITY",
+      "language": "es",
+      "query": "¿Cuántos viajeros diarios tiene la línea 3 de metro?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "TABLE_ROW"]
+    },
+    {
+      "id": "tp-q28",
+      "family": "gatos",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Pueden viajar gatos en el autobús?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT", "SAME_VOCABULARY"]
+    },
+    {
+      "id": "tp-q29",
+      "family": "tranvia",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Se puede usar la tarjeta de transporte en el tranvía?",
+      "gold": [],
+      "challenges": ["WRONG_SUBJECT"]
+    },
+    {
+      "id": "tp-q30",
+      "family": "conductor-acredita",
+      "intent": "YES_NO",
+      "language": "en",
+      "query": "Do bus drivers renew the reduced-fare credentials every year?",
+      "gold": [],
+      "challenges": ["INVERTED_RELATION", "CROSS_LINGUAL"]
+    },
+    {
+      "id": "tp-q31",
+      "family": "anio-sin-contacto",
+      "intent": "DATE",
+      "language": "es",
+      "query": "¿En qué año se introdujo la tarjeta sin contacto?",
+      "gold": [],
+      "challenges": ["MISSING_SLOT"]
+    },
+    {
+      "id": "tp-q32",
+      "family": "retraso-reembolso",
+      "intent": "YES_NO",
+      "language": "es",
+      "query": "¿Te devuelven el billete si el autobús llega con retraso?",
+      "gold": [],
+      "challenges": ["SAME_VOCABULARY"]
+    }
+  ]
+}

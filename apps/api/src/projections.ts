@@ -9,6 +9,7 @@ import type {
 import {
   createConfiguredEmbeddingProvider,
   parseKnowledgeUnits,
+  tableRowLexicalContextByUnitKey,
 } from "@akp/retrieval";
 import {
   buildEmbeddingIndex,
@@ -173,6 +174,10 @@ export async function rebuildSpaceProjections(
     // so retaining older snapshots does not mix them into current results.
     for (const document of documents.rows) {
       const units = parseKnowledgeUnits(document.title, document.body_cache);
+      const lexicalContextByUnitKey = tableRowLexicalContextByUnitKey(
+        document.title,
+        document.body_cache,
+      );
       const unitIds = new Map<string, string>();
       for (const unit of units) {
         if (!unit) continue;
@@ -182,8 +187,8 @@ export async function rebuildSpaceProjections(
             document_id,space_id,vault_id,unit_key,unit_type,heading_path,body,
             content_hash,corpus_revision,lifecycle,trust_tier,source_ids,
             token_estimate,parent_unit_id,document_revision,permissions,locator,
-            structural_order,container_only,embedding_eligible
-          ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'{}',$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18,$19)
+            structural_order,container_only,embedding_eligible,lexical_context
+          ) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'{}',$12,$13,$14,$15::jsonb,$16::jsonb,$17,$18,$19,$20)
           on conflict(document_id,unit_key,corpus_revision) do update set
             space_id=excluded.space_id,vault_id=excluded.vault_id,
             unit_type=excluded.unit_type,heading_path=excluded.heading_path,
@@ -195,7 +200,8 @@ export async function rebuildSpaceProjections(
             permissions=excluded.permissions,locator=excluded.locator,
             structural_order=excluded.structural_order,
             container_only=excluded.container_only,
-            embedding_eligible=excluded.embedding_eligible,updated_at=now()
+            embedding_eligible=excluded.embedding_eligible,
+            lexical_context=excluded.lexical_context,updated_at=now()
           returning id
           `,
           [
@@ -220,6 +226,7 @@ export async function rebuildSpaceProjections(
             unit.structuralOrder,
             unit.containerOnly,
             unit.embeddingEligible,
+            lexicalContextByUnitKey.get(unit.unitKey) ?? "",
           ],
         );
         const unitId = inserted.rows[0]?.id;

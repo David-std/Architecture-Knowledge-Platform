@@ -10,16 +10,16 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "next": "16.3.3",
+    "next": "16.4.1",
     "postcss": "8.5.25",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "sharp": "0.35.4"
+    "sharp": "0.35.5"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "typescript": "^5.7.0",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.12"
   }
 }

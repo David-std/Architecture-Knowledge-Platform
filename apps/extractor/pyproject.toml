@@ -25,6 +25,13 @@ dependencies = [
 # Heavy providers are intentionally opt-in. The deterministic adapter remains
 # the only default path; installing an extra does not select that provider.
 docling = ["docling>=2.0,<3"]
+# CPU provider profile keeps the same PyTorch/TorchVision versions.
+docling-cpu = [
+  "docling>=2.0,<3",
+  "torch==2.13.0",
+  "torchvision==0.28.0",
+  "docling-core==2.92.0; sys_platform != 'darwin'",
+]
 marker = ["marker-pdf>=2.0,<3"]
 chunkr = ["chunkr-ai>=0.3,<1"]
 
@@ -53,3 +60,23 @@ ignore = ["EXE002"]
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
+
+[tool.uv]
+# Retain the existing macOS provider lock while adding an accelerator fork.
+constraint-dependencies = [
+  "docling==2.99.0; sys_platform == 'darwin'",
+  "docling-core==2.78.0; sys_platform == 'darwin'",
+]
+conflicts = [
+  [{ extra = "docling-cpu" }, { extra = "docling" }],
+  [{ extra = "docling-cpu" }, { extra = "marker" }],
+]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cpu", extra = "docling-cpu", marker = "sys_platform != 'darwin'" }]
+torchvision = [{ index = "pytorch-cpu", extra = "docling-cpu", marker = "sys_platform != 'darwin'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

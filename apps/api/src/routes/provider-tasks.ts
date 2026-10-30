@@ -5,8 +5,8 @@ import type { Postgres } from "@akp/postgres";
 import { z } from "zod";
 
 const ProviderTaskUpdate = z.object({
-  jobId: z.string().uuid().optional(),
-  sourceId: z.string().uuid().optional(),
+  jobId: z.string().guid().optional(),
+  sourceId: z.string().guid().optional(),
   provider: z
     .string()
     .min(1)
@@ -21,7 +21,7 @@ const ProviderTaskUpdate = z.object({
   taskType: z.string().min(1).max(80).optional(),
   mode: z.string().min(1).max(40).optional(),
   eventTime: z.string().datetime({ offset: true }).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 type ProviderTaskUpdate = z.infer<typeof ProviderTaskUpdate>;

@@ -55,6 +55,10 @@ The v0.4 product surface is intentionally bounded. These limitations are part of
 - Optional retrieval, model and extraction quality depends on the selected provider and corpus; unexecuted comparisons stay unmeasured.
 - Human review remains the authority for canonical publication; generated content and provider responses are untrusted until validated and approved.
 
+## Core redesign stage acceptance
+
+The S0 architecture gate and the **S1 single faithful source-to-context gate** have executable evidence; S1's last code baseline `12749df7a0708dbb278fbc6cc6b24efcd2dbc322` passed five CI jobs and 14 required workflows, including real OCR and source-revision integration. The [execution specification](architecture/core-redesign-execution-spec.md) and [roadmap](architecture/core-redesign-roadmap.md) record the fixture-bounded S1 acceptance and its unmeasured limits. The documentation-signoff revision requires a further same-SHA CI before final PR acceptance. S2 evidence-precision/efficiency and S3–S5 remain incomplete and have not been advanced by this acceptance. PR #38 is open/draft, not merged.
+
 ## Verification
 
 Repository gates cover formatting, contracts, documentation, repository hygiene, type/unit checks, integration behavior, secret scanning and production builds. Additional maintained workflows exercise semantic retrieval, domain quality, Document Intelligence, team-node behavior, concurrency, resilience, scale, federation, long-context placement, agent behavior, recovery and same-revision release assurance.

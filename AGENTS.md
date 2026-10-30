@@ -15,6 +15,12 @@ Keep these boundaries intact:
 - Keep secrets, private source bytes, local paths and provider credentials out of committed artifacts.
 - Prefer deterministic application/runtime controls over prompt-only rules.
 
+## Product scope and architecture
+
+AKP is a shared, governed engineering knowledge/context workspace for teams and coding agents, not solely a document chatbot. Preserve approved Git knowledge, source fidelity, revision-scoped retrieval, multi-agent work claims/handoffs and source-of-record connector ownership. Read [ADR 0004](docs/adr/0004-core-product-scope-and-simplification.md), [repository standards](docs/architecture/repository-standards.md), the [core redesign roadmap](docs/architecture/core-redesign-roadmap.md) and the [agent execution specification](docs/architecture/core-redesign-execution-spec.md) before adding providers or refactoring a subsystem.
+
+Enforce a single implementation for accepted behavior: migrate call sites and delete replaced aliases/adapters. Do not introduce permanent legacy or dual-write paths as a refactoring convenience. Existing public state may require an explicit versioned one-time migration; do not delete persisted data without verifying it.
+
 ## Repository map
 
 - `apps/api` — authenticated HTTP use cases and policy enforcement.
@@ -66,6 +72,7 @@ Commit messages should describe the product behavior or repository change, not a
 - Add focused tests proportional to the risk of the changed behavior.
 - Do not enable optional retrieval, extraction or model providers by default without reproducible evidence and an explicit configuration decision.
 - Keep the generic runtime independent of a specific vault, course, company, developer workstation or fixture corpus.
+- Apply [retrieval generality policy](policies/retrieval-generality.md): never repair an individual RAG question by adding its concepts, aliases, wording, or document identity to generic runtime heuristics. Diagnose the failed stage, use generic and adversarial evaluation cases, and measure held-out source-level accuracy before changing a support rule.
 - Do not commit generated local reports, backups, `.env`, temporary repositories or private raw evidence.
 
 ## Focused checks
@@ -77,6 +84,7 @@ pnpm format:check
 pnpm contracts:validate
 pnpm docs:validate
 pnpm hygiene:validate
+pnpm retrieval:generality:validate
 pnpm check
 pnpm build
 ```
@@ -104,6 +112,7 @@ pnpm security:secrets
 pnpm contracts:validate
 pnpm docs:validate
 pnpm hygiene:validate
+pnpm retrieval:generality:validate
 pnpm check
 pnpm build
 pnpm test:integration

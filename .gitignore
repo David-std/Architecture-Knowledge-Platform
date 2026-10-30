@@ -13,7 +13,7 @@ coverage/
 *.log
 backups/
 reports/**/*.json
-reports/ci/
+**/reports/ci/
 reports/migration/
 reports-vault-stat-*.txt
 apps/extractor/.venv/

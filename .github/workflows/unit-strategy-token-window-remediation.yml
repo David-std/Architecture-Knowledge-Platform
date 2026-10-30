@@ -1,0 +1,110 @@
+name: unit-strategy-token-window-remediation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit-strategy-token-window-remediation:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.ref == 'fix/e5-token-window-chunk-budget'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AKP_MODEL_CACHE_DIR: /tmp/akp-model-cache
+      AKP_UNIT_STRATEGY_REMEDIATION_REPORT: reports/ci/unit-strategy-token-window-remediation.json
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with: { version: 10.34.5 }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.20.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --strict-peer-dependencies
+      - name: Validate remediation source
+        run: |
+          pnpm exec prettier --check \
+            packages/retrieval/src/chunking.ts \
+            packages/retrieval/test/chunking.test.ts \
+            evals/registered/unit-strategy-token-window-remediation.json \
+            packages/retrieval/scripts/unit-strategy-token-window-remediation.ts \
+            .github/workflows/unit-strategy-token-window-remediation.yml
+          pnpm check
+      - name: Run focused chunking regression tests
+        run: pnpm --filter @akp/retrieval exec vitest run test/chunking.test.ts
+      - name: Warm pinned multilingual semantic model cache
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p reports/ci "$AKP_MODEL_CACHE_DIR"
+          pnpm exec tsx scripts/preload-semantic-model.ts \
+            2>&1 | tee reports/ci/unit-strategy-remediation-model-prefetch.log
+          echo "AKP_LOCAL_FILES_ONLY=1" >> "$GITHUB_ENV"
+      - name: Run frozen E5 token-window remediation
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm --filter @akp/retrieval exec tsx \
+            scripts/unit-strategy-token-window-remediation.ts \
+            2>&1 | tee reports/ci/unit-strategy-token-window-remediation.log
+      - name: Validate governed remediation outcome
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const report = JSON.parse(
+            readFileSync(
+              "reports/ci/unit-strategy-token-window-remediation.json",
+              "utf8",
+            ),
+          );
+          const allowed = new Set([
+            "PROMOTE_TOKEN_WINDOW_BUDGET",
+            "REJECT_TOKEN_WINDOW_OVERFLOW",
+          ]);
+          if (!allowed.has(report.outcome)) {
+            throw new Error(
+              "Token-window remediation is invalid: " + String(report.outcome),
+            );
+          }
+          if (
+            report.baselineReproduced !== true ||
+            report.structuralGatesPass !== true ||
+            report.totals?.vectorsCreated !==
+              report.totals?.embeddingEligibleUnits ||
+            report.singleIndependentVariable !==
+              "MAX_EMBEDDING_UNIT_CHARACTERS"
+          ) {
+            throw new Error("Token-window remediation invariants failed.");
+          }
+          console.log(
+            JSON.stringify(
+              {
+                outcome: report.outcome,
+                baseline: report.baseline,
+                candidate: report.candidate,
+                tokenWindowComplete: report.tokenWindowComplete,
+                totals: report.totals,
+                violations: report.tokenWindowViolations,
+              },
+              null,
+              2,
+            ),
+          );
+          NODE
+      - name: Upload token-window remediation evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-strategy-token-window-remediation-${{ github.run_id }}
+          path: |
+            reports/ci/unit-strategy-token-window-remediation.json
+            reports/ci/unit-strategy-token-window-remediation.log
+            reports/ci/unit-strategy-remediation-model-prefetch.log
+          if-no-files-found: warn
+          retention-days: 14

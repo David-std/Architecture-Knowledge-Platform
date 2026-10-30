@@ -41,6 +41,37 @@ afterEach(async () => {
 });
 
 describe("parseWikiLinks", () => {
+  it("imports regular Markdown files while skipping matching directories and hidden inputs", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akp-vault-traversal-"));
+    temporaryRoots.push(root);
+    for (const directory of [
+      "folder.md",
+      ".hidden",
+      "nested/.hidden",
+      "node_modules",
+    ]) {
+      await mkdir(path.join(root, directory), { recursive: true });
+    }
+    for (const file of [
+      "visible.md",
+      "folder.md/note.md",
+      ".hidden/note.md",
+      "nested/.hidden/note.md",
+      "node_modules/note.md",
+    ]) {
+      await writeFile(
+        path.join(root, file),
+        "# Source\nRead-only fixture.\n",
+        "utf8",
+      );
+    }
+    const result = await inspectVault(root);
+    expect(result.documents.map((document) => document.relativePath)).toEqual([
+      "folder.md/note.md",
+      "visible.md",
+    ]);
+  });
+
   it("normalizes aliases, headings and extensions", () => {
     expect(
       parseWikiLinks(
@@ -51,6 +82,291 @@ describe("parseWikiLinks", () => {
 
   it("deduplicates targets", () => {
     expect(parseWikiLinks("[[same]] then [[same|again]]")).toEqual(["same"]);
+  });
+});
+
+describe("title fallback and portable aliases", () => {
+  it("uses the first Markdown heading as title and retains the file slug as an alias", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akp-title-fallback-"));
+    temporaryRoots.push(root);
+    await writeFile(
+      path.join(root, "runtime-recovery-guide.md"),
+      [
+        "---",
+        "id: TITLE-FALLBACK-001",
+        "type: guide",
+        "status: active",
+        "---",
+        "# Runtime Recovery",
+        "",
+        "Use the verified recovery path.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const inspection = await inspectVault(root);
+    expect(inspection.documents[0]).toMatchObject({
+      title: "Runtime Recovery",
+      aliases: ["Runtime Recovery Guide"],
+    });
+  });
+
+  it("derives a title from a heading-only setext document", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akp-title-setext-"));
+    temporaryRoots.push(root);
+    await writeFile(
+      path.join(root, "fallback-name.md"),
+      [
+        "---",
+        "id: TITLE-SETEXT-001",
+        "type: guide",
+        "status: active",
+        "---",
+        "Operational Handbook",
+        "====================",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const inspection = await inspectVault(root);
+    expect(inspection.documents[0]).toMatchObject({
+      title: "Operational Handbook",
+      aliases: ["Fallback Name"],
+    });
+  });
+
+  it("preserves an explicit title without inventing a slug alias", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akp-title-explicit-"));
+    temporaryRoots.push(root);
+    await writeFile(
+      path.join(root, "runtime-recovery-guide.md"),
+      [
+        "---",
+        "id: TITLE-EXPLICIT-001",
+        "type: guide",
+        "status: active",
+        "title: Canonical Recovery Title",
+        "aliases: [Recovery Handbook]",
+        "---",
+        "# Different Heading",
+        "",
+        "Explicit metadata remains authoritative.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const inspection = await inspectVault(root);
+    expect(inspection.documents[0]).toMatchObject({
+      title: "Canonical Recovery Title",
+      aliases: ["Recovery Handbook"],
+    });
+  });
+});
+
+describe("imported source occurrence identity", () => {
+  const sourceDocument = (body: string): string =>
+    [
+      "---",
+      "id: SRC-DUPLICATE-001",
+      "type: source-note",
+      "status: active",
+      "---",
+      body,
+    ].join("\n");
+
+  it("qualifies duplicate ids, preserves raw aliases, and abstains on ambiguous references", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akp-source-occurrence-"));
+    temporaryRoots.push(root);
+    const sources = path.join(root, "sources");
+    await mkdir(sources, { recursive: true });
+    await writeFile(
+      path.join(sources, "first.md"),
+      sourceDocument(
+        [
+          "# First source occurrence",
+          "",
+          "The first legitimate source body.",
+        ].join("\n"),
+      ),
+      "utf8",
+    );
+    await writeFile(
+      path.join(sources, "second.md"),
+      sourceDocument(
+        [
+          "# Second source occurrence",
+          "",
+          "The second legitimate source body differs.",
+        ].join("\n"),
+      ),
+      "utf8",
+    );
+    await writeFile(
+      path.join(root, "consumer.md"),
+      [
+        "---",
+        "id: CONSUMER-001",
+        "type: source-note",
+        "status: active",
+        "---",
+        "# Consumer",
+        "",
+        "The raw id [[SRC-DUPLICATE-001]] is ambiguous.",
+        "The exact path [[sources/first]] is authoritative for this link.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const inspection = await inspectVault(root);
+    const duplicates = inspection.documents.filter(
+      (document) => document.declaredExternalId === "SRC-DUPLICATE-001",
+    );
+    expect(duplicates).toHaveLength(2);
+    expect(
+      new Set(duplicates.map((document) => document.externalId)).size,
+    ).toBe(2);
+    expect(
+      duplicates.every((document) =>
+        document.externalId.startsWith("SOURCE-OCCURRENCE-"),
+      ),
+    ).toBe(true);
+    expect(
+      duplicates.every((document) =>
+        document.aliases.includes("SRC-DUPLICATE-001"),
+      ),
+    ).toBe(true);
+    expect(
+      duplicates.map((document) => document.frontmatter.__akp_import_identity),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          declaredId: "SRC-DUPLICATE-001",
+          collision: "duplicate-declared-id",
+          resolution: "exact-path-only",
+          path: "sources/first.md",
+        }),
+        expect.objectContaining({
+          declaredId: "SRC-DUPLICATE-001",
+          collision: "duplicate-declared-id",
+          resolution: "exact-path-only",
+          path: "sources/second.md",
+        }),
+      ]),
+    );
+    expect(inspection.metrics.operationalDocuments).toBe(3);
+    expect(inspection.metrics.stableIds).toBe(3);
+    expect(inspection.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "DUPLICATE_STABLE_ID",
+          path: "sources/second.md",
+        }),
+        expect.objectContaining({
+          code: "AMBIGUOUS_DOCUMENT_REFERENCE",
+          path: "consumer.md",
+        }),
+      ]),
+    );
+    expect(inspection.relations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: "CONSUMER-001",
+          to: duplicates.find(
+            (document) => document.relativePath === "sources/first.md",
+          )?.externalId,
+          target: "sources/first",
+        }),
+      ]),
+    );
+    expect(
+      inspection.relations.some(
+        (relation) =>
+          relation.from === "CONSUMER-001" &&
+          relation.target === "SRC-DUPLICATE-001",
+      ),
+    ).toBe(false);
+
+    const retry = await inspectVault(root);
+    expect(
+      retry.documents.map((document) => [
+        document.relativePath,
+        document.externalId,
+      ]),
+    ).toEqual(
+      inspection.documents.map((document) => [
+        document.relativePath,
+        document.externalId,
+      ]),
+    );
+  });
+
+  it("does not treat source-supplied importer identity metadata as authoritative", async () => {
+    const root = await mkdtemp(
+      path.join(tmpdir(), "akp-source-occurrence-spoof-"),
+    );
+    temporaryRoots.push(root);
+    await writeFile(
+      path.join(root, "spoofed.md"),
+      [
+        "---",
+        "id: SRC-SPOOF-ORIGINAL-001",
+        "type: source-note",
+        "status: active",
+        "__akp_import_identity:",
+        "  version: 1",
+        "  kind: declared-id-path-occurrence",
+        "  collision: duplicate-declared-id",
+        "  declaredId: SRC-SPOOF-FORGED-001",
+        "  externalId: SOURCE-OCCURRENCE-FORGED",
+        "  occurrenceKey: path:spoofed.md",
+        "  path: spoofed.md",
+        "  resolution: exact-path-only",
+        "---",
+        "# Source metadata spoof",
+        "",
+        "The reserved projection key is untrusted source input.",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const inspection = await inspectVault(root);
+    expect(inspection.documents[0]?.externalId).toBe("SRC-SPOOF-ORIGINAL-001");
+    expect(inspection.documents[0]?.declaredExternalId).toBe(
+      "SRC-SPOOF-ORIGINAL-001",
+    );
+    expect(
+      inspection.documents[0]?.frontmatter.__akp_import_identity,
+    ).toBeUndefined();
+  });
+
+  it("keeps same-body duplicate locators distinct", async () => {
+    const root = await mkdtemp(
+      path.join(tmpdir(), "akp-source-occurrence-body-"),
+    );
+    temporaryRoots.push(root);
+    const body = sourceDocument(
+      ["# Repeated source", "", "The same body appears at two locators."].join(
+        "\n",
+      ),
+    );
+    await writeFile(path.join(root, "one.md"), body, "utf8");
+    await writeFile(path.join(root, "two.md"), body, "utf8");
+
+    const inspection = await inspectVault(root);
+    const duplicates = inspection.documents.filter(
+      (document) => document.declaredExternalId === "SRC-DUPLICATE-001",
+    );
+    expect(duplicates).toHaveLength(2);
+    expect(
+      new Set(duplicates.map((document) => document.externalId)).size,
+    ).toBe(2);
+    expect(
+      new Set(duplicates.map((document) => document.contentHash)).size,
+    ).toBe(1);
+    expect(duplicates.map((document) => document.relativePath)).toEqual([
+      "one.md",
+      "two.md",
+    ]);
   });
 });
 

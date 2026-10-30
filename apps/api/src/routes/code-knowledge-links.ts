@@ -23,9 +23,9 @@ import {
 
 const LinkRequest = z
   .object({
-    projectId: z.string().uuid(),
-    documentId: z.string().uuid(),
-    reviewId: z.string().uuid(),
+    projectId: z.string().guid(),
+    documentId: z.string().guid(),
+    reviewId: z.string().guid(),
     relationType: z.enum(["rationale_ref", "applies_to"]),
     selector: z
       .object({

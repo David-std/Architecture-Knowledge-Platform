@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { classifySameShaJobSnapshot } from "./release-assurance-workflows-consistency.mjs";
 
 const requiredWorkflows = [
   "ci",
@@ -23,22 +24,84 @@ function requiredEnv(name) {
   return value;
 }
 
-async function githubJson(url, token) {
-  const response = await fetch(url, {
-    headers: {
-      accept: "application/vnd.github+json",
-      authorization: `Bearer ${token}`,
-      "x-github-api-version": "2022-11-28",
-    },
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(
-      `GitHub API ${response.status} ${response.statusText}: ${body.slice(0, 500)}`,
-    );
+const GITHUB_API_MAX_ATTEMPTS = 5;
+const GITHUB_API_RETRY_BASE_MS = 1_000;
+
+function retryDelayMs(response, attempt) {
+  const retryAfter = Number(response?.headers?.get("retry-after"));
+  if (Number.isFinite(retryAfter) && retryAfter >= 0) {
+    return Math.min(30_000, retryAfter * 1_000);
   }
-  return response.json();
+  return Math.min(
+    30_000,
+    GITHUB_API_RETRY_BASE_MS * 2 ** Math.max(0, attempt - 1),
+  );
+}
+
+function retryableStatus(response) {
+  return (
+    response.status === 408 ||
+    response.status === 429 ||
+    response.status >= 500 ||
+    (response.status === 403 && response.headers.has("retry-after"))
+  );
+}
+
+async function githubJson(url, token) {
+  let lastError;
+  for (let attempt = 1; attempt <= GITHUB_API_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          accept: "application/vnd.github+json",
+          authorization: `Bearer ${token}`,
+          "x-github-api-version": "2022-11-28",
+        },
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (response.ok) return response.json();
+
+      const body = await response.text();
+      const error = new Error(
+        `GitHub API ${response.status} ${response.statusText}: ${body.slice(0, 500)}`,
+      );
+      if (!retryableStatus(response)) {
+        error.name = "GitHubApiPermanentError";
+        throw error;
+      }
+      if (attempt === GITHUB_API_MAX_ATTEMPTS) throw error;
+      lastError = error;
+      const delayMs = retryDelayMs(response, attempt);
+      console.warn(
+        JSON.stringify({
+          status: "GITHUB_API_RETRY",
+          attempt,
+          maxAttempts: GITHUB_API_MAX_ATTEMPTS,
+          responseStatus: response.status,
+          delayMs,
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    } catch (error) {
+      lastError = error;
+      if (error instanceof Error && error.name === "GitHubApiPermanentError") {
+        throw error;
+      }
+      if (attempt === GITHUB_API_MAX_ATTEMPTS) throw error;
+      const delayMs = retryDelayMs(null, attempt);
+      console.warn(
+        JSON.stringify({
+          status: "GITHUB_API_RETRY",
+          attempt,
+          maxAttempts: GITHUB_API_MAX_ATTEMPTS,
+          responseStatus: null,
+          delayMs,
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError ?? new Error("GitHub API request failed");
 }
 
 const repository = requiredEnv("GITHUB_REPOSITORY");
@@ -111,6 +174,34 @@ for (;;) {
   await new Promise((resolve) => setTimeout(resolve, pollMs));
 }
 
+async function consistentWorkflowJobs(runId, workflowName) {
+  const jobsUrl = `${apiUrl}/repos/${repository}/actions/runs/${runId}/jobs?per_page=100`;
+  let lastJobs = [];
+  let lastAssessment = { status: "PENDING", detail: "not yet fetched" };
+  for (let attempt = 1; attempt <= 12; attempt += 1) {
+    const payload = await githubJson(jobsUrl, token);
+    lastJobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+    lastAssessment = classifySameShaJobSnapshot(lastJobs);
+    if (lastAssessment.status !== "PENDING") {
+      return { jobs: lastJobs, assessment: lastAssessment };
+    }
+    if (attempt === 12) break;
+    const delayMs = Math.min(5_000, 1_000 * attempt);
+    console.warn(
+      JSON.stringify({
+        status: "WAITING_FOR_CONSISTENT_JOB_STEPS",
+        workflow: workflowName,
+        runId,
+        attempt,
+        detail: lastAssessment.detail,
+        delayMs,
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  return { jobs: lastJobs, assessment: lastAssessment };
+}
+
 const selectedRuns = [];
 const failures = [];
 for (const workflowName of requiredWorkflows) {
@@ -137,23 +228,19 @@ for (const workflowName of requiredWorkflows) {
     continue;
   }
 
-  const jobsPayload = await githubJson(
-    `${apiUrl}/repos/${repository}/actions/runs/${successful.id}/jobs?per_page=100`,
-    token,
+  const { jobs, assessment } = await consistentWorkflowJobs(
+    successful.id,
+    workflowName,
   );
-  const jobs = Array.isArray(jobsPayload.jobs) ? jobsPayload.jobs : [];
-  const unsuccessfulJobs = jobs.filter(
-    (job) => job?.status !== "completed" || job?.conclusion !== "success",
-  );
-  if (unsuccessfulJobs.length > 0) {
+  if (assessment.status !== "READY") {
     failures.push(
-      `${workflowName}: successful run ${successful.id} contains non-success jobs`,
+      `${workflowName}: successful run ${successful.id} lacks finalized successful job/step evidence (${assessment.detail})`,
     );
   }
 
   selectedRuns.push({
     workflow: workflowName,
-    status: unsuccessfulJobs.length === 0 ? "PASSED" : "FAILED",
+    status: assessment.status === "READY" ? "PASSED" : "FAILED",
     runId: successful.id,
     runAttempt: successful.run_attempt ?? 1,
     event: successful.event ?? null,

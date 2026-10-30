@@ -5,6 +5,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { GitKnowledgeStore } from "@akp/git-store";
 import { Postgres, appendOutboxEvent } from "@akp/postgres";
+import { MAX_EMBEDDING_UNIT_CHARACTERS } from "@akp/retrieval";
 import { incrementalIndex, reconcileIncrementalIndex } from "../src/index.js";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -440,6 +441,204 @@ describe("incremental index event port", () => {
           },
         ]);
       } finally {
+        await db.pool.end();
+        await rm(repositoryPath, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
+    "materializes table rows, cells and bounded long-text fragments in a fresh projection",
+    async () => {
+      if (!databaseUrl) return;
+      const db = new Postgres(databaseUrl);
+      const repositoryPath = await mkdtemp(
+        path.join(os.tmpdir(), "akp-indexing-unitization-"),
+      );
+      const store = new GitKnowledgeStore(repositoryPath);
+      const organizationId = randomUUID();
+      const spaceId = randomUUID();
+      const vaultId = randomUUID();
+      const eventId = randomUUID();
+      const previousVectorEnabled = process.env.AKP_VECTOR_ENABLED;
+      process.env.AKP_VECTOR_ENABLED = "false";
+      try {
+        await db.pool.query(
+          `insert into organizations(id,slug,name) values($1,$2,$3)`,
+          [
+            organizationId,
+            `idx-units-${organizationId.slice(0, 8)}`,
+            "Unitization integration",
+          ],
+        );
+        await db.pool.query(
+          `insert into spaces(id,organization_id,slug,name,visibility,knowledge_repo_path)
+           values($1,$2,$3,$4,'PRIVATE',$5)`,
+          [
+            spaceId,
+            organizationId,
+            `idx-units-${spaceId.slice(0, 8)}`,
+            "Unitization integration space",
+            repositoryPath,
+          ],
+        );
+        await db.pool.query(
+          `insert into vaults(
+             id,space_id,canonical_path,name,read_only,current_revision,
+             vault_key,local_path
+           ) values($1,$2,$3,$4,true,$5,$6,$3)`,
+          [
+            vaultId,
+            spaceId,
+            repositoryPath,
+            "Unitization integration vault",
+            "r0",
+            `idx-units-${vaultId.slice(0, 8)}`,
+          ],
+        );
+
+        const baseRevision = await store.ensureRepository(
+          "Unitization integration",
+          "unitization@localhost",
+        );
+        const branchName = await store.createDraftBranch(
+          "unitization-integration",
+          baseRevision,
+        );
+        const longText =
+          "Bounded retrieval material remains structurally attributable. ".repeat(
+            55,
+          ) + "The terminal recovery marker is still retrievable.";
+        await store.writeDraftFile(
+          "managed/structured.md",
+          [
+            "---",
+            "id: IDX-STRUCTURED-UNITIZATION",
+            "title: Structured unitization",
+            "type: evidence",
+            "status: active",
+            "---",
+            "",
+            "# Retrieval evidence",
+            "",
+            "| Metric | Value |",
+            "| --- | --- |",
+            "| Accuracy | 97.2% |",
+            "| Window | 47 minutes |",
+            "",
+            longText,
+            "",
+          ].join("\n"),
+        );
+        const draftRevision = await store.commitAll(
+          "test: add structured unitization fixture",
+          "Unitization integration",
+          "unitization@localhost",
+        );
+        const publishedRevision = await store.mergeDraft(
+          branchName,
+          baseRevision,
+          draftRevision,
+          "Unitization integration",
+          "unitization@localhost",
+        );
+        await db.pool.query(
+          "update vaults set current_revision=$1 where id=$2",
+          [publishedRevision, vaultId],
+        );
+        await appendOutboxEvent(db, {
+          eventId,
+          eventType: "CorpusRevisionPublished",
+          resourceId: randomUUID(),
+          spaceId,
+          vaultId,
+          payload: {
+            revision: publishedRevision,
+            changedPaths: ["structured.md"],
+          },
+        });
+
+        const result = await incrementalIndex(db, store, {
+          eventId,
+          spaceId,
+          vaultId,
+          revision: publishedRevision,
+          changes: [{ path: "structured.md", operation: "CREATE" }],
+        });
+
+        const rows = await db.pool.query<{
+          unit_type: string;
+          body: string;
+          container_only: boolean;
+          embedding_eligible: boolean;
+          locator: Record<string, unknown>;
+        }>(
+          `select u.unit_type,u.body,u.container_only,u.embedding_eligible,u.locator
+             from knowledge_units u
+             join knowledge_documents d on d.id=u.document_id
+            where u.space_id=$1 and u.vault_id=$2
+              and u.corpus_revision=$3
+              and d.external_id='IDX-STRUCTURED-UNITIZATION'
+            order by u.structural_order,u.id`,
+          [spaceId, vaultId, result.corpusRevision],
+        );
+
+        const table = rows.rows.find((row) => row.unit_type === "TABLE");
+        const tableRows = rows.rows.filter(
+          (row) => row.unit_type === "TABLE_ROW",
+        );
+        const tableCells = rows.rows.filter(
+          (row) => row.unit_type === "TABLE_CELL",
+        );
+        const longContainer = rows.rows.find(
+          (row) =>
+            row.container_only && row.body.includes("terminal recovery marker"),
+        );
+        const fragments = rows.rows.filter(
+          (row) =>
+            row.embedding_eligible && typeof row.locator.fragment === "number",
+        );
+
+        expect(table).toMatchObject({
+          container_only: true,
+          embedding_eligible: false,
+        });
+        expect(tableRows).toHaveLength(2);
+        expect(
+          tableRows.map((row) => [row.locator.table, row.locator.row]),
+        ).toEqual([
+          [1, 1],
+          [1, 2],
+        ]);
+        expect(tableRows.every((row) => row.embedding_eligible)).toBe(true);
+        expect(tableCells).toHaveLength(4);
+        expect(
+          tableCells.every(
+            (row) =>
+              row.embedding_eligible === false &&
+              typeof row.locator.table === "number" &&
+              typeof row.locator.row === "number" &&
+              typeof row.locator.column === "number",
+          ),
+        ).toBe(true);
+        expect(longContainer).toBeDefined();
+        expect(fragments.length).toBeGreaterThan(1);
+        expect(
+          fragments.some((row) =>
+            row.body.includes("terminal recovery marker"),
+          ),
+        ).toBe(true);
+        expect(
+          rows.rows
+            .filter((row) => row.embedding_eligible)
+            .every((row) => row.body.length <= MAX_EMBEDDING_UNIT_CHARACTERS),
+        ).toBe(true);
+      } finally {
+        if (previousVectorEnabled === undefined) {
+          delete process.env.AKP_VECTOR_ENABLED;
+        } else {
+          process.env.AKP_VECTOR_ENABLED = previousVectorEnabled;
+        }
         await db.pool.end();
         await rm(repositoryPath, { recursive: true, force: true });
       }

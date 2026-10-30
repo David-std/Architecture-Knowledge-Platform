@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { pipeline } from "node:stream/promises";
 import {
   Postgres,
+  type PostgresPoolClient,
   applyNextSourceConnectorEvent,
   claimContextFabricNode,
   claimNextAssuranceRun,
@@ -25,6 +26,7 @@ import {
   type RawObjectRef,
 } from "@akp/object-store";
 import { CompilationPlan } from "@akp/compiler";
+import { replaceSourceProjectionUnits } from "@akp/indexing";
 import { ModelResidency } from "@akp/contracts";
 import { GitKnowledgeStore } from "@akp/git-store";
 import { validateMarkdownDocument } from "@akp/validation";
@@ -47,7 +49,9 @@ import {
 } from "./assurance-worker.js";
 import {
   DOCUMENT_ARTIFACT_SCHEMA_VERSION,
+  buildFaithfulSourceMarkdown,
   parseCanonicalExtractionResponse,
+  type FaithfulSourceMarkdown,
   renderDocumentArtifactPreview,
 } from "./document-artifact.js";
 import { buildCompilationStage } from "./compilation-stage.js";
@@ -205,6 +209,91 @@ async function updateState(
   );
 }
 
+/**
+ * Source readers accept only a complete, latest extracted revision. Raw bytes
+ * are immutable; currentness is a mutable scoped pointer, not Git approval.
+ */
+async function activateExtractedSourceRevision(
+  client: PostgresPoolClient,
+  input: {
+    jobId: string;
+    sourceId: string;
+    sourceHash: string;
+    sourceUri: string;
+    spaceId: string;
+    vaultId: string | null;
+  },
+): Promise<void> {
+  await client.query("select pg_advisory_xact_lock(hashtextextended($1,0))", [
+    JSON.stringify([input.spaceId, input.vaultId, input.sourceUri]),
+  ]);
+  // A later requested revision with an already persisted artifact wins even
+  // when an earlier worker finishes its extraction out of order.
+  const newer = await client.query(
+    "select j.id from ingest_jobs j " +
+      "join ingest_jobs current_job on current_job.id=$1 " +
+      "where j.space_id=$2 and j.vault_id is not distinct from $3 " +
+      "and j.source_uri=$4 and j.id<>$1 and j.cancelled_at is null " +
+      "and (j.created_at,j.id)>(current_job.created_at,current_job.id) " +
+      "and j.stage_outputs->'extracted'->>'source_artifact_id' is not null " +
+      "and j.stage_outputs->'raw'->>'sha256'<>$5 limit 1",
+    [
+      input.jobId,
+      input.spaceId,
+      input.vaultId,
+      input.sourceUri,
+      input.sourceHash,
+    ],
+  );
+  if (newer.rowCount) {
+    await client.query(
+      "update sources set status='SUPERSEDED' " +
+        "where id=$1 and space_id=$2 and vault_id is not distinct from $3 and sha256=$4",
+      [input.sourceId, input.spaceId, input.vaultId, input.sourceHash],
+    );
+    return;
+  }
+  const old = await client.query<{ id: string }>(
+    "update sources set status='SUPERSEDED' " +
+      "where space_id=$1 and vault_id is not distinct from $2 " +
+      "and source_uri=$3 and id<>$4 and status='ACTIVE' returning id",
+    [input.spaceId, input.vaultId, input.sourceUri, input.sourceId],
+  );
+  const activated = await client.query(
+    "update sources set status='ACTIVE' " +
+      "where id=$1 and space_id=$2 and vault_id is not distinct from $3 " +
+      "and sha256=$4 returning id",
+    [input.sourceId, input.spaceId, input.vaultId, input.sourceHash],
+  );
+  if (activated.rowCount !== 1) {
+    throw new Error("SOURCE_REVISION_ACTIVATION_IDENTITY_MISMATCH");
+  }
+  if (old.rows.length) {
+    // Git remains authoritative; a cited superseded source requires renewed
+    // human review, not a silent machine rewrite or auto-publication.
+    await client.query(
+      "update knowledge_documents k " +
+        "set refresh_status='STALE_BLOCKED', " +
+        "stale_reason='Cited raw source revision superseded',updated_at=now() " +
+        "where k.space_id=$1 and k.vault_id is not distinct from $2 " +
+        "and k.refresh_status='CURRENT' and exists (" +
+        "select 1 from document_evidence de " +
+        "join evidence e on e.id=de.evidence_id " +
+        "where de.document_id=k.id and e.source_id=any($3::uuid[]))",
+      [input.spaceId, input.vaultId, old.rows.map((row) => row.id)],
+    );
+    // A cached packet may embed the previous source-backed assertion. It is
+    // derived/rebuildable data, unlike approved Git or immutable source bytes.
+    if (input.vaultId) {
+      await client.query(
+        "delete from context_packets where space_id=$1 " +
+          "and (vault_id=$2 or (scope->'vaultIds') ? $3)",
+        [input.spaceId, input.vaultId, input.vaultId],
+      );
+    }
+  }
+}
+
 type ProviderTaskEvent =
   "PROVIDER_TASK_STARTED" | "PROVIDER_TASK_SUCCEEDED" | "PROVIDER_TASK_FAILED";
 
@@ -294,9 +383,9 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
               `
               insert into sources(
                 space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
-                object_key,created_by,metadata,model_residency
+                object_key,created_by,metadata,model_residency,status
               )
-              values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
+              values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,'STAGED')
               on conflict (vault_id,sha256) where vault_id is not null
                 do update set
                   source_uri=excluded.source_uri,
@@ -315,9 +404,9 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
               `
               insert into sources(
                 space_id,vault_id,title,source_uri,media_type,sha256,byte_size,
-                object_key,created_by,metadata,model_residency
+                object_key,created_by,metadata,model_residency,status
               )
-              values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)
+              values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,'STAGED')
               on conflict (space_id,sha256) where vault_id is null
                 do update set
                   source_uri=excluded.source_uri,
@@ -461,6 +550,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         warnings: canonical.warnings,
       });
 
+      const sourceMarkdown = buildFaithfulSourceMarkdown(canonical.artifact);
       const preview = renderDocumentArtifactPreview(canonical.artifact, 4_000);
       const evidenceFragment = selectEvidenceFragment(
         canonical.artifact,
@@ -473,6 +563,8 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
         artifact_schema_version: DOCUMENT_ARTIFACT_SCHEMA_VERSION,
         configuration_hash: canonical.configurationHash,
         structured_content_hash: canonical.contentHash,
+        source_markdown_hash: sourceMarkdown.sha256,
+        source_markdown_renderer_version: sourceMarkdown.rendererVersion,
         routing: canonical.routing,
         warnings: canonical.warnings,
         source_artifact_id: "",
@@ -493,9 +585,10 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
             insert into source_artifacts(
               source_id,kind,object_key,source_hash,extractor,extractor_version,
               quality,metadata,document_artifact,artifact_schema_version,
-              configuration_hash,structured_content_hash
+              configuration_hash,structured_content_hash,
+              source_markdown,source_markdown_hash,source_markdown_renderer_version
             )
-            values($1,'document-artifact',$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11)
+            values($1,'document-artifact',$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11,$12,$13,$14)
             on conflict (source_id,extractor,extractor_version,configuration_hash)
               where kind='document-artifact'
             do update set
@@ -505,7 +598,10 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
               metadata=excluded.metadata,
               document_artifact=excluded.document_artifact,
               artifact_schema_version=excluded.artifact_schema_version,
-              structured_content_hash=excluded.structured_content_hash
+              structured_content_hash=excluded.structured_content_hash,
+              source_markdown=excluded.source_markdown,
+              source_markdown_hash=excluded.source_markdown_hash,
+              source_markdown_renderer_version=excluded.source_markdown_renderer_version
             returning id
             `,
             [
@@ -524,6 +620,9 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
               DOCUMENT_ARTIFACT_SCHEMA_VERSION,
               canonical.configurationHash,
               canonical.contentHash,
+              sourceMarkdown.content,
+              sourceMarkdown.sha256,
+              sourceMarkdown.rendererVersion,
             ],
           );
           const artifactId =
@@ -549,6 +648,14 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
             throw new Error("Could not persist document artifact.");
           }
           extracted.source_artifact_id = artifactId;
+          await replaceSourceProjectionUnits(client, {
+            sourceId: String(outputs.sourceId),
+            sourceArtifactId: artifactId,
+            sourceSha256: raw.sha256,
+            markdown: sourceMarkdown.content,
+            markdownSha256: sourceMarkdown.sha256,
+            title: String(outputs.title ?? payload.title ?? "Source"),
+          });
 
           const storedEvidence = await client.query<{ id: string }>(
             `
@@ -578,6 +685,14 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
           const evidenceId = storedEvidence.rows[0]?.id;
           if (!evidenceId) throw new Error("Could not persist evidence.");
           extracted.evidence_id = evidenceId;
+          await activateExtractedSourceRevision(client, {
+            jobId: id,
+            sourceId: String(outputs.sourceId),
+            sourceHash: raw.sha256,
+            sourceUri,
+            spaceId,
+            vaultId,
+          });
         },
       );
     } finally {
@@ -592,6 +707,9 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       evidence_id?: string;
       extractor?: string;
       extractor_version?: string;
+      structured_content_hash?: string;
+      source_markdown_hash?: string;
+      source_markdown_renderer_version?: string;
     };
     if (
       !extracted?.document_artifact ||
@@ -648,6 +766,52 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       return;
     }
 
+    const projection = await db.pool.query<{
+      source_markdown: string | null;
+      source_markdown_hash: string | null;
+      source_markdown_renderer_version: string | null;
+    }>(
+      `
+      select a.source_markdown,a.source_markdown_hash,
+             a.source_markdown_renderer_version
+        from source_artifacts a
+        join sources s on s.id=a.source_id
+       where a.id=$1 and a.source_id=$2
+         and s.space_id=$3 and s.vault_id is not distinct from $4::uuid
+         and a.kind='document-artifact' and a.source_hash=$5
+         and s.sha256=$5 and a.structured_content_hash=$6
+      `,
+      [
+        extracted.source_artifact_id,
+        outputs.sourceId,
+        spaceId,
+        vaultId,
+        raw.sha256,
+        extracted.structured_content_hash,
+      ],
+    );
+    const persisted = projection.rows[0];
+    if (
+      !persisted ||
+      persisted.source_markdown === null ||
+      persisted.source_markdown_hash === null ||
+      persisted.source_markdown_renderer_version === null
+    ) {
+      throw new Error("SOURCE_MARKDOWN_PROJECTION_UNAVAILABLE");
+    }
+    if (
+      extracted.source_markdown_hash !== persisted.source_markdown_hash ||
+      extracted.source_markdown_renderer_version !==
+        persisted.source_markdown_renderer_version
+    ) {
+      throw new Error("SOURCE_MARKDOWN_PROJECTION_REVISION_MISMATCH");
+    }
+    const sourceMarkdown: FaithfulSourceMarkdown = {
+      content: persisted.source_markdown,
+      sha256: persisted.source_markdown_hash,
+      rendererVersion: persisted.source_markdown_renderer_version,
+    };
+
     const title = String(
       payload.title ?? outputs.originalName ?? basename(sourceUri),
     );
@@ -665,6 +829,7 @@ async function processJob(job: Record<string, unknown>): Promise<void> {
       extractor: artifactResult.extractor,
       extractorVersion: artifactResult.extractorVersion,
       artifact: artifactResult.artifact,
+      sourceMarkdown,
       vectorEnabled: process.env.AKP_VECTOR_ENABLED === "true",
     });
     const plan = CompilationPlan.parse(compilationStage.plan);

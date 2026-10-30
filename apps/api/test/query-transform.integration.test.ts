@@ -1,10 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import type { SearchRequest } from "@akp/contracts";
 import { Postgres } from "@akp/postgres";
 import {
   buildContextPacket,
   DeterministicQueryDecomposer,
+  S2BoundedQuestionCandidateTransformer,
   planQuery,
   type QueryTransformerPort,
 } from "@akp/retrieval";
@@ -195,6 +197,160 @@ const capabilities = {
 };
 
 describe("query transformation retrieval", () => {
+  it.skipIf(!databaseUrl)(
+    "recovers the original R2/R7 Atlas-Lima fact with both named anchors, without promoting negatives",
+    async () => {
+      if (!databaseUrl) return;
+      const value = fixture();
+      const db = new Postgres(databaseUrl);
+      const originalBytes = await readFile(
+        new URL(
+          "../../../test/fixtures/r2-r7-fresh-source/fidelity-probe.md",
+          import.meta.url,
+        ),
+      );
+      const oracle = JSON.parse(
+        await readFile(
+          new URL(
+            "../../../evals/registered/r2-r7-fresh-source-e2e.json",
+            import.meta.url,
+          ),
+          "utf8",
+        ),
+      ) as { source: { sha256: string } };
+      expect(createHash("sha256").update(originalBytes).digest("hex")).toBe(
+        oracle.source.sha256,
+      );
+      const authorizedId = randomUUID();
+      const unauthorizedId = randomUUID();
+      const query =
+        "What recovery target is documented for the Atlas relay in the Lima staging cluster?";
+      try {
+        await seed(db, value);
+        await insertDocument(db, value, {
+          id: authorizedId,
+          vaultId: value.authorizedVaultId,
+          externalId: "R2-R7-FIDELITY-SOURCE",
+          path: "reviewed/r2-r7-fidelity.md",
+          title: "R2/R7 reviewed Atlas relay facts",
+          body: originalBytes.toString("utf8"),
+        });
+        await insertDocument(db, value, {
+          id: unauthorizedId,
+          vaultId: value.unauthorizedVaultId,
+          externalId: "DECOY-ATLAS-LIMA",
+          path: "private/atlas-lima-decoy.md",
+          title: "Decoy Atlas relay recovery",
+          body: "For the Lima staging cluster, the Atlas relay recovery target is 99 minutes.",
+        });
+        const plan = planQuery(query, {
+          requestedIntent: "CONCEPTUAL",
+          capabilities,
+        });
+        const baseline = await queryKnowledge(db, request(value, query), {
+          channels: ["lexical"],
+          plan,
+          vaultIds: [value.authorizedVaultId],
+        });
+        expect(baseline.some((hit) => hit.documentId === authorizedId)).toBe(
+          false,
+        );
+        const rescued = await queryKnowledge(db, request(value, query), {
+          channels: ["lexical"],
+          plan,
+          vaultIds: [value.authorizedVaultId],
+          queryTransformer: new S2BoundedQuestionCandidateTransformer(),
+        });
+        expect(rescued.some((hit) => hit.documentId === authorizedId)).toBe(
+          true,
+        );
+        expect(
+          rescued.every(
+            (hit) =>
+              hit.vaultId === value.authorizedVaultId &&
+              hit.documentId !== unauthorizedId &&
+              hit.retrievalTrace?.authorization.vaultId ===
+                value.authorizedVaultId,
+          ),
+        ).toBe(true);
+        expect(
+          rescued.some((hit) =>
+            hit.reasons.some((reason) =>
+              reason.startsWith("lexical:transformed:MULTI_QUERY:"),
+            ),
+          ),
+        ).toBe(true);
+
+        const noAnswer =
+          "What TLS certificate serial number is configured for the Atlas relay?";
+        const negativePlan = planQuery(noAnswer, {
+          requestedIntent: "CONCEPTUAL",
+          capabilities,
+        });
+        const withheld = await queryKnowledge(db, request(value, noAnswer), {
+          channels: ["lexical"],
+          plan: negativePlan,
+          vaultIds: [value.authorizedVaultId],
+          queryTransformer: new S2BoundedQuestionCandidateTransformer(),
+        });
+        expect(withheld).toHaveLength(0);
+      } finally {
+        await cleanup(db, value).catch(() => undefined);
+        await db.close();
+      }
+    },
+  );
+
+  it.skipIf(!databaseUrl)(
+    "rescues a bounded open-question candidate without crossing vault authorization",
+    async () => {
+      if (!databaseUrl) return;
+      const value = fixture();
+      const db = new Postgres(databaseUrl);
+      const query = "Where are TLS rotation intervals defined?";
+      try {
+        await seed(db, value);
+        const plan = planQuery(query, {
+          requestedIntent: "CONCEPTUAL",
+          capabilities,
+        });
+        const original = await queryKnowledge(db, request(value, query), {
+          channels: ["lexical"],
+          plan,
+          vaultIds: [value.authorizedVaultId],
+        });
+        expect(original).toHaveLength(0);
+        const withQuestionProbe = await queryKnowledge(
+          db,
+          request(value, query),
+          {
+            channels: ["lexical"],
+            plan,
+            vaultIds: [value.authorizedVaultId],
+            queryTransformer: new S2BoundedQuestionCandidateTransformer(),
+          },
+        );
+        expect(withQuestionProbe.map((hit) => hit.documentId)).toEqual([
+          value.tlsDocumentId,
+        ]);
+        expect(
+          withQuestionProbe.every(
+            (hit) =>
+              hit.vaultId === value.authorizedVaultId &&
+              hit.retrievalTrace?.authorization.vaultId ===
+                value.authorizedVaultId &&
+              hit.reasons.some((reason) =>
+                reason.startsWith("lexical:transformed:MULTI_QUERY:"),
+              ),
+          ),
+        ).toBe(true);
+      } finally {
+        await cleanup(db, value).catch(() => undefined);
+        await db.close();
+      }
+    },
+  );
+
   it.skipIf(!databaseUrl)(
     "persists original+variants and uses variants only inside the authorized vault",
     async () => {

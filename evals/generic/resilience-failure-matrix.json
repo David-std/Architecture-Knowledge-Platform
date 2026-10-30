@@ -131,6 +131,11 @@
       "id": "backup-restore-projection-rebuild",
       "expectedOutcome": "The v4 backup restores declared durable state and managed Git into isolated resources, then rebuilds a searchable projection from restored canonical authority.",
       "evidence": ".github/workflows/resilience-matrix.yml; scripts/verify-restore.ps1; scripts/verify-managed-git-restore.ps1"
+    },
+    {
+      "id": "optional-semantic-layer-provider-failure",
+      "expectedOutcome": "An explicitly injected optional evidence verifier failure is observable but preserves deterministic support in SHADOW, fails closed in ENFORCE, and rolling the verifier back to OFF exactly restores the baseline; optional reranker provider failure preserves the authorized fused order.",
+      "evidence": "apps/api/test/optional-semantic-layer-rollback.test.ts; packages/retrieval/test/rerank.test.ts; scripts/optional-semantic-layer-rollback-evidence.ts"
     }
   ],
   "limitations": [

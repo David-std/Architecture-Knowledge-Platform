@@ -17,6 +17,8 @@ from typing import Any, ClassVar
 
 from bs4 import BeautifulSoup
 from docx import Document
+from docx.oxml.ns import qn
+from docx.table import Table
 from PIL import Image
 from pptx import Presentation
 from pypdf import PdfReader
@@ -33,6 +35,7 @@ from ..ports import (
     AdapterAvailability,
     CapabilityStatus,
     DocumentExtractionRequest,
+    DocumentIntelligenceError,
     DocumentIntelligencePort,
     UnsupportedMediaType,
 )
@@ -42,6 +45,10 @@ _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 _LIST = re.compile(r"^\s*(?:[-*+]\s+|\d+[.)]\s+)(.+?)\s*$")
 _IMAGE = re.compile(r"!\[([^]]*)\]\(([^)]+)\)")
 _EQUATION = re.compile(r"^(?:\${1,2}|\\\[|\\\(|\\begin\{).*(?:\${1,2}|\\\]|\\\)|\\end\{.*\})?$")
+# Extraction-semantic changes must not overwrite an older derived projection
+# under the same (source, extractor, version, configuration) persistence key.
+DETERMINISTIC_EXTRACTOR_VERSION = "0.3.1"
+
 _TABLE_SEPARATOR = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$")
 
 
@@ -247,7 +254,7 @@ def _parse_text_units(
                 source_ref,
                 kind="table",
                 line_start=table_start + line_offset,
-                line_end=table_start + len(table_lines) + 1 + line_offset,
+                line_end=table_start + len(table_lines) + line_offset,
                 page=page,
                 slide=slide,
                 heading_path=heading_stack,
@@ -392,8 +399,10 @@ def _artifact_from_units(
     merged.locators.insert(0, source_locator)
     all_pages = pages or []
     merged.locators.extend(page.locator for page in all_pages)
-    if not merged.blocks and not all_pages:
-        warnings = [*(warnings or []), "NO_TEXT_EXTRACTED"]
+    # No source blocks means no faithful Markdown can be emitted. An empty
+    # page-only result is not a successful extraction, regardless of format.
+    if not merged.blocks:
+        raise DocumentIntelligenceError("DOCUMENT_EXTRACTION_EMPTY")
     return DocumentArtifact(
         source_id=request.source_id,
         source_hash=source_hash,
@@ -430,6 +439,7 @@ def artifact_from_text(
     media_type: str | None = None,
     source_hash: str | None = None,
     warnings: list[str] | None = None,
+    quality: str = "EXACT_TEXT",
 ) -> DocumentArtifact:
     digest = source_hash or sha256_path(request.source_path)
     media = media_type or infer_media_type(request.source_path, request.media_type)
@@ -445,17 +455,18 @@ def artifact_from_text(
         request,
         digest,
         extractor=extractor,
-        version="0.3.0",
+        version=DETERMINISTIC_EXTRACTOR_VERSION,
         media_type=media,
         units=[units],
         pages=[page],
         warnings=warnings,
+        quality=quality,
     )
 
 
 class DeterministicTextAdapter(DocumentIntelligencePort):
     name = "deterministic-baseline"
-    version = "0.3.0"
+    version = DETERMINISTIC_EXTRACTOR_VERSION
     media_suffixes: ClassVar[set[str]] = {
         ".md",
         ".markdown",
@@ -537,11 +548,21 @@ class DeterministicTextAdapter(DocumentIntelligencePort):
             "application/x-yaml",
             "application/yaml",
         }:
+            raw = path.read_bytes()
+            try:
+                content = raw.decode("utf-8")
+                decode_warnings: list[str] = []
+            except UnicodeDecodeError:
+                # Replacing invalid bytes is a lossy extraction, never EXACT_TEXT.
+                content = raw.decode("utf-8", errors="replace")
+                decode_warnings = ["INVALID_UTF8_REPLACED"]
             return artifact_from_text(
                 request,
-                path.read_text(encoding="utf-8", errors="replace"),
+                content,
                 extractor="deterministic-text",
                 media_type=media,
+                warnings=decode_warnings,
+                quality="MACHINE_EXTRACTED" if decode_warnings else "EXACT_TEXT",
             )
         if suffix == ".pdf" or media == "application/pdf":
             return self._extract_pdf(request)
@@ -634,7 +655,66 @@ class DeterministicTextAdapter(DocumentIntelligencePort):
         document = Document(str(request.source_path))
         units = _ParsedUnits()
         heading_stack: list[str] = []
-        for paragraph_number, paragraph in enumerate(document.paragraphs, start=1):
+        paragraph_number = 0
+        table_number = 0
+        warnings: list[str] = []
+        # python-docx's separate paragraphs/tables lists lose their original
+        # interleaving. Body-order iteration is required for quote replay.
+        for block in document.iter_inner_content():
+            if isinstance(block, Table):
+                table_number += 1
+                rows = [[cell.text.strip() for cell in row.cells] for row in block.rows]
+                if not rows:
+                    continue
+                # A merged Word cell may appear in multiple grid slots.
+                # Preserve text but mark the reconstructed grid as uncertain.
+                if any(
+                    cell._tc.grid_span != 1 or cell._tc.vMerge is not None
+                    for row in block.rows
+                    for cell in row.cells
+                ):
+                    warnings.append(f"DOCX_TABLE_{table_number}_MERGED_CELL_UNCERTAIN")
+                locator = _new_locator(
+                    digest,
+                    request.source_uri or request.source_id,
+                    kind="docx-table",
+                    table=table_number,
+                    row=1,
+                    heading_path=heading_stack,
+                )
+                # DOCX has no implicit first-row header semantics. Only the
+                # native w:tblHeader marker may classify a row as a header.
+                first_row_properties = block.rows[0]._tr.trPr
+                header_flag = (
+                    first_row_properties.find(qn("w:tblHeader"))
+                    if first_row_properties is not None
+                    else None
+                )
+                has_header = (
+                    header_flag is not None
+                    and str(header_flag.get(qn("w:val"), "1")).lower()
+                    not in {"0", "false", "off"}
+                )
+                table_item = TableArtifact(
+                    id=f"table-{table_number}",
+                    kind="table",
+                    text=" | ".join(rows[0]),
+                    locator=locator,
+                    headers=rows[0] if has_header else [],
+                    rows=rows[1:] if has_header else rows,
+                    metadata={
+                        "heading_path": [*heading_stack],
+                        "header_row_declared": has_header,
+                    },
+                )
+                units.blocks.append(table_item)
+                units.tables.append(table_item)
+                units.locators.append(locator)
+                units.reading_order.append(table_item.id or "")
+                continue
+
+            paragraph_number += 1
+            paragraph = block
             text = paragraph.text.strip()
             if not text:
                 continue
@@ -666,29 +746,6 @@ class DeterministicTextAdapter(DocumentIntelligencePort):
             units.locators.append(locator)
             units.reading_order.append(item.id or "")
             (units.headings if kind == "heading" else units.paragraphs).append(item)
-        for table_number, table in enumerate(document.tables, start=1):
-            rows = [[cell.text.strip() for cell in row.cells] for row in table.rows]
-            if not rows:
-                continue
-            locator = _new_locator(
-                digest,
-                request.source_uri or request.source_id,
-                kind="docx-table",
-                table=table_number,
-                row=1,
-            )
-            table_item = TableArtifact(
-                id=f"table-{table_number}",
-                kind="table",
-                text=" | ".join(rows[0]),
-                locator=locator,
-                headers=rows[0],
-                rows=rows[1:],
-            )
-            units.blocks.append(table_item)
-            units.tables.append(table_item)
-            units.locators.append(locator)
-            units.reading_order.append(table_item.id or "")
         return _artifact_from_units(
             request,
             digest,
@@ -696,7 +753,8 @@ class DeterministicTextAdapter(DocumentIntelligencePort):
             version=self.version,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             units=[units],
-            quality="EXACT_TEXT",
+            warnings=warnings,
+            quality="MACHINE_EXTRACTED" if warnings else "EXACT_TEXT",
         )
 
     def _extract_pptx(self, request: DocumentExtractionRequest) -> DocumentArtifact:

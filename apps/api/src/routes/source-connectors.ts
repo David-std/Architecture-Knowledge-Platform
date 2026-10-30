@@ -17,7 +17,7 @@ import {
 } from "@akp/postgres";
 import { actorOf, audit, requirePermission, type Permission } from "../auth.js";
 
-const UUID = z.string().uuid();
+const UUID = z.string().guid();
 const CONNECTOR_KEY = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const WEBHOOK_MAX_BYTES = 1_500_000;
 const WEBHOOK_MAX_SKEW_SECONDS = 300;
@@ -208,7 +208,7 @@ const WebhookBody = z
             aclFingerprint: z.string().max(1024).nullable().optional(),
           })
           .strict(),
-        metadata: z.record(z.unknown()).default({}),
+        metadata: z.record(z.string(), z.unknown()).default({}),
       })
       .strict(),
   })

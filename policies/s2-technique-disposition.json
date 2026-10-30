@@ -1,0 +1,916 @@
+{
+  "schemaVersion": "akp.s2.technique-disposition.v1",
+  "status": "ARCHITECTURE_AUDIT_NOT_RELEASE_ACCEPTANCE",
+  "pr": 38,
+  "sourceLedger": "docs/architecture/s2-semantic-experiments-and-integration-ledger.md",
+  "gateStatus": "OPEN",
+  "lastReviewed": "2026-10-29",
+  "dispositionDefinitions": {
+    "RUNTIME_DEFAULT": "On the maintained production path; security/sufficiency authority still bounded by code.",
+    "RUNTIME_OPT_IN": "Connected to maintained path behind opt-in configuration or guarded injection; not promoted.",
+    "SHADOW_ONLY": "May run and emit diagnostics; cannot grant source support.",
+    "EVALUATION_ONLY": "Implemented as offline/benchmark helper, not part of admitted production answer path.",
+    "REJECTED": "Experimental hypothesis rejected in a documented DEV comparison; do not auto-combine.",
+    "REQUIRES_CUTOVER": "Existing code/experiment is useful but lacks a proven safe single-owner production cutover.",
+    "UNIMPLEMENTED_GATE": "Missing verified end-to-end or external acceptance evidence."
+  },
+  "supplementalModules": [
+    {
+      "path": "scripts/s2-audit-owner-holdout-reviews.ts",
+      "sourceSection": 37,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-audit-reader-answer-forms.ts",
+      "sourceSection": 62,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-audit-reader-claim-review.ts",
+      "sourceSection": 62,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-audit-section-blind-reviewers.ts",
+      "sourceSection": 32,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-audit-writer-semantic-review.ts",
+      "sourceSection": 67,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-finalize-owner-case-proposals.ts",
+      "sourceSection": 37,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-freeze-and-run-writer-probe.ts",
+      "sourceSection": 45,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-paired-answer-generation.mjs",
+      "sourceSection": 28,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-prepare-owner-holdout.ts",
+      "sourceSection": 37,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-prepare-reader-claim-review.ts",
+      "sourceSection": 62,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-prepare-writer-semantic-review.ts",
+      "sourceSection": 67,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-probe-native-structured-writer.ts",
+      "sourceSection": 93,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-rebind-admission-shadow.ts",
+      "sourceSection": 39,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-reconcile-writer-review-submissions.ts",
+      "sourceSection": 67,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-score-calibration-admissions.mjs",
+      "sourceSection": 67,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-score-generated-answer-calibration.mjs",
+      "sourceSection": 68,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-score-observations.ts",
+      "sourceSection": 4,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-score-section-paired.ts",
+      "sourceSection": 32,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-source-bound-absence-study.ts",
+      "sourceSection": 35,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-source-bound-relation-study.ts",
+      "sourceSection": 35,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-summarize-writer-reviews.ts",
+      "sourceSection": 67,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "scripts/s2-verify-external-holdout-freeze.ts",
+      "sourceSection": 37,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Operator-controlled evaluation, validation or capture; never grants runtime source support or independent acceptance."
+    },
+    {
+      "path": "packages/evaluation/src/s2-actor-binding.ts",
+      "sourceSection": 21,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-authenticated-http-writer-bridge.ts",
+      "sourceSection": 45,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-bm25-same-pool-shadow.ts",
+      "sourceSection": 78,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-claim-answer-anchor.ts",
+      "sourceSection": 24,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-claim-corroboration.ts",
+      "sourceSection": 31,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-claim-numeric-integrity.ts",
+      "sourceSection": 50,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-discovery-review-plan.ts",
+      "sourceSection": 39,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-dual-axis.ts",
+      "sourceSection": 40,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-end-to-end-evidence-trace.ts",
+      "sourceSection": 28,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-evidence-portfolio.ts",
+      "sourceSection": 30,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-frozen-reader-source-bridge.ts",
+      "sourceSection": 44,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-holdout-freeze.ts",
+      "sourceSection": 39,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-http-admitted-frozen-reader.ts",
+      "sourceSection": 45,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-http-evidence-replay.ts",
+      "sourceSection": 28,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-owner-holdout.ts",
+      "sourceSection": 37,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-owner-review-audit.ts",
+      "sourceSection": 37,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-paired-semantic-probe.ts",
+      "sourceSection": 27,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-pipeline-stage-ledger.ts",
+      "sourceSection": 28,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-pre-admission-source-discovery.ts",
+      "sourceSection": 29,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-question-answer-claim.ts",
+      "sourceSection": 49,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-quote-evidence-choice.ts",
+      "sourceSection": 47,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-reader-claim-review.ts",
+      "sourceSection": 62,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-retrieved-writer-bridge.ts",
+      "sourceSection": 45,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-section-blind-review.ts",
+      "sourceSection": 32,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-section-paired.ts",
+      "sourceSection": 32,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-semantic-pipeline-trace.ts",
+      "sourceSection": 28,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-semantic-probes.ts",
+      "sourceSection": 27,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-source-span.ts",
+      "sourceSection": 4,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-windowed-claim-diagnostics.ts",
+      "sourceSection": 22,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-writer-citation-reconciliation.ts",
+      "sourceSection": 28,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-writer-passage-capture.ts",
+      "sourceSection": 45,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-writer-review-compat.ts",
+      "sourceSection": 64,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/evaluation/src/s2-writer-semantic-packets.ts",
+      "sourceSection": 67,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Evaluation library, not a standalone production entitlement; requires paired acceptance before product cutover"
+    },
+    {
+      "path": "packages/retrieval/src/s2-bilingual-candidate-shadow.ts",
+      "sourceSection": 19,
+      "disposition": "SHADOW_ONLY",
+      "decision": "Source/original or bilingual diagnostic; cannot grant admission"
+    },
+    {
+      "path": "apps/api/src/s2-admission-shadow.ts",
+      "sourceSection": 39,
+      "disposition": "RUNTIME_OPT_IN",
+      "decision": "Opt-in application shadow event sink, redacted diagnostics only"
+    },
+    {
+      "path": "apps/api/src/s2-source-rebind.ts",
+      "sourceSection": 39,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Source/original or bilingual diagnostic; cannot grant admission"
+    },
+    {
+      "path": "packages/evaluation/src/s2-private-unseen-review.ts",
+      "sourceSection": 99,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Strictly validate captured SOURCE hashes, original UTF-16 spans and complete model claims; assemble blank X/Y source-only packets and private Writer custody, never gold."
+    },
+    {
+      "path": "scripts/s2-export-private-unseen-review.ts",
+      "sourceSection": 99,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Offline-only outside-repository pinned-sample export with exclusive private files and no public source/model text; operator ACL remains mandatory."
+    },
+    {
+      "path": "packages/evaluation/src/s2-independent-intake.ts",
+      "sourceSection": 100,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Fail-closed prospective-source intake parsing and immutable original byte binding for externally supplied questions; no Writer, inferred gold or admission."
+    },
+    {
+      "path": "scripts/s2-preflight-external-intake.ts",
+      "sourceSection": 100,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Private CLI validates frozen coordinator template and externally filled original source/answerability seats before provider inference and emits redacted non-gate receipt only."
+    },
+    {
+      "path": "packages/evaluation/src/s2-prospective-paired-score.ts",
+      "sourceSection": 100,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Consume independently supplied judgments for same-case deterministic/candidate comparison and emit non-gateable paired descriptive metrics; no semantic truth generated."
+    },
+    {
+      "path": "scripts/s2-score-private-paired-arms.ts",
+      "sourceSection": 100,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Private frozen-by-hash paired arms scorer, no models, no runtime admission/policy authority and no gold promotion."
+    },
+    {
+      "path": "packages/evaluation/src/s2-preinference-blind-review.ts",
+      "sourceSection": 102,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Export source-only X/Y pre-inference packets and coordinator private mapping after the existing governed external intake preflight."
+    },
+    {
+      "path": "packages/evaluation/src/s2-family-stratified-bootstrap.ts",
+      "sourceSection": 102,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Deterministic descriptive, paired publisher-family clustered percentile bootstrap, with language balance, not release confidence certification."
+    },
+    {
+      "path": "packages/evaluation/src/s2-prospective-source-review-audit.ts",
+      "sourceSection": 103,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Fail closed on mismatched X/Y original-source reviews, fake citation, revised source scope and negative with unconfirmed whole-corpus declaration; output Z-only adjudication material and redacted non-release counts."
+    },
+    {
+      "path": "scripts/s2-audit-prospective-source-review.ts",
+      "sourceSection": 103,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Private pinned-source/source-review CLI produces private Z-only packet and redacted receipt outside Git, without model inference or semantic truth promotion."
+    },
+    {
+      "path": "scripts/s2-convert-prospective-source-review-csv.mjs",
+      "sourceSection": 105,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Private exact 240-row reviewer CSV conversion with original CSV SHA trace, packet identity, Unicode-safe SOURCE quotes and reviewer schema; no model, no source truth promotion, no production policy authority."
+    },
+    {
+      "path": "scripts/s2-audit-technical-z-intake.py",
+      "sourceSection": 107,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Private original SOURCE+X/Y+unsigned technical Z ZIP validator, redacted nonrelease receipt only, no generative semantic judging or runtime authorization."
+    },
+    {
+      "path": "scripts/test_s2_technical_z_intake.py",
+      "sourceSection": 107,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Synthetic full-cohort and adversarial Unicode/source/citation/negative/reviewer identity regression tests for the maintained technical-Z intake adapter."
+    },
+    {
+      "path": "scripts/s2-prepare-owner-editorial-revision.py",
+      "sourceSection": 109,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Private SHA-pinned project-owner editorial patch: eight rewords, one scope-limited negative, complete 120 EN/120 ES DEV packets, no independent holdout or runtime admission authority."
+    },
+    {
+      "path": "scripts/test_s2_owner_editorial_revision.py",
+      "sourceSection": 109,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Synthetic fail-closed original SOURCE quotes/keys and owner's restricted editing authority regression checks for versioned 240 DEV corpus; no private data in CI."
+    },
+    {
+      "path": "apps/api/test/s2-benchmark-authority.test.ts",
+      "sourceSection": 115,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Strict synthetic regression checks for branded eval:run-only full-vault benchmark authority, exact scoped non-federated retrieval and fail-closed direct runner invocation. No independent semantic assessment."
+    },
+    {
+      "path": "apps/api/test/s2-authorized-retrieval-scope.test.ts",
+      "sourceSection": 112,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "§116 adds bidirectional explicit vault-intent/scope containment, legitimate implicit/explicit opt-in federations and unauthorized narrowed-scope widening negatives to shared Search/Context pre-provider unit tests. Existing graph/HTTP integrations still needed; no release acceptance."
+    },
+    {
+      "path": "packages/evaluation/src/s2-development-http-journey-metrics.ts",
+      "sourceSection": 111,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "DEV-only external clock metrics for both §111 three-request/two-retrieval Search+Context+Writer and §113 Context DIRECT+Writer (one retrieval/two HTTP requests), each with strict failed-attempt inclusion and redacted outcomes. Neither is semantic gold, paired candidate evidence, one-server-request latency or release acceptance."
+    },
+    {
+      "path": "packages/evaluation/test/s2-development-http-journey-metrics.test.ts",
+      "sourceSection": 111,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Pure timing and fail-closed stage transition regression tests for both mutually exclusive composed HTTP protocols, 6 tests, not independent SOURCE-quality or release acceptance."
+    },
+    {
+      "path": "packages/evaluation/src/s2-development-http-writer-metrics.ts",
+      "sourceSection": 110,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Pure bounded strict nearest-rank p50/p95 and degraded HTTP 503 summary for real Writer-audit HTTP timing, never release acceptance or Search-to-Writer journey claim."
+    },
+    {
+      "path": "packages/evaluation/test/s2-development-http-writer-metrics.test.ts",
+      "sourceSection": 110,
+      "disposition": "EVALUATION_ONLY",
+      "decision": "Synthetic metric calculation, failure inclusion, malformed latency, stage-timing nonaddition tests."
+    }
+  ],
+  "techniques": [
+    {
+      "id": "authorized-search-context",
+      "stage": "A",
+      "disposition": "RUNTIME_DEFAULT",
+      "sourceSection": 6,
+      "files": ["apps/api/src/routes/search.ts", "apps/api/src/server.ts"],
+      "decision": "Search and Context already call the one queryKnowledge engine; section 112 centralizes effective Postgres actor/vault/path/SOURCE scopes and a typed scope-enforcing invocation for both HTTP routes and Context reasoning operators (MCP delegates HTTP). §114 also converges governance identity/check on the same actor/vault/credential-path intersection and scoped invocation, closing its direct user-facing queryKnowledge bypass. §115 requires branded eval:run unrestricted-vault authority and separately SOURCE:read raw scopes; §116 additionally guards explicit vault intent against wider reused multi-vault authority at the last typed Search/Context invocation. No new engine. Pure ranking/admission extraction, complete S2.11 and independent holdout remain pending."
+    },
+    {
+      "id": "hybrid-pgvector-lexical-rrf",
+      "stage": "B",
+      "disposition": "RUNTIME_DEFAULT",
+      "sourceSection": 77,
+      "files": [
+        "apps/api/src/routes/search.ts",
+        "packages/retrieval/src/rrf.ts"
+      ],
+      "decision": "Exact/lexical/vector channels available; vector E5 deployment remains separately configured; rank not truth."
+    },
+    {
+      "id": "e5-local-embedding",
+      "stage": "B",
+      "disposition": "SHADOW_ONLY",
+      "sourceSection": 77,
+      "files": [
+        "packages/retrieval/src/local-semantic-embedding.ts",
+        "packages/indexing/src/embedding-index.ts"
+      ],
+      "decision": "E5 indexing and search measured on real PostgreSQL; no production quality promotion."
+    },
+    {
+      "id": "bounded-unit-lexical-recall",
+      "stage": "B",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 80,
+      "files": [
+        "packages/retrieval/src/assertion-recall.ts",
+        "apps/api/src/routes/search.ts"
+      ],
+      "decision": "Source-unit candidate recovery, not admission; source-family and distractor evidence outstanding."
+    },
+    {
+      "id": "sibling-unit-depth",
+      "stage": "B",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 87,
+      "files": [
+        "apps/api/src/routes/search.ts",
+        "packages/retrieval/src/candidate-policy.ts"
+      ],
+      "decision": "Bounded SQL branch 1/2/4 tested; >1 added distractors on controls; cap configurable but not proof of better default."
+    },
+    {
+      "id": "bge-order-only",
+      "stage": "C",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 85,
+      "files": [
+        "packages/retrieval/src/local-bge-reranker.ts",
+        "apps/api/src/server.ts"
+      ],
+      "flag": "AKP_S2_BGE_RERANK_ENABLED",
+      "decision": "Local BGE ordering connected after authorized fusion; cannot grant support; default OFF, p95 concern."
+    },
+    {
+      "id": "query-translation",
+      "stage": "B",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 19,
+      "files": [
+        "packages/retrieval/src/query-translation.ts",
+        "apps/api/src/server.ts"
+      ],
+      "decision": "Entity-preserving lexical/vector query variants; no admission authority, error cases and provider budgets."
+    },
+    {
+      "id": "bounded-bilingual-question-transform",
+      "stage": "B",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 19,
+      "files": ["packages/retrieval/src/s2-question-candidate-transform.ts"],
+      "decision": "Lexical translation/retention hypothesis tested; not a second hidden query planner."
+    },
+    {
+      "id": "contextual-qa-diagnostic",
+      "stage": "E",
+      "disposition": "SHADOW_ONLY",
+      "sourceSection": 14,
+      "files": [
+        "packages/retrieval/src/local-multilingual-qa-evidence.ts",
+        "apps/api/src/server.ts"
+      ],
+      "decision": "Extractive QA can identify wrong value in an authentic quote; not eligible to grant source support."
+    },
+    {
+      "id": "nli-diagnostic",
+      "stage": "G",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 25,
+      "files": [
+        "packages/retrieval/src/local-multilingual-nli-evidence.ts",
+        "packages/evaluation/src/s2-semantic-evidence.ts"
+      ],
+      "decision": "Cross-domain entailment/polarity unsafe as mandatory veto or guarantee until independent evidence."
+    },
+    {
+      "id": "deterministic-support-guard",
+      "stage": "E",
+      "disposition": "RUNTIME_DEFAULT",
+      "sourceSection": 6,
+      "files": [
+        "packages/retrieval/src/support-verifier.ts",
+        "packages/retrieval/src/answerability.ts"
+      ],
+      "decision": "Deterministic authority retained; known false abstentions and missing role/condition semantics."
+    },
+    {
+      "id": "layered-admission",
+      "stage": "E",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 42,
+      "files": [
+        "packages/retrieval/src/evidence-admission.ts",
+        "packages/retrieval/src/layered-answerability.ts",
+        "apps/api/src/server.ts"
+      ],
+      "flag": "AKP_EVIDENCE_VERIFIER_MODE",
+      "decision": "One existing structural/semantic owner with fail-closed paths; not accepted for default."
+    },
+    {
+      "id": "v5-reader-adaptive-shortlist",
+      "stage": "E",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 55,
+      "files": [
+        "packages/retrieval/src/evidence-reader.ts",
+        "apps/api/src/runtime-config.ts"
+      ],
+      "flag": "AKP_EVIDENCE_READER_ADAPTIVE_MAX_CANDIDATES",
+      "decision": "Preserves reader errors and adaptive batch support; source relation correctness remains conditional."
+    },
+    {
+      "id": "governed-qualified-proposition-matcher",
+      "stage": "E",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 76,
+      "files": [
+        "packages/retrieval/src/proposition-projection.ts",
+        "packages/retrieval/src/evidence-admission.ts"
+      ],
+      "decision": "Source SHA and exact typed slots; only trustworthy external projection may drive it."
+    },
+    {
+      "id": "reviewed-original-source-service",
+      "stage": "D",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 92,
+      "files": [
+        "apps/api/src/s2-reviewed-source-proposition-service.ts",
+        "apps/api/src/server.ts"
+      ],
+      "flag": "AKP_S2_REVIEWED_SOURCE_ENABLED",
+      "decision": "Two distinct authenticated reviewer accounts + immutable SOURCE; human correctness not inferred from identities."
+    },
+    {
+      "id": "writer-claims-http-audit",
+      "stage": "G",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 92,
+      "files": [
+        "apps/api/src/routes/s2-writer-claims.ts",
+        "packages/retrieval/src/governed-writer-claims.ts"
+      ],
+      "decision": "Authenticated audit of externally supplied Writer statements; no provider generation or independent full answer proof."
+    },
+    {
+      "id": "source-section-independent-selection",
+      "stage": "D",
+      "disposition": "REQUIRES_CUTOVER",
+      "sourceSection": 22,
+      "files": [
+        "apps/api/src/section-candidate-shadow.ts",
+        "packages/retrieval/src/contextual-evidence.ts"
+      ],
+      "decision": "Only original authorized standalone SECTION can be evidence; parentContext must never masquerade as an original quote."
+    },
+    {
+      "id": "source-original-window-choice",
+      "stage": "D",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 47,
+      "files": [
+        "packages/evaluation/src/s2-evidence-window-selection.ts",
+        "packages/evaluation/src/s2-atomic-original-window-choice.ts"
+      ],
+      "decision": "Original literal windows and positional provenance tested offline; context/passage fallback not accepted."
+    },
+    {
+      "id": "exact-quote-source-attribution",
+      "stage": "F",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 30,
+      "files": ["packages/evaluation/src/s2-exact-quote-attribution.ts"],
+      "decision": "Unique literal original span can correct citation identity but cannot confer entailment."
+    },
+    {
+      "id": "complete-atomic-answer-coverage",
+      "stage": "G",
+      "disposition": "REQUIRES_CUTOVER",
+      "sourceSection": 36,
+      "files": [
+        "packages/evaluation/src/s2-complete-answer-evidence.ts",
+        "packages/evaluation/src/s2-writer-semantic-audit.ts"
+      ],
+      "decision": "Per-atomic-claim + full question-slot coverage not connected to a production writer answer endpoint."
+    },
+    {
+      "id": "native-writer-source-frozen-probe",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 93,
+      "files": [
+        "scripts/s2-prospective-ollama-custody.ts",
+        "packages/evaluation/src/s2-native-structured-writer.ts"
+      ],
+      "decision": "16-case author-controlled provider diagnostic across four models; not independently adjudicated nor authenticated Search/ContextPacket coupled."
+    },
+    {
+      "id": "gemma-full-proposition-mandatory-veto",
+      "stage": "E",
+      "disposition": "REJECTED",
+      "sourceSection": 67,
+      "files": [],
+      "decision": "200 exposed DEV cases rejected: high loss of correct Writer statements; do not wire as default judge."
+    },
+    {
+      "id": "forced-writer-slot-prompt",
+      "stage": "H",
+      "disposition": "REJECTED",
+      "sourceSection": 70,
+      "files": [],
+      "decision": "Paired 80 DEV prompts created unsupported answers in negatives; do not promote prompt variant."
+    },
+    {
+      "id": "independent-publisher-holdout",
+      "stage": "GATE",
+      "disposition": "UNIMPLEMENTED_GATE",
+      "sourceSection": 93,
+      "files": ["scripts/s2-prepare-external-review-kit.ts"],
+      "decision": "Only 240 BLANK intake seats; external custodians, source-family-disjoint questions and blind X/Y/Z adjudication absent."
+    },
+    {
+      "id": "full-auth-provider-writer-atomic-audit",
+      "stage": "H",
+      "disposition": "UNIMPLEMENTED_GATE",
+      "sourceSection": 93,
+      "files": [
+        "apps/api/test/s2-reviewed-source-live.integration.test.ts",
+        "scripts/s2-prospective-ollama-custody.ts"
+      ],
+      "decision": "Two separate tested pieces but no single authentic provider-fed Reader-to-Writer-to-source audit on blind cohort."
+    },
+    {
+      "id": "exact-token-paired-manual-baseline",
+      "stage": "GATE",
+      "disposition": "UNIMPLEMENTED_GATE",
+      "sourceSection": 9,
+      "files": ["packages/retrieval/scripts/context-tokenizer-baseline.ts"],
+      "decision": "Real target-tokenizer and paired Obsidian/manual baseline not yet accepted on new family-disjoint set."
+    },
+    {
+      "id": "native-atomic-writer-existing-reviewed-audit",
+      "stage": "H",
+      "disposition": "RUNTIME_OPT_IN",
+      "sourceSection": 95,
+      "flag": "AKP_S2_ATOMIC_WRITER_EVAL_ENABLED",
+      "files": [
+        "apps/api/src/routes/s2-native-writer.ts",
+        "apps/api/src/s2-writer-context.ts",
+        "apps/api/src/s2-writer-audit-core.ts",
+        "apps/api/src/s2-local-atomic-provider.ts",
+        "packages/evaluation/src/s2-atomic-native-writer.ts"
+      ],
+      "decision": "Native local Writer is provider-pin-gated and sends ONLY currently authorized two-review SOURCE; typed full claim coverage and UTF-16 citations are re-evaluated by existing R5 audit, never as independent acceptance or release permission."
+    },
+    {
+      "id": "unseen-question-reviewed-source-anchor-shadow",
+      "stage": "H",
+      "disposition": "SHADOW_ONLY",
+      "sourceSection": 97,
+      "flag": "AKP_S2_SOURCE_ANCHORED_SHADOW_ENABLED",
+      "files": [
+        "apps/api/src/routes/s2-native-writer.ts",
+        "apps/api/src/s2-reviewed-source-proposition-service.ts"
+      ],
+      "decision": "Separately opted-in observation of previously unreviewed questions on exact currently authorized original SOURCE with an approved different-question anchor. Original SHA, ACL, revision, post-inference anchor proof and frozen native citations are checked, but the anchor's relation and model statements are NEVER semantically admitted; only redacted diagnostics are returned."
+    },
+    {
+      "id": "private-unseen-question-source-and-writer-review-custody",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 99,
+      "flag": "AKP_S2_PRIVATE_SHADOW_REVIEW_CAPTURE_ENABLED",
+      "files": [
+        "apps/api/src/routes/s2-native-writer.ts",
+        "apps/api/src/server.ts",
+        "packages/evaluation/src/s2-private-unseen-review.ts",
+        "scripts/s2-export-private-unseen-review.ts"
+      ],
+      "decision": "Opt-in in-process authorized private original-SOURCE and model-output capture, redacted public HTTP, and separate source-only blinded reviewer versus custodian Writer packets. Requires explicit receiving sink and remains developmental; human gold, reviewer identity, claim entailment and release permissions are NEVER manufactured."
+    },
+    {
+      "id": "prospective-240-seat-original-source-preflight",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 100,
+      "files": [
+        "packages/evaluation/src/s2-independent-intake.ts",
+        "scripts/s2-preflight-external-intake.ts"
+      ],
+      "decision": "Pre-inference 240-seat external custodian intake gate verifies pinned template/cases, source-family and stratum distribution, exact original SHA/UTF-16, private path containment and declared DEV family separation. Structural readiness only, not signature/independent gold or semantic release authorization."
+    },
+    {
+      "id": "source-family-stratified-prospective-paired-scoring",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 100,
+      "files": [
+        "packages/evaluation/src/s2-prospective-paired-score.ts",
+        "scripts/s2-score-private-paired-arms.ts"
+      ],
+      "decision": "Exact same-case deterministic-vs-candidate paired descriptive S2 metrics: independent-source-gold-supplied citation precision and false admission rate, justified abstentions, full HTTP p95, errors, tokens and source-family/language sensitivity; no model scores are used to authenticate truth; release gate always false."
+    },
+    {
+      "id": "pre-inference-source-only-blind-x-y-review",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 102,
+      "files": [
+        "packages/evaluation/src/s2-preinference-blind-review.ts",
+        "scripts/s2-preflight-external-intake.ts"
+      ],
+      "decision": "Reuses full pinned external original SOURCE preflight before model queries; creates private separately shuffled X/Y question-plus-source-only reviewer packets with blank answerability and source spans and an isolated custodian-only stratum map; no gold, release or SOURCE access authority."
+    },
+    {
+      "id": "en-es-balanced-paired-source-family-bootstrap",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 102,
+      "files": [
+        "packages/evaluation/src/s2-family-stratified-bootstrap.ts",
+        "packages/evaluation/src/s2-prospective-paired-score.ts"
+      ],
+      "decision": "Exploratory 2048-replicate whole-publisher-family paired resampling with equal EN/ES weights, 2.5-97.5 percentile precision/FAR/correct-answer intervals and no certified release or external-truth claims."
+    },
+    {
+      "id": "prospective-blind-source-review-submission-custody",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 103,
+      "files": [
+        "packages/evaluation/src/s2-prospective-source-review-audit.ts",
+        "scripts/s2-audit-prospective-source-review.ts"
+      ],
+      "decision": "The already issued pre-inference X/Y tasks are matched to independently delivered, SHA-pinned reviewer submissions; verify complete cases, original SOURCE quote byte spans, vault path revision, full corpus-negative check declarations, and hold disagreements for blank independent Z adjudication. No human gold or policy promotion is authenticated by code."
+    },
+    {
+      "id": "external-csv-review-attestation-semantic-bridge",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 105,
+      "files": [
+        "scripts/s2-convert-prospective-source-review-csv.mjs",
+        "packages/evaluation/src/s2-prospective-source-review-audit.ts"
+      ],
+      "decision": "Explicitly map reviewer CSV whole-corpus-examined field to existing negative-only absence attestation; verify original SOURCE exact spans and immutable complete reviewer packet, classify verdict conflicts separately from answer/quote variance without auto-gold or inferred equivalence."
+    },
+    {
+      "id": "owner-attested-third-party-z-private-dev-reconciliation",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 119,
+      "files": [
+        "scripts/s2-reconcile-owner-attested-z.py",
+        "scripts/test_s2_reconcile_owner_attested_z.py"
+      ],
+      "decision": "Bind the 177 real owner-attested blind third-party Z decisions to 63 exact private X/Y consensus cases and original source hashes/UTF-16 spans in a private 240-case DEV-only reference. Distinguish owner testimony from externally authenticated independence, preserve seven exceptional labels, fail closed on tampering and never treat exposed DEV as independent acceptance gold."
+    },
+    {
+      "id": "technical-ai-z-unsigned-source-intake-audit",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 107,
+      "files": [
+        "scripts/s2-audit-technical-z-intake.py",
+        "scripts/test_s2_technical_z_intake.py"
+      ],
+      "decision": "Fail-closed source-original and frozen case identity, exact UTF-16 quote, JSON/CSV/manifest checksum and source-license awareness for unsigned AI Z technical intake; diagnostic X/Y differences are non-gold, no reviewer identity or FAR approval."
+    },
+    {
+      "id": "owner-approved-dev-question-revision-240",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 109,
+      "files": [
+        "scripts/s2-prepare-owner-editorial-revision.py",
+        "scripts/test_s2_owner_editorial_revision.py"
+      ],
+      "decision": "Record explicit project-owner editorial authorization to replace eight AI-authored DEV questions and retain one scoped negative. Validate unchanged source byte/UTF16/revision and paired X/Y cohort, generate versioned 240-case DEV-only nonholdout packets and immutable original proposal SHA. Owner approval is effective for internal editing but cannot authenticate independent holdout truth or source rights."
+    },
+    {
+      "id": "actual-guarded-writer-http-latency-dev-diagnostic",
+      "stage": "H",
+      "disposition": "EVALUATION_ONLY",
+      "sourceSection": 110,
+      "files": [
+        "packages/evaluation/src/s2-development-http-writer-metrics.ts",
+        "apps/api/test/s2-reviewed-source-live.integration.test.ts"
+      ],
+      "decision": "Run optionally 12 sequential real authenticated local-HTTP Writer audit calls (reviewed EN/ES, unseen inverted actor EN) with pinned Ollama on PostgreSQL/MinIO; count every HTTP 503 in p95/degraded denominators; distinguish initial per-scenario repeats. Does not include preceding search or independent semantic gold."
+    }
+  ]
+}

@@ -9,12 +9,186 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { GitKnowledgeStore, LocalGitSourceConnector } from "../src/index.js";
+
+// These fixtures execute multiple real Git/process operations; allow bounded
+// filesystem latency on Windows and under parallel workspace test load.
+vi.setConfig({ testTimeout: 30_000 });
 
 const execFileAsync = promisify(execFile);
 
+async function gitOutput(workingTree: string, args: string[]): Promise<string> {
+  const result = await execFileAsync("git", ["-C", workingTree, ...args]);
+  return result.stdout.trim();
+}
+
+async function repositorySnapshot(workingTree: string) {
+  return {
+    branch: await gitOutput(workingTree, ["branch", "--show-current"]),
+    head: await gitOutput(workingTree, ["rev-parse", "HEAD"]),
+    tree: await gitOutput(workingTree, [
+      "ls-tree",
+      "-r",
+      "--full-tree",
+      "HEAD",
+    ]),
+    readme: await readFile(path.join(workingTree, "README.md"), "utf8"),
+    authorName: await gitOutput(workingTree, ["config", "user.name"]),
+    authorEmail: await gitOutput(workingTree, ["config", "user.email"]),
+  };
+}
+
 describe("isolated draft worktrees", () => {
+  it("rejects a nested path before touching the ancestor repository", async () => {
+    const parent = await mkdtemp(path.join(tmpdir(), "akp-git-store-parent-"));
+    const nested = path.join(parent, ".work", "gate-managed");
+    const author = ["Parent Repository", "parent@localhost"] as const;
+
+    await execFileAsync("git", ["init", "-b", "main", parent]);
+    await execFileAsync("git", [
+      "-C",
+      parent,
+      "config",
+      "user.name",
+      author[0],
+    ]);
+    await execFileAsync("git", [
+      "-C",
+      parent,
+      "config",
+      "user.email",
+      author[1],
+    ]);
+    await writeFile(path.join(parent, "README.md"), "parent fixture\n", "utf8");
+    await execFileAsync("git", ["-C", parent, "add", "--all"]);
+    await execFileAsync("git", [
+      "-C",
+      parent,
+      "-c",
+      `user.name=${author[0]}`,
+      "-c",
+      `user.email=${author[1]}`,
+      "commit",
+      "-m",
+      "parent fixture",
+    ]);
+    const before = await repositorySnapshot(parent);
+
+    await expect(
+      new GitKnowledgeStore(nested).ensureRepository(...author),
+    ).rejects.toThrow("GIT_REPOSITORY_ROOT_INVALID");
+    await expect(access(nested)).rejects.toThrow();
+    await expect(repositorySnapshot(parent)).resolves.toEqual(before);
+  });
+
+  it("initializes an independent path and accepts a linked worktree root", async () => {
+    const container = await mkdtemp(
+      path.join(tmpdir(), "akp-git-store-independent-"),
+    );
+    const repository = path.join(container, "managed");
+    const linked = path.join(container, "linked");
+    const author = [
+      "Architecture Knowledge Platform",
+      "akp@localhost",
+    ] as const;
+
+    const store = new GitKnowledgeStore(repository);
+    const base = await store.ensureRepository(...author);
+    expect(await gitOutput(repository, ["branch", "--show-current"])).toBe(
+      "main",
+    );
+    expect(
+      await readFile(path.join(repository, "README.md"), "utf8"),
+    ).toContain("Managed Architecture Knowledge");
+
+    await execFileAsync("git", [
+      "-C",
+      repository,
+      "worktree",
+      "add",
+      "-b",
+      "linked",
+      linked,
+      base,
+    ]);
+    const linkedStore = new GitKnowledgeStore(linked);
+    await expect(linkedStore.revision()).resolves.toBe(base);
+    const linkedBefore = await repositorySnapshot(linked);
+    await expect(
+      linkedStore.ensureRepository("Replacement", "replacement@localhost"),
+    ).rejects.toThrow();
+    await expect(repositorySnapshot(linked)).resolves.toEqual(linkedBefore);
+  });
+
+  it("does not replace an existing repository after main checkout fails", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "akp-git-store-checkout-"));
+    const originalAuthor = [
+      "Existing Managed Author",
+      "existing@localhost",
+    ] as const;
+    await execFileAsync("git", ["init", "-b", "main", root]);
+    await execFileAsync("git", [
+      "-C",
+      root,
+      "config",
+      "user.name",
+      originalAuthor[0],
+    ]);
+    await execFileAsync("git", [
+      "-C",
+      root,
+      "config",
+      "user.email",
+      originalAuthor[1],
+    ]);
+    await writeFile(
+      path.join(root, "README.md"),
+      "preserve this file\n",
+      "utf8",
+    );
+    await execFileAsync("git", ["-C", root, "add", "--all"]);
+    await execFileAsync("git", [
+      "-C",
+      root,
+      "-c",
+      `user.name=${originalAuthor[0]}`,
+      "-c",
+      `user.email=${originalAuthor[1]}`,
+      "commit",
+      "-m",
+      "existing repository",
+    ]);
+    await execFileAsync("git", ["-C", root, "branch", "-m", "legacy"]);
+    const before = await repositorySnapshot(root);
+
+    await expect(
+      new GitKnowledgeStore(root).ensureRepository(
+        "Replacement Author",
+        "replacement@localhost",
+      ),
+    ).rejects.toThrow();
+    await expect(repositorySnapshot(root)).resolves.toEqual(before);
+  });
+
+  it("rejects a bare Git directory instead of treating it as fresh", async () => {
+    const container = await mkdtemp(path.join(tmpdir(), "akp-git-store-bare-"));
+    const bare = path.join(container, "managed.git");
+    const author = [
+      "Architecture Knowledge Platform",
+      "akp@localhost",
+    ] as const;
+    await execFileAsync("git", ["init", "--bare", bare]);
+
+    await expect(
+      new GitKnowledgeStore(bare).ensureRepository(...author),
+    ).rejects.toThrow("GIT_REPOSITORY_ROOT_INVALID");
+    await expect(access(path.join(bare, "README.md"))).rejects.toThrow();
+    await expect(
+      gitOutput(bare, ["rev-parse", "--is-bare-repository"]),
+    ).resolves.toBe("true");
+  });
+
   it("publishes only the approved review", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "akp-git-store-"));
     const author = [
