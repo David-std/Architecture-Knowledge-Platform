@@ -168,6 +168,52 @@ describe("S2 prospective pre-inference external 240-seat intake", () => {
     f.deny.push("new-family-f01");
     expect(() => run(f)).toThrow(/SOURCE_SCOPE_OR_PROVENANCE_INVALID/);
   });
+  it("cannot hide a blocked development publisher behind a fresh display alias", () => {
+    const f = fixture();
+    f.deny.push("EXTERNALF01");
+    expect(() => run(f)).toThrow(/DEVELOPMENT_UPSTREAM_OWNER_REUSED/);
+  });
+  it("rejects two family seats pointing at the same upstream repository owner", () => {
+    const f = fixture();
+    f.filledBytes = UTF(
+      f.filledBytes
+        .toString("utf8")
+        .replaceAll('"externalf02/reference"', '"externalf01/other-repo"'),
+    );
+    expect(() => run(f)).toThrow(/UPSTREAM_OWNER_SHARED_ACROSS_FAMILIES/);
+  });
+  it("cannot claim two independently sourced families by reusing identical original bytes", () => {
+    const f = fixture();
+    const oldSha = sha(f.files[1]!.rawBytes);
+    const sameSha = sha(f.files[0]!.rawBytes);
+    f.files[1]!.rawBytes = f.files[0]!.rawBytes;
+    f.filledBytes = UTF(
+      f.filledBytes.toString("utf8").replaceAll(oldSha, sameSha),
+    );
+    expect(() => run(f)).toThrow(/ORIGINAL_SOURCE_REUSED_ACROSS_FAMILIES/);
+  });
+  it("rejects normalized duplicate questions and a prefilled blind template", () => {
+    const f = fixture();
+    const q = (n: number) =>
+      "Who approved item F01 case " + sha("CF01enPOS" + n).slice(0, 8) + "?";
+    f.filledBytes = UTF(
+      f.filledBytes
+        .toString("utf8")
+        .replace('"' + q(1) + '"', '"' + q(0).toUpperCase() + '"'),
+    );
+    expect(() => run(f)).toThrow(/QUESTION_DUPLICATE/);
+    const f2 = fixture();
+    const templateText = f2.templateBytes.toString("utf8");
+    const before = '"CF01enPOS0","F01","en","POSITIVE","",""';
+    expect(templateText).toContain(before);
+    f2.templateBytes = UTF(
+      templateText.replace(
+        before,
+        '"CF01enPOS0","F01","en","POSITIVE","leaked-answer",""',
+      ),
+    );
+    expect(() => run(f2)).toThrow(/TEMPLATE_NOT_BLANK/);
+  });
   it("rejects incomplete and duplicate cases and fake language", () => {
     const f = fixture();
     const s = f.filledBytes.toString("utf8");

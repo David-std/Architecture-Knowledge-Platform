@@ -135,8 +135,16 @@ export function preflightS2IndependentIntake(input: {
   const counts = new Map<string, number>(),
     familyStrata = new Map<string, number>(),
     familyMeta = new Map<string, string>(),
+    upstreamOwnerToSeat = new Map<string, string>(),
+    sourceHashToSeat = new Map<string, string>(),
     seats = new Set<string>(),
     questions = new Set<string>();
+  // Seat IDs and strata are the only fields permitted in the frozen template.
+  // A prepopulated template could otherwise contaminate a purported blind intake.
+  if (
+    template.some((row) => HEAD.slice(4).some((column) => row[column] !== ""))
+  )
+    fail("TEMPLATE_NOT_BLANK");
   const originalBytes = new Map<string, Uint8Array>();
   for (const f of input.sourceFiles) {
     if (
@@ -150,13 +158,18 @@ export function preflightS2IndependentIntake(input: {
     if (originalBytes.has(key)) fail("SOURCE_DUPLICATE");
     originalBytes.set(key, f.rawBytes);
   }
+  const canonicalExcluded = input.excludedDevelopmentPublisherFamilies.map(
+    (family) => family.trim().toLowerCase(),
+  );
   if (
-    !input.excludedDevelopmentPublisherFamilies.length ||
-    new Set(input.excludedDevelopmentPublisherFamilies).size !==
-      input.excludedDevelopmentPublisherFamilies.length
+    !canonicalExcluded.length ||
+    canonicalExcluded.some(
+      (family) => !/^[a-z0-9][a-z0-9.-]{1,70}$/u.test(family),
+    ) ||
+    new Set(canonicalExcluded).size !== canonicalExcluded.length
   )
     fail("DENYLIST_REQUIRED");
-  const denied = new Set(input.excludedDevelopmentPublisherFamilies);
+  const denied = new Set(canonicalExcluded);
   let filledCount = 0,
     sourceCount = 0;
   const countedSources = new Set<string>();
@@ -209,15 +222,35 @@ export function preflightS2IndependentIntake(input: {
       row!.externalCustodianSourceSelectionReason.length > 512
     )
       fail("SOURCE_SCOPE_OR_PROVENANCE_INVALID");
+    const upstreamOwner = row!.upstreamRepository.split("/")[0]!.toLowerCase();
+    // Publisher names are self-declared. A different alias cannot turn an
+    // excluded upstream organization into a fresh independent family.
+    if (denied.has(upstreamOwner)) fail("DEVELOPMENT_UPSTREAM_OWNER_REUSED");
+    const priorOwnerSeat = upstreamOwnerToSeat.get(upstreamOwner);
+    if (priorOwnerSeat && priorOwnerSeat !== row!.publisherFamilySeat)
+      fail("UPSTREAM_OWNER_SHARED_ACROSS_FAMILIES");
+    upstreamOwnerToSeat.set(upstreamOwner, row!.publisherFamilySeat);
+    const priorSourceSeat = sourceHashToSeat.get(row!.originalSha256);
+    if (priorSourceSeat && priorSourceSeat !== row!.publisherFamilySeat)
+      fail("ORIGINAL_SOURCE_REUSED_ACROSS_FAMILIES");
+    sourceHashToSeat.set(row!.originalSha256, row!.publisherFamilySeat);
     const metadata = JSON.stringify([
       row!.publisherName,
-      row!.upstreamRepository,
+      row!.upstreamRepository.toLowerCase(),
       row!.sourceRevision40Hex,
     ]);
     const existing = familyMeta.get(row!.publisherFamilySeat);
     if (existing && existing !== metadata) fail("FAMILY_REVISION_CHANGED");
     familyMeta.set(row!.publisherFamilySeat, metadata);
-    const questionKey = sha(row!.language + "\0" + row!.question.trim());
+    const questionKey = sha(
+      row!.language +
+        "\0" +
+        row!.question
+          .normalize("NFKC")
+          .trim()
+          .replace(/\s+/gu, " ")
+          .toLowerCase(),
+    );
     if (questions.has(questionKey)) fail("QUESTION_DUPLICATE");
     questions.add(questionKey);
     const sourceKey = row!.publisherFamilySeat + "/" + row!.sourceRelativePath;
