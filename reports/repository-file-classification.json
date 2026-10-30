@@ -5242,6 +5242,16 @@
       "reason": "runtime, build or operational code"
     },
     {
+      "path": "scripts/release-assurance-workflows-consistency.mjs",
+      "category": "PRODUCT_CODE",
+      "reason": "runtime, build or operational code"
+    },
+    {
+      "path": "scripts/release-assurance-workflows-consistency.test.mjs",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "scripts/release-assurance-workflows.mjs",
       "category": "PRODUCT_CODE",
       "reason": "runtime, build or operational code"

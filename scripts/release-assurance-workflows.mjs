@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { classifySameShaJobSnapshot } from "./release-assurance-workflows-consistency.mjs";
 
 const requiredWorkflows = [
   "ci",
@@ -173,6 +174,34 @@ for (;;) {
   await new Promise((resolve) => setTimeout(resolve, pollMs));
 }
 
+async function consistentWorkflowJobs(runId, workflowName) {
+  const jobsUrl = `${apiUrl}/repos/${repository}/actions/runs/${runId}/jobs?per_page=100`;
+  let lastJobs = [];
+  let lastAssessment = { status: "PENDING", detail: "not yet fetched" };
+  for (let attempt = 1; attempt <= 12; attempt += 1) {
+    const payload = await githubJson(jobsUrl, token);
+    lastJobs = Array.isArray(payload.jobs) ? payload.jobs : [];
+    lastAssessment = classifySameShaJobSnapshot(lastJobs);
+    if (lastAssessment.status !== "PENDING") {
+      return { jobs: lastJobs, assessment: lastAssessment };
+    }
+    if (attempt === 12) break;
+    const delayMs = Math.min(5_000, 1_000 * attempt);
+    console.warn(
+      JSON.stringify({
+        status: "WAITING_FOR_CONSISTENT_JOB_STEPS",
+        workflow: workflowName,
+        runId,
+        attempt,
+        detail: lastAssessment.detail,
+        delayMs,
+      }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  return { jobs: lastJobs, assessment: lastAssessment };
+}
+
 const selectedRuns = [];
 const failures = [];
 for (const workflowName of requiredWorkflows) {
@@ -199,23 +228,19 @@ for (const workflowName of requiredWorkflows) {
     continue;
   }
 
-  const jobsPayload = await githubJson(
-    `${apiUrl}/repos/${repository}/actions/runs/${successful.id}/jobs?per_page=100`,
-    token,
+  const { jobs, assessment } = await consistentWorkflowJobs(
+    successful.id,
+    workflowName,
   );
-  const jobs = Array.isArray(jobsPayload.jobs) ? jobsPayload.jobs : [];
-  const unsuccessfulJobs = jobs.filter(
-    (job) => job?.status !== "completed" || job?.conclusion !== "success",
-  );
-  if (unsuccessfulJobs.length > 0) {
+  if (assessment.status !== "READY") {
     failures.push(
-      `${workflowName}: successful run ${successful.id} contains non-success jobs`,
+      `${workflowName}: successful run ${successful.id} lacks finalized successful job/step evidence (${assessment.detail})`,
     );
   }
 
   selectedRuns.push({
     workflow: workflowName,
-    status: unsuccessfulJobs.length === 0 ? "PASSED" : "FAILED",
+    status: assessment.status === "READY" ? "PASSED" : "FAILED",
     runId: successful.id,
     runAttempt: successful.run_attempt ?? 1,
     event: successful.event ?? null,
