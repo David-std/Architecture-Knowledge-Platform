@@ -148,8 +148,14 @@ export function verifyPrecommittedHoldoutFreeze(input: {
   )
     fail("BAD_EXTERNAL_FAMILY_DENYLIST");
   const publishers = new Set<string>(),
-    repos = new Set<string>();
+    repos = new Set<string>(),
+    owners = new Set<string>(),
+    sourceSnapshots = new Set<string>();
   for (const item of manifest.sourceFamilies as Record<string, unknown>[]) {
+    const owner =
+      obj(item) && typeof item.repository === "string"
+        ? item.repository.split("/")[0]!.toLowerCase()
+        : "";
     if (
       !obj(item) ||
       !keys(item, [
@@ -166,14 +172,19 @@ export function verifyPrecommittedHoldoutFreeze(input: {
       typeof item.repository !== "string" ||
       !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/u.test(item.repository) ||
       repos.has(item.repository.toLowerCase()) ||
+      denied.has(owner) ||
+      owners.has(owner) ||
       !rev.test(String(item.commitSha)) ||
       !hex.test(String(item.sourceSnapshotSha256)) ||
+      sourceSnapshots.has(String(item.sourceSnapshotSha256)) ||
       !Number.isSafeInteger(item.sourceCount) ||
       Number(item.sourceCount) < 1
     )
       fail("SOURCE_FAMILIES_NOT_DISJOINT_OR_INVALID");
     publishers.add(item.publisherFamily as string);
     repos.add((item.repository as string).toLowerCase());
+    owners.add(owner);
+    sourceSnapshots.add(item.sourceSnapshotSha256 as string);
   }
   const languageCounts = manifest.languages as { en: number; es: number };
   return {

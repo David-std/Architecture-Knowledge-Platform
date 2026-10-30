@@ -55,6 +55,19 @@ function fixture() {
   };
   return { manifest, input, privateKey };
 }
+function resignFixture(x: ReturnType<typeof fixture>) {
+  const updated = bytes(x.manifest);
+  x.input.manifestBytes = updated;
+  x.input.precommittedManifestSha256 = sha(updated);
+  x.input.signatureBytes = sign(
+    null,
+    Buffer.concat([
+      Buffer.from("AKP:S2:INDEPENDENT_HOLDOUT_FREEZE:V1\0"),
+      updated,
+    ]),
+    x.privateKey,
+  );
+}
 describe("S2 externally signed holdout-family freeze verifier", () => {
   it("verifies signature and family split, but never self-certifies independence", () => {
     const r = verifyPrecommittedHoldoutFreeze(fixture().input);
@@ -110,6 +123,31 @@ describe("S2 externally signed holdout-family freeze verifier", () => {
       ]),
       x.privateKey,
     );
+    expect(() => verifyPrecommittedHoldoutFreeze(x.input)).toThrow(
+      "SOURCE_FAMILIES_NOT_DISJOINT_OR_INVALID",
+    );
+  });
+  it("rejects a signed development repository owner concealed by another publisher name", () => {
+    const x = fixture();
+    x.manifest.sourceFamilies[1]!.repository = "mdn/docs";
+    resignFixture(x);
+    expect(() => verifyPrecommittedHoldoutFreeze(x.input)).toThrow(
+      "SOURCE_FAMILIES_NOT_DISJOINT_OR_INVALID",
+    );
+  });
+  it("rejects a signed freeze with two different repositories of one owner", () => {
+    const x = fixture();
+    x.manifest.sourceFamilies[1]!.repository = "nodejs/another-project";
+    resignFixture(x);
+    expect(() => verifyPrecommittedHoldoutFreeze(x.input)).toThrow(
+      "SOURCE_FAMILIES_NOT_DISJOINT_OR_INVALID",
+    );
+  });
+  it("rejects cloned source snapshot hashes across two claimed independent families", () => {
+    const x = fixture();
+    x.manifest.sourceFamilies[1]!.sourceSnapshotSha256 =
+      x.manifest.sourceFamilies[0]!.sourceSnapshotSha256;
+    resignFixture(x);
     expect(() => verifyPrecommittedHoldoutFreeze(x.input)).toThrow(
       "SOURCE_FAMILIES_NOT_DISJOINT_OR_INVALID",
     );
