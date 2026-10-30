@@ -657,6 +657,11 @@
       "reason": "executable product test"
     },
     {
+      "path": "apps/api/test/s2-owner-v3-product.integration.test.ts",
+      "category": "PRODUCT_TEST",
+      "reason": "executable product test"
+    },
+    {
       "path": "apps/api/test/s2-reviewed-propositions.test.ts",
       "category": "PRODUCT_TEST",
       "reason": "executable product test"
